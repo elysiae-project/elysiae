@@ -23,14 +23,14 @@
 </script>
 
 <div class="w-screen h-screen flex flex-col dark:text-white text-black">
-    <div data-tauri-drag-region class="w-full h-10 bg-neutral-600 flex flex-row justify-between items-center px-3 py-1">
+    <div data-tauri-drag-region class="w-full h-10 bg-neutral-600 rounded-t-lg flex flex-row justify-between items-center px-3 py-1">
         <div class="flex flex-row">
             <h1>Yoohoo!</h1>
         </div>
         <div class="h-full flex flex-row justify-end items-center gap-2.5">
-            <Minus class="minus p-1" onclick={minimize}/>
-            <Scan class="maximize p-1" 
-                  onclick={(e) => {e.currentTarget.blur(); maximize()}} 
+            <Minus class="minus p-1 h-full w-auto" onclick={minimize}/>
+            <Scan class="maximize p-1 h-full w-auto" 
+                onclick={(e) => {e.currentTarget.blur(); maximize()}} 
                 onmousedown={(e) => {
                     e.currentTarget.blur(); 
                     gsap.fromTo(".maximize", { 
@@ -44,10 +44,11 @@
                         duration: 0.35 
                     });
                 }}/>
-            <X class="close p-1" onclick={close} />
+            <X class="close p-1 h-full w-1/4 rounded-full hover:bg-red-600" onclick={close} />
         </div>
     </div>
-    <div class="px-5 py-3 bg-neutral-800 h-full w-full">
+    <div class="px-5 py-3 bg-neutral-800 rounded-b-lg h-full w-full">
+        
         {@render children?.()}
     </div>
 </div>

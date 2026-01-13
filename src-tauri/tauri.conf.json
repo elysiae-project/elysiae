@@ -12,11 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "YooHoo",
+        "title": "Yoohoo",
         "width": 1150,
         "height": 700,
         "decorations": false,
-        "shadow": true
+        "shadow": true,
+        "transparent": true
       }
     ],
     "security": {
