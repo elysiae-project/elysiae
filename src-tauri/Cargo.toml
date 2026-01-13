@@ -1,0 +1,24 @@
+[package]
+name = "yoohoo"
+version = "0.1.0"
+description = "Universal Hoyoverse Game Launcher"
+authors = ["Shob3r"]
+edition = "2024"
+
+[lib]
+name = "yoohoo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.9.5", features = [] }
+tauri-plugin-opener = "2.5.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tauri-plugin-process = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2.3.7"
+
