@@ -3,14 +3,27 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "yoohoo"
+    "main"
   ],
   "permissions": [
     "core:default",
+    "core:window:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "opener:default",
-    "process:default"
+    "fs:default",
+    "os:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*.hoyoverse.com"
+        }
+      ]
+    },
+    "store:default",
+    "upload:default"
   ]
 }
