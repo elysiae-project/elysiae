@@ -1,1 +1,44 @@
 @import "tailwindcss";
+
+@theme {
+    --color-hi3-primary: #ffffff;
+    --color-hi3-secondary: #ffffff;
+
+    --color-genshin-primary: #ffffff;
+    --color-genshin-secondary: #ffffff;
+
+    --color-hsr-primary: #ffffff;
+}
+
+/* These fonts belong to Hoyoverse, I scraped them from game installs */
+@font-face {
+    font-family: genshin;
+    src: url('/src/assets/Genshin.ttf');
+}
+
+@font-face {
+    font-family: hsr-hi3;
+    src: url('/src/assets/HSR-HI3.ttf');
+}
+
+@font-face {
+    font-family: zzz;
+    src: url('/src/assets/ZZZ.ttf');
+}
+
+* {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.font-genshin {
+    font-family: genshin, serif;
+}
+
+.font-hsr-hi3 {
+    font-family: hsr-hi3, serif;
+}
+
+.font-zzz {
+    font-family: zzz, serif;
+}
