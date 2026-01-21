@@ -1,7 +1,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { cva } from "class-variance-authority";
 import { X, Maximize, Minus } from 'lucide-preact';
-import {variants} from "../util/selectedGame.ts";
+import { useGame } from "../util/selectedGame.ts";
 
 const appWindow = getCurrentWindow();
 
@@ -28,10 +28,10 @@ const minimize = () => {
     appWindow.minimize();
 }
 
-export default function Titlebar({ intent }: { intent: variants }) {
+export default function Titlebar() {
     return(
         <>
-            <div data-tauri-drag-region class={titlebar({intent: intent})}>
+            <div data-tauri-drag-region class={titlebar({intent: useGame()})}>
                 <p data-tauri-drag-region>Yoohoo!</p>
                 <div class="flex flex-row-reverse gap-2 ">
                     <button onClick={() => closeWindow()}><X/></button>
