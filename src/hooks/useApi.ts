@@ -1,6 +1,9 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { useEffect, useState } from "preact/hooks";
 import {
+	LauncherBrandingData,
+	LauncherBrandingRawData,
+	LauncherBrandingRawGameData,
 	LauncherGraphicsData,
 	LauncherGraphicsRawData,
 	LauncherGraphicsRawGameData,
@@ -14,11 +17,17 @@ const BH3_EN_ID = "bxPTXSET5t";
 
 let loading = false;
 export const useApi = () => {
-	const [graphicsData, setData] = useState<LauncherGraphicsData | null>(null);
+	const [graphicsData, setGraphicsData] = useState<LauncherGraphicsData | null>(
+		null,
+	);
+	const [brandingData, setBrandingData] = useState<LauncherBrandingData | null>(
+		null,
+	);
 
 	useEffect(() => {
-		if (!graphicsData && !loading) {
+		if (!loading) {
 			loading = true;
+
 			fetch(
 				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getAllGameBasicInfo"].join("/")}?launcher_id=${LAUNCHER_ID}&language=${LANGUAGE}`,
 			)
@@ -55,12 +64,51 @@ export const useApi = () => {
 						{} as LauncherGraphicsData,
 					);
 					console.log(formatted);
-					setData(formatted);
+					setGraphicsData(formatted);
+				})
+				.catch((err) => console.log(err))
+				.finally(() => (loading = false));
+
+			fetch(
+				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getGames"].join("/")}?launcher_id=${LAUNCHER_ID}`,
+			)
+				.then((res) => res.json())
+				.then((data: LauncherBrandingRawData) => {
+					if (data.message !== "OK") throw new Error(data.message);
+					console.log(data);
+					const formatted = data.data.games.reduce(
+						(acc: LauncherBrandingData, game: LauncherBrandingRawGameData) => {
+							let id;
+							switch (game.biz) {
+								case "bh3_global":
+									if (game.id === BH3_EN_ID) id = Variants.BH;
+									break;
+								case "hk4e_global":
+									id = Variants.YS;
+									break;
+								case "hkrpg_global":
+									id = Variants.SR;
+									break;
+								case "nap_global":
+									id = Variants.NAP;
+									break;
+							}
+							if (typeof id === "undefined") return acc;
+							acc[id] = {
+								icon: game.display.icon.url,
+								iconLarge: game.display.shortcut.url,
+							};
+							return acc;
+						},
+						{} as LauncherBrandingData,
+					);
+					console.log(formatted);
+					setBrandingData(formatted);
 				})
 				.catch((err) => console.log(err))
 				.finally(() => (loading = false));
 		}
 	}, []);
 
-	return { graphics: graphicsData };
+	return { graphics: graphicsData, branding: brandingData };
 };

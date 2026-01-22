@@ -4,6 +4,7 @@ import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
+import Sidebar from "./components/Sidebar.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -44,9 +45,12 @@ export default function App() {
 								src={graphics[game].backgroundVideoOverlay}
 								alt=""
 							/>
+
 							<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
 								{/* Page content */}
 							</div>
+
+							<Sidebar />
 						</div>
 					) : (
 						<div class="flex h-full w-full flex-col items-center justify-center text-center">
