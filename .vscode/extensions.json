@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "wayou.vscode-todo-highlight",
+    "kevinyouu.tailwind-raw-reorder-tw4",
+    "yzhang.markdown-all-in-one"
+  ]
+}
