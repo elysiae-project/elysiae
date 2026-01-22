@@ -6,7 +6,7 @@ export default function Sidebar() {
 	const { branding } = useApi();
 
 	return (
-		<div class="bg-linear-to-r absolute bottom-0 left-0 top-0 z-20 flex flex-col items-center gap-4 from-black/30 to-transparent py-4 pl-4 pr-12">
+		<div class="bg-linear-to-b absolute bottom-0 left-0 top-0 z-20 flex flex-col items-center gap-4 from-black/50 to-black/30 p-4">
 			{branding &&
 				Object.entries(branding).map(([key, data]) => (
 					<button
