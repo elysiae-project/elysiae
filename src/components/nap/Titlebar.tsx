@@ -1,10 +1,8 @@
 export default function NapTitlebar({
 	onClose,
-	onToggleMaximize,
 	onMinimize,
 }: {
 	onClose: () => void;
-	onToggleMaximize: () => void;
 	onMinimize: () => void;
 }) {
 	return (

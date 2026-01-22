@@ -14,10 +14,6 @@ const closeWindow = () => {
 	appWindow.close();
 };
 
-const toggleMaximize = () => {
-	appWindow.toggleMaximize();
-};
-
 const minimize = () => {
 	appWindow.minimize();
 };
@@ -34,7 +30,6 @@ export default function Titlebar() {
 	return (
 		<Titlebar
 			onClose={closeWindow}
-			onToggleMaximize={toggleMaximize}
 			onMinimize={minimize}
 		/>
 	);
