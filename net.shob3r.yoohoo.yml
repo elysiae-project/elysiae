@@ -1,6 +1,6 @@
 id: net.shob3r.yoohoo
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: "48"
 sdk: org.gnome.sdk
 
 command: tauri-app
@@ -22,6 +22,6 @@ modules:
       HOME: /run/build/yoohoo
       CARGO_HOME: /run/build/yoohoo/src-tauri
       XDG_CACHE_HOME: /run/build/yoohoo/flatpak-node/cache
-      yarn_config_offline: 'true'
+      yarn_config_offline: "true"
       yarn_config_cache: /run/build/yoohoo/flatpak-node/yarn-cache
     sources:

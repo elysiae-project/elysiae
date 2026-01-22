@@ -1,44 +1,35 @@
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { cva } from "class-variance-authority";
-import { X, Maximize, Minus } from 'lucide-preact';
-import { useGame } from "../util/selectedGame.ts";
+import { getCurrentWindow, Window } from '@tauri-apps/api/window';
 
-const appWindow = getCurrentWindow();
+import BhTitlebar from './bh/Titlebar.tsx';
+import YsTitlebar from './ys/Titlebar.tsx';
+import SrTitlebar from './sr/Titlebar.tsx';
+import NapTitlebar from './nap/Titlebar.tsx';
+import { useGame } from '../util/selectedGame.ts';
 
-const titlebar = cva("flex flex-row justify-between w-full h-auto px-3 py-1.5 rounded-t-xl", {
-    variants: {
-        intent: {
-            hi3: "bg-amber-300 font-hsr-hi3",
-            genshin: "bg-orange-400 font-genshin text-white",
-            hsr: "bg-pink-500 font-hsr-hi3",
-            zzz: "bg-green-400 font-zzz"
-        }
-    }
-});
+const appWindow: Window = getCurrentWindow();
 
 const closeWindow = () => {
-    appWindow.close();
-}
+	appWindow.close();
+};
 
 const toggleMaximize = () => {
-    appWindow.toggleMaximize();
-}
+	appWindow.toggleMaximize();
+};
 
 const minimize = () => {
-    appWindow.minimize();
-}
+	appWindow.minimize();
+};
 
 export default function Titlebar() {
-    return(
-        <>
-            <div data-tauri-drag-region class={titlebar({intent: useGame()})}>
-                <p data-tauri-drag-region>Yoohoo!</p>
-                <div class="flex flex-row-reverse gap-2 ">
-                    <button onClick={() => closeWindow()}><X/></button>
-                    <button onClick={() => toggleMaximize()}><Maximize/></button>
-                    <button onClick={() => minimize()}><Minus/></button>
-                </div>
-            </div>
-        </>
-    )
+  const game = useGame();
+	switch (game) {
+		case 'bh':
+			return <BhTitlebar />;
+		case 'ys':
+			return <YsTitlebar />;
+		case 'sr':
+			return <SrTitlebar />;
+		case 'nap':
+			return <NapTitlebar />;
+	}
 }

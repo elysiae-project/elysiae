@@ -564,21 +564,21 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@preact/signals-core@npm:^1.12.0":
-  version: 1.12.1
-  resolution: "@preact/signals-core@npm:1.12.1"
-  checksum: 10c0/06e73a9b6b90ef5967687eb64003cc7c1abae1950ade55941c3eefeca5d4f642010bce3f267f00663703d7f1509c51ced4751733b7ef5dcba29707fe38d375a1
+"@preact/signals-core@npm:^1.12.2":
+  version: 1.12.2
+  resolution: "@preact/signals-core@npm:1.12.2"
+  checksum: 10c0/25ccf7639522179452ee4636290cd70573048c613bc1fffaa5f5deecd0a750611c170c954769ba3c71fca97aa4b951edcdd3a2b2c96b172c87e4ba3bc81ddccd
   languageName: node
   linkType: hard
 
-"@preact/signals@npm:^2.5.1":
-  version: 2.5.1
-  resolution: "@preact/signals@npm:2.5.1"
+"@preact/signals@npm:^2.6.1":
+  version: 2.6.1
+  resolution: "@preact/signals@npm:2.6.1"
   dependencies:
-    "@preact/signals-core": "npm:^1.12.0"
+    "@preact/signals-core": "npm:^1.12.2"
   peerDependencies:
     preact: ">= 10.25.0 || >=11.0.0-0"
-  checksum: 10c0/ec155724b062389462a2e04aeeb715d23b52d45ab08eb8553d57d66db69918cb2c0ed5f50a8242631135d5a7bda16868f4a1666920ab6a8541316e09b09e69f4
+  checksum: 10c0/8ec79acd3441523783dc5cd1b41052fb3cefd960e4bb4e0a5c82ce2f282ad22adaf1578114b6c49a8c0515941a085f380132b67cfe63f8dbbb193385ece43878
   languageName: node
   linkType: hard
 
@@ -1098,7 +1098,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-fs@npm:~2":
+"@tauri-apps/plugin-fs@npm:~2.4.5":
   version: 2.4.5
   resolution: "@tauri-apps/plugin-fs@npm:2.4.5"
   dependencies:
@@ -1107,7 +1107,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-http@npm:~2":
+"@tauri-apps/plugin-http@npm:~2.5.6":
   version: 2.5.6
   resolution: "@tauri-apps/plugin-http@npm:2.5.6"
   dependencies:
@@ -1116,7 +1116,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-log@npm:~2":
+"@tauri-apps/plugin-log@npm:~2.8.0":
   version: 2.8.0
   resolution: "@tauri-apps/plugin-log@npm:2.8.0"
   dependencies:
@@ -1125,7 +1125,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-notification@npm:~2":
+"@tauri-apps/plugin-notification@npm:~2.3.3":
   version: 2.3.3
   resolution: "@tauri-apps/plugin-notification@npm:2.3.3"
   dependencies:
@@ -1134,7 +1134,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-opener@npm:~2":
+"@tauri-apps/plugin-opener@npm:~2.5.3":
   version: 2.5.3
   resolution: "@tauri-apps/plugin-opener@npm:2.5.3"
   dependencies:
@@ -1143,7 +1143,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-os@npm:~2":
+"@tauri-apps/plugin-os@npm:~2.3.2":
   version: 2.3.2
   resolution: "@tauri-apps/plugin-os@npm:2.3.2"
   dependencies:
@@ -1152,7 +1152,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-store@npm:~2":
+"@tauri-apps/plugin-store@npm:~2.4.2":
   version: 2.4.2
   resolution: "@tauri-apps/plugin-store@npm:2.4.2"
   dependencies:
@@ -1161,7 +1161,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-upload@npm:~2":
+"@tauri-apps/plugin-upload@npm:~2.4.0":
   version: 2.4.0
   resolution: "@tauri-apps/plugin-upload@npm:2.4.0"
   dependencies:
@@ -2096,6 +2096,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"prettier@npm:3.8.1":
+  version: 3.8.1
+  resolution: "prettier@npm:3.8.1"
+  bin:
+    prettier: bin/prettier.cjs
+  checksum: 10c0/33169b594009e48f570471271be7eac7cdcf88a209eed39ac3b8d6d78984039bfa9132f82b7e6ba3b06711f3bfe0222a62a1bfb87c43f50c25a83df1b78a2c42
+  languageName: node
+  linkType: hard
+
 "proc-log@npm:^6.0.0":
   version: 6.1.0
   resolution: "proc-log@npm:6.1.0"
@@ -2506,21 +2515,22 @@ __metadata:
   resolution: "yoohoo@workspace:."
   dependencies:
     "@preact/preset-vite": "npm:^2.10.2"
-    "@preact/signals": "npm:^2.5.1"
+    "@preact/signals": "npm:^2.6.1"
     "@tailwindcss/vite": "npm:^4.1.18"
     "@tauri-apps/api": "npm:^2.9.1"
     "@tauri-apps/cli": "npm:^2.9.6"
-    "@tauri-apps/plugin-fs": "npm:~2"
-    "@tauri-apps/plugin-http": "npm:~2"
-    "@tauri-apps/plugin-log": "npm:~2"
-    "@tauri-apps/plugin-notification": "npm:~2"
-    "@tauri-apps/plugin-opener": "npm:~2"
-    "@tauri-apps/plugin-os": "npm:~2"
-    "@tauri-apps/plugin-store": "npm:~2"
-    "@tauri-apps/plugin-upload": "npm:~2"
+    "@tauri-apps/plugin-fs": "npm:~2.4.5"
+    "@tauri-apps/plugin-http": "npm:~2.5.6"
+    "@tauri-apps/plugin-log": "npm:~2.8.0"
+    "@tauri-apps/plugin-notification": "npm:~2.3.3"
+    "@tauri-apps/plugin-opener": "npm:~2.5.3"
+    "@tauri-apps/plugin-os": "npm:~2.3.2"
+    "@tauri-apps/plugin-store": "npm:~2.4.2"
+    "@tauri-apps/plugin-upload": "npm:~2.4.0"
     class-variance-authority: "npm:^0.7.1"
     lucide-preact: "npm:^0.562.0"
     preact: "npm:^10.28.2"
+    prettier: "npm:3.8.1"
     tailwindcss: "npm:^4.1.18"
     typescript: "npm:~5.9.3"
     vite: "npm:^7.3.1"
