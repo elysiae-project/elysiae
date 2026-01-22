@@ -4,6 +4,7 @@ import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
+import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 
@@ -49,6 +50,8 @@ function App() {
 						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
 							{/* Page content */}
 						</div>
+
+						<Sidebar />
 					</div>
 				) : (
 					<div class="flex h-full w-full flex-col items-center justify-center text-center">
