@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root::view-transition { 
+	background-color: #232323;
+}
+
 @theme {
 	/* Bh */
 	--color-bh-titlebar: #223651;
