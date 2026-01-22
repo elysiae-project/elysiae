@@ -1,10 +1,11 @@
 import "./App.css";
-import { GameContext, useGame } from "./hooks/useGame.ts";
+import { useGame } from "./hooks/useGame.ts";
 import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
-import Sidebar from "./components/Sidebar.tsx";
+import { ApiProvider } from "./contexts/ApiContext.tsx";
+import { GameProvider } from "./contexts/GameContext.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -21,44 +22,50 @@ const theme = cva("h-full w-full overflow-hidden", {
 
 function Background() {}
 
-export default function App() {
-	const game = useGame();
+function App() {
+	const { game } = useGame();
 	const { graphics } = useApi();
 
 	return (
-		<GameContext.Provider value={game}>
-			<div class="flex h-screen w-screen flex-col gap-0 text-white">
-				<Titlebar />
+		<div class="flex h-screen w-screen flex-col gap-0 text-white">
+			<Titlebar />
 
-				<div class={theme({ intent: game })}>
-					{graphics ? (
-						<div class="relative h-full w-full">
-							<video
-								class="absolute inset-0 h-full w-full object-cover"
-								src={graphics[game].backgroundVideo}
-								autoplay
-								loop
-								muted
-							></video>
-							<img
-								class="absolute inset-0 h-full w-full object-cover"
-								src={graphics[game].backgroundVideoOverlay}
-								alt=""
-							/>
+			<div class={theme({ intent: game })}>
+				{graphics ? (
+					<div class="relative h-full w-full">
+						<video
+							class="absolute inset-0 h-full w-full object-cover"
+							src={graphics[game].backgroundVideo}
+							autoplay
+							loop
+							muted
+						></video>
+						<img
+							class="absolute inset-0 h-full w-full object-cover"
+							src={graphics[game].backgroundVideoOverlay}
+							alt=""
+						/>
 
-							<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
-								{/* Page content */}
-							</div>
-
-							<Sidebar />
+						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
+							{/* Page content */}
 						</div>
-					) : (
-						<div class="flex h-full w-full flex-col items-center justify-center text-center">
-							<h2 class="text-6xl">Loading...</h2>
-						</div>
-					)}
-				</div>
+					</div>
+				) : (
+					<div class="flex h-full w-full flex-col items-center justify-center text-center">
+						<h2 class="text-6xl">Loading...</h2>
+					</div>
+				)}
 			</div>
-		</GameContext.Provider>
+		</div>
+	);
+}
+
+export default function AppWrapper() {
+	return (
+		<GameProvider>
+			<ApiProvider>
+				<App />
+			</ApiProvider>
+		</GameProvider>
 	);
 }

@@ -24,7 +24,7 @@ const minimize = () => {
 };
 
 export default function Titlebar() {
-	const game = useGame();
+	const { game } = useGame();
 
 	const Titlebar = {
 		[Variants.BH]: BhTitlebar,
