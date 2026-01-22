@@ -39,7 +39,6 @@
 * {
 	user-select: none;
 	-webkit-user-select: none;
-	overflow: hidden;
 	scrollbar-color: transparent;
 }
 

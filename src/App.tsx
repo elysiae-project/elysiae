@@ -9,15 +9,15 @@ const theme = cva("h-full w-full px-3 py-4", {
 		intent: {
 			[Variants.BH]: "bg-bh-bg font-hsr-hi3 rounded-b-xl text-white",
 			[Variants.YS]: "bg-ys-bg font-genshin text-black",
-			[Variants.SR]:
-				"bg-sr-bg font-hsr-hi3 rounded-b-xs border border-[#393939] text-black",
-			[Variants.NAP]:
-				"bg-nap-bg font-zzz rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white nap-dots",
+			[Variants.SR]: "bg-sr-bg font-hsr-hi3 rounded-b-xs border border-[#393939] text-black",
+			[Variants.NAP]: "bg-nap-bg font-zzz rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white nap-dots",
 		},
 	},
 });
 
-function Background() {}
+function Background() {
+	
+}
 
 export default function App() {
 	return (

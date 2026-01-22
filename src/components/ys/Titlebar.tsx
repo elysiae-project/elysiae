@@ -1,12 +1,10 @@
-import TitlebarButtons from "./TitlebarButtons";
+import YsTitlebarButtons from "./TitlebarButtons";
 
 export default function YsTitlebar({
 	onClose,
-	onToggleMaximize,
 	onMinimize,
 }: {
 	onClose: () => void;
-	onToggleMaximize: () => void;
 	onMinimize: () => void;
 }) {
 	return (
@@ -16,12 +14,12 @@ export default function YsTitlebar({
 		>
 			<div
 				data-tauri-drag-region
-				class="flex flex-row justify-between border border-[#505869] bg-transparent px-5 py-3"
+				class="flex flex-row justify-between items-center border border-[#505869] bg-transparent px-5 py-1.5"
 			>
-				<h3 class="text-xl" data-tauri-drag-region>
+				<h3 class="text-xl text-center" data-tauri-drag-region>
 					Yoohoo!
 				</h3>
-				<TitlebarButtons />
+				<YsTitlebarButtons close={onClose} minimize={onMinimize}/>
 			</div>
 		</div>
 	);
