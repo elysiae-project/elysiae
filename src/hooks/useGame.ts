@@ -1,11 +1,6 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
+import { Variants } from "../types";
 
-export enum Variants {
-	BH,
-	YS,
-	SR,
-	NAP,
-}
 export const GameContext = createContext<Variants>(Variants.SR);
 export const useGame = () => useContext(GameContext);

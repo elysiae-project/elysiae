@@ -1,6 +1,7 @@
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 
-import { useGame, Variants } from "../util/selectedGame.ts";
+import { useGame } from "../hooks/useGame.ts";
+import { Variants } from "../types";
 
 import BhTitlebar from "./bh/Titlebar.tsx";
 import NapTitlebar from "./nap/Titlebar.tsx";
