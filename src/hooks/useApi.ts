@@ -14,10 +14,10 @@ const BH3_EN_ID = "bxPTXSET5t";
 
 let loading = false;
 export const useApi = () => {
-	const [data, setData] = useState<LauncherGraphicsData | null>(null);
+	const [graphicsData, setData] = useState<LauncherGraphicsData | null>(null);
 
 	useEffect(() => {
-		if (!data && !loading) {
+		if (!graphicsData && !loading) {
 			loading = true;
 			fetch(
 				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getAllGameBasicInfo"].join("/")}?launcher_id=${LAUNCHER_ID}&language=${LANGUAGE}`,
@@ -62,5 +62,5 @@ export const useApi = () => {
 		}
 	}, []);
 
-	return data;
+	return { graphics: graphicsData };
 };

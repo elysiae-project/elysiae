@@ -22,7 +22,7 @@ function Background() {}
 
 export default function App() {
 	const game = useGame();
-	const api = useApi();
+	const { graphics } = useApi();
 
 	return (
 		<GameContext.Provider value={game}>
@@ -30,18 +30,18 @@ export default function App() {
 				<Titlebar />
 
 				<div class={theme({ intent: game })}>
-					{api ? (
+					{graphics ? (
 						<div class="relative h-full w-full">
 							<video
 								class="absolute inset-0 h-full w-full object-cover"
-								src={api[game].backgroundVideo}
+								src={graphics[game].backgroundVideo}
 								autoplay
 								loop
 								muted
 							></video>
 							<img
 								class="absolute inset-0 h-full w-full object-cover"
-								src={api[game].backgroundVideoOverlay}
+								src={graphics[game].backgroundVideoOverlay}
 								alt=""
 							/>
 							<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
