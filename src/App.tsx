@@ -1,6 +1,6 @@
 import "./App.css";
 import { GameContext, useGame, Variants } from "./util/selectedGame.ts";
-import Titlebar from "./Components/Titlebar.tsx";
+import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 
 const theme = cva("h-full w-full px-3 py-4", {
