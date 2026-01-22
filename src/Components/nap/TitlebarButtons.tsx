@@ -1,5 +1,1 @@
-
-export default function TitlebarButtons() {
-
-}
-
+export default function TitlebarButtons() {}

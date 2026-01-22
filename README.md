@@ -1,12 +1,10 @@
 # Yoohoo!
+
 Universal Hoyoverse game launcher using Wine, DXVK, And Proton
 
 ## Why This Project Exists
 
-I created Yoohoo to replace the separated Hoyoverse game launchers from [an-anime-team](https://github.com/an-anime-team). From my experience, these launchers can be somewhat unreliable, are missing a few features, and are barely maintained. On top of that, each game requires its own launcher. While work has started on a [Unified Hoyoverse Launcher](https://github.com/an-anime-team/an-anime-game-launcher) several years ago, the project has largely stagnated, leading me to believe that the project will likely never be finished at all. These factors led me to creating Yoohoo, which attempts to do the following: 
-    1. Function properly without any user intervention 
-    2. Implement any features available on the Windows counterpart of Hoyoplay 
-    3. Be actively maintained
+I created Yoohoo to replace the separated Hoyoverse game launchers from [an-anime-team](https://github.com/an-anime-team). From my experience, these launchers can be somewhat unreliable, are missing a few features, and are barely maintained. On top of that, each game requires its own launcher. While work has started on a [Unified Hoyoverse Launcher](https://github.com/an-anime-team/an-anime-game-launcher) several years ago, the project has largely stagnated, leading me to believe that the project will likely never be finished at all. These factors led me to creating Yoohoo, which attempts to do the following: 1. Function properly without any user intervention 2. Implement any features available on the Windows counterpart of Hoyoplay 3. Be actively maintained
 
 ## Software Requirements
 

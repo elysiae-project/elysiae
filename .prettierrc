@@ -1,10 +1,10 @@
 {
-  "tabWidth": 4,
-  "useTabs": true,
-  "trailingComma": "all",
-  "semi": true,
-  "singleQuote": true,
-  "endOfLine": "lf",
-  "cursorOffset": -1,
-  "arrowParens": "always"
+	"$schema": "https://json.schemastore.org/prettierrc",
+	"tabWidth": 2,
+	"useTabs": true,
+	"trailingComma": "all",
+	"semi": true,
+	"singleQuote": false,
+	"endOfLine": "lf",
+	"arrowParens": "always"
 }

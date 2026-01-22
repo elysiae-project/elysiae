@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @theme {
 	/* Bh */
@@ -17,30 +17,30 @@
 	/* Nap */
 	--color-nap-titlebar: #191919;
 	--color-nap-bg: #232324;
-	--color-nap-border: #939393BB;
+	--color-nap-border: #939393bb;
 }
 
 /* These fonts belong to Hoyoverse, I scraped them from game installs */
 @font-face {
 	font-family: ys;
-	src: url('/src/assets/YS.ttf');
+	src: url("/src/assets/YS.ttf");
 }
 
 @font-face {
 	font-family: bh3-sr;
-	src: url('/src/assets/BH-SR.ttf');
+	src: url("/src/assets/BH-SR.ttf");
 }
 
 @font-face {
 	font-family: nap;
-	src: url('/src/assets/NAP.ttf');
+	src: url("/src/assets/NAP.ttf");
 }
 
 * {
 	user-select: none;
 	-webkit-user-select: none;
-    overflow: hidden;
-    scrollbar-color: transparent;
+	overflow: hidden;
+	scrollbar-color: transparent;
 }
 
 .font-ys {
@@ -56,8 +56,8 @@
 }
 
 .nap-dots {
-    background-image: repeating-conic-gradient(#232323 0% 25%, #161616 0% 50%);
-    background-size: 6px 6px;
+	background-image: repeating-conic-gradient(#232323 0% 25%, #161616 0% 50%);
+	background-size: 6px 6px;
 }
 
 .titlebar-sr-noise {
