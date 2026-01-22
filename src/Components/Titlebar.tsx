@@ -1,10 +1,11 @@
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 
+import { useGame, Variants } from "../util/selectedGame.ts";
+
 import BhTitlebar from "./bh/Titlebar.tsx";
-import YsTitlebar from "./ys/Titlebar.tsx";
-import SrTitlebar from "./sr/Titlebar.tsx";
 import NapTitlebar from "./nap/Titlebar.tsx";
-import { useGame } from "../util/selectedGame.ts";
+import SrTitlebar from "./sr/Titlebar.tsx";
+import YsTitlebar from "./ys/Titlebar.tsx";
 
 const appWindow: Window = getCurrentWindow();
 
@@ -22,14 +23,18 @@ const minimize = () => {
 
 export default function Titlebar() {
 	const game = useGame();
-	switch (game) {
-		case "bh":
-			return <BhTitlebar />;
-		case "ys":
-			return <YsTitlebar />;
-		case "sr":
-			return <SrTitlebar />;
-		case "nap":
-			return <NapTitlebar />;
-	}
+
+	const Titlebar = {
+		[Variants.BH]: BhTitlebar,
+		[Variants.YS]: YsTitlebar,
+		[Variants.SR]: SrTitlebar,
+		[Variants.NAP]: NapTitlebar,
+	}[game];
+	return (
+		<Titlebar
+			onClose={closeWindow}
+			onToggleMaximize={toggleMaximize}
+			onMinimize={minimize}
+		/>
+	);
 }

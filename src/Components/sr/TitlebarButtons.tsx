@@ -1,1 +1,1 @@
-export default function TitlebarButtons() {}
+export default function SrTitlebarButtons() {}
