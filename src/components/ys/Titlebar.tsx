@@ -19,7 +19,7 @@ export default function YsTitlebar({
 				<h3 class="text-xl text-center" data-tauri-drag-region>
 					Yoohoo!
 				</h3>
-				<YsTitlebarButtons close={onClose} minimize={onMinimize}/>
+				<YsTitlebarButtons close={onClose} minimize={onMinimize} />
 			</div>
 		</div>
 	);

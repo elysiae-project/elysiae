@@ -1,12 +1,13 @@
 import { Shrink, Minus } from "lucide-preact";
+import YsButton from "./Button";
 
 export default function YsTitlebarButtons({
-		close, 
-		minimize
-	}: {
-		close: () => void, 
-		minimize: () => void
-	}) {
+	close,
+	minimize,
+}: {
+	close: () => void;
+	minimize: () => void;
+}) {
 	const content = [
 		{
 			icon: Shrink,
@@ -15,7 +16,7 @@ export default function YsTitlebarButtons({
 		{
 			icon: Minus,
 			action: minimize,
-		}
+		},
 	] as const;
 
 	return (
@@ -23,9 +24,12 @@ export default function YsTitlebarButtons({
 			{content.map((item, key) => {
 				const Icon = item.icon;
 				return (
-					<div class="border-5 border-[#888d8e] bg-[#ece5d8] hover:border-[#00000000] hover:drop-shadow-xs hover:drop-shadow-[#fdfdfeAA] 
-						active:bg-[#9a947f] active:border-[#00000000] p-2 rounded-full" onClick={item.action}>
-						<Icon key={key} color="#4b5366"/>
+					<div
+						class="border-5 border-[#888d8e] bg-[#ece5d8] hover:border-[#00000000] hover:drop-shadow-xs hover:drop-shadow-[#fdfdfeAA] 
+						active:bg-[#9a947f] active:border-[#00000000] p-2 rounded-full"
+						onClick={item.action}
+					>
+						<Icon key={key} color="#4b5366" />
 					</div>
 				);
 			})}

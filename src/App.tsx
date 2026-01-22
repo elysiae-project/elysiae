@@ -1,7 +1,6 @@
 import "./App.css";
 import { useGame } from "./hooks/useGame.ts";
 import Titlebar from "./components/Titlebar.tsx";
-import YsButton from "./components/ys/Button.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
 
@@ -17,8 +16,6 @@ const theme = cva("h-full w-full px-3 py-4", {
 		},
 	},
 });
-
-function Background() {}
 
 export default function App() {
 	return (

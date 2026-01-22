@@ -4,10 +4,8 @@
     <developer id="net.shob3r">
         <name>Andrew Pinter</name>
     </developer>
-
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>BSD-3-Clause</project_license>
-
     <name>Yoohoo!</name>
     <summary>Universal Hoyoverse Game Launcher for Linux</summary>
     <url type="homepage">https://github.com/shob3r/yoohoo</url>
@@ -26,7 +24,6 @@
         <category>Game</category>
         <category>LauncherStore</category>
     </categories>
-
     <requires>
         <control>keyboard</control>
         <control>pointing</control>
