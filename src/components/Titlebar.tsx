@@ -7,6 +7,7 @@ import BhTitlebar from "./bh/Titlebar.tsx";
 import NapTitlebar from "./nap/Titlebar.tsx";
 import SrTitlebar from "./sr/Titlebar.tsx";
 import YsTitlebar from "./ys/Titlebar.tsx";
+import { useApi } from "../hooks/useApi.ts";
 
 const appWindow: Window = getCurrentWindow();
 
@@ -24,6 +25,7 @@ const minimize = () => {
 
 export default function Titlebar() {
 	const game = useGame();
+	// const api = useApi();
 
 	const Titlebar = {
 		[Variants.BH]: BhTitlebar,
