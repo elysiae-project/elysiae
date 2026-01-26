@@ -16,8 +16,7 @@ To use Yoohoo properly, you will need the following:
 - Enough additional storage to install any Hoyoverse games you'd like to play
 
 ## Installing Yoohoo
-
-You can install Yoohoo from flatpak, the AUR, or as a portable binary. Keep in mind that automatic updates will only work on flatpak and the AUR
+**WIP**
 
 ## Building From Source / Contributing to Yoohoo
 

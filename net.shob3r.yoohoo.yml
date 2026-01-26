@@ -13,9 +13,11 @@ finish-args:
   - --share=network
   - --filesystem=xdg-run/path
   - --filesystem=home
+
 build-extensions:
-  - org.freedesktop.Sdk.Extension.node20 # Make sure to install these packages or else you will cry in your sleep. I used 24.08
-  - org.freedesktop.Sdk.Extension.rust-stable # 24.08 here as well
+  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.rust-stable
+
 build-options:
   append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
 

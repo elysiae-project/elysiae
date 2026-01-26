@@ -564,24 +564,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@preact/signals-core@npm:^1.12.2":
-  version: 1.12.2
-  resolution: "@preact/signals-core@npm:1.12.2"
-  checksum: 10c0/25ccf7639522179452ee4636290cd70573048c613bc1fffaa5f5deecd0a750611c170c954769ba3c71fca97aa4b951edcdd3a2b2c96b172c87e4ba3bc81ddccd
-  languageName: node
-  linkType: hard
-
-"@preact/signals@npm:^2.6.1":
-  version: 2.6.1
-  resolution: "@preact/signals@npm:2.6.1"
-  dependencies:
-    "@preact/signals-core": "npm:^1.12.2"
-  peerDependencies:
-    preact: ">= 10.25.0 || >=11.0.0-0"
-  checksum: 10c0/8ec79acd3441523783dc5cd1b41052fb3cefd960e4bb4e0a5c82ce2f282ad22adaf1578114b6c49a8c0515941a085f380132b67cfe63f8dbbb193385ece43878
-  languageName: node
-  linkType: hard
-
 "@prefresh/babel-plugin@npm:0.5.2":
   version: 0.5.2
   resolution: "@prefresh/babel-plugin@npm:0.5.2"
@@ -2522,7 +2504,6 @@ __metadata:
   resolution: "yoohoo@workspace:."
   dependencies:
     "@preact/preset-vite": "npm:^2.10.2"
-    "@preact/signals": "npm:^2.6.1"
     "@tailwindcss/vite": "npm:^4.1.18"
     "@tauri-apps/api": "npm:^2.9.1"
     "@tauri-apps/cli": "npm:^2.9.6"

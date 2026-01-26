@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-:root::view-transition { 
+:root::view-transition {
 	background-color: #232323;
 }
 
@@ -27,17 +27,17 @@
 /* These fonts belong to Hoyoverse, I scraped them from game installs */
 @font-face {
 	font-family: ys;
-	src: url("/src/assets/YS.ttf");
+	src: url("/src/assets/YS.woff2");
 }
 
 @font-face {
 	font-family: bh3-sr;
-	src: url("/src/assets/BH-SR.ttf");
+	src: url("/src/assets/BH-SR.woff2");
 }
 
 @font-face {
 	font-family: nap;
-	src: url("/src/assets/NAP.ttf");
+	src: url("/src/assets/NAP.woff2");
 }
 
 * {

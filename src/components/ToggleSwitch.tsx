@@ -1,3 +1,4 @@
+import { useEffect } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
 
@@ -13,6 +14,10 @@ export default function ToggleSwitch({
 	onClick: (enabled: boolean) => void;
 	startActive: boolean;
 }) {
+	useEffect(() => {
+		console.log("LOADED");
+	}, []);
+
 	const game = useGame();
 	const ToggleSwitch = {
 		[Variants.BH]: BhToggleSwitch,
@@ -22,6 +27,9 @@ export default function ToggleSwitch({
 	}[game];
 
 	return (
-		<ToggleSwitch onClick={onClick} startActive={startActive}></ToggleSwitch>
+		<ToggleSwitch
+			onClick={(e) => onClick(e)}
+			startActive={startActive}
+		></ToggleSwitch>
 	);
 }

@@ -11,9 +11,10 @@
     <summary>Universal Hoyoverse Game Launcher for Linux</summary>
     <url type="homepage">https://github.com/shob3r/yoohoo</url>
     <description>
-        <p>This app is in Alpha! Please use with caution, and expect bugs</p>
+        <p>This app is in Alpha! Please use with caution, and expect bugs/missing features</p>
         <p>Yoohoo! is a Universal Hoyoverse Game Launcher for x64 Linux hosts using Wine and DXVK.</p>
-        <p>The application meant to replace the individual launchers created by an-anime-team, as work on a unified launcher has stalled</p>
+        <p>The application meant to replace the individual launchers created by an-anime-team, as
+            work on a unified launcher has stalled</p>
         <p>This app works with the following games:</p>
         <ul>
             <li>Honkai Impact 3rd</li>
@@ -21,7 +22,8 @@
             <li>Honkai: Star Rail</li>
             <li>Zenless Zone Zero</li>
         </ul>
-        <p>All features available in the HoyoPlay launcher on Windows (i.e. preinstall) will be/are implemented in this application</p>
+        <p>All features available in the HoyoPlay launcher on Windows (i.e. preinstall) will be/are
+            implemented in this application</p>
     </description>
     <categories>
         <category>Game</category>
