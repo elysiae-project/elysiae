@@ -3,6 +3,9 @@ import { useGame } from "./hooks/useGame.ts";
 import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
+import Button from "./components/Button.tsx";
+import { Download, Trash } from "lucide-preact";
+import ToggleSwitch from "./components/ToggleSwitch.tsx";
 
 const theme = cva("h-full w-full px-3 py-4", {
 	variants: {
@@ -25,6 +28,18 @@ export default function App() {
 				<div class="flex h-full w-full flex-col items-center justify-center text-center gap-2">
 					<h1 class="text-8xl">It's Taurin'</h1>
 					<h2 class="text-6xl">Time</h2>
+					<Button onClick={() => {}} intent="primary">
+						<Download /> Download
+					</Button>
+					<Button onClick={() => {}} intent="secondary">
+						<Trash />
+					</Button>
+					<ToggleSwitch
+						startActive={false}
+						onClick={(e) => {
+							console.log(`Clicked! Value: ${e}`);
+						}}
+					></ToggleSwitch>
 				</div>
 			</div>
 		</div>

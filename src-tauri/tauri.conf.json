@@ -27,7 +27,7 @@
 		}
 	},
 	"bundle": {
-		"active": false,
-		"targets": []
+		"active": true,
+		"targets": ["deb"]
 	}
 }

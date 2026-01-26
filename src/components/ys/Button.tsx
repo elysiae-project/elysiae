@@ -1,7 +1,7 @@
 import { cva } from "class-variance-authority";
 
 const button = cva(
-	"rounded-full font-ys min-w-55 transition-colors duration-150 px-5 py-2",
+	"rounded-full font-ys min-w-10 transition-colors duration-175 px-5 py-2 drop-shadow-md flex flex-row gap-3 justify-center items-center",
 	{
 		variants: {
 			intent: {
