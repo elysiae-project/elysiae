@@ -1,36 +1,41 @@
-import { Signal } from "@preact/signals";
-import { MutableRef, useRef } from "preact/hooks";
-
+import { useState } from "preact/hooks";
 
 export default function YsDropdown({
 	labels,
-	selectedIndex,
+	initialIndex = 0,
 	onChangeAction,
 }: {
 	labels: string[];
-	selectedIndex: number;
-	onChangeAction: () => void;
+	initialIndex: number;
+	onChangeAction: (index: number) => void;
 }) {
-	const dropdownElement: MutableRef<null | HTMLDivElement> = useRef(null)
-	const selectedItem = new Signal<number>(selectedIndex);
-	const currentLabel = new Signal<string>(labels[selectedItem.value]);
+	let [open, setOpen] = useState<boolean>(false);
+	let [label, setLabel] = useState<string>(labels[initialIndex]);
 
 	const onChange = (index: number) => {
-
-		onChangeAction();
+		setLabel(labels[index]);
+		onChangeAction(index);
 	};
 
 	return (
 		<div class="relative w-60">
-			<div class="flex flex-col h-auto overflow-y-auto bg-[#dcd5c9]" ref={dropdownElement}>
-				<h1>{currentLabel}</h1>
-
-				{labels.map((label, index) => {
-					return(
-						<>
-						</>
-					)
-				})}
+			<div
+				class="flex flex-col h-auto overflow-y-auto bg-[#dcd5c9] rounded-full border-2 border-transparent hover:border-white active:border-[#444140] active:bg-[#edd4b2]"
+				onClick={() => setOpen(!open)}
+			>
+				<h1 class="text-[#3d4557]">{label}</h1>
+				<div style={{ scale: 0 }} class="h-auto p-1 rounded-full bg-[#495366]">
+					{labels.map((label, index) => {
+						return (
+							<div
+								onClick={() => onChange(index)}
+								class="absolute bg-transparent hover:bg-[#606979] active:bg[#ece5d8] text-[#ece5d8] active:text-[#495366] w-full"
+							>
+								<p>{label}</p>
+							</div>
+						);
+					})}
+				</div>
 			</div>
 		</div>
 	);

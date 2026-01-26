@@ -6,6 +6,7 @@ import { Variants } from "./types";
 import Button from "./components/Button.tsx";
 import { Download, Trash } from "lucide-preact";
 import ToggleSwitch from "./components/ToggleSwitch.tsx";
+import YsDropdown from "./components/ys/Dropdown.tsx";
 
 const theme = cva("h-full w-full px-3 py-4", {
 	variants: {
@@ -40,6 +41,7 @@ export default function App() {
 							console.log(`Clicked! Value: ${e}`);
 						}}
 					></ToggleSwitch>
+					<YsDropdown labels={["gaming", "test", "123"]} initialIndex={0} onChangeAction={(e) => {console.log(`Selected Index: ${e}`)}}></YsDropdown>
 				</div>
 			</div>
 		</div>
