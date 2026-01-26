@@ -1,24 +1,23 @@
-# Make sure to have flathub installed on flatpak so flatpak-builder can auto-install everything else
 id: net.shob3r.yoohoo
 
-runtime: org.freedesktop.Platform
-runtime-version: "25.08"
-sdk: org.freedesktop.Sdk
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
 
 command: yoohoo
 finish-args:
   - --socket=wayland
-  - --socket=fallback-x11 # Some styles I created only work with Wayland afaik. There will be some issues with some styles
+  - --socket=fallback-x11
   - --device=dri
   - --share=ipc
   - --share=network
   - --filesystem=xdg-run/path
   - --filesystem=home
-sdk-extensions:
-  - org.freedesktop.Sdk.Extension.node24
-  - org.freedesktop.Sdk.Extension.rust-stable
+build-extensions:
+  - org.freedesktop.Sdk.Extension.node20 # Make sure to install these packages or else you will cry in your sleep. I used 24.08
+  - org.freedesktop.Sdk.Extension.rust-stable # 24.08 here as well
 build-options:
-  append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin
+  append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
 
 modules:
   - name: yoohoo
@@ -28,28 +27,24 @@ modules:
       CARGO_HOME: /run/build/yoohoo/cargo
       RUSTUP_HOME: /run/build/yoohoo/rustup
       XDG_CACHE_HOME: /run/build/yoohoo/flatpak-node/cache
-      yarn_config_offline: "true"
-      yarn_config_cache: /run/build/yoohoo/flatpak-node/yarn-cache
     sources:
-      - type: git
-        url: https://github.com/Shob3r/yoohoo.git
-        tag: main
+      - type: dir
+        path: .
       - cargo-sources.json
-      - node-sources.json
 
     build-commands:
       - set -e
-      - echo -e 'yarn-offline-mirror "/run/build/yoohoo/flatpak-node/yarn-mirror"\nyarn-offline-mirror-pruning true' > /run/build/yoohoo/.yarnrc
+      - cargo --version
       - mkdir -p src-tauri/.cargo && echo -e '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "/run/build/yoohoo/cargo/vendor"' > src-tauri/.cargo/config.toml
-      - yarn install  --offline --immutable --immutable-cache --inline-builds
-      - yarn run tauri build -- -b deb
+      - node flatpak-builder-prep.js
+      - npm run tauri build -- -b deb
+      - echo $PWD
       - ar -x src-tauri/target/release/bundle/deb/*.deb
-      - tar -xf src-tauri/target/release/bundle/deb/yoohoo/data.tar.gz
-      - install -Dm755 src-tauri/target/release/bundle/deb/yoohoo/data/usr/bin/yoohoo /app/bin/yoohoo
-      - install -Dm644 src-tauri/target/release/bundle/deb/yoohoo/data/usr/share/applications/yoohoo.desktop /app/share/applications/net.shob3r.yoohoo.desktop
-      - install -Dm644 src-tauri/target/release/bundle/deb/yoohoo/data/usr/share/icons/hicolor/128x128/apps/yoohoo.png /app/share/icons/hicolor/128x128/apps/yoohoo.png
-      - install -Dm644 src-tauri/target/release/bundle/deb/yoohoo/data/usr/share/icons/hicolor/32x32/apps/yoohoo.png /app/share/icons/hicolor/32x32/apps/yoohoo.png
-      - install -Dm644 src-tauri/target/release/bundle/deb/yoohoo/data/usr/share/icons/hicolor/256x256@2/apps/yoohoo.png /app/share/icons/hicolor/512x512/apps/yoohoo.png
-      - install -Dm644 src-tauri/target/release/bundle/deb/yoohoo/data/usr/share/icons/hicolor/scalable/apps/yoohoo.svg /app/share/icons/hicolor/scalable/apps/yoohoo.svg
-
-      - install -Dm644 src-tauri/target/release/bundle/deb/yoohoo/data/usr/share/metainfo/net.shob3r.yoohoo /app/share/metainfo/net.shob3r.yoohoo
+      - tar -xf data.tar.gz
+      - install -Dm755 ./usr/bin/yoohoo /app/bin/yoohoo
+      - install -Dm644 ./usr/share/applications/yoohoo.desktop /app/share/applications/net.shob3r.yoohoo.desktop
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/yoohoo.png
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/yoohoo.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/512x512/apps/yoohoo.png
+      # - install -Dm644 ./usr/share/icons/hicolor/scalable/apps/yoohoo.svg /app/share/icons/hicolor/scalable/apps/yoohoo.svg
+      - install -Dm644 ./usr/share/metainfo/net.shob3r.yoohoo.metainfo.xml /app/share/metainfo/net.shob3r.yoohoo.metainfo.xml
