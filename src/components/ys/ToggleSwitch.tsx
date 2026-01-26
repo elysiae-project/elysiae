@@ -23,7 +23,9 @@ export default function YsToggleSwitch({
 		>
 			<div
 				class="rounded-full w-8 min-h-8 inner-switch p-1 bg-[#ece5d8] transition-transform duration-400 delay-0"
-				style={{ translate: enabled ? "155%" : "0%" }}
+				style={{
+					transform: `${enabled ? "translateX(155%px)" : ""} translateZ(1px)`,
+				}}
 			>
 				{enabled ? (
 					<Check style="color: #6d7887" />
