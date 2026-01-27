@@ -1,7 +1,7 @@
 id: net.shob3r.yoohoo
 
 runtime: org.gnome.Platform
-runtime-version: "48" # TODO: Upgrade to Gnome 49 or 50 when it is possible to do so
+runtime-version: "48" # TODO: Upgrade to Gnome 49 or 50 when it is possible to do so (Afaik, tauri runs on Gnome 48 right now)
 sdk: org.gnome.Sdk
 
 command: yoohoo
@@ -15,10 +15,10 @@ finish-args:
   - --filesystem=home
 
 build-extensions:
-  # 24.08 is going EOL this August
-  # TODO: Update sdk extensions to 26.08 once it releases
-  - org.freedesktop.Sdk.Extension.node20
-  - org.freedesktop.Sdk.Extension.rust-stable
+  # A new major version of the freedesktop SDK releases every August. Each SDK version is in support for about two years
+  # I believe it is best to stay on top of things and update to the latest SDKs when they are made available
+  - org.freedesktop.Sdk.Extension.node24//25.08
+  - org.freedesktop.Sdk.Extension.rust-stable//25.08
 
 build-options:
   append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
@@ -38,11 +38,9 @@ modules:
 
     build-commands:
       - set -e
-      - cargo --version
       - mkdir -p src-tauri/.cargo && echo -e '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "/run/build/yoohoo/cargo/vendor"' > src-tauri/.cargo/config.toml
       - node flatpak-builder-prep.js
-      - npm run tauri build -- -b deb
-      - echo $PWD
+      - RUSTFLAGS="-C target-cpu=native" npm run tauri build -- -b deb
       - ar -x src-tauri/target/release/bundle/deb/*.deb
       - tar -xf data.tar.gz
       - install -Dm755 ./usr/bin/yoohoo /app/bin/yoohoo
