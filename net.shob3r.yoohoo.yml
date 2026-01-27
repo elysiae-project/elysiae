@@ -1,3 +1,4 @@
+# FIXME: License information doesn't get embedded in the flatpak file for some reason. It might be related to the metainfo.xml file, but I doubt it
 id: net.shob3r.yoohoo
 
 runtime: org.gnome.Platform

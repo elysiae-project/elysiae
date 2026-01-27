@@ -28,6 +28,12 @@ then
     corepack enable
 fi
 
+# Yes, this should be done inside the flatpak environment, but several issues arose while I was trying to implement that
+# 1. Yarn 1.22.0 in flatpak build env only
+# 2. Even when I did figure out how to get it to work, it really did not want to
+# 3. This is flat-out easier in my opinion
+# Rust dependencies are downloaded in the flatpak environment, but only because it isn't cancerous to do so
+# In the future, I might have the flatpak manifest handle this, but for now, this script will
 echo "(4/7) Installing frontend dependencies"
 yarn
 
@@ -37,9 +43,10 @@ flatpak-builder --repo=repo --force-clean build net.shob3r.yoohoo.yml
 echo "(6/7) Bundling flatpak app"
 flatpak build-bundle repo net.shob3r.yoohoo.flatpak net.shob3r.yoohoo
 
-echo "(7/7) Cleanup"
-# Single & means "Run the program/command, but don't wait for it to finish"
+
+# A single & means "Run the program/command, but the shell shouldn't wait for it to finish"
 # There's no need to wait for cleanup to complete, so it's being used here
+echo "(7/7) Cleanup"
 rm -rf {repo,.flatpak-builder,build} & >/dev/null
 
 echo "Done! .flatpak file located in $PWD/net.shob3r.yoohoo.flatpak"
