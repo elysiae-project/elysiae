@@ -1,4 +1,4 @@
-import { Check } from "lucide-preact";
+import { ArrowDown, Check } from "lucide-preact";
 import { MutableRef, useEffect, useRef, useState } from "preact/hooks";
 
 export default function YsDropdown({
@@ -24,30 +24,45 @@ export default function YsDropdown({
 		onChangeAction(index);
 	};
 
+	useEffect(() => {
+		const onClick = (e: MouseEvent) => {
+			setOpen(false);
+		};
+		if (open) {
+			document.addEventListener("click", onClick);
+		}
+		return () => {
+			document.removeEventListener("click", onClick);
+		};
+	}, [open]);
+
 	return (
 		<div class="relative w-60" ref={dropdownDiv}>
 			<div class="overflow-y-auto-y flex h-full flex-col">
 				<div
-					class="flex h-10 items-center justify-center rounded-3xl border-2 border-transparent bg-[#dcd5c9] hover:border-white active:border-[#444140] active:bg-[#edd4b2]"
-					onClick={() => setOpen(!open)}
+					class="flex flex-row h-10 px-3 items-center justify-between rounded-3xl border-2 border-transparent bg-[#dcd5c9] hover:border-white active:border-[#444140] active:bg-[#edd4b2]"
+					onClick={(e) => {
+						e.stopPropagation();
+						setOpen(!open);
+					}}
 				>
-					<h1 class="text-lg text-[#3d4557]">{label}</h1>
+					<h1 class="text-[#3d4557]">{label}</h1>
+					<ArrowDown />
 				</div>
 				<div
-					class="min-h-auto mt-10.5 absolute flex w-full flex-col rounded-xl bg-[#495366] px-3 py-2 transition-opacity duration-100"
+					class="min-h-auto mt-10.5 absolute flex w-full flex-col rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1  py-1 transition-opacity duration-150"
 					style={open ? "opacity: 100" : "opacity: 0;"}
 				>
 					{labels.map((label, index) => {
 						return (
 							<div
 								onClick={() => onChange(index)}
-								class={
-									"bg-transparent hover:bg-[#606979] active:bg-[#ece5d8] rounded-2xl text-[#ece5d8] active:text-[#495366] w-full py-1 px-2 "
-								}
+								class="bg-transparent hover:bg-[#606979] active:bg-[#ece5d8] rounded-4xl text-[#ece5d8] active:text-[#495366] w-full h-8 py-1 px-2 flex flex-row justify-between *:items-center text-center"
 							>
-								<p class="flex flex-row justify-between text-center">
-									{label} {index === currentIndex ? <Check /> : ""}
-								</p>
+								<p class="pt-0.5">{label}</p>
+								{index === currentIndex ? (
+									<Check style="color: #ece5d" />
+								) : null}
 							</div>
 						);
 					})}

@@ -41,7 +41,13 @@ export default function App() {
 							console.log(`Clicked! Value: ${e}`);
 						}}
 					></ToggleSwitch>
-					<YsDropdown labels={["gaming", "test", "123"]} initialIndex={0} onChangeAction={(e) => {console.log(`Selected Index: ${e}`)}}></YsDropdown>
+					<YsDropdown
+						labels={["Light", "Dark", "System"]}
+						initialIndex={0}
+						onChangeAction={(e) => {
+							console.log(`Selected Index: ${e}`);
+						}}
+					></YsDropdown>
 				</div>
 			</div>
 		</div>

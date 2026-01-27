@@ -7,7 +7,7 @@ sdk: org.gnome.Sdk
 command: yoohoo
 finish-args:
   - --socket=wayland
-  - --socket=fallback-x11
+  #  - --socket=fallback-x11 # I honestly don't think I should be supporting X11 since it's getting very close to being removed from pretty much all common DEs
   - --device=dri
   - --share=ipc
   - --share=network

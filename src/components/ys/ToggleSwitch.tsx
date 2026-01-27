@@ -13,7 +13,7 @@ export default function YsToggleSwitch({
 	return (
 		<div
 			class={
-				"w-25 min-h-8 p-1.5 rounded-full border-3 border-white transition-colors duration-200 delay-0 " +
+				"w-25 min-h-8 p-1.5 rounded-full border-2 border-white transition-colors duration-200 delay-0 " +
 				(enabled ? "bg-[#dccba9]" : "bg-[#353d4f]")
 			}
 			onClick={() => {

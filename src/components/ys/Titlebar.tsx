@@ -10,7 +10,7 @@ export default function YsTitlebar({
 	return (
 		<div
 			data-tauri-drag-region
-			class="bg-ys-titlebar font-ys h-10 min-w-full p-1"
+			class="bg-ys-titlebar font-ys h-15 min-w-full p-1"
 		>
 			<div
 				data-tauri-drag-region
