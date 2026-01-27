@@ -1,42 +1,59 @@
-
 name: "Publish Release (flatpak)"
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
-    publish-yoohoo:
-        permissions:
-            contents: write
-        strategy:
-            fail-fast: false
-        runs-on: "ubuntu-24.04"
-        steps: 
-            - uses: actions/checkout@v4
+  publish-yoohoo:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+    runs-on: "ubuntu-24.04"
+    steps:
+      - uses: actions/checkout@v4
 
-            - name: Setup NodeJS
-              uses: actions/setup-node@v4
-              with:
-                node-version: 24
-            
-            - name: Install Rust Toolchain
-              uses: dtolnay/rust-toolchain@stable
-            
-            - name: Install System Dependencies
-              run: |
-                sudo apt-get update
-                sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libasound2-dev libgtk-3-dev flatpak flatpak-builder
-                flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo -y
-            
-            - name: Install Project Dependencies
-              run: |
-                corepack enable
-                yarn
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
-            - name: Build Yoohoo
-              run: |
-                RUSTFLAGS="-C target-cpu=native" yarn tauri build
-            
-            - name: Build flatpak package
-              run: |
-# wip
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libasound2-dev libgtk-3-dev flatpak flatpak-builder
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo -y
+
+      - name: Install flatpak dependencies
+        run: |
+          flatpak install org.gnome.Platform//48 -y
+          flatpak install org.gnome.Sdk//48 -y
+          flatpak install org.freedesktop.Sdk.Extension.node20//24.08 -y
+          flatpak install org.freedesktop.Sdk.Extension.rust-stable//24.08 -y
+
+      - name: Install Project Dependencies
+        run: |
+          corepack enable
+          yarn
+
+      - name: Build flatpak package
+        run: |
+          export RUSTFLAGS="-C target-cpu=native"
+
+          flatpak-builder --repo=repo --force-clean build net.shob3r.yoohoo.yml
+          flatpak build-bundle repo net.shob3r.yoohoo.flatpak net.shob3r.yoohoo
+          unset RUSTFLAGS
+
+      - name: Clean-Up
+        run: |
+          rm -rf repo
+          rm -rf .flatpak-builder
+          rm -rf build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yoohoo-artifact-${{ github.run_number }}.flatpak
+          path: ./net.shob3r.yoohoo.flatpak
