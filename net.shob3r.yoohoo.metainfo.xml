@@ -34,4 +34,6 @@
         <control>pointing</control>
         <display_length compare="ge">768</display_length>
     </requires>
+    <launchable type="desktop-id">net.shob3r.yoohoo.desktop</launchable>
+    <content_rating type="oars-1.1" />
 </component>

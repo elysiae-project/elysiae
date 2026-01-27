@@ -1,7 +1,7 @@
 id: net.shob3r.yoohoo
 
 runtime: org.gnome.Platform
-runtime-version: "48"
+runtime-version: "48" # TODO: Upgrade to Gnome 49 or 50 when it is possible to do so
 sdk: org.gnome.Sdk
 
 command: yoohoo
@@ -15,6 +15,8 @@ finish-args:
   - --filesystem=home
 
 build-extensions:
+  # 24.08 is going EOL this August
+  # TODO: Update sdk extensions to 26.08 once it releases
   - org.freedesktop.Sdk.Extension.node20
   - org.freedesktop.Sdk.Extension.rust-stable
 
