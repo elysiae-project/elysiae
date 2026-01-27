@@ -1,5 +1,4 @@
 set -e
-
 cd "$(dirname "$0")"
 
 echo "(1/7) Checking for system dependencies"
@@ -39,8 +38,8 @@ echo "(6/7) Bundling flatpak app"
 flatpak build-bundle repo net.shob3r.yoohoo.flatpak net.shob3r.yoohoo
 
 echo "(7/7) Cleanup"
-rm -rf repo & >/dev/null
-rm -rf .flatpak-builder & >/dev/null
-rm -rf build & >/dev/null
+# Single & means "Run the program/command, but don't wait for it to finish"
+# There's no need to wait for cleanup to complete, so it's being used here
+rm -rf {repo,.flatpak-builder,build} & >/dev/null
 
 echo "Done! .flatpak file located in $PWD/net.shob3r.yoohoo.flatpak"
