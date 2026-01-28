@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-    <!--TODO: Colour schemes/branding in manifest after app icon is created-->
+    <!--TODO:
+    Colour schemes/branding in manifest-->
     <id>net.shob3r.yoohoo</id>
     <developer id="net.shob3r">
         <name>Shob3r (Andrew Pinter) &amp; ChakornK (Chakorn Kungsanarux)</name>
@@ -8,7 +9,7 @@
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>BSD-3-Clause</project_license>
     <name>Yoohoo!</name>
-    <summary>Universal Hoyoverse Game Launcher for Linux</summary>
+    <summary>An Unofficial Hoyoverse Launcher for Linux</summary>
     <url type="homepage">https://github.com/shob3r/yoohoo</url>
     <description>
         <p>This app is in Alpha! Please use with caution, and expect bugs/missing features</p>
