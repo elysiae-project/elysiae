@@ -2,7 +2,7 @@
 <component type="desktop-application">
     <!--TODO:
     Colour schemes/branding in manifest-->
-    <id>net.shob3r.yoohoo</id>
+    <id>io.shob3r.yoohoo</id>
     <developer id="net.shob3r">
         <name>Shob3r (Andrew Pinter) &amp; ChakornK (Chakorn Kungsanarux)</name>
     </developer>
@@ -35,6 +35,6 @@
         <control>pointing</control>
         <display_length compare="ge">768</display_length>
     </requires>
-    <launchable type="desktop-id">net.shob3r.yoohoo.desktop</launchable>
+    <launchable type="desktop-id">io.shob3r.yoohoo.desktop</launchable>
     <content_rating type="oars-1.1" />
 </component>

@@ -32,7 +32,7 @@
 		"linux": {
 			"deb": {
 				"files": {
-					"/usr/share/metainfo/net.shob3r.yoohoo.metainfo.xml": "../net.shob3r.yoohoo.metainfo.xml"
+					"/usr/share/metainfo/io.shob3r.yoohoo.metainfo.xml": "../io.shob3r.yoohoo.metainfo.xml"
 				}
 			}
 		}

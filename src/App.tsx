@@ -7,6 +7,7 @@ import Button from "./components/Button.tsx";
 import { Download, Trash } from "lucide-preact";
 import ToggleSwitch from "./components/ToggleSwitch.tsx";
 import YsDropdown from "./components/ys/Dropdown.tsx";
+import YsProgressbar from "./components/ys/Progressbar.tsx";
 
 const theme = cva("h-full w-full px-3 py-4", {
 	variants: {
@@ -48,6 +49,7 @@ export default function App() {
 							console.log(`Selected Index: ${e}`);
 						}}
 					></YsDropdown>
+					<YsProgressbar progress={12.55} />
 				</div>
 			</div>
 		</div>
