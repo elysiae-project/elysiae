@@ -26,3 +26,4 @@ dist-ssr
 .flatpak-builder
 repo
 *.flatpak
+build/

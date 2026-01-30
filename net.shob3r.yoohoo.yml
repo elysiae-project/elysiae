@@ -1,47 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json
+
 # FIXME: License information doesn't get embedded in the flatpak file for some reason. It might be related to the metainfo.xml file, but I doubt it
 id: net.shob3r.yoohoo
-
-runtime: org.gnome.Platform
-runtime-version: "48" # TODO: Upgrade to Gnome 49 or 50 when it is possible to do so (Afaik, tauri runs on Gnome 48 right now)
-sdk: org.gnome.Sdk
-
 command: yoohoo
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk//48
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node24
+  - org.freedesktop.Sdk.Extension.rust-stable
+writable-sdk: true
+
 finish-args:
   - --socket=wayland
-  #  - --socket=fallback-x11 # I honestly don't think I should be supporting X11 since it's getting very close to being removed from pretty much all common DEs
+  - --socket=fallback-x11
   - --device=dri
   - --share=ipc
   - --share=network
   - --filesystem=xdg-run/path
   - --filesystem=home
 
-build-extensions:
-  # A new major version of the freedesktop SDK releases every August. Each SDK version is in support for about two years
-  # I believe it is best to stay on top of things and update to the latest SDKs when they are made available
-  - org.freedesktop.Sdk.Extension.node24//25.08
-  - org.freedesktop.Sdk.Extension.rust-stable//25.08
-
-build-options:
-  append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
-
 modules:
   - name: yoohoo
     buildsystem: simple
-    env:
-      HOME: /run/build/yoohoo
-      CARGO_HOME: /run/build/yoohoo/cargo
-      RUSTUP_HOME: /run/build/yoohoo/rustup
-      XDG_CACHE_HOME: /run/build/yoohoo/flatpak-node/cache
     sources:
       - type: dir
         path: .
-      - cargo-sources.json
-
+        skip:
+          - ./.flatpak-builder
+          - ./.yarn
+          - ./build
+          - ./dist
+          - ./flatpak-builder-tools
+          - ./node_modules
+          - ./src-tauri/target
+      - download-sources/cargo.json
+      - download-sources/corepack.json
+      - download-sources/yarn.json
+    build-options:
+      append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin:/run/build/yoohoo/flatpak-node/corepack-shims
+      env:
+        HOME: /run/build/yoohoo
+        CARGO_HOME: /run/build/yoohoo/src-tauri/cargo
+        CARGO_NET_OFFLINE: "true"
+        RUSTUP_HOME: /run/build/yoohoo/rustup
+        XDG_CACHE_HOME: /run/build/yoohoo/flatpak-node/cache
+        npm_config_nodedir: /usr/lib/sdk/node24
+        COREPACK_HOME: /run/build/yoohoo/flatpak-node/corepack-home
+        COREPACK_ENABLE_NETWORK: "0"
+        YARN_ENABLE_TELEMETRY: "0"
+        YARN_ENABLE_NETWORK: "0"
+        YARN_ENABLE_GLOBAL_CACHE: "0"
+        YARN_GLOBAL_FOLDER: /run/build/yoohoo/flatpak-node/yarn-berry
     build-commands:
       - set -e
-      - mkdir -p src-tauri/.cargo && echo -e '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "/run/build/yoohoo/cargo/vendor"' > src-tauri/.cargo/config.toml
-      - node flatpak-builder-prep.js
-      - RUSTFLAGS="-C target-cpu=native" npm run tauri build -- -b deb
+      - ./flatpak-node/autogen.sh
+      - yarn install
+      - yarn tauri build
       - ar -x src-tauri/target/release/bundle/deb/*.deb
       - tar -xf data.tar.gz
       - install -Dm755 ./usr/bin/yoohoo /app/bin/yoohoo
