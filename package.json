@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"@tailwindcss/vite": "^4.1.18",
-		"@tauri-apps/api": "^2.9.1",
+		"@tauri-apps/api": "^2.10.1",
 		"@tauri-apps/plugin-fs": "~2.4.5",
 		"@tauri-apps/plugin-http": "~2.5.6",
 		"@tauri-apps/plugin-log": "~2.8.0",
@@ -24,12 +24,12 @@
 		"class-variance-authority": "^0.7.1",
 		"gsap": "^3.14.2",
 		"lucide-preact": "^0.563.0",
-		"preact": "^10.28.2",
+		"preact": "^10.28.3",
 		"tailwindcss": "^4.1.18"
 	},
 	"devDependencies": {
-		"@preact/preset-vite": "^2.10.2",
-		"@tauri-apps/cli": "^2.9.6",
+		"@preact/preset-vite": "^2.10.3",
+		"@tauri-apps/cli": "^2.10.0",
 		"prettier": "3.8.1",
 		"typescript": "~5.9.3",
 		"vite": "^7.3.1"
