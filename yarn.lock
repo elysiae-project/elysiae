@@ -1112,12 +1112,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-http@npm:~2.5.6":
-  version: 2.5.6
-  resolution: "@tauri-apps/plugin-http@npm:2.5.6"
+"@tauri-apps/plugin-http@npm:~2.5.7":
+  version: 2.5.7
+  resolution: "@tauri-apps/plugin-http@npm:2.5.7"
   dependencies:
-    "@tauri-apps/api": "npm:^2.8.0"
-  checksum: 10c0/cbead026d770383a8875bd7e0ed39f61be3373794ac30ee7b5c31af87975a415da8b998fa9928905918b1ce22c5725b1a09767ca1134a8c628044f520bce4998
+    "@tauri-apps/api": "npm:^2.10.1"
+  checksum: 10c0/d7cfac15a60feb6743ae44eb08fd6177c29a47f1b74b6eea318585000245d99fa5a5436be39309f00ecc91f0405a1cbc82e6829c458edb2c892e90e5a1b81e17
   languageName: node
   linkType: hard
 
@@ -2531,7 +2531,7 @@ __metadata:
     "@tauri-apps/api": "npm:^2.10.1"
     "@tauri-apps/cli": "npm:^2.10.0"
     "@tauri-apps/plugin-fs": "npm:~2.4.5"
-    "@tauri-apps/plugin-http": "npm:~2.5.6"
+    "@tauri-apps/plugin-http": "npm:~2.5.7"
     "@tauri-apps/plugin-log": "npm:~2.8.0"
     "@tauri-apps/plugin-notification": "npm:~2.3.3"
     "@tauri-apps/plugin-opener": "npm:~2.5.3"
