@@ -28,13 +28,13 @@ jobs:
       - name: Install Flatpak-builder dependencies
         run: |
           pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-          curl -o ~/.local/bin/flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py
+          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
 
       - name: Update dependencies list
         run: |
-          python3 ~/.local/bin/flatpak-cargo-generator -o download-sources/cargo.json ./src-tauri/Cargo.lock
+          python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
-          ~/.local/bin/flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
+          flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
 
       - name: Build Flatpak
         run: flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build dev.shob3r.yoohoo.yml
