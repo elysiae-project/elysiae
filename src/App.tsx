@@ -38,7 +38,7 @@ export default function App() {
 					</Button>
 					<Button
 						onClick={() => {
-							setModalOpen(true);
+							setModalOpen(!modalOpen);
 						}}
 						intent="secondary"
 					>
