@@ -23,12 +23,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libasound2-dev libgtk-3-dev flatpak flatpak-builder python3 pipx python3-tomlkit python3-aiohttp curl
-          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo -y
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Install Flatpak-builder dependencies
         run: |
           pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
           wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
+
+      - name: Install Flatpak Dependencies
+        run: |
+          flatpak install org.gnome.{Sdk,Platform}//48 -y
+          flatpak install org.freedesktop.Sdk.Extension.{node24,rust-stable}//24.08
 
       - name: Update dependencies list
         run: |
