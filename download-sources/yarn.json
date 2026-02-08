@@ -398,9 +398,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@isaacs/brace-expansion/-/brace-expansion-5.0.0.tgz",
-        "sha512": "653e790432d5d32bf44419b673332267e4aa0863bb02f98e3371bfc36c6154f1feb5ed1a2a0163981bc694bd5d1feaa5dad8063b7315adb6f78c22b2be9827c4",
-        "dest-filename": "brace-expansion-QGlzYWFjcy9icmFjZS1leHBhbnNpb25AbnBtOjUuMC4w-b4d4812f4b.tgz",
+        "url": "https://registry.npmjs.org/@isaacs/brace-expansion/-/brace-expansion-5.0.1.tgz",
+        "sha512": "58ccfbd53d494badb89d68f69f67e7600b8fa2f86fec452193af51ea2f5db15cb3c6de5e3376e3c2f824f4bf803c4d5346c706cac0153003640748e1d0b419ad",
+        "dest-filename": "brace-expansion-QGlzYWFjcy9icmFjZS1leHBhbnNpb25AbnBtOjUuMC4x-e5d67c7bbf.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
