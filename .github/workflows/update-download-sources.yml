@@ -1,4 +1,4 @@
-name: Update Node/Cargo Flatpak Sources (With PR)
+name: Update Node/Cargo Flatpak Builder Sources
 on:
   push:
     paths:
@@ -45,3 +45,4 @@ jobs:
             Merging this branch is **strongly recommended** to ensure that flatpak builder builds do not fail due to having incorrectly downloaded packages
           branch: "bot/update-flatpak-sources"
           delete-branch: true
+          token: ${{ secrets.GITHUB_TOKEN }}
