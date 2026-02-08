@@ -7,7 +7,7 @@ jobs:
   publish-yoohoo:
     permissions:
       contents: write
-    runs-on: "ubuntu-24.04"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -22,21 +22,24 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libasound2-dev libgtk-3-dev flatpak flatpak-builder
+          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libasound2-dev libgtk-3-dev flatpak flatpak-builder python3 pipx python3-tomlkit python3-aiohttp curl
           flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo -y
 
-      - name: Generate dependencies list
+      - name: Install Flatpak-builder dependencies
         run: |
-          sudo apt-get install -y pipx
-          pipx run flatpak-cargo-generator -o download-sources/cargo.json ./src-tauri/Cargo.lock
-          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
           pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-          flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
+          curl -o ~/.local/bin/flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py
+
+      - name: Update dependencies list
+        run: |
+          python3 ~/.local/bin/flatpak-cargo-generator -o download-sources/cargo.json ./src-tauri/Cargo.lock
+          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+          ~/.local/bin/flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
 
       - name: Build Flatpak
-        run: flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build net.shob3r.yoohoo.yml
+        run: flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build dev.shob3r.yoohoo.yml
 
       - uses: actions/upload-artifact@v4
         with:
           name: yoohoo-artifact-${{ github.run_number }}.flatpak
-          path: ./net.shob3r.yoohoo.flatpak
+          path: ./dev.shob3r.yoohoo.flatpak

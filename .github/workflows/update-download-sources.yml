@@ -1,6 +1,9 @@
-name: Update Node/Cargo Flatpak Sources
+name: Update Node/Cargo Flatpak Sources (With PR)
 on:
   push:
+    paths:
+      - "package.json"
+      - "src-tauri/Cargo.toml"
   workflow_dispatch:
 
 jobs:
@@ -11,13 +14,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # You don't need NodeJS or Cargo here, since no packages are being installed.
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 pipx
+          sudo apt-get install -y build-essential python3 pipx python3-tomlkit python3-aiohttp curl
+
+      - name: Install Flatpak Builder Tools
+        run: |
+          pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
+          curl -o ~/.local/bin/flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py
 
       - name: Generate Sources
         run: |
-          pipx run flatpak-cargo-generator -o download-sources/cargo.json ./src-tauri/Cargo.lock
+          python3 ~/.local/bin/flatpak-cargo-generator -o download-sources/cargo.json ./src-tauri/Cargo.lock
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+          ~/.local/bin/flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8.1.0
+        with:
+          commit-message: "chore: Update Flatpak Builder package sources"
+          title: "Automatic Flatpak Source Update"
+          body: |
+            This PR has been automatically generated as changes have been detected in at least one of:
+              - package.json
+              - src-tauri/Cargo.toml
+
+            Merging this branch is **strongly recommended** to ensure that flatpak builder builds do not fail due to having incorrectly downloaded packages
+          branch: "bot/update-flatpak-sources"
+          delete-branch: true
