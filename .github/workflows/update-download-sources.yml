@@ -6,6 +6,7 @@ on:
       - "yarn.lock"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
+    branches: main
   workflow_dispatch:
 
 jobs:
