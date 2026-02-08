@@ -1,7 +1,1 @@
-export default function BhProgressbar({
-	progress,
-	showPercentage,
-}: {
-	progress: number;
-	showPercentage: boolean;
-}) {}
+export default function BhProgressbar({ progress }: { progress: number }) {}

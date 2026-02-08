@@ -1,7 +1,1 @@
-export default function NapProgressbar({
-	progress,
-	showPercentage,
-}: {
-	progress: number;
-	showPercentage: boolean;
-}) {}
+export default function NapProgressbar({ progress }: { progress: number }) {}

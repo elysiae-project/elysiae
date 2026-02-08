@@ -1,7 +1,1 @@
-export default function SrProgressbar({
-	progress,
-	showPercentage,
-}: {
-	progress: number;
-	showPercentage: boolean;
-}) {}
+export default function SrProgressbar({ progress }: { progress: number }) {}
