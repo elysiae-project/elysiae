@@ -22,6 +22,7 @@
 			]
 		},
 		"store:default",
-		"upload:default"
+		"upload:default",
+		"notification:default"
 	]
 }

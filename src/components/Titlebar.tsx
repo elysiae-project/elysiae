@@ -14,10 +14,6 @@ const closeWindow = () => {
 	appWindow.close();
 };
 
-const toggleMaximize = () => {
-	appWindow.toggleMaximize();
-};
-
 const minimize = () => {
 	appWindow.minimize();
 };
@@ -32,10 +28,8 @@ export default function Titlebar() {
 		[Variants.NAP]: NapTitlebar,
 	}[game];
 	return (
-		<Titlebar
-			onClose={closeWindow}
-			onToggleMaximize={toggleMaximize}
-			onMinimize={minimize}
-		/>
+		<div style={{ zIndex: 1001 }}>
+			<Titlebar onClose={closeWindow} onMinimize={minimize} />
+		</div>
 	);
 }
