@@ -1728,9 +1728,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/tar/-/tar-7.5.6.tgz",
-        "sha512": "c6a51ebb6240209a57cafb24bd4deebd05bc3c0987aed5e9d8a0ee309c10a96f12aaad0269904043e74a4b74415d5854e300b936301d2ab9a1f38db8d603bd70",
-        "dest-filename": "tar-dGFyQG5wbTo3LjUuNg==-08af380703.tgz",
+        "url": "https://registry.npmjs.org/tar/-/tar-7.5.7.tgz",
+        "sha512": "7e8bf9e9f26246e4e15455c3ea8ebf437e784bba6758c2485650c16228ec4cdc7a8ca484e29beb0d3b3a9549e61af3727c9c05410c16cb7a302b3d6e70886f79",
+        "dest-filename": "tar-dGFyQG5wbTo3LjUuNw==-51f261afc4.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
