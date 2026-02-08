@@ -1,1 +1,3 @@
-export default function NapProgressbar({ progress }: { progress: number }) {}
+export default function NapProgressbar({ progress }: { progress: number }) {
+	return <>placeholder</>;
+}

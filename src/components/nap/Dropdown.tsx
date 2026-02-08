@@ -6,4 +6,6 @@ export default function NapDropdown({
 	labels: string[];
 	initialIndex: number;
 	onChangeAction: (index: number) => void;
-}) {}
+}) {
+	return <>placeholder</>;
+}

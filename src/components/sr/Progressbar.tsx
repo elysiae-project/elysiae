@@ -1,1 +1,3 @@
-export default function SrProgressbar({ progress }: { progress: number }) {}
+export default function SrProgressbar({ progress }: { progress: number }) {
+	return <>placeholder</>;
+}

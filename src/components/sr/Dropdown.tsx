@@ -7,5 +7,5 @@ export default function SrDropdown({
 	initialIndex: number;
 	onChangeAction: (index: number) => void;
 }) {
-    
+	return <>placeholder</>;
 }
