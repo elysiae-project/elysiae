@@ -8,8 +8,10 @@ import { Download, Trash } from "lucide-preact";
 import ToggleSwitch from "./components/ToggleSwitch.tsx";
 import YsDropdown from "./components/ys/Dropdown.tsx";
 import YsProgressbar from "./components/ys/Progressbar.tsx";
+import YsModal from "./components/ys/Modal.tsx";
+import { useState } from "preact/hooks";
 
-const theme = cva("h-full w-full px-3 py-4", {
+const theme = cva("h-full w-full px-3 py-4 flex-1", {
 	variants: {
 		intent: {
 			[Variants.BH]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
@@ -23,6 +25,7 @@ const theme = cva("h-full w-full px-3 py-4", {
 });
 
 export default function App() {
+	let [modalOpen, setModalOpen] = useState(false);
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
 			<Titlebar />
@@ -33,7 +36,12 @@ export default function App() {
 					<Button onClick={() => {}} intent="primary">
 						<Download /> Download
 					</Button>
-					<Button onClick={() => {}} intent="secondary">
+					<Button
+						onClick={() => {
+							setModalOpen(true);
+						}}
+						intent="secondary"
+					>
 						<Trash />
 					</Button>
 					<ToggleSwitch
@@ -50,6 +58,9 @@ export default function App() {
 						}}
 					></YsDropdown>
 					<YsProgressbar progress={12.55} />
+					<YsModal title={"TEST Modal"} open={modalOpen}>
+						Test Test 123123
+					</YsModal>
 				</div>
 			</div>
 		</div>

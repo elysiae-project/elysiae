@@ -27,5 +27,9 @@ export default function Titlebar() {
 		[Variants.SR]: SrTitlebar,
 		[Variants.NAP]: NapTitlebar,
 	}[game];
-	return <Titlebar onClose={closeWindow} onMinimize={minimize} />;
+	return (
+		<div style={{ zIndex: 1001 }}>
+			<Titlebar onClose={closeWindow} onMinimize={minimize} />
+		</div>
+	);
 }

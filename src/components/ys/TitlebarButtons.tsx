@@ -1,5 +1,4 @@
 import { Shrink, Minus } from "lucide-preact";
-import YsButton from "./Button";
 
 export default function YsTitlebarButtons({
 	close,
