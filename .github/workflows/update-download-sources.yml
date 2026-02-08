@@ -19,18 +19,18 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 pipx python3-tomlkit python3-aiohttp curl
+          sudo apt-get install -y build-essential python3 pipx python3-tomlkit python3-aiohttp wget
 
       - name: Install Flatpak Builder Tools
         run: |
           pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/.local/bin/flatpak-cargo-generator.py
+          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
 
       - name: Generate Sources
         run: |
-          python3 ~/.local/bin/flatpak-cargo-generator -o download-sources/cargo.json ./src-tauri/Cargo.lock
+          python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
-          ~/.local/bin/flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
+          flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8.1.0
