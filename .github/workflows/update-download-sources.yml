@@ -3,7 +3,9 @@ on:
   push:
     paths:
       - "package.json"
+      - "yarn.lock"
       - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
   workflow_dispatch:
 
 jobs:
