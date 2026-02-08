@@ -1,7 +1,7 @@
 # Yoohoo!
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/Shob3r/yoohoo/refs/heads/feat/ys-components/app-icon.png" alt="Yoohoo App Icon" width="256">
+<img src="https://raw.githubusercontent.com/Shob3r/yoohoo/refs/heads/main/app-icon.png" alt="Yoohoo App Icon" width="256">
 </p>
 
 ## Why This Project Exists

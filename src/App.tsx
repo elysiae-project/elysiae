@@ -3,13 +3,6 @@ import { useGame } from "./hooks/useGame.ts";
 import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
-import Button from "./components/Button.tsx";
-import { Download, Trash } from "lucide-preact";
-import ToggleSwitch from "./components/ToggleSwitch.tsx";
-import YsDropdown from "./components/ys/Dropdown.tsx";
-import YsProgressbar from "./components/ys/Progressbar.tsx";
-import YsModal from "./components/ys/Modal.tsx";
-import { useState } from "preact/hooks";
 
 const theme = cva("h-full w-full px-3 py-4 flex-1", {
 	variants: {
@@ -25,44 +18,10 @@ const theme = cva("h-full w-full px-3 py-4 flex-1", {
 });
 
 export default function App() {
-	let [modalOpen, setModalOpen] = useState(false);
 	return (
-		<div class="flex h-screen w-screen flex-col gap-0 text-white">
+		<div class="flex h-screen w-screen flex-col gap-0">
 			<Titlebar />
-			<div class={theme({ intent: useGame() })}>
-				<div class="flex h-full w-full flex-col items-center justify-center text-center gap-2">
-					<h1 class="text-8xl">It's Taurin'</h1>
-					<h2 class="text-6xl">Time</h2>
-					<Button onClick={() => {}} intent="primary">
-						<Download /> Download
-					</Button>
-					<Button
-						onClick={() => {
-							setModalOpen(!modalOpen);
-						}}
-						intent="secondary"
-					>
-						<Trash />
-					</Button>
-					<ToggleSwitch
-						startActive={false}
-						onClick={(e) => {
-							console.log(`Clicked! Value: ${e}`);
-						}}
-					></ToggleSwitch>
-					<YsDropdown
-						labels={["Light", "Dark", "System"]}
-						initialIndex={0}
-						onChangeAction={(e) => {
-							console.log(`Selected Index: ${e}`);
-						}}
-					></YsDropdown>
-					<YsProgressbar progress={12.55} />
-					<YsModal title={"TEST Modal"} open={modalOpen}>
-						Test Test 123123
-					</YsModal>
-				</div>
-			</div>
+			<div class={theme({ intent: useGame() })}></div>
 		</div>
 	);
 }
