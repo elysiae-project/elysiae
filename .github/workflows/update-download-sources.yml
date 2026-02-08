@@ -24,7 +24,7 @@ jobs:
       - name: Install Flatpak Builder Tools
         run: |
           pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-          curl -o ~/.local/bin/flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py
+          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/.local/bin/flatpak-cargo-generator.py
 
       - name: Generate Sources
         run: |
