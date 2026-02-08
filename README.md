@@ -6,7 +6,7 @@
 
 ## Why This Project Exists
 
-Yoohoo aims to replace the separated game launchers from [an-anime-team](https://github.com/an-anime-team). From my experience, these launchers can be somewhat unreliable, are missing a few features, and are barely maintained. On top of that, each game requires its own launcher. While work has started on a [Unified Launcher](https://github.com/an-anime-team/an-anime-game-launcher) several years ago, the project has largely stagnated, leading me to believe that the project will likely never be finished at all. These factors led me to creating Yoohoo, which attempts to do the following:
+Yoohoo aims to replace the separated game launchers from [an-anime-team](https://github.com/an-anime-team). From my experience, these launchers can be somewhat unreliable, are missing a few features, and are barely maintained. On top of that, each game requires its own launcher. While work has started on a [Unified Launcher](https://github.com/an-anime-team/anime-games-launcher) several years ago, the project has largely stagnated, leading me to believe that the project will likely never be finished at all. These factors led me to creating Yoohoo, which attempts to do the following:
 
 1. Function properly without any user intervention
 2. Implement any features available on the Windows counterpart of the launcher
