@@ -16,7 +16,7 @@ jobs:
 
       - name: Update Flatpak Source Lists
         run: |
-          apt install -y build-essential python3 pipx python3-tomlkit python3-aiohttp wget
+          dnf install -y gcc gcc-c++ make python3 pipx python3-tomlkit python3-aiohttp wget
 
           pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
           wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
