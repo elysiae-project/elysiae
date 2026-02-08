@@ -1,4 +1,4 @@
-name: "Create Flatpak Release Artifact"
+name: Create Flatpak Release Artifact
 
 on:
   workflow_dispatch:
