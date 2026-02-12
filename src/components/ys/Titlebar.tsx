@@ -1,12 +1,4 @@
-import YsTitlebarButtons from "./TitlebarButtons";
-
-export default function YsTitlebar({
-	onClose,
-	onMinimize,
-}: {
-	onClose: () => void;
-	onMinimize: () => void;
-}) {
+export default function YsTitlebar({ children }: { children: any }) {
 	return (
 		<div
 			data-tauri-drag-region
@@ -19,7 +11,7 @@ export default function YsTitlebar({
 				<h3 class="text-xl text-center" data-tauri-drag-region>
 					Yoohoo!
 				</h3>
-				<YsTitlebarButtons close={onClose} minimize={onMinimize} />
+				{children}
 			</div>
 		</div>
 	);

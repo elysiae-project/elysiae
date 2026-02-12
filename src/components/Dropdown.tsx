@@ -21,5 +21,13 @@ export default function Dropdown({
 		[Variants.SR]: SrDropdown,
 		[Variants.NAP]: NapDropdown,
 	}[game];
-	return <Dropdown labels={labels} initialIndex={initialIndex} onChangeAction={(e) => {onChangeAction(e)}}></Dropdown>;
+	return (
+		<Dropdown
+			labels={labels}
+			initialIndex={initialIndex}
+			onChangeAction={(e) => {
+				onChangeAction(e);
+			}}
+		></Dropdown>
+	);
 }

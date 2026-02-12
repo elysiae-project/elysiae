@@ -37,7 +37,7 @@ export default function YsDropdown({
 	}, [open]);
 
 	return (
-		<div class="relative w-60" ref={dropdownDiv}>
+		<div class="relative w-60" ref={dropdownDiv} style={{ zIndex: 500 }}>
 			<div class="overflow-y-auto-y flex h-full flex-col">
 				<div
 					class="flex flex-row h-10 px-3 items-center justify-between rounded-3xl border-2 border-transparent bg-[#dcd5c9] hover:border-white active:border-[#444140] active:bg-[#edd4b2]"

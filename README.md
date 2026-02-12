@@ -29,7 +29,7 @@ To use Yoohoo properly, you will need the following:
 
 Please see [Contributing](https://github.com/shob3r/yoohoo/CONTRIBUTING.md)
 
-## For the lawyers of the game company
+## For the lawyers of the "anime game" company
 
 This app does **NOT** use any cheats/game plugins or any other exploits to get Hoyoverse games running on Linux. It is running through Wine, a compatibility layer that allows for the execution of Windows binaries on Linux. Game rendering is performed through DXVK, another compatibility layer that translates DirectX shaders to Vulkan on run-time.
 

@@ -8,5 +8,5 @@ export default function SrToggleSwitch({
 	startActive: boolean;
 }) {
 	let [enabled, setEnabled] = useState<boolean>(startActive);
-	return <></>;	
+	return <>Placeholder</>;	
 }

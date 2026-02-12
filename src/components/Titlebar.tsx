@@ -1,5 +1,4 @@
-import { getCurrentWindow, Window } from "@tauri-apps/api/window";
-
+import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame.ts";
 import { Variants } from "../types";
 
@@ -7,16 +6,41 @@ import BhTitlebar from "./bh/Titlebar.tsx";
 import NapTitlebar from "./nap/Titlebar.tsx";
 import SrTitlebar from "./sr/Titlebar.tsx";
 import YsTitlebar from "./ys/Titlebar.tsx";
+import { closeApp } from "../util/AppFunctions.ts";
 
-const appWindow: Window = getCurrentWindow();
+function TitlebarButtons() {
+	const buttonStyles = cva("h-10 w-10 flex items-center justify-center", {
+		variants: {
+			intent: {
+				[Variants.BH]: "",
+				[Variants.YS]:
+					"border-3 p-0.5 border-[#888d8e] bg-[#ece5d8] hover:border-transparent hover:drop-shadow-xs hover:drop-shadow[#fdfdfeAA] rounded-full",
+				[Variants.SR]: "",
+				[Variants.NAP]: "",
+			},
+		},
+	});
 
-const closeWindow = () => {
-	appWindow.close();
-};
+	const gamePath = (() => {
+		switch (useGame()) {
+			case Variants.BH:
+				return "bh";
+			case Variants.YS:
+				return "ys";
+			case Variants.SR:
+				return "sr";
+			case Variants.NAP:
+				return "nap";
+		}
+	})();
+	const assetPath = `src/assets/icon/${gamePath}`;
 
-const minimize = () => {
-	appWindow.minimize();
-};
+	return (
+		<div class={buttonStyles({ intent: useGame() })} onClick={() => closeApp()}>
+			<img src={`${assetPath}/close.svg`} width={18} height={18}  />
+		</div>
+	);
+}
 
 export default function Titlebar() {
 	const game = useGame();
@@ -28,8 +52,10 @@ export default function Titlebar() {
 		[Variants.NAP]: NapTitlebar,
 	}[game];
 	return (
-		<div style={{ zIndex: 1001 }}>
-			<Titlebar onClose={closeWindow} onMinimize={minimize} />
+		<div style={{ zIndex: 1001, color: "white" }}>
+			<Titlebar>
+				<TitlebarButtons />
+			</Titlebar>
 		</div>
 	);
 }

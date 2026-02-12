@@ -1,10 +1,4 @@
-export default function SrTitlebar({
-	onClose,
-	onMinimize,
-}: {
-	onClose: () => void;
-	onMinimize: () => void;
-}) {
+export default function SrTitlebar({ children }: { children: any }) {
 	return (
 		<div
 			data-tauri-drag-region
@@ -13,6 +7,7 @@ export default function SrTitlebar({
 			<h3 class="text-xl" data-tauri-drag-region>
 				Yoohoo!
 			</h3>
+			{children}
 		</div>
 	);
 }

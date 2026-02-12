@@ -8,5 +8,5 @@ export default function BhToggleSwitch({
 	startActive: boolean;
 }) {
 	let [enabled, setEnabled] = useState<boolean>(startActive);
-	return <></>;
+	return <>Placeholder</>;
 }
