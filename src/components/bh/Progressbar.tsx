@@ -1,3 +1,3 @@
 export default function BhProgressbar({ progress }: { progress: number }) {
-	return <>placeholder</>;
+	return <>Progress Bar</>;
 }

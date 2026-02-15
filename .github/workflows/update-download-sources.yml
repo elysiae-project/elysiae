@@ -42,7 +42,9 @@ jobs:
           body: |
             This PR has been automatically generated as changes have been detected in at least one of:
               - package.json
+              - yarn.lock
               - src-tauri/Cargo.toml
+              - src-tauri/Cargo.lock
 
             Merging this branch is **strongly recommended** to ensure that flatpak builder builds do not fail due to having incorrectly downloaded packages
           branch: "bot/update-flatpak-sources-${{ github.run_id }}"

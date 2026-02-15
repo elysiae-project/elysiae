@@ -22,9 +22,20 @@
 	--color-nap-titlebar: #191919;
 	--color-nap-bg: #232324;
 	--color-nap-border: #939393bb;
+	--animate-nap-pulsate: nap-pulsate 1.5s ease-in-out infinite;
 }
 
-/* These fonts belong to Hoyoverse, I scraped them from game installs */
+@keyframes nap-pulsate {
+	0%,
+	100% {
+		background-color: #f3d906;
+	}
+	50% {
+		background-color: #91ba00;
+	}
+}
+
+/* These fonts belong to Hoyoverse, I scraped them from legitimate game installs */
 @font-face {
 	font-family: ys;
 	src: url("/src/assets/font/YS.woff2");
@@ -60,12 +71,37 @@
 }
 
 .nap-dots {
-	background-image: repeating-conic-gradient(#232323 0% 25%, #161616 0% 50%);
-	background-size: 6px 6px;
+	background-image: repeating-conic-gradient(#000000 0% 25%, #171717 0% 50%);
+	background-size: 10px 10px;
+}
+
+.nap-dots:active {
+	background-image: none;
+	background-size: 0px;
+}
+
+.bh-button-primary-dots {
+	background-image: repeating-conic-gradient(#f0952f 0% 25%, #f3b84c 0% 50%);
+	background-size: 8px 8px;
+}
+
+.bh-button-primary-dots:active {
+	background-image: repeating-conic-gradient(#f6d469 0% 25%, #faf486 0% 50%);
+	background-size: 8px 8px;
+}
+
+.bh-button-secondary-dots {
+	background-image: repeating-conic-gradient(#8897ab 0% 25%, #96a6ba 0% 50%);
+	background-size: 8px 8px;
+}
+
+.bh-button-secondary-dots:active {
+	background-image: repeating-conic-gradient(#9eaabb 0% 25%, #b3c0d1 0% 50%);
+	background-size: 8px 8px;
 }
 
 .titlebar-sr-noise {
-	/* Source - https://stackoverflow.com/a
+	/* Source - https://stackoverflow.com/
        Posted by tim.baker, modified by community. See post 'Timeline' for change history
        Retrieved 2026-01-21, License - CC BY-SA 3.0 
     */
