@@ -9,7 +9,7 @@ const dropdownStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "",
+				[Variants.BH]: "bg-[#f5f5f5] text-[#45424d]",
 				[Variants.YS]:
 					"rounded-3xl border-2 border-transparent bg-[#dcd5c9] hover:border-white active:border-[#444140] active:bg-[#edd4b2] text-[#3d4557]",
 				[Variants.SR]:
@@ -21,14 +21,14 @@ const dropdownStyles = cva(
 );
 
 const dropdownListStyles = cva(
-	"min-h-auto mt-10.5 absolute flex w-full flex-col px-1 py-1 transition-opacity duration-150",
+	"min-h-auto mt-10.5 absolute flex w-full flex-col transition-opacity duration-150",
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "",
+				[Variants.BH]: "bg-white text-[#45424d]",
 				[Variants.YS]:
-					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1  py-1 transition-opacity duration-150",
-				[Variants.SR]: "rounded-none bg-[#ededed] mt-12",
+					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
+				[Variants.SR]: "bg-[#ededed] mt-12 rounded-xs",
 				[Variants.NAP]: "bg-[#353535] rounded-2xl",
 			},
 		},
@@ -36,14 +36,14 @@ const dropdownListStyles = cva(
 );
 
 const dropdownItemStyles = cva(
-	"w-full h-8 py-1 px-2 flex flex-row bg-transparent justify-between items-center text-center",
+	"w-full h-8 py-1 px-2 flex flex-row bg-transparent justify-between items-center text-center transition-all duration-175",
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "",
+				[Variants.BH]: "active:bg-[#bfbfbf]",
 				[Variants.YS]:
 					"hover:bg-[#606979] active:bg-[#ece5d8] rounded-4xl text-[#ece5d8] active:text-[#495366]",
-				[Variants.SR]: "py-5",
+				[Variants.SR]: "py-5 active:bg-[#bdbdbd] hover:bg-[#f0f0f0]",
 				[Variants.NAP]:
 					"text-white active:text-black active:animate-nap-pulsate rounded-full text-center",
 			},

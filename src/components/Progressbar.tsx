@@ -1,21 +1,41 @@
+import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
-import BhProgressbar from "./bh/Progressbar";
-import NapProgressbar from "./nap/Progressbar";
-import SrProgressbar from "./sr/Progressbar";
-import YsProgressbar from "./ys/Progressbar";
+
+const progressbarStyles = cva("h-5", {
+	variants: {
+		game: {
+			[Variants.BH]: "bg-[#21364a] rounded-md",
+			[Variants.YS]: "rounded-full bg-[#242424]",
+			[Variants.SR]: "bg-[#c0bebf]",
+			[Variants.NAP]: "border-2 border-[#212222] bg-[#262626] rounded-full",
+		},
+	},
+});
+
+const progressbarContainerStyles = cva("h-full transition-all duration-300", {
+	variants: {
+		game: {
+			[Variants.BH]: "bg-[#5fcaff] rounded-md",
+			[Variants.YS]: "rounded-full bg-[#ffb244]",
+			[Variants.SR]: "bg-[#ef973c]",
+			[Variants.NAP]:
+				"bg-linear-to-r from-[#4766fe] from-10% via-[#529aff] via-60% to-[#5ec6ff] rounded-full",
+		},
+	},
+});
 
 export default function Progressbar({ progress }: { progress: number }) {
-	const game = useGame();
-	const Progressbar = {
-		[Variants.BH]: BhProgressbar,
-		[Variants.YS]: YsProgressbar,
-		[Variants.SR]: SrProgressbar,
-		[Variants.NAP]: NapProgressbar,
-	}[game];
+	const activeGame = useGame();
+	//if (activeGame === Variants.YS) {
+	//	return <YsProgressbar progress={progress} />;
+	//}
 	return (
-		<Progressbar
-			progress={progress}
-		></Progressbar>
+		<div class={progressbarStyles({ game: activeGame })}>
+			<div
+				style={{ width: `${progress}%` }}
+				class={progressbarContainerStyles({ game: activeGame })}
+			></div>
+		</div>
 	);
 }
