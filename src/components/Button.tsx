@@ -12,7 +12,7 @@ const buttonStyles = cva(
 				[Variants.SR]:
 					"rounded-full py-3 outline-2 hover:outline-[#fcfcfc] active:outline-[#fcfcfc] drop-shadow-sm",
 				[Variants.NAP]:
-					"transition-colors duration-200 min-h-10 flex flex-row justify-center items-center nap-dots border-3 rounded-full border-[#3d3d3d] active:border-transparent active:text-black active:animate-nap-pulsate",
+					"transition-colors duration-200 min-h-10 flex flex-row justify-center items-center border-3 rounded-full border-[#3d3d3d] active:border-transparent active:text-black active:animate-nap-pulsate",
 			},
 			variant: {
 				// These are needed so the primary/secondary variants below register properly
@@ -60,12 +60,12 @@ const buttonStyles = cva(
 			{
 				game: Variants.NAP,
 				variant: "primary",
-				class: "",
+				class: "nap-dots",
 			},
 			{
 				game: Variants.NAP,
 				variant: "secondary",
-				class: "",
+				class: "bg-transparent",
 			},
 		],
 	},

@@ -7,6 +7,7 @@ on:
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
     branches: main
+  # In case it would be more efficient in one merge, or if regenerating the package caches seems necessary
   workflow_dispatch:
 
 jobs:

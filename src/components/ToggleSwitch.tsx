@@ -6,14 +6,14 @@ import { cva } from "class-variance-authority";
 import { Check, X } from "lucide-preact";
 
 const toggleSwitchStyles = cva(
-	"w-25 min-h-8 p-1.5 transition-colors duration-150 delay-0",
+	"w-25 p-1.5 transition-colors duration-150 delay-0",
 	{
 		variants: {
 			game: {
 				[Variants.BH]: "rounded-none",
 				[Variants.YS]: "rounded-full border-2 border-white",
 				[Variants.SR]: "rounded-full",
-				[Variants.NAP]: "",
+				[Variants.NAP]: "rounded-full border-4 border-[#353535]",
 			},
 			variant: {
 				active: "",
@@ -29,7 +29,7 @@ const toggleSwitchStyles = cva(
 			{
 				game: Variants.BH,
 				variant: "active",
-				class: "bg-[#1e2035]",
+				class: "bg-[#313458]",
 			},
 			{
 				game: Variants.YS,
@@ -54,12 +54,12 @@ const toggleSwitchStyles = cva(
 			{
 				game: Variants.NAP,
 				variant: "inactive",
-				class: "",
+				class: "bg-[#242424]",
 			},
 			{
 				game: Variants.NAP,
 				variant: "active",
-				class: "",
+				class: "bg-[#a2a2a2]",
 			},
 		],
 	},
@@ -73,7 +73,7 @@ const toggleSwitchKnobStyles = cva(
 				[Variants.BH]: "bg-white border-2 border-[#c0bfc2]",
 				[Variants.YS]: "bg-[#ece5d8] rounded-full",
 				[Variants.SR]: "bg-white rounded-full",
-				[Variants.NAP]: "rounded-full",
+				[Variants.NAP]: "rounded-full bg-[#575556]",
 			},
 		},
 	},

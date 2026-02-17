@@ -1843,12 +1843,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lucide-preact@npm:^0.564.0":
-  version: 0.564.0
-  resolution: "lucide-preact@npm:0.564.0"
+"lucide-preact@npm:^0.574.0":
+  version: 0.574.0
+  resolution: "lucide-preact@npm:0.574.0"
   peerDependencies:
     preact: ^10.27.2
-  checksum: 10c0/2128fda291d13aa5a7571bb143f4dd9ef71ce758cc7402cdcedb85f6ee2bd9f37e53120198353e727383472d0cbef4cc5894093dbcdbd52e5ac20a255231239c
+  checksum: 10c0/e0e20b82603ea1cddba3fc77cc3b6532e6f7f942597fd29e7b1b6c626d3fa7d17c7296c647a570739edddc24858be98004b992b966daa1d14c74ff842a6f15ae
   languageName: node
   linkType: hard
 
@@ -2532,7 +2532,7 @@ __metadata:
     "@tauri-apps/plugin-store": "npm:~2.4.2"
     "@tauri-apps/plugin-upload": "npm:~2.4.0"
     class-variance-authority: "npm:^0.7.1"
-    lucide-preact: "npm:^0.564.0"
+    lucide-preact: "npm:^0.574.0"
     preact: "npm:^10.28.3"
     prettier: "npm:3.8.1"
     tailwindcss: "npm:^4.1.18"

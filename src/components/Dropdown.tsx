@@ -9,12 +9,13 @@ const dropdownStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "bg-[#f5f5f5] text-[#45424d]",
+				[Variants.BH]: "bg-[#f5f5f5] text-[#45424d] active:bg-[#dcdcdc]",
 				[Variants.YS]:
 					"rounded-3xl border-2 border-transparent bg-[#dcd5c9] hover:border-white active:border-[#444140] active:bg-[#edd4b2] text-[#3d4557]",
 				[Variants.SR]:
 					"rounded-full bg-[#e6e5e3] hover:bg-[#ffffff] border-2 border-transparent hover:border[#eeeeee] active:border-white active:bg-[#cfcecd]",
-				[Variants.NAP]: "nap-dots rounded-full border-3 border-[#353535]",
+				[Variants.NAP]:
+					"nap-dots rounded-full border-3 border-[#353535] active:animate-nap-pulsate",
 			},
 		},
 	},

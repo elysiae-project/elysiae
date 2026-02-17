@@ -2,6 +2,7 @@ import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame.ts";
 import { Variants } from "../types";
 import { closeApp, getActiveGameCode } from "../util/AppFunctions.ts";
+import { useState } from "preact/hooks";
 
 const titlebarStyles = cva(
 	"h-15 min-w-full p-1 transition-all duration-175 flex flex-row justify-between items-center px-5 py-1.5",
@@ -31,32 +32,38 @@ const titlebarButtonStyles = cva("h-10 w-10 flex items-center justify-center", {
 	},
 });
 
-function TitlebarButtons() {
-	const assetPath = `src/assets/icon/${getActiveGameCode()}`;
-
-	return (
-		<div
-			class={titlebarButtonStyles({ intent: useGame() })}
-			onClick={() => closeApp()}
-		>
-			<img src={`${assetPath}/close.svg`} width={18} height={18} />
-		</div>
-	);
-}
-
 export default function Titlebar() {
 	const activeGame = useGame();
+	const assetPath = `src/assets/icon/${getActiveGameCode()}`;
+	let [mouseDown, setMouseDown] = useState<boolean>(false);
 	return (
 		<div
 			style={{ zIndex: 1001, color: "white" }}
 			data-tauri-drag-region
 			class={titlebarStyles({ game: activeGame })}
 		>
-			{" "}
 			<h3 class="text-xl text-center" data-tauri-drag-region>
 				Yoohoo!
 			</h3>
-			<TitlebarButtons />
+			<div
+				class={titlebarButtonStyles({ intent: useGame() })}
+				onClick={() => closeApp()}
+				onMouseDown={() => setMouseDown(true)}
+				onMouseUp={() => setMouseDown(false)}
+			>
+				<img
+					style={{ display: mouseDown ? "none" : "" }}
+					src={`${assetPath}/close.svg`}
+					width={18}
+					height={18}
+				/>
+				<img
+					style={{ display: mouseDown ? "" : "none" }}
+					src={`${assetPath}/close-click.svg`}
+					width={18}
+					height={18}
+				/>
+			</div>
 		</div>
 	);
 }
