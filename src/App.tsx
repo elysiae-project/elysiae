@@ -7,6 +7,7 @@ import ToggleSwitch from "./components/ToggleSwitch.tsx";
 import Button from "./components/Button.tsx";
 import Dropdown from "./components/Dropdown.tsx";
 import Progressbar from "./components/Progressbar.tsx";
+import Modal from "./components/Modal.tsx";
 
 const theme = cva("h-full w-full px-3 py-4 flex flex-col gap-y-2", {
 	variants: {

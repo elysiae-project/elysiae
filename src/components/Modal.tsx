@@ -9,24 +9,24 @@ const modalStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "",
-				[Variants.YS]: "bg-[#3b4354] rounded-md text-white",
-				[Variants.SR]: "bg-[#dbd7d7]",
-				[Variants.NAP]: "",
+				[Variants.BH]: "bg-bh-modal-bg rounded-lg",
+				[Variants.YS]: "bg-ys-modal-bg rounded-md text-white",
+				[Variants.SR]: "bg-sr-modal-bg rounded-md",
+				[Variants.NAP]: "nap-dots rounded-xl border-4 border-nap-btn-border",
 			},
 		},
 	},
 );
 
 const modalTitlebarStyles = cva(
-	"flex flex-row justify-between items-center w-full mb-1",
+	"flex flex-row justify-between items-center w-full mb-1 border-b",
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "",
-				[Variants.YS]: "text-[#d2bc8d] border-b border-b-[#69758f]",
-				[Variants.SR]: "",
-				[Variants.NAP]: "",
+				[Variants.BH]: "border-b-white",
+				[Variants.YS]: "text-ys-modal-titlebar-text border-b-ys-modal-titlebar-border",
+				[Variants.SR]: "border-b-black",
+				[Variants.NAP]: "border-b-white",
 			},
 		},
 	},
@@ -51,7 +51,7 @@ export default function Modal({
 	let [isOpen, setIsOpen] = useState(open);
 
 	const updateOpenState = () => {
-		setIsOpen(!isOpen);
+		setIsOpen(false);
 		onOpenUpdate();
 	};
 
@@ -59,7 +59,7 @@ export default function Modal({
 		updateOpenState();
 	}, [open]);
 
-	if (!isOpen) return null;
+	if (!isOpen) return;
 
 	return (
 		<div
