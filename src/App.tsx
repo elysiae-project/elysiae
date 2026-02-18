@@ -11,12 +11,12 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
-			[Variants.BH]: "bg-bh-bg font-hsr-hi3 rounded-b-xl text-white",
-			[Variants.YS]: "bg-ys-bg font-genshin text-black",
+			[Variants.BH]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
+			[Variants.YS]: "bg-ys-bg font-ys text-black",
 			[Variants.SR]:
-				"bg-sr-bg font-hsr-hi3 rounded-b-xs border border-[#393939] text-black",
+				"bg-sr-bg font-bh-sr rounded-b-xs border border-[#393939] text-black",
 			[Variants.NAP]:
-				"bg-nap-bg font-zzz rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white nap-dots",
+				"bg-nap-bg font-nap rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white",
 		},
 	},
 });

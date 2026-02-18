@@ -1,0 +1,22 @@
+name: Create Flatpak Release Artifact
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package-yoohoo:
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: yoohoo.flatpak
+          manifest-path: dev.shob3r.yoohoo.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+          branch: main
+          upload-artifact: true

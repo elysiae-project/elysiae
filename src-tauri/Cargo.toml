@@ -2,7 +2,10 @@
 name = "yoohoo"
 version = "0.1.0"
 description = "Universal Hoyoverse Game Launcher for Linux Hosts"
-authors = ["Shon3r <andrewpinter23@gmail.com>", "ChakornK <ChakornK2007@gmail.com>"]
+authors = [
+    "Shob3r <andrewpinter23@gmail.com>",
+    "ChakornK <ChakornK2007@gmail.com>",
+]
 edition = "2024"
 
 [lib]
@@ -10,14 +13,16 @@ name = "yoohoo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.3", features = [] }
+tauri-build = { version = "2.5.5", features = [] }
 
 [dependencies]
-tauri = { version = "2.9.5", features = [] }
+tauri = { version = "2.10.2", features = [] }
 tauri-plugin-opener = "2.5.3"
+
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tauri-plugin-http = "2.5.6"
+
+tauri-plugin-http = "2.5.7"
 tauri-plugin-fs = "2.4.5"
 tauri-plugin-os = "2.3.2"
 tauri-plugin-upload = "2.4.0"
@@ -25,6 +30,14 @@ tauri-plugin-log = "2.8.0"
 tauri-plugin-store = "2.4.2"
 tauri-plugin-notification = "2.3.3"
 
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-single-instance = "2.3.7"
+glib = "0.21.5"
+sevenz-rust = { version = "0.6.1", features = [] }
 
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2.4.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+    <id>dev.shob3r.yoohoo</id>
+    <branding>
+        <color type="primary" scheme_preference="light">#c971ca</color>
+        <color type="primary" scheme_preference="dark">#53217a</color>
+    </branding>
+    <developer id="net.shob3r">
+        <name>Shob3r &amp; ChakornK </name>
+    </developer>
+    <name>Yoohoo!</name>
+    <summary>Unofficial Hoyoverse Launcher for Linux</summary>
+    <metadata_license>CC0-1.0</metadata_license>
+    <project_license>BSD-3-Clause</project_license>
+    <url type="homepage">https://github.com/shob3r/yoohoo</url>
+    <url type="bugtracker">https://github.com/shob3r/yoohoo/issues</url>
+    <description>
+        <p>This app is in Alpha! Please use with caution, and expect bugs/missing features</p>
+        <p>Yoohoo! is a Universal Hoyoverse Game Launcher for x64 Linux hosts using Wine and DXVK.</p>
+        <p>The application meant to replace the individual launchers created by an-anime-team, as
+            work on a unified launcher has stalled</p>
+        <p>This app works with the following games:</p>
+        <ul>
+            <li>Honkai Impact 3rd</li>
+            <li>Genshin Impact</li>
+            <li>Honkai: Star Rail</li>
+            <li>Zenless Zone Zero</li>
+        </ul>
+        <p>All features available in the HoyoPlay launcher on Windows (i.e. preinstall) will be/are
+            implemented in this application</p>
+    </description>
+    <categories>
+        <category>Game</category>
+        <category>LauncherStore</category>
+    </categories>
+    <requires>
+        <control>keyboard</control>
+        <control>pointing</control>
+        <display_length compare="ge">768</display_length>
+    </requires>
+    <launchable type="desktop-id">dev.shob3r.yoohoo.desktop</launchable>
+    <content_rating type="oars-1.1" />
+</component>

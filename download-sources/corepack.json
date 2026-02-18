@@ -1,0 +1,43 @@
+[
+	{
+		"type": "file",
+		"url": "https://repo.yarnpkg.com/4.12.0/packages/yarnpkg-cli/bin/yarn.js",
+		"sha512": "f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8",
+		"dest-filename": "yarn.js",
+		"dest": "flatpak-node/corepack-home/v1/yarn/4.12.0"
+	},
+	{
+		"type": "inline",
+		"contents": "{\"locator\":{\"name\":\"yarn\",\"reference\":\"4.12.0\"},\"bin\":[\"yarn\",\"yarnpkg\"],\"hash\":\"sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8\"}",
+		"dest-filename": ".corepack",
+		"dest": "flatpak-node/corepack-home/v1/yarn/4.12.0"
+	},
+	{
+		"type": "inline",
+		"contents": "{}",
+		"dest-filename": "package.json",
+		"dest": "flatpak-node"
+	},
+	{
+		"type": "shell",
+		"commands": [
+			"mkdir -- \"flatpak-node/corepack-shims\"",
+			"ln -sT -- \"$(command -v corepack)\" \"flatpak-node/corepack-shims/corepack\"",
+			"COREPACK_HOME=\"${PWD:?}/flatpak-node/corepack-home\" COREPACK_ENABLE_NETWORK=\"0\" PATH=\"${PWD:?}/flatpak-node/corepack-shims${PATH:+:${PATH:?}}\" corepack --version",
+			"COREPACK_HOME=\"${PWD:?}/flatpak-node/corepack-home\" COREPACK_ENABLE_NETWORK=\"0\" PATH=\"${PWD:?}/flatpak-node/corepack-shims${PATH:+:${PATH:?}}\" corepack enable",
+			"COREPACK_HOME=\"${PWD:?}/flatpak-node/corepack-home\" COREPACK_ENABLE_NETWORK=\"0\" PATH=\"${PWD:?}/flatpak-node/corepack-shims${PATH:+:${PATH:?}}\" corepack install"
+		]
+	},
+	{
+		"type": "script",
+		"commands": [
+			"corepack enable yarn",
+			"yarn config set enableNetwork false",
+			"yarn config set enableOfflineMode true",
+			"yarn config set globalFolder -- \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/yarn-berry\"",
+			"yarn plugin import \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/flatpak-yarn.js\"",
+			"yarn convertToZip \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/corepack-home/v1/yarn/4.12.0/yarn.js\""
+		],
+		"dest": "flatpak-node"
+	}
+]

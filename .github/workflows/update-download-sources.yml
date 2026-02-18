@@ -1,0 +1,53 @@
+name: Update Node/Cargo Flatpak Builder Sources
+on:
+  push:
+    paths:
+      - "package.json"
+      - "yarn.lock"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+    branches: main
+  # In case it would be more efficient in one merge, or if regenerating the package caches seems necessary
+  workflow_dispatch:
+
+jobs:
+  update-sources:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: "ubuntu-24.04"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential python3 pipx python3-tomlkit python3-aiohttp wget
+
+      - name: Install Flatpak Builder Tools
+        run: |
+          pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
+          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
+
+      - name: Generate Sources
+        run: |
+          python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
+          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+          flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8.1.0
+        with:
+          commit-message: "chore: Update Flatpak Builder package sources"
+          title: "Automatic Flatpak Source Update"
+          body: |
+            This PR has been automatically generated as changes have been detected in at least one of:
+              - package.json
+              - yarn.lock
+              - src-tauri/Cargo.toml
+              - src-tauri/Cargo.lock
+
+            Merging this branch is **strongly recommended** to ensure that flatpak builder builds do not fail due to having incorrectly downloaded packages
+          branch: "bot/update-flatpak-sources-${{ github.run_id }}"
+          delete-branch: true
+          token: ${{ secrets.GITHUB_TOKEN }}
