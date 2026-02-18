@@ -1,6 +1,10 @@
-import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import { Variants } from "../types";
+import { GameContext } from "../contexts/GameContext";
 
-export const GameContext = createContext<Variants>(Variants.NAP);
-export const useGame = () => useContext(GameContext);
+export const useGame = () => {
+	const context = useContext(GameContext);
+	if (!context) {
+		throw new Error("useGame must be used within a GameProvider");
+	}
+	return context;
+};

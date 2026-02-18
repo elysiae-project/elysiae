@@ -3,13 +3,12 @@ import { useGame } from "./hooks/useGame.ts";
 import Titlebar from "./components/Titlebar.tsx";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
-import ToggleSwitch from "./components/ToggleSwitch.tsx";
-import Button from "./components/Button.tsx";
-import Dropdown from "./components/Dropdown.tsx";
-import Progressbar from "./components/Progressbar.tsx";
-import Modal from "./components/Modal.tsx";
+import { useApi } from "./hooks/useApi.ts";
+import Sidebar from "./components/Sidebar.tsx";
+import { ApiProvider } from "./contexts/ApiContext.tsx";
+import { GameProvider } from "./contexts/GameContext.tsx";
 
-const theme = cva("h-full w-full px-3 py-4 flex flex-col gap-y-2", {
+const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
 			[Variants.BH]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
@@ -22,25 +21,54 @@ const theme = cva("h-full w-full px-3 py-4 flex flex-col gap-y-2", {
 	},
 });
 
-export default function App() {
+function Background() {}
+
+function App() {
+	const { game } = useGame();
+	const { graphics } = useApi();
+
 	return (
-		<div class="flex h-screen w-screen flex-col gap-0">
+		<div class="flex h-screen w-screen flex-col gap-0 text-white">
 			<Titlebar />
-			<div class={theme({ intent: useGame() })}>
-				<ToggleSwitch startActive={false} onClick={() => {}} />
-				<Button intent={"primary"} onClick={() => {}}>
-					Primary Button
-				</Button>
-				<Button intent={"secondary"} onClick={() => {}}>
-					Secondary Button
-				</Button>
-				<Dropdown
-					labels={["On", "Off", "Default"]}
-					initialIndex={0}
-					onChangeAction={() => {}}
-				/>
-				<Progressbar progress={35} />
+
+			<div class={theme({ intent: game })}>
+				{graphics ? (
+					<div class="relative h-full w-full">
+						<video
+							class="absolute inset-0 h-full w-full object-cover"
+							src={graphics[game].backgroundVideo}
+							autoplay
+							loop
+							muted
+						></video>
+						<img
+							class="absolute inset-0 h-full w-full object-cover"
+							src={graphics[game].backgroundVideoOverlay}
+							alt=""
+						/>
+
+						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
+							{/* Page content */}
+						</div>
+
+						<Sidebar />
+					</div>
+				) : (
+					<div class="flex h-full w-full flex-col items-center justify-center text-center">
+						<h2 class="text-6xl">Loading...</h2>
+					</div>
+				)}
 			</div>
 		</div>
+	);
+}
+
+export default function AppWrapper() {
+	return (
+		<GameProvider>
+			<ApiProvider>
+				<App />
+			</ApiProvider>
+		</GameProvider>
 	);
 }
