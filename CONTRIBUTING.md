@@ -21,9 +21,9 @@ After installing the system dependencies, install the NodeJS dependencies in the
 yarn
 ```
 
-### If you want to build flatpaks
+### Flatpak Build Support
 
-Building flatpaks will require a bit of extra setup. You'll want to additionally install:
+Generating flatpak installers will require a bit of extra setup. You'll want to additionally install:
 
 - Flatpak
 - Flatpak Builder
@@ -37,19 +37,19 @@ flatpak install org.freedesktop.Sdk.Extension.{node24,rust-stable}//24.08 -y
 
 ## Build Instructions
 
-If you want to create a developer build, run:
+To run a developer build, run:
 
 ```sh
-yarn tauri dev # For A Development Build
+yarn tauri dev
 ```
 
-If you want to create a release build, run:
+To create a release build, run:
 
 ```sh
 yarn tauri build
 ```
 
-if you want to generate a .flatpak file, run the following commands (in the source tree):
+### Building Flatpak
 
 ```sh
 flatpak-builder --repo=repo --force-clean build dev.shob3r.yoohoo.yml

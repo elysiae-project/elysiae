@@ -1,35 +1,37 @@
-import { getCurrentWindow, Window } from "@tauri-apps/api/window";
-
+import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame.ts";
 import { Variants } from "../types";
+import { closeApp } from "../util/AppFunctions.ts";
+import MenuClose from "./MenuClose.tsx";
 
-import BhTitlebar from "./bh/Titlebar.tsx";
-import NapTitlebar from "./nap/Titlebar.tsx";
-import SrTitlebar from "./sr/Titlebar.tsx";
-import YsTitlebar from "./ys/Titlebar.tsx";
-
-const appWindow: Window = getCurrentWindow();
-
-const closeWindow = () => {
-	appWindow.close();
-};
-
-const minimize = () => {
-	appWindow.minimize();
-};
+const titlebarStyles = cva(
+	"h-15 min-w-full p-1 transition-all duration-175 flex flex-row justify-between items-center px-5 py-1.5",
+	{
+		variants: {
+			game: {
+				// Declare fonts because the titlebar is declared outside the actual app content. Can be easily fixed if I wasn't lazy
+				[Variants.BH]: "bg-bh-titlebar font-bh-sr",
+				[Variants.YS]: "bg-ys-titlebar font-ys",
+				[Variants.SR]: "bg-sr-titlebar titlebar-sr-noise font-bh-sr",
+				[Variants.NAP]:
+					"bg-nap-titlebar font-nap border-t-2 border-r-2 border-l-2 border-nap-border rounded-tl-xl",
+			},
+		},
+	},
+);
 
 export default function Titlebar() {
-	const game = useGame();
-
-	const Titlebar = {
-		[Variants.BH]: BhTitlebar,
-		[Variants.YS]: YsTitlebar,
-		[Variants.SR]: SrTitlebar,
-		[Variants.NAP]: NapTitlebar,
-	}[game];
+	const activeGame = useGame();
 	return (
-		<div style={{ zIndex: 1001 }}>
-			<Titlebar onClose={closeWindow} onMinimize={minimize} />
+		<div
+			style={{ zIndex: 1001, color: "white" }}
+			data-tauri-drag-region
+			class={titlebarStyles({ game: activeGame })}
+		>
+			<h3 class="text-xl text-center" data-tauri-drag-region>
+				Yoohoo!
+			</h3>
+			<MenuClose clickAction={closeApp} />
 		</div>
 	);
 }

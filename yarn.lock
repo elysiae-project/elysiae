@@ -1600,13 +1600,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"gsap@npm:^3.14.2":
-  version: 3.14.2
-  resolution: "gsap@npm:3.14.2"
-  checksum: 10c0/8f7d93d58d43c23a8de22630539364fac270e0d1dd8b8747064275dcc177e9c3c944a2eb54a10684e2902011dad0ba9ca3eb5c2a0a3bdb815d4f5401f14519e6
-  languageName: node
-  linkType: hard
-
 "he@npm:1.2.0":
   version: 1.2.0
   resolution: "he@npm:1.2.0"
@@ -1850,12 +1843,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lucide-preact@npm:^0.563.0":
-  version: 0.563.0
-  resolution: "lucide-preact@npm:0.563.0"
+"lucide-preact@npm:^0.574.0":
+  version: 0.574.0
+  resolution: "lucide-preact@npm:0.574.0"
   peerDependencies:
     preact: ^10.27.2
-  checksum: 10c0/18490ab0e1aac0a3b96780c105bee3528de043996d3f077b96b103eac0aaf16275bdbbdd0c314e075da552dbddc5bd1ecb76e3a98cda5d048c04262686fc6cd4
+  checksum: 10c0/e0e20b82603ea1cddba3fc77cc3b6532e6f7f942597fd29e7b1b6c626d3fa7d17c7296c647a570739edddc24858be98004b992b966daa1d14c74ff842a6f15ae
   languageName: node
   linkType: hard
 
@@ -2539,8 +2532,7 @@ __metadata:
     "@tauri-apps/plugin-store": "npm:~2.4.2"
     "@tauri-apps/plugin-upload": "npm:~2.4.0"
     class-variance-authority: "npm:^0.7.1"
-    gsap: "npm:^3.14.2"
-    lucide-preact: "npm:^0.563.0"
+    lucide-preact: "npm:^0.574.0"
     preact: "npm:^10.28.3"
     prettier: "npm:3.8.1"
     tailwindcss: "npm:^4.1.18"
