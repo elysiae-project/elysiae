@@ -21,12 +21,12 @@ const titlebarStyles = cva(
 );
 
 export default function Titlebar() {
-	const activeGame = useGame();
+	const {game, setGame} = useGame();
 	return (
 		<div
 			style={{ zIndex: 1001, color: "white" }}
 			data-tauri-drag-region
-			class={titlebarStyles({ game: activeGame })}
+			class={titlebarStyles({ game: game })}
 		>
 			<h3 class="text-xl text-center" data-tauri-drag-region>
 				Yoohoo!

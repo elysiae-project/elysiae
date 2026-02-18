@@ -14,7 +14,9 @@ export const minimizeApp = (): void => {
 };
 
 export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
-	switch (useGame()) {
+	const { game, setGame } = useGame();
+
+	switch (game) {
 		case Variants.BH:
 			return "bh";
 		case Variants.YS:

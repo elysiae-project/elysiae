@@ -8,7 +8,8 @@ const progressbarStyles = cva("h-5", {
 			[Variants.BH]: "bg-bh-progress-bg rounded-sm",
 			[Variants.YS]: "rounded-full bg-[#242424]",
 			[Variants.SR]: "bg-sr-progress-bg",
-			[Variants.NAP]: "border-2 border-nap-progress-border bg-nap-progress-bg rounded-full",
+			[Variants.NAP]:
+				"border-2 border-nap-progress-border bg-nap-progress-bg rounded-full",
 		},
 	},
 });
@@ -26,15 +27,13 @@ const progressbarContainerStyles = cva("h-full transition-all duration-300", {
 });
 
 export default function Progressbar({ progress }: { progress: number }) {
-	const activeGame = useGame();
-	//if (activeGame === Variants.YS) {
-	//	return <YsProgressbar progress={progress} />;
-	//}
+	const { game, setGame } = useGame();
+
 	return (
-		<div class={progressbarStyles({ game: activeGame })}>
+		<div class={progressbarStyles({ game: game })}>
 			<div
 				style={{ width: `${progress}%` }}
-				class={progressbarContainerStyles({ game: activeGame })}
+				class={progressbarContainerStyles({ game: game })}
 			></div>
 		</div>
 	);
