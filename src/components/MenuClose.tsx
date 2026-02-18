@@ -8,7 +8,7 @@ const menuCloseStyles = cva(
 	"h-10 w-10 flex items-center justify-center transition-all duration-50",
 	{
 		variants: {
-			intent: {
+			game: {
 				// Additional Styles aren't needed for bh or sr as they are just the icon
 				[Variants.BH]: "",
 				[Variants.YS]:
@@ -26,13 +26,13 @@ export default function MenuClose({
 }: {
 	clickAction: () => void;
 }) {
-	const activeGame = useGame();
+	const {game, setGame} = useGame();
 	const assetPath = `src/assets/icon/${getActiveGameCode()}`;
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
 		<div
-			class={menuCloseStyles({ intent: activeGame })}
+			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
 				setMouseDown(true);

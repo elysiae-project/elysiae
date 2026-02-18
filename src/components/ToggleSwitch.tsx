@@ -86,7 +86,7 @@ export default function ToggleSwitch({
 	onClick: (enabled: boolean) => void;
 	startActive: boolean;
 }) {
-	const activeGame = useGame();
+	const { game, setGame } = useGame();
 	let [enabled, setEanbled] = useState<boolean>(startActive);
 
 	return (
@@ -96,7 +96,7 @@ export default function ToggleSwitch({
 				onClick(enabled);
 			}}
 			class={toggleSwitchStyles({
-				game: activeGame,
+				game: game,
 				variant: `${enabled ? "active" : "inactive"}`,
 			})}
 		>
@@ -104,7 +104,7 @@ export default function ToggleSwitch({
 				style={{
 					transform: `${enabled ? "translateX(155%)" : ""} translateZ(1px)`,
 				}}
-				class={toggleSwitchKnobStyles({ game: activeGame })}
+				class={toggleSwitchKnobStyles({ game: game })}
 			>
 				{enabled ? <Check size={18} /> : <X size={18} />}
 			</div>

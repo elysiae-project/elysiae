@@ -6,7 +6,7 @@ import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
 import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
-import { GameProvider } from "./contexts/GameContext.tsx";
+import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {

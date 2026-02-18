@@ -80,11 +80,11 @@ export default function Button({
 	children: any;
 	intent: "primary" | "secondary" | null | undefined;
 }) {
-	const activeGame = useGame();
+	const { game, setGame } = useGame();
 	return (
 		<div
 			onClick={onClick}
-			class={buttonStyles({ game: activeGame, variant: intent })}
+			class={buttonStyles({ game: game, variant: intent })}
 		>
 			{children}
 		</div>

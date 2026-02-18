@@ -47,7 +47,7 @@ export default function Modal({
 	open: boolean;
 	onOpenUpdate?: () => void;
 }) {
-	const activeGame = useGame();
+	const { game, setGame } = useGame();
 	let [isOpen, setIsOpen] = useState(open);
 
 	const updateOpenState = () => {
@@ -72,8 +72,8 @@ export default function Modal({
 			}}
 			onClick={() => updateOpenState()}
 		>
-			<div class={modalStyles({ game: activeGame })}>
-				<div class={modalTitlebarStyles({ game: activeGame })}>
+			<div class={modalStyles({ game: game })}>
+				<div class={modalTitlebarStyles({ game: game })}>
 					<h2>{title}</h2>
 					<MenuClose clickAction={() => setIsOpen(false)} />
 				</div>

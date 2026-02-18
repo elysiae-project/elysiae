@@ -63,7 +63,7 @@ export default function Dropdown({
 	initialIndex: number;
 	onChangeAction: (index: number) => void;
 }) {
-	const activeGame = useGame();
+	const { game, setGame } = useGame();
 
 	let [open, setOpen] = useState<boolean>(false);
 	let [label, setLabel] = useState<string>(labels[initialIndex]);
@@ -95,7 +95,7 @@ export default function Dropdown({
 		<div class="relative w-60" ref={dropdownDiv} style={{ zIndex: 500 }}>
 			<div class="overflow-y-auto flex h-full flex-col">
 				<div
-					class={dropdownStyles({ game: activeGame })}
+					class={dropdownStyles({ game: game })}
 					onClick={(e) => {
 						e.stopPropagation();
 						setOpen(!open);
@@ -105,14 +105,14 @@ export default function Dropdown({
 					<ArrowDown />
 				</div>
 				<div
-					class={dropdownListStyles({ game: activeGame })}
+					class={dropdownListStyles({ game: game })}
 					style={open ? "opacity: 100" : "opacity: 0;"}
 				>
 					{labels.map((listLabel, index) => {
 						return (
 							<div
 								onClick={() => onChange(index)}
-								class={dropdownItemStyles({ game: activeGame })}
+								class={dropdownItemStyles({ game: game })}
 							>
 								<p class="pt-0.5">{listLabel}</p>
 								{index === currentIndex ? <Check /> : null}
