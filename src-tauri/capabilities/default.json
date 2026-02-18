@@ -18,11 +18,32 @@
 			"allow": [
 				{
 					"url": "https://*.hoyoverse.com"
+				},
+				{
+					"url": "https://*.github.com"
+				},
+				{
+					"url": "https://*.githubusercontent.com"
+				},
+				{
+					"url": "https://*"
+				}
+			]
+		},
+		{
+			"identifier": "shell:allow-execute",
+			"allow": [
+				{
+					"name": "exec-all",
+					"cmd": "*",
+					"args": true
 				}
 			]
 		},
 		"store:default",
 		"upload:default",
-		"notification:default"
+		"notification:default",
+		"shell:default",
+		"log:default"
 	]
 }
