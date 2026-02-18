@@ -1217,13 +1217,6 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/gsap/-/gsap-3.14.2.tgz",
-        "sha512": "3fcfe633154b53ba38fb9e7ed530a742b3e68233ca9f093391738ad5ab2747d260da59dae2d118e6a0498cc98068e0430d95ad9518c15e32dad30e771bfb812c",
-        "dest-filename": "gsap-Z3NhcEBucG06My4xNC4y-8f7d93d58d.tgz",
-        "dest": "flatpak-node/yarn-berry/cache/locator"
-    },
-    {
-        "type": "file",
         "url": "https://registry.npmjs.org/he/-/he-1.2.0.tgz",
         "sha512": "17fd439d418fa29391662d278be0afac28074391721001d12d2029b9858c9ab6d2c28376327ffb93e1a5dfc8099d1ef2c83664e962d7c221a877524e58d0ca1b",
         "dest-filename": "he-aGVAbnBtOjEuMi4w-a27d478bef.tgz",
@@ -1413,9 +1406,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/lucide-preact/-/lucide-preact-0.563.0.tgz",
-        "sha512": "982a0cae61dfc734d71a83a5734313ae8c04b5786a84bd00f662d67ded4deb3524c1f80a40dabd49bebfac725a40e5525609b352c9fd7a2b38aef3b61cab0832",
-        "dest-filename": "lucide-preact-bHVjaWRlLXByZWFjdEBucG06MC41NjMuMA==-18490ab0e1.tgz",
+        "url": "https://registry.npmjs.org/lucide-preact/-/lucide-preact-0.574.0.tgz",
+        "sha512": "5a24c7b2fece23ce49d244b2c9ca3daa0fb114b348b6bb091044e01e7ac967ed00f12dc3738134a988cccb774c6ed4d227524125af0ad24a7527a5f67e9e9958",
+        "dest-filename": "lucide-preact-bHVjaWRlLXByZWFjdEBucG06MC41NzQuMA==-e0e20b8260.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
