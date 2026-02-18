@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
 import { cva } from "class-variance-authority";
-import { X } from "lucide-preact";
+import MenuClose from "./MenuClose";
 
 const modalStyles = cva(
 	"px-5 py-3 overflow-y-scroll w-auto min-w-125 h-auto min-h-75",
@@ -11,7 +11,7 @@ const modalStyles = cva(
 			game: {
 				[Variants.BH]: "",
 				[Variants.YS]: "bg-[#3b4354] rounded-md text-white",
-				[Variants.SR]: "",
+				[Variants.SR]: "bg-[#dbd7d7]",
 				[Variants.NAP]: "",
 			},
 		},
@@ -31,10 +31,6 @@ const modalTitlebarStyles = cva(
 		},
 	},
 );
-
-function ModalCloseButton() {
-	
-}
 
 export default function Modal({
 	children,
@@ -79,8 +75,7 @@ export default function Modal({
 			<div class={modalStyles({ game: activeGame })}>
 				<div class={modalTitlebarStyles({ game: activeGame })}>
 					<h2>{title}</h2>
-					{/* TODO: Replace Lucide X component with the appropriate close button asset */}
-					<X size={18} />
+					<MenuClose clickAction={() => setIsOpen(false)} />
 				</div>
 				{children}
 			</div>

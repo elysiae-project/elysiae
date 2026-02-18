@@ -24,42 +24,42 @@ const toggleSwitchStyles = cva(
 			{
 				game: Variants.BH,
 				variant: "inactive",
-				class: "bg-[#1e2035]",
+				class: "bg-bh-toggle-inactive",
 			},
 			{
 				game: Variants.BH,
 				variant: "active",
-				class: "bg-[#313458]",
+				class: "bg-bh-toggle-active",
 			},
 			{
 				game: Variants.YS,
 				variant: "inactive",
-				class: "bg-[#353d4f]",
+				class: "bg-ys-toggle-inactive",
 			},
 			{
 				game: Variants.YS,
 				variant: "active",
-				class: "bg-[#dccba9]",
+				class: "bg-ys-toggle-active",
 			},
 			{
 				game: Variants.SR,
 				variant: "inactive",
-				class: "bg-[rgba(49,49,49,0.40)]",
+				class: "bg-sr-toggle-inactive",
 			},
 			{
 				game: Variants.SR,
 				variant: "active",
-				class: "bg-[#f5c76f]",
+				class: "bg-sr-toggle-active",
 			},
 			{
 				game: Variants.NAP,
 				variant: "inactive",
-				class: "bg-[#242424]",
+				class: "bg-nap-toggle-inactive",
 			},
 			{
 				game: Variants.NAP,
 				variant: "active",
-				class: "bg-[#a2a2a2]",
+				class: "bg-nap-toggle-active",
 			},
 		],
 	},
@@ -70,10 +70,10 @@ const toggleSwitchKnobStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "bg-white border-2 border-[#c0bfc2]",
+				[Variants.BH]: "bg-white border-2 border-bh-knob-border",
 				[Variants.YS]: "bg-[#ece5d8] rounded-full",
 				[Variants.SR]: "bg-white rounded-full",
-				[Variants.NAP]: "rounded-full bg-[#575556]",
+				[Variants.NAP]: "rounded-full bg-nap-knob-bg",
 			},
 		},
 	},
@@ -102,7 +102,7 @@ export default function ToggleSwitch({
 		>
 			<div
 				style={{
-					transform: `${enabled ? "translateX(160%)" : ""} translateZ(1px)`,
+					transform: `${enabled ? "translateX(155%)" : ""} translateZ(1px)`,
 				}}
 				class={toggleSwitchKnobStyles({ game: activeGame })}
 			>

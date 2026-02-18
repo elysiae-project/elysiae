@@ -5,15 +5,16 @@ import { MutableRef, useEffect, useRef, useState } from "preact/hooks";
 import { ArrowDown, Check } from "lucide-preact";
 
 const dropdownStyles = cva(
-	"flex flex-row h-10 px-3 items-center justify-between",
+	"flex flex-row h-10 px-3 items-center justify-between transition duration-150",
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "bg-[#f5f5f5] text-[#45424d] active:bg-[#dcdcdc]",
+				[Variants.BH]:
+					"bg-bh-dropdown text-bh-dropdown-text active:bg-bh-dropdown-active",
 				[Variants.YS]:
-					"rounded-3xl border-2 border-transparent bg-[#dcd5c9] hover:border-white active:border-[#444140] active:bg-[#edd4b2] text-[#3d4557]",
+					"rounded-3xl border-2 border-transparent bg-ys-dropdown hover:border-white active:border-ys-dropdown-border-active active:bg-ys-dropdown-active text-ys-dropdown-text",
 				[Variants.SR]:
-					"rounded-full bg-[#e6e5e3] hover:bg-[#ffffff] border-2 border-transparent hover:border[#eeeeee] active:border-white active:bg-[#cfcecd]",
+					"rounded-full bg-sr-dropdown-bg hover:bg-white border-2 border-transparent hover:border[#eeeeee] active:border-white active:bg-sr-dropdown-active-bg",
 				[Variants.NAP]:
 					"nap-dots rounded-full border-3 border-[#353535] active:animate-nap-pulsate",
 			},
@@ -26,10 +27,10 @@ const dropdownListStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "bg-white text-[#45424d]",
+				[Variants.BH]: "bg-white text-bh-dropdown-text",
 				[Variants.YS]:
 					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
-				[Variants.SR]: "bg-[#ededed] mt-12 rounded-xs",
+				[Variants.SR]: "bg-sr-list-bg mt-12 rounded-xs",
 				[Variants.NAP]: "bg-[#353535] rounded-2xl",
 			},
 		},
@@ -41,10 +42,11 @@ const dropdownItemStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "active:bg-[#bfbfbf]",
+				[Variants.BH]: "active:bg-bh-dropdown-item-active",
 				[Variants.YS]:
-					"hover:bg-[#606979] active:bg-[#ece5d8] rounded-4xl text-[#ece5d8] active:text-[#495366]",
-				[Variants.SR]: "py-5 active:bg-[#bdbdbd] hover:bg-[#f0f0f0]",
+					"hover:bg-ys-item-hover active:bg-[#ece5d8] rounded-4xl text-[#ece5d8] active:text-[#495366]",
+				[Variants.SR]:
+					"py-5 active:bg-sr-item-active-bg hover:bg-sr-item-hover-bg",
 				[Variants.NAP]:
 					"text-white active:text-black active:animate-nap-pulsate rounded-full text-center",
 			},

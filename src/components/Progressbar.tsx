@@ -5,10 +5,10 @@ import { Variants } from "../types";
 const progressbarStyles = cva("h-5", {
 	variants: {
 		game: {
-			[Variants.BH]: "bg-[#21364a] rounded-sm",
+			[Variants.BH]: "bg-bh-progress-bg rounded-sm",
 			[Variants.YS]: "rounded-full bg-[#242424]",
-			[Variants.SR]: "bg-[#c0bebf]",
-			[Variants.NAP]: "border-2 border-[#212222] bg-[#262626] rounded-full",
+			[Variants.SR]: "bg-sr-progress-bg",
+			[Variants.NAP]: "border-2 border-nap-progress-border bg-nap-progress-bg rounded-full",
 		},
 	},
 });
@@ -16,11 +16,11 @@ const progressbarStyles = cva("h-5", {
 const progressbarContainerStyles = cva("h-full transition-all duration-300", {
 	variants: {
 		game: {
-			[Variants.BH]: "bg-[#5fcaff] rounded-sm",
-			[Variants.YS]: "rounded-full bg-[#f59f27]",
-			[Variants.SR]: "bg-[#f3cb54]",
+			[Variants.BH]: "bg-bh-pbar-fill rounded-sm",
+			[Variants.YS]: "rounded-full bg-ys-pbar-fill",
+			[Variants.SR]: "bg-sr-pbar-fill",
 			[Variants.NAP]:
-				"bg-linear-to-r from-[#4766fe] from-10% via-[#529aff] via-60% to-[#5ec6ff] rounded-full",
+				"bg-linear-to-r from-nap-pbar-from from-10% via-nap-pbar-via via-60% to-nap-pbar-to rounded-full",
 		},
 	},
 });

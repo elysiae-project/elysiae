@@ -56,7 +56,7 @@ export const getHttpStatus = async (url: string): Promise<number> => {
 	if (!isURLValid(url)) {
 		const message = `The URL ${url} is not valid!`;
 		error(message);
-		return 404; // URL isn't valid = not found. 
+		return 404; // URL isn't valid = not found.
 	}
 	const response = await fetch(url, {
 		method: "GET",
