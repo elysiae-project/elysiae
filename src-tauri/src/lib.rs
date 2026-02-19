@@ -20,7 +20,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::file_manager::get_sha256_sum,
             commands::file_manager::extract_file,
-            commands::file_downloader::download_file
+            commands::file_downloader::download_file,
+            commands::file_manager::get_all_directories,
+            commands::file_manager::get_all_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

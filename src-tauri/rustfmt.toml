@@ -1,0 +1,6 @@
+edition = "2024"
+style_edition = "2024"
+wrap_comments = true
+trailing_comma = "Vertical"
+comment_width = 80
+array_width = 60

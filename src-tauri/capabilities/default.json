@@ -44,6 +44,12 @@
 		"upload:default",
 		"notification:default",
 		"shell:default",
-		"log:default"
+		"log:default",
+		"fs:allow-exists",
+		"fs:allow-app-read-recursive",
+		"fs:allow-app-write-recursive",
+		"fs:allow-resource-read-recursive",
+		"fs:read-all",
+		"fs:write-all"
 	]
 }

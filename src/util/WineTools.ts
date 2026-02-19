@@ -1,18 +1,22 @@
 import { info } from "@tauri-apps/plugin-log";
 import { downloadFile, getApiJson } from "./WebUtils";
 import { getActiveGameCode } from "./AppFunctions";
-import { invoke } from "@tauri-apps/api/core";
-import { remove } from "@tauri-apps/plugin-fs";
+import { readDir, remove, rename } from "@tauri-apps/plugin-fs";
 import { join, resourceDir } from "@tauri-apps/api/path";
+import { extractFile, getAllDirs } from "./FileUtils";
 
 export const createWineEnvironment = async () => {
 	info("Creating Wine Environment");
-	
+
 	const appDir = await resourceDir();
 
 	const repo = "NelloKudo/spritz-wine-aur";
-	const downloadLocation = await join(appDir, "wine.tar.xz");
-	const extractLocation = await join(appDir, "wine");
+	const wineDownloadLocation = await join(appDir, "wine.tar.xz");
+	const wineExtractLocation = await join(appDir, "wine");
+	const winetricksDownloadLocation = await join(
+		wineExtractLocation,
+		"winetricks",
+	);
 
 	info(`Getting JSON for ${repo}`);
 	const json = await getApiJson(
@@ -21,24 +25,32 @@ export const createWineEnvironment = async () => {
 	const downloadLink = json.assets[0].browser_download_url;
 	info(`Downloading from ${downloadLink}`);
 
-	const sha256 = json.assets[0].digest.slice(7);
-	info(`Web sha256: ${sha256}`);
+	// const sha256 = json.assets[0].digest.slice(7);
 
-	info(`Downloading ${repo} to ${downloadLocation}`);
-	await downloadFile(downloadLink, downloadLocation);
+	info(`Downloading ${repo} to ${wineDownloadLocation}`);
+	await downloadFile(downloadLink, wineDownloadLocation);
 
 	// Extract content
-	info(`Extracing ${downloadFile} to ${extractLocation}`);
-	await invoke("extract_file", {
-		archive: downloadLocation,
-		destination: extractLocation,
-	});
-	remove(downloadLocation);
+	info(`Extracing ${downloadFile} to ${wineExtractLocation}`);
+	await extractFile(wineDownloadLocation, wineExtractLocation);
+
+	const surfaceDirs = ["bin", "lib", "lib32", "lib64", "share"];
+	const wineFolder = (await getAllDirs(wineExtractLocation))[0];
+
+	for (let i = 0; i < surfaceDirs.length; i++) {
+		const currentLocation = await join(wineFolder, surfaceDirs[i]);
+		const renamedLocation = await join(wineExtractLocation, surfaceDirs[i]);
+
+		await rename(currentLocation, renamedLocation);
+	}
+
+	remove(wineFolder);
+	remove(wineDownloadLocation);
 
 	// Specifically just for winetricks because it wants to be special and not host the binary on the releases tab of the repo its hosted on
 	await downloadFile(
 		"https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
-		"wine/winetricks",
+		winetricksDownloadLocation,
 	);
 	// Initial Wine Configure (also enable font smoothing)
 
