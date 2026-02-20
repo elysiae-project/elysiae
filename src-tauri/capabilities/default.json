@@ -18,11 +18,52 @@
 			"allow": [
 				{
 					"url": "https://*.hoyoverse.com"
+				},
+				{
+					"url": "https://*.github.com"
+				},
+				{
+					"url": "https://*.githubusercontent.com"
+				},
+				{
+					"url": "https://*"
 				}
 			]
 		},
+		{
+			"identifier": "shell:allow-execute",
+			"allow": [
+				{
+					"name": "sh",
+					"cmd": "sh",
+					"args": true
+				},
+				{
+					"name": "mv",
+					"cmd": "mv",
+					"args": true
+				},
+				{
+					"name": "rm",
+					"cmd": "rm",
+					"args": true
+				}
+			]
+		},
+		{
+			"identifier": "fs:scope",
+			"allow": [{ "path": "$APPDIR/**" }]
+		},
 		"store:default",
 		"upload:default",
-		"notification:default"
+		"notification:default",
+		"shell:default",
+		"log:default",
+		"fs:allow-exists",
+		"fs:allow-app-read-recursive",
+		"fs:allow-app-write-recursive",
+		"fs:allow-resource-read-recursive",
+		"fs:read-all",
+		"fs:write-all"
 	]
 }

@@ -7,6 +7,8 @@ import { useApi } from "./hooks/useApi.ts";
 import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
+import Button from "./components/Button.tsx";
+import { createWineEnv } from "./util/WineTools.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -49,6 +51,14 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
 							{/* Page content */}
+							<Button
+								intent="primary"
+								onClick={async () => {
+									await createWineEnv();
+								}}
+							>
+								Wine Download Test
+							</Button>
 						</div>
 
 						<Sidebar />

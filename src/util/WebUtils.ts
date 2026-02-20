@@ -1,0 +1,103 @@
+import { error, info } from "@tauri-apps/plugin-log";
+import { isFileValid } from "./FileUtils";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+
+/**
+ * @param url The URL to check
+ * @returns HTTP status code of the URL
+ */
+export const getHttpStatus = async (url: string): Promise<number> => {
+	console.log(`Checking HTTP Status of ${url}`);
+	return new Promise((resolve, reject) => {
+		if (!isURLValid(url)) {
+			const message = `The URL ${url} is not valid!`;
+			error(message);
+			reject(`URL ${url} is invalid!`);
+		}
+		fetch(url, {
+			method: "GET",
+		}).then((response) => {
+			resolve(response.status);
+		});
+	});
+};
+
+/**
+ * @param verifyingString the string you want to verify
+ * @returns boolean value based on weather verifyingString is a valid http URL or not
+ */
+export const isURLValid = (verifyingString: string): boolean => {
+	try {
+		const testURL = new URL(verifyingString);
+		return testURL.protocol === "http:" || testURL.protocol === "https:";
+	} catch {
+		return false;
+	}
+};
+
+/**
+ * @param url Location of the file that is going to be downloaded
+ * @param destination Location the file will be saved to
+ */
+export const downloadFile = async (
+	url: string,
+	destination: string,
+): Promise<void> => {
+	console.log(`Attempting to download ${url}`);
+	const unlisten = await listen<{ progress: number; total: number }>(
+		"download://progress",
+		({ payload }) => {
+			const percentage = ((payload.progress / payload.total) * 100).toFixed(2);
+			info(
+				`Downloaded ${(payload.progress / 1024 ** 2).toFixed(2)} of ${(payload.total / 1024 ** 2).toFixed(2)} Megabytes (${percentage}%)`,
+			);
+		},
+	);
+
+	try {
+		await invoke("download_file", {
+			downloadUrl: url,
+			destination: destination,
+		});
+	} finally {
+		unlisten();
+	}
+};
+
+export const getApiJson = async (url: string): Promise<any> => {
+	return new Promise((resolve, reject) => {
+		fetch(url, {
+			method: "GET",
+		}).then((response) => {
+			if (response.status === 200) {
+				response.json().then((json) => {
+					resolve(json);
+				});
+			} else {
+				const message = `${url} returned status code ${response.status}!`;
+				error(message);
+				reject(message);
+			}
+		});
+	});
+};
+
+export const getGithubInfo = async (url: string): Promise<any> => {
+	return new Promise((resolve, reject) => {
+		if (!url.includes("api.github.com")) {
+			reject("URL Does not point to the GitHub API");
+		}
+		getApiJson(url)
+			.then((json) => {
+				resolve({
+					downloadURL: json.assets[0].browser_download_url,
+					hash: json.assets[0].digest.slice(7),
+					tagName: json.tag_name,
+				});
+			})
+			.catch((e) => {
+				reject(e);
+			});
+	});
+};
