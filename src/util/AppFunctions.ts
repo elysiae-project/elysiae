@@ -4,6 +4,7 @@ import { Variants } from "../types";
 import { fetch } from "@tauri-apps/plugin-http";
 import { error, info } from "@tauri-apps/plugin-log";
 import { download } from "@tauri-apps/plugin-upload";
+import { invoke } from "@tauri-apps/api/core";
 
 export const closeApp = (): void => {
 	getCurrentWindow().close();
@@ -26,4 +27,16 @@ export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
 		case Variants.NAP:
 			return "nap";
 	}
+};
+
+export const inDevEnv = async (): Promise<boolean> => {
+	return new Promise((resolve, reject) => {
+		invoke("in_dev_env")
+			.then((res) => {
+				resolve(res as boolean);
+			})
+			.catch((e) => {
+				reject(e);
+			});
+	});
 };
