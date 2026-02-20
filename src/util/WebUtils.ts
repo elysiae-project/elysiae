@@ -1,5 +1,4 @@
 import { error, info } from "@tauri-apps/plugin-log";
-import { download } from "@tauri-apps/plugin-upload";
 import { isFileValid } from "./FileUtils";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,14 +13,12 @@ export const getHttpStatus = async (url: string): Promise<number> => {
 		if (!isURLValid(url)) {
 			const message = `The URL ${url} is not valid!`;
 			error(message);
-			reject(404); // URL isn't valid = not found.
+			reject(`URL ${url} is invalid!`);
 		}
-		getRedirectURL(url).then((resolvedURL) => {
-			fetch(resolvedURL, {
-				method: "GET",
-			}).then((response) => {
-				resolve(response.status);
-			});
+		fetch(url, {
+			method: "GET",
+		}).then((response) => {
+			resolve(response.status);
 		});
 	});
 };
@@ -52,7 +49,9 @@ export const downloadFile = async (
 		"download://progress",
 		({ payload }) => {
 			const percentage = ((payload.progress / payload.total) * 100).toFixed(2);
-			console.log(`Downloaded ${payload.progress} of ${payload.total} bytes`);
+			info(
+				`Downloaded ${(payload.progress / 1024 ** 2).toFixed(2)} of ${(payload.total / 1024 ** 2).toFixed(2)} Megabytes (${percentage}%)`,
+			);
 		},
 	);
 
@@ -66,40 +65,20 @@ export const downloadFile = async (
 	}
 };
 
-export const getRedirectURL = async (url: string): Promise<string> => {
-	console.log(`Getting Redirect URL For: ${url}`);
-	return new Promise((resolve, reject) => {
-		fetch(url, {
-			method: "HEAD",
-		})
-			.then((res) => {
-				console.log("Success!");
-				console.log(`Resolved URL: ${res.url}`);
-				resolve(res.url as string);
-			})
-			.catch((err) => {
-				console.log("FAIL!!!!");
-				reject(err);
-			});
-	});
-};
-
 export const getApiJson = async (url: string): Promise<any> => {
 	return new Promise((resolve, reject) => {
-		getRedirectURL(url).then((resolvedURL) => {
-			fetch(resolvedURL, {
-				method: "GET",
-			}).then((response) => {
-				if (response.status === 200) {
-					response.json().then((json) => {
-						resolve(json);
-					});
-				} else {
-					const message = `${url} returned status code ${response.status}!`;
-					error(message);
-					reject(message);
-				}
-			});
+		fetch(url, {
+			method: "GET",
+		}).then((response) => {
+			if (response.status === 200) {
+				response.json().then((json) => {
+					resolve(json);
+				});
+			} else {
+				const message = `${url} returned status code ${response.status}!`;
+				error(message);
+				reject(message);
+			}
 		});
 	});
 };

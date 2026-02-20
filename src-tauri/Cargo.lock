@@ -6774,6 +6774,7 @@ dependencies = [
  "walkdir",
  "xz",
  "zip",
+ "zstd",
 ]
 
 [[package]]

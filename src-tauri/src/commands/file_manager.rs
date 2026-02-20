@@ -4,6 +4,7 @@ use bzip2::read::BzDecoder as Bz2;
 use flate2::read::GzDecoder as Gz;
 use walkdir::WalkDir;
 use xz::read::XzDecoder as Xz;
+use zstd::Decoder as Zstd;
 
 use sha256::try_digest;
 use tauri::command;
@@ -30,6 +31,12 @@ pub async fn extract_file(archive: String, destination: String) -> Result<(), St
                 .map_err(|e| e.to_string())?;
         } else if archive.ends_with(".tar.bz2") {
             let decoder = Bz2::new(file);
+            let mut tar_archive = Tar::new(decoder);
+            tar_archive
+                .unpack(&destination)
+                .map_err(|e| e.to_string())?;
+        } else if archive.ends_with(".tar.zst") {
+            let decoder = Zstd::new(file).unwrap();
             let mut tar_archive = Tar::new(decoder);
             tar_archive
                 .unpack(&destination)
