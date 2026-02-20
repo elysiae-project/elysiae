@@ -82,3 +82,19 @@ export const getApiJson = async (url: string): Promise<any> => {
 		});
 	});
 };
+
+export const getGithubInfo = async (url: string): Promise<any> => {
+	return new Promise((resolve, reject) => {
+		getApiJson(url)
+			.then((json) => {
+				resolve({
+					downloadURL: json.assets[0].browser_download_url,
+					hash: json.assets[0].digest.slice(7),
+					tagName: json.tag_name,
+				});
+			})
+			.catch((e) => {
+				reject(e);
+			});
+	});
+};

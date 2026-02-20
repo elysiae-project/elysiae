@@ -1,82 +1,68 @@
-import { info } from "@tauri-apps/plugin-log";
-import { downloadFile, getApiJson } from "./WebUtils";
+import { downloadFile, getGithubInfo } from "./WebUtils";
 import { getActiveGameCode } from "./AppFunctions";
 import { exists, remove } from "@tauri-apps/plugin-fs";
 import { join, resourceDir } from "@tauri-apps/api/path";
 import { extractFile, getAllDirs, moveDirItems } from "./FileUtils";
 import { Command } from "@tauri-apps/plugin-shell";
 
-export const createWineEnvironment = async () => {
+export const createWineEnvironment = async (firstInstall: boolean = true) => {
+	await updateWine();
+	await updateWinetricks();
+	if (firstInstall) await updateWinetricksModules();
+	await updateVkd3d();
+};
+
+export const updateWine = async () => {
 	const appDir = await resourceDir();
-	const winetricksDownloadLocation = await join(appDir, "wine", "winetricks");
+	const downloadLocation = await join(appDir, "wine.tar.xz");
+	const extractLocation = await join(appDir, "wine-temp");
+	const finalLocation = await join(appDir, "wine");
 
-	const repoAssets = [
-		{
-			repo: "NelloKudo/spritz-wine-aur",
-			downloadLocation: await join(appDir, "wine.tar.xz"),
-			extractLocation: await join(appDir, "wine"),
-		},
-		{
-			// While not entirely necessary, I think that current games could be updated to use DX12, and future games will most certainly use DX12
-			// Good for futureproofing, also provides a very gaming-focused wine prefix for yoohoo
-			repo: "HansKristian-Work/vkd3d-proton",
-			downloadLocation: await join(appDir, "vkd3d-proton.tar.xz"),
-			extractLocation: await join(appDir, "vkd3d-temp"),
-		},
-	];
+	const repoInfo = await getGithubInfo(
+		"https://api.github.com/repos/NelloKudo/spritz-wine-aur/releases/latest",
+	);
 
-	if (!(await exists(repoAssets[0].extractLocation))) {
-		for (let i = 0; i < repoAssets.length; i++) {
-			const repo = repoAssets[i].repo;
-			const downloadLocation = repoAssets[i].downloadLocation;
-			const extractLocation = repoAssets[i].extractLocation;
+	await downloadFile(repoInfo.downloadURL, downloadLocation);
+	await extractFile(downloadLocation, extractLocation);
 
-			// Get the download link to the asset
-			const json = await getApiJson(
-				`https://api.github.com/repos/${repo}/releases/latest`,
-			);
-			const downloadLink = json.assets[0].browser_download_url;
-			info(`Downloading from ${downloadLink}`);
+	const folder = (await getAllDirs(extractLocation))[0];
+	await moveDirItems(folder, finalLocation);
+	await remove(downloadLocation);
+};
 
-			// TODO: Hash validation
-			const sha256 = json.assets[0].digest.slice(7);
-
-			// Download file
-			await downloadFile(downloadLink, downloadLocation);
-
-			// Extract content
-			await extractFile(downloadLocation, extractLocation);
-
-			// Get path to the "parent folder" of the extracted directory and move to the proper extract location
-			const folder = (await getAllDirs(extractLocation))[0];
-			await moveDirItems(folder, extractLocation);
-
-			// Remove downloaded asset
-			remove(downloadLocation);
-		}
-	}
-	if (!(await exists(winetricksDownloadLocation))) {
-		// Winetricks has a direct link available to download, rather than a release on github
-		await downloadFile(
-			"https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
-			winetricksDownloadLocation,
-		);
+export const updateWinetricks = async () => {
+	const appDir = await resourceDir();
+	const wineDir = await join(appDir, "wine");
+	const downloadLocation = await join(wineDir, "winetricks");
+	if (!(await exists(wineDir))) {
+		await updateWine();
 	}
 
-	// Use Winetricks to install install DXVK and vcrun
-	// This would resolve to 'winetricks -q {vcrun2022,dxvk}'.
-	// The command will run once for each value within the braces. in this case, it will install vcrun2022 and dxvk
-	// Winetricks also generates the wineprefix folder/content automatically, so there's no need to go out of the way to generate one
-	await winetricksCommand(["{vcrun2022,dxvk}"]);
+	await downloadFile(
+		"https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
+		downloadLocation,
+	);
+};
 
-	// Install vkd3d-proton
+export const updateVkd3d = async () => {
+	const appDir = await resourceDir();
+	const downloadLocation = await join(appDir, "wine.tar.zst");
+	const extractLocation = await join(appDir, "vkd3d-proton-temp");
+	const wineDir = await join(appDir, "wine");
+
+	if (!(await exists(wineDir))) {
+		await updateWine();
+		await updateWinetricks(); // Generates the wineprefix
+		await updateWinetricksModules();
+	}
+
+	// Not using rename() because this is a lot cleaner
 	await Command.create("sh", [
 		"-c",
-		`mv ${repoAssets[1].extractLocation}/x64/* ${repoAssets[0].extractLocation}/drive_c/windows/system32/`,
+		`mv ${extractLocation}/x64/* ${wineDir}/drive_c/windows/system32/`,
 		"&&",
-		`mv ${repoAssets[1].extractLocation}/x86/* ${repoAssets[0].extractLocation}/drive_c/windows/syswow64`,
+		`mv ${extractLocation}/x86/* ${wineDir}/drive_c/windows/syswow64`,
 	]).execute();
-	await remove(repoAssets[1].extractLocation);
 
 	// d3d12
 	await wineCommand([
@@ -87,6 +73,13 @@ export const createWineEnvironment = async () => {
 	await wineCommand([
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v d3d12core /t REG_SZ /d native /f`,
 	]);
+
+	await remove(downloadLocation);
+	await remove(extractLocation);
+};
+
+export const updateWinetricksModules = async () => {
+	await winetricksCommand(["vcrun2019 vcrun2022 vcrun2026 dxvk"]);
 };
 
 const launchGame = async () => {
@@ -112,7 +105,8 @@ const winetricksCommand = async (commands: string[]) => {
 
 	const winePrefix = await join(appDir, "wine");
 	if (!(await exists(winePrefix))) {
-		await createWineEnvironment();
+		await updateWine();
+		await updateWinetricks();
 	}
 
 	await Command.create(
