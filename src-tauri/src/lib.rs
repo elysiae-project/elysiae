@@ -23,6 +23,7 @@ pub fn run() {
             commands::file_downloader::download_file,
             commands::file_manager::get_all_directories,
             commands::file_manager::get_all_files,
+            commands::file_manager::get_top_level_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

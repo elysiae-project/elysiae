@@ -1,9 +1,9 @@
 use std::{fs::File, path::Path};
 
-use bzip2::read::BzDecoder;
-use flate2::read::GzDecoder;
+use bzip2::read::BzDecoder as Bz2;
+use flate2::read::GzDecoder as Gz;
 use walkdir::WalkDir;
-use xz::read::XzDecoder;
+use xz::read::XzDecoder as Xz;
 
 use sha256::try_digest;
 use tauri::command;
@@ -12,37 +12,49 @@ use tar::Archive as Tar;
 use zip::ZipArchive as Zip;
 
 #[command]
-pub fn extract_file(archive: &str, destination: &str) {
-    let file = File::open(archive).unwrap();
+pub async fn extract_file(archive: String, destination: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = std::fs::File::open(&archive).map_err(|e| e.to_string())?;
 
-    if archive.ends_with(".tar.gz") {
-        let decoder = GzDecoder::new(file);
-        let mut tar_archive = Tar::new(decoder);
-        tar_archive.unpack(destination).unwrap();
-    } else if archive.ends_with(".tar.xz") {
-        let decoder = XzDecoder::new(file);
-        let mut tar_archive = Tar::new(decoder);
-        tar_archive.unpack(destination).unwrap();
-    } else if archive.ends_with("tar.bz2") {
-        let decoder = BzDecoder::new(file);
-        let mut tar_archive = Tar::new(decoder);
-        tar_archive.unpack(destination).unwrap();
-    } else if archive.ends_with(".tar") {
-        let mut tar_archive = Tar::new(file);
-        tar_archive.unpack(destination).unwrap();
-    } else if archive.ends_with(".zip") {
-        let mut zip_archive = Zip::new(file).unwrap();
-        Zip::extract(&mut zip_archive, destination).unwrap();
-    }
-    // 7zip generates part archives where the first package in the part archive has the file extension .7z.001/.zip.001.
-    // If there are more than 999 parts to the archive, it just adds an extra slot
-    // TLDR: .7z.001/.zip.001 covers all part archives, unless they have been renamed
-    else if archive.ends_with(".7z")
-        || archive.ends_with(".7z.001")
-        || archive.ends_with(".zip.001")
-    {
-        sevenz_rust::decompress(file, destination).unwrap();
-    }
+        if archive.ends_with(".tar.gz") {
+            let decoder = Gz::new(file);
+            let mut tar_archive = Tar::new(decoder);
+            tar_archive
+                .unpack(&destination)
+                .map_err(|e| e.to_string())?;
+        } else if archive.ends_with(".tar.xz") {
+            let decoder = Xz::new(file);
+            let mut tar_archive = Tar::new(decoder);
+            tar_archive
+                .unpack(&destination)
+                .map_err(|e| e.to_string())?;
+        } else if archive.ends_with(".tar.bz2") {
+            let decoder = Bz2::new(file);
+            let mut tar_archive = Tar::new(decoder);
+            tar_archive
+                .unpack(&destination)
+                .map_err(|e| e.to_string())?;
+        } else if archive.ends_with(".tar") {
+            let mut tar_archive: Tar<File> = Tar::new(file);
+            tar_archive
+                .unpack(&destination)
+                .map_err(|e| e.to_string())?;
+        } else if archive.ends_with(".zip") {
+            let mut zip_archive = Zip::new(file).map_err(|e| e.to_string())?;
+            zip_archive
+                .extract(&destination)
+                .map_err(|e| e.to_string())?;
+        } else if archive.ends_with(".7z")
+            || archive.ends_with(".7z.001")
+            || archive.ends_with(".zip.001")
+        {
+            sevenz_rust::decompress(file, &destination).map_err(|e| e.to_string())?;
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[command]
@@ -77,6 +89,12 @@ pub fn get_all_directories(path: &str) -> Vec<String> {
 }
 
 #[command]
-pub fn unwarp_root_folder() {
-    
+pub fn get_top_level_files(path: &str) -> Vec<String> {
+    let mut items = vec![];
+    for item in WalkDir::new(path).min_depth(1).max_depth(1) {
+        let path = item.unwrap();
+        items.push(path.path().display().to_string());
+    }
+
+    items
 }

@@ -34,11 +34,25 @@
 			"identifier": "shell:allow-execute",
 			"allow": [
 				{
-					"name": "exec-all",
-					"cmd": "*",
+					"name": "sh",
+					"cmd": "sh",
+					"args": true
+				},
+				{
+					"name": "mv",
+					"cmd": "mv",
+					"args": true
+				},
+				{
+					"name": "rm",
+					"cmd": "rm",
 					"args": true
 				}
 			]
+		},
+		{
+			"identifier": "fs:scope",
+			"allow": [{ "path": "$APPDIR/**" }]
 		},
 		"store:default",
 		"upload:default",
