@@ -74,21 +74,14 @@ export const moveDirItems = async (
 	newLocation: string,
 	removeOriginal: boolean = true,
 ) => {
-	// I wanted to be clever and not use shell commands but here we are.
-	Command.create("sh", ["-c", `mv -v "${itemsDir}"/* "${newLocation}"`])
-		.execute()
-		.then(() => {
-			if (removeOriginal) {
-				Command.create("rm", ["-rf", itemsDir])
-					.execute()
-					.then(() => {
-						console.log("Done");
-					});
-			}
-		})
-		.catch((e) => {
-			console.error(e);
-		});
+	await Command.create("sh", [
+		"-c",
+		`mv -v "${itemsDir}"/* "${newLocation}"`,
+	]).execute();
+
+	if (removeOriginal) {
+		await Command.create("sh", ["-c", `rm -rf "${itemsDir}"`]).execute();
+	}
 };
 
 export const getTopLevelfiles = async (location: string): Promise<string[]> => {

@@ -8,7 +8,7 @@ import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
-import { createWineEnvironment } from "./util/WineTools.ts";
+import { createWineEnv } from "./util/WineTools.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -54,7 +54,7 @@ function App() {
 							<Button
 								intent="primary"
 								onClick={async () => {
-									await createWineEnvironment();
+									await createWineEnv();
 								}}
 							>
 								Wine Download Test

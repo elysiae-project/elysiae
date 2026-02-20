@@ -85,6 +85,9 @@ export const getApiJson = async (url: string): Promise<any> => {
 
 export const getGithubInfo = async (url: string): Promise<any> => {
 	return new Promise((resolve, reject) => {
+		if (!url.includes("api.github.com")) {
+			reject("URL Does not point to the GitHub API");
+		}
 		getApiJson(url)
 			.then((json) => {
 				resolve({
