@@ -10,9 +10,13 @@ import {
 import { basename, join, resourceDir } from "@tauri-apps/api/path";
 import { extractFile, getAllDirs, moveDirItems } from "./FileUtils";
 import { Command } from "@tauri-apps/plugin-shell";
-import { info, warn } from "@tauri-apps/plugin-log";
+import { error, info, warn } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
 
+type wineAsset = "wine" | "vkd3d";
+/**
+ * @description Creates a wine environment
+ */
 export const createWineEnv = async (): Promise<void> => {
 	await updateWine();
 	await updateWinetricks();
@@ -21,6 +25,9 @@ export const createWineEnv = async (): Promise<void> => {
 	info("Wine Env Creation Complete");
 };
 
+/**
+ * @description Updates the current wine install
+ */
 export const updateWine = async (): Promise<void> => {
 	const appDir = await resourceDir();
 	const downloadLocation = await join(appDir, "wine.tar.xz");
@@ -41,7 +48,7 @@ export const updateWine = async (): Promise<void> => {
 	const folder = (await getAllDirs(extractLocation))[0];
 	await moveDirItems(folder, finalLocation);
 
-	// Quickly generate a wineprefix
+	// Quickly (re)-generate a wineprefix. Useful even when updating
 	await Command.create("sh", ["-c", `${finalLocation}/bin/wineboot -i`], {
 		env: {
 			WINEPREFIX: finalLocation,
@@ -65,6 +72,9 @@ export const updateWine = async (): Promise<void> => {
 	});
 };
 
+/**
+ * @description Downloads winetricks
+ */
 export const updateWinetricks = async (): Promise<void> => {
 	const appDir = await resourceDir();
 	const wineDir = await join(appDir, "wine");
@@ -79,17 +89,10 @@ export const updateWinetricks = async (): Promise<void> => {
 	);
 };
 
+/**
+ * @description Sets up vkd3d in the wine environment. if no wine environment exists, create it first.
+ */
 export const updateVkd3d = async (): Promise<void> => {
-	// d3d12
-	await wineCommand(
-		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v d3d12 /t REG_SZ /d native /f`,
-	);
-
-	// d3d12core
-	await wineCommand(
-		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v d3d12core /t REG_SZ /d native /f`,
-	);
-
 	const appDir = await resourceDir();
 	const downloadLocation = await join(appDir, "wine.tar.zst");
 	const extractLocation = await join(appDir, "vkd3d-proton-temp");
@@ -131,6 +134,17 @@ export const updateVkd3d = async (): Promise<void> => {
 			await rename(files[j], finalLocation);
 		}
 	}
+	// Adds required registry keys for vkd3d12 to work
+
+	// d3d12
+	await wineCommand(
+		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v d3d12 /t REG_SZ /d native /f`,
+	);
+
+	// d3d12core
+	await wineCommand(
+		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v d3d12core /t REG_SZ /d native /f`,
+	);
 
 	await remove(downloadLocation);
 	await remove(extractLocation, {
@@ -143,12 +157,19 @@ export const updateVkd3d = async (): Promise<void> => {
 	});
 };
 
+/**
+ * @description Installs/Updates winetricks modules used in yoohoo
+ */
 export const updateWinetricksModules = async (): Promise<void> => {
 	// Trying to install a few different redists to ensure that older games will still run properly.
 	// Not sure if just vcrun2022/vcrun2026 will be able to do this
 	await winetricksCommand("vcrun2019 vcrun2022 vcrun2026 dxvk");
 };
 
+/**
+ * @description executes a command with __wine__
+ * @param commands list of commands to run with ``wine``
+ */
 export const wineCommand = async (commands: string): Promise<void> => {
 	// These operators are typically used to chain shell commands together
 	if (isCommandValid(commands)) {
@@ -167,9 +188,17 @@ export const wineCommand = async (commands: string): Promise<void> => {
 		env: {
 			WINEPREFIX: winePrefix,
 		},
-	}).execute();
+	})
+		.execute()
+		.catch((e) => {
+			error(`wineCommand: ${e}`);
+		});
 };
 
+/**
+ * @description executes a command with __winetricks__
+ * @param commands list of commands to run
+ */
 export const winetricksCommand = async (commands: string): Promise<void> => {
 	if (isCommandValid(commands)) {
 		warn(
@@ -196,6 +225,11 @@ export const winetricksCommand = async (commands: string): Promise<void> => {
 	).execute();
 };
 
+/**
+ *
+ * @param command any shell command ``string``
+ * @returns ``boolean`` value based on if the command does not inclue ``&&``, ``&``, or ``;``
+ */
 const isCommandValid = (command: string) => {
 	// These operators are typically used to chain shell commands together
 	return (
@@ -203,6 +237,9 @@ const isCommandValid = (command: string) => {
 	);
 };
 
+/**
+ * @returns ``boolean`` value based on if the wine prefix directory exists
+ */
 export const wineEnvActive = async (): Promise<boolean> => {
 	return new Promise((resolve) => {
 		resourceDir().then((appDir) => {
@@ -215,10 +252,17 @@ export const wineEnvActive = async (): Promise<boolean> => {
 	});
 };
 
-type wineAsset = "wine" | "vkd3d";
+/**
+ * @description Creates/Updates wine asset tracker used for component updates
+ * @param tag Which wine asset entry
+ * @param info Object for release tag/version (``tag``) and the sha256sum of the current download package (``hash``)
+ */
 export const updateAssetTracker = async (
 	tag: wineAsset,
-	info: any,
+	info: {
+		tag: string;
+		hash: string;
+	},
 ): Promise<void> => {
 	const appDir = await resourceDir();
 	const assetFile = await join(appDir, "assets.json");

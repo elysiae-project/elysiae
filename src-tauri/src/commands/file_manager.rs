@@ -1,7 +1,11 @@
-use std::{fs::File, path::Path};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use bzip2::read::BzDecoder as Bz2;
 use flate2::read::GzDecoder as Gz;
+use glob::glob;
 use walkdir::WalkDir;
 use xz::read::XzDecoder as Xz;
 use zstd::Decoder as Zstd;

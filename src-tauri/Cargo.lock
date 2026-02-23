@@ -6752,6 +6752,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "glib 0.22.0",
+ "glob",
  "reqwest 0.13.2",
  "serde",
  "serde_json",

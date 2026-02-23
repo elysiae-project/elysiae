@@ -1,19 +1,25 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
-import { fetch } from "@tauri-apps/plugin-http";
-import { error, info } from "@tauri-apps/plugin-log";
-import { download } from "@tauri-apps/plugin-upload";
 import { invoke } from "@tauri-apps/api/core";
 
+/**
+ * @description Closes the app
+ */
 export const closeApp = (): void => {
 	getCurrentWindow().close();
 };
 
+/**
+ * @description Minimizes the app window
+ */
 export const minimizeApp = (): void => {
 	getCurrentWindow().minimize();
 };
 
+/**
+ * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
+ */
 export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
 	const { game, setGame } = useGame();
 
@@ -29,6 +35,9 @@ export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
 	}
 };
 
+/**
+ * @returns ``boolean`` value based on weather or not the app is running in a development environment
+ */
 export const inDevEnv = async (): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		invoke("in_dev_env")

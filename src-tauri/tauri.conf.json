@@ -38,6 +38,9 @@
 			"icons/128x128@2x.png",
 			"icons/icon.svg"
 		],
+		"resources": {
+			"resources/settings.json": "settings.json"
+		},
 		"active": true,
 		"targets": ["deb"],
 		"linux": {

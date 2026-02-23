@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.5", features = [] }
 
 [dependencies]
-tauri = { version = "2.10.2", features = ["protocol-asset"] }
+tauri = { version = "2.10.2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2.5.3"
 
 serde = { version = "1.0.228", features = ["derive"] }
@@ -43,6 +43,7 @@ bzip2 = "0.6.1"
 flate2 = "1.1.9"
 walkdir = "2.5.0"
 zstd = "0.13.3"
+glob = "0.3.3"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.0"

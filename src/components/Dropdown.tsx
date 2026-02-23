@@ -93,7 +93,7 @@ export default function Dropdown({
 
 	return (
 		<div class="relative w-60" ref={dropdownDiv} style={{ zIndex: 500 }}>
-			<div class="overflow-y-auto flex h-full flex-col">
+			<div class="flex h-full flex-col overflow-y-auto">
 				<div
 					class={dropdownStyles({ game: game })}
 					onClick={(e) => {

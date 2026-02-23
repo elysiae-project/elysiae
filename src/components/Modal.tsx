@@ -24,7 +24,8 @@ const modalTitlebarStyles = cva(
 		variants: {
 			game: {
 				[Variants.BH]: "border-b-white",
-				[Variants.YS]: "text-ys-modal-titlebar-text border-b-ys-modal-titlebar-border",
+				[Variants.YS]:
+					"text-ys-modal-titlebar-text border-b-ys-modal-titlebar-border",
 				[Variants.SR]: "border-b-black",
 				[Variants.NAP]: "border-b-white",
 			},
@@ -63,7 +64,7 @@ export default function Modal({
 
 	return (
 		<div
-			class="w-full h-full flex justify-center items-center fixed inset-0"
+			class="fixed inset-0 flex h-full w-full items-center justify-center"
 			style={{
 				backdropFilter: "blur(7px)",
 				backgroundColor: "rgba(13,13,13,0.6)",
