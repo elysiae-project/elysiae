@@ -4,3 +4,7 @@ wrap_comments = true
 trailing_comma = "Vertical"
 comment_width = 80
 array_width = 60
+max_width = 100
+fn_args_layout = "Tall"
+color = "Always"
+newline_style = "Unix"

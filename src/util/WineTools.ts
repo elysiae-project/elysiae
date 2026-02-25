@@ -231,9 +231,8 @@ export const winetricksCommand = async (commands: string): Promise<void> => {
  * @returns ``boolean`` value based on if the command does not inclue ``&&``, ``&``, or ``;``
  */
 const isCommandValid = (command: string) => {
-	// These operators are typically used to chain shell commands together
 	return (
-		!command.includes("&&") || !command.includes("&") || !command.includes(";")
+		command.includes("&&") || command.includes("&") || command.includes(";")
 	);
 };
 

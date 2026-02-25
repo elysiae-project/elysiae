@@ -47,6 +47,11 @@
 					"name": "rm",
 					"cmd": "rm",
 					"args": true
+				},
+				{
+					"name": "binaries/7za",
+					"sidecar": true,
+					"args": true
 				}
 			]
 		},

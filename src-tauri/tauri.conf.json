@@ -41,6 +41,7 @@
 		"resources": {
 			"resources/settings.json": "settings.json"
 		},
+		"externalBin": ["binaries/7za"],
 		"active": true,
 		"targets": ["deb"],
 		"linux": {
