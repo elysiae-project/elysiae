@@ -84,7 +84,7 @@ export const extractFile = async (
 				return;
 			});
 
-		const regex = /\.tar\.(xz|bz2|gz|zstd)$/i;
+		const regex: RegExp = /\.tar\.*/;
 		if (regex.test(file)) {
 			// Compressed tarball extracts to dest/filename.tar
 			const fileName = `${(await basename(file)).split(".")[0]}.tar`;

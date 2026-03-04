@@ -112,7 +112,6 @@ export const updateVkd3d = async (): Promise<void> => {
 		return;
 	}
 
-	// Not using rename() because this is a lot cleaner
 	const dirs = [
 		{
 			initialLocation: await join(extractLocation, "x64"),
@@ -122,12 +121,13 @@ export const updateVkd3d = async (): Promise<void> => {
 			initialLocation: await join(extractLocation, "x86"),
 			moveTo: await join(wineDir, "drive_c", "windows", "syswow64"),
 		},
-	];
+	] as const;
 
 	for (let i = 0; i < dirs.length; i++) {
 		const files = await invoke<string[]>("get_all_files", {
 			path: dirs[i].initialLocation,
 		});
+
 		for (let j = 0; j < files.length; j++) {
 			const fileName = await basename(files[j]);
 			const finalLocation = await join(dirs[i].moveTo, fileName);
@@ -135,7 +135,6 @@ export const updateVkd3d = async (): Promise<void> => {
 		}
 	}
 	// Adds required registry keys for vkd3d12 to work
-
 	// d3d12
 	await wineCommand(
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v d3d12 /t REG_SZ /d native /f`,
@@ -239,7 +238,7 @@ const isCommandValid = (command: string) => {
 /**
  * @returns ``boolean`` value based on if the wine prefix directory exists
  */
-export const wineEnvActive = async (): Promise<boolean> => {
+export const wineEnvAvailable = async (): Promise<boolean> => {
 	return new Promise((resolve) => {
 		resourceDir().then((appDir) => {
 			join(appDir, "wine").then((wineDir) => {

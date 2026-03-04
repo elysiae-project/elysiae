@@ -8,7 +8,12 @@ import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
-import { createWineEnv } from "./util/WineTools.ts";
+import { createWineEnv, wineEnvAvailable } from "./util/WineTools.ts";
+import { downloadGame } from "./util/GameManager.ts";
+import { useEffect, useState } from "preact/hooks";
+import { error, info } from "@tauri-apps/plugin-log";
+import { join, resourceDir } from "@tauri-apps/api/path";
+import { getActiveGameCode } from "./util/AppFunctions.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -27,14 +32,22 @@ function Background() {}
 
 function App() {
 	const { game } = useGame();
-	const { graphics } = useApi();
+	const { graphics, gamePackages } = useApi();
+
+	let [wineEnvExists, setWineEnvExists] = useState(false);
+
+	useEffect(() => {
+		wineEnvAvailable().then((res) => {
+			setWineEnvExists(res);
+		});
+	}, []);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
 			<Titlebar />
 
 			<div class={theme({ intent: game })}>
-				{graphics ? (
+				{graphics && gamePackages ? (
 					<div class="relative h-full w-full">
 						<video
 							class="absolute inset-0 h-full w-full object-cover"
@@ -49,15 +62,31 @@ function App() {
 							alt=""
 						/>
 
-						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
+						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full">
 							{/* Page content */}
 							<Button
 								intent="primary"
 								onClick={async () => {
-									await createWineEnv();
+									if (wineEnvExists) {
+										// TODO: Download links processing
+										// await downloadGame([], "");
+										const downloadPath = await join((await resourceDir()), getActiveGameCode());
+
+										await downloadGame(gamePackages[game].main.major.game_pkgs, "");
+										info("The game is being downloaded ooooooooooo oooooooo");
+									} else {
+										// Download wine instead
+										await createWineEnv()
+											.then(() => {
+												setWineEnvExists(true);
+											})
+											.catch((e) => {
+												error(`Error in creating wine environment: ${e}`);
+											});
+									}
 								}}
 							>
-								Wine Download Test
+								{wineEnvExists ? "Download Game" : "Create Environment"}
 							</Button>
 						</div>
 

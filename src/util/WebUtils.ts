@@ -1,4 +1,4 @@
-import { error, info } from "@tauri-apps/plugin-log";
+import { info } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
