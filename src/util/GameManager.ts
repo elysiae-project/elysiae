@@ -39,7 +39,7 @@ export const downloadGame = async (
 				destFiles.push(temporaryLocation);
 			})
 			.catch((e) => {
-				error(`The download function encountered an error! ${e}`);
+				error(`downloadGame: ${e}`);
 			});
 	}
 

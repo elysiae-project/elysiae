@@ -4,6 +4,9 @@
 <img src="https://raw.githubusercontent.com/Shob3r/yoohoo/refs/heads/main/app-icon.png" alt="Yoohoo App Icon" width="256">
 </p>
 
+> [!WARNING]  
+> This project is in Alpha! Some features are missing and others may have issues.
+
 ## Why This Project Exists
 
 Yoohoo aims to replace the separated game launchers from [an-anime-team](https://github.com/an-anime-team). From my experience, these launchers can be somewhat unreliable, are missing a few features, and are barely maintained. On top of that, each game requires its own launcher. While work has started on a [Unified Launcher](https://github.com/an-anime-team/anime-games-launcher) several years ago, the project has largely stagnated, leading me to believe that the project will likely never be finished at all. These factors led me to creating Yoohoo, which attempts to do the following:
@@ -41,4 +44,4 @@ Please look at the source code to verify my claims
 
 ## Disclaimer
 
-while Yoohoo should be completely safe to use, please note that I am not responsible for any consequences that may come from using Yoohoo. Use at your own risk
+Yoohoo should be completely safe to use. However, please note that I am not responsible for any consequences that may come from using Yoohoo. Use this program at your own risk

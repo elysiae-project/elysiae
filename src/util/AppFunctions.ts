@@ -20,10 +20,9 @@ export const minimizeApp = (): void => {
 /**
  * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
  */
-export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
-	const { game, setGame } = useGame();
+export const getActiveGameCode = (currentGame: Variants): "bh" | "ys" | "sr" | "nap" => {
 
-	switch (game) {
+	switch (currentGame) {
 		case Variants.BH:
 			return "bh";
 		case Variants.YS:

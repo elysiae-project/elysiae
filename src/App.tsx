@@ -70,9 +70,9 @@ function App() {
 									if (wineEnvExists) {
 										// TODO: Download links processing
 										// await downloadGame([], "");
-										const downloadPath = await join((await resourceDir()), getActiveGameCode());
+										const downloadPath = await join((await resourceDir()), getActiveGameCode(game));
 
-										await downloadGame(gamePackages[game].main.major.game_pkgs, "");
+										await downloadGame(gamePackages[game].main.major.game_pkgs, downloadPath);
 										info("The game is being downloaded ooooooooooo oooooooo");
 									} else {
 										// Download wine instead

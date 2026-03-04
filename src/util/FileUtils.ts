@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { basename, dirname, join } from "@tauri-apps/api/path";
 import { exists } from "@tauri-apps/plugin-fs";
-import { error } from "@tauri-apps/plugin-log";
+import { error, info, warn } from "@tauri-apps/plugin-log";
 import { Command } from "@tauri-apps/plugin-shell";
 
 /**
@@ -75,7 +75,7 @@ export const extractFile = async (
 			"x",
 			file,
 			"-sdel",
-			`-o${destination}` // 7z is weird like this. It only works like this
+			`-o${destination}`, // 7z is weird like this. It only works like this
 		])
 			.execute()
 			.catch((e) => {
@@ -84,13 +84,16 @@ export const extractFile = async (
 				return;
 			});
 
-		const regex: RegExp = /\.tar\.*/;
+		const regex: RegExp = /\.tar\.+/;
 		if (regex.test(file)) {
 			// Compressed tarball extracts to dest/filename.tar
 			const fileName = `${(await basename(file)).split(".")[0]}.tar`;
 			const tarballLocation = await join(destination, fileName);
+			info(tarballLocation);
 			await extractFile(tarballLocation, destination);
 		}
+	} else {
+		warn(`extractFile: ${file} does not exist`);
 	}
 };
 

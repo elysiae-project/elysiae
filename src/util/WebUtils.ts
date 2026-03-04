@@ -47,7 +47,7 @@ export const downloadFile = async (
 		({ payload }) => {
 			const percentage = ((payload.progress / payload.total) * 100).toFixed(2);
 			info(
-				`Downloaded ${(payload.progress / 1024 ** 2).toFixed(2)} of ${(payload.total / 1024 ** 2).toFixed(2)} Megabytes (${percentage}%)`,
+				`Downloaded ${(payload.progress / 1024 ** 2).toFixed(2)}Mb of ${(payload.total / 1024 ** 2).toFixed(2)}Mb (${percentage}%)`,
 			);
 		},
 	);
