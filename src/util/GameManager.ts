@@ -1,4 +1,4 @@
-import { error, warn } from "@tauri-apps/plugin-log";
+import { error, info, warn } from "@tauri-apps/plugin-log";
 import { downloadFile, isURLValid } from "./WebUtils";
 import { dirname, join, resourceDir } from "@tauri-apps/api/path";
 import { extractFile } from "./FileUtils";
@@ -20,6 +20,7 @@ export const downloadGame = async (
 		// TODO: Also get md5 (for file verification) and download size (if needed)
 		downloadLinks.push(downloadAsset[i].url);
 	}
+	info(downloadLinks.toString());
 
 	let destFiles: string[] = [];
 
