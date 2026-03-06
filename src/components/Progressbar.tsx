@@ -27,14 +27,15 @@ const progressbarContainerStyles = cva("h-full transition-all duration-300", {
 });
 
 export default function Progressbar({ progress }: { progress: number }) {
-	const { game, setGame } = useGame();
+	const { game } = useGame();
 
 	return (
 		<div class={progressbarStyles({ game: game })}>
 			<div
 				style={{ width: `${progress}%` }}
 				class={progressbarContainerStyles({ game: game })}
-			></div>
+			>
+			</div>
 		</div>
 	);
 }

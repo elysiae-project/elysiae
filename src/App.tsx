@@ -14,6 +14,7 @@ import { useEffect, useState } from "preact/hooks";
 import { error, info } from "@tauri-apps/plugin-log";
 import { join, resourceDir } from "@tauri-apps/api/path";
 import { getActiveGameCode } from "./util/AppFunctions.ts";
+import DownloadProgress from "./components/DownloadProgress.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -64,16 +65,13 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full">
 							{/* Page content */}
+							<DownloadProgress/>
 							<Button
 								intent="primary"
 								onClick={async () => {
 									if (wineEnvExists) {
-										// TODO: Download links processing
-										// await downloadGame([], "");
 										const downloadPath = await join((await resourceDir()), getActiveGameCode(game));
-
 										await downloadGame(gamePackages[game].main.major.game_pkgs, downloadPath);
-										info("The game is being downloaded ooooooooooo oooooooo");
 									} else {
 										// Download wine instead
 										await createWineEnv()

@@ -3,6 +3,7 @@ import { Download } from "../types";
 import { error, info } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomEventManager } from "./CustomEventManager";
+import { exists } from "@tauri-apps/plugin-fs";
 
 export const downloads = new Map<string, Download>();
 export const downloadEvent = new CustomEventManager();
@@ -26,9 +27,15 @@ export const downloadFile = async (
 	try {
 		for (let i = 0; i < (links as string[]).length; i++) {
 			uuids.push(crypto.randomUUID());
-			activeDownloads.push(
-				download((links as string[])[i], destination, uuids[i]),
-			);
+			if (!(await exists(destination))) {
+				activeDownloads.push(
+					download((links as string[])[i], destination, uuids[i]),
+				);
+			}
+            else {
+                info(`Download Skipped as file already exists`);
+                continue;
+            };
 		}
 		await Promise.all(activeDownloads).catch((e) => {
 			error(`downloadFile: ${e}`);
@@ -46,7 +53,7 @@ const download = async (
 	uuid: string,
 ): Promise<void> => {
 	const unlisten = await listen<{ progress: number; total: number }>(
-		"download://progress",
+		`download://progress`,
 		({ payload }) => {
 			const status: Download = {
 				// Progress/total is stored as bytes. Convert to Megabytes
@@ -54,7 +61,7 @@ const download = async (
 				downloaded: payload.progress / 1024 ** 2,
 				total: payload.total / 1024 ** 2,
 			};
-			// info(`Downloaded ${status.downloaded.toFixed(2)} of ${status.total.toFixed(2)}Mb`);
+			// info(`Downloaded ${status.downloaded.toFixed(2)} of ${status.total.toFixed(2)}Mb`,);
 			downloads.set(uuid, status);
 			downloadEvent.dispatchEvent("downloadChanged", { uuid, status });
 		},

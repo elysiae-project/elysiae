@@ -1,4 +1,5 @@
 type EventCallback<T = unknown> = (data: T) => void;
+type CustomEvents = "downloadChanged";
 export class CustomEventManager {
 	private handlers: Record<string, EventCallback[]>;
 
@@ -7,7 +8,7 @@ export class CustomEventManager {
 	}
 
 	addEventListener<T = unknown>(
-		name: string,
+		name: CustomEvents,
 		callback: EventCallback<T>,
 	): void {
 		if (!this.handlers[name]) this.handlers[name] = [];
@@ -15,14 +16,14 @@ export class CustomEventManager {
 	}
 
 	removeEventListener<T = unknown>(
-		name: string,
+		name: CustomEvents,
 		callback: EventCallback<T>,
 	): void {
 		if (!this.handlers[name]) return;
 		this.handlers[name] = this.handlers[name].filter((h) => h !== callback);
 	}
 
-	dispatchEvent<T = unknown>(name: string, data: T): void {
+	dispatchEvent<T = unknown>(name: CustomEvents, data: T): void {
 		if (!this.handlers[name]) return;
 		for (let i = 0; i < this.handlers[name].length; i++) {
 			this.handlers[name][i](data);
