@@ -34,38 +34,6 @@ export const isURLValid = (verifyingString: string): boolean => {
 };
 
 /**
- * @param url Location of the file that is going to be downloaded
- * @param destination Location the file will be saved to
- */
-export const downloadFile = async (
-	url: string,
-	destination: string,
-): Promise<void> => {
-	console.log(`Attempting to download ${url}`);
-	const unlisten = await listen<{ progress: number; total: number }>(
-		"download://progress",
-		({ payload }) => {
-			const percentage = ((payload.progress / payload.total) * 100).toFixed(2);
-			info(
-				`Downloaded ${(payload.progress / 1024 ** 2).toFixed(2)}Mb of ${(payload.total / 1024 ** 2).toFixed(2)}Mb (${percentage}%)`,
-			);
-		},
-	);
-
-	try {
-		await invoke("download_file", {
-			downloadUrl: url,
-			destination: destination,
-		}).catch((e) => {
-			console.error(`downloadFile: ${e}`);
-			unlisten();
-		});
-	} finally {
-		unlisten();
-	}
-};
-
-/**
  * @param url link to an API
  * @returns JavaScipt Object from API URL
  */

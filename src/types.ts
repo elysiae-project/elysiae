@@ -144,7 +144,7 @@ export type LauncherGamePkgRawData = {
 	}[];
 	required_client_version: string;
 	pre_download: {
-		// TODO: Refine these properties when a preinstal is available (look at the values that are filled in)
+		// TODO: Refine these properties when a preinstal is available (look at the values when they are filled in)
 		major: null | string;
 		patches: [];
 		required_client_version: string;
@@ -201,3 +201,8 @@ export type LauncherPkgData = {
 		};
 	};
 };
+
+export type Download = { 
+	downloaded: number;
+	total: number;
+}

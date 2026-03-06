@@ -1,5 +1,6 @@
 import { error, info, warn } from "@tauri-apps/plugin-log";
-import { downloadFile, isURLValid } from "./WebUtils";
+import { isURLValid } from "./WebUtils";
+import { downloadFile } from "./DownloadManager";
 import { dirname, join, resourceDir } from "@tauri-apps/api/path";
 import { extractFile } from "./FileUtils";
 import { exists, remove } from "@tauri-apps/plugin-fs";

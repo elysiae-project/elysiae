@@ -1,4 +1,5 @@
-import { downloadFile, getGithubInfo } from "./WebUtils";
+import { getGithubInfo } from "./WebUtils";
+import { downloadFile } from "./DownloadManager";
 import {
 	exists,
 	mkdir,
