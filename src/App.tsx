@@ -71,7 +71,10 @@ function App() {
 								onClick={async () => {
 									if (wineEnvExists) {
 										const downloadPath = await join((await resourceDir()), getActiveGameCode(game));
-										await downloadGame(gamePackages[game].main.major.game_pkgs, downloadPath);
+										const assets = gamePackages[game].main.major.game_pkgs;
+										assets.join(gamePackages[game].main.major.audio_pkgs[1].url); // TODO: language selection. rn, english only
+										info(assets.toString());
+										await downloadGame(assets, downloadPath);
 									} else {
 										// Download wine instead
 										await createWineEnv()

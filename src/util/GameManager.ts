@@ -24,28 +24,16 @@ export const downloadGame = async (
 	info(downloadLinks.toString());
 
 	let destFiles: string[] = [];
-
-	for (let i = 0; i < downloadLinks.length; i++) {
-		if (!isURLValid(downloadLinks[i])) {
-			warn(`downloadGame: ${downloadLinks[i]} is not a valid URL`);
-			continue;
-		}
-
-		const fileName = downloadLinks[i].split("/").pop() as string; // gets filename from URL
-		const temporaryLocation = await join(await resourceDir(), fileName);
-
-		await downloadFile(downloadLinks[i], temporaryLocation)
-			.then(() => {
-				// Only push to destFiles if the download was successful
-				destFiles.push(temporaryLocation);
-			})
-			.catch((e) => {
-				error(`downloadGame: ${e}`);
-			});
+	await downloadFile(downloadLinks, (await resourceDir()));
+	for(let i = 0; i < downloadLinks.length; i++) {
+		const fileName = downloadAsset[i].url.split("/").pop() as string;
+		const temporaryLocation = await join((await resourceDir()), fileName);
+		destFiles.push(temporaryLocation);
 	}
 
 	for (let i = 0; i < destFiles.length; i++) {
 		const file = destFiles[i];
+		info(file);
 
 		await extractFile(file, destPath);
 		await remove(file);

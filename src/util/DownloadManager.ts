@@ -4,6 +4,7 @@ import { error, info } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomEventManager } from "./CustomEventManager";
 import { exists } from "@tauri-apps/plugin-fs";
+import { join } from "@tauri-apps/api/path";
 
 export const downloads = new Map<string, Download>();
 export const downloadEvent = new CustomEventManager();
@@ -22,20 +23,22 @@ export const downloadFile = async (
 		return await downloadFile([links], destination);
 	}
 	const activeDownloads: Promise<any>[] = [];
-	const uuids = [];
+	const uuids = (links as string[]).map(() => crypto.randomUUID());
 
 	try {
 		for (let i = 0; i < (links as string[]).length; i++) {
 			uuids.push(crypto.randomUUID());
-			if (!(await exists(destination))) {
+			const fileName = (links as string[])[i].split("/").pop() as string;
+			const downloadLocation = await join(destination, fileName);
+
+			if (!(await exists(downloadLocation))) {
 				activeDownloads.push(
-					download((links as string[])[i], destination, uuids[i]),
+					download((links as string[])[i], downloadLocation, uuids[i]),
 				);
+			} else {
+				info(`Download Skipped as file already exists`);
+				continue;
 			}
-            else {
-                info(`Download Skipped as file already exists`);
-                continue;
-            };
 		}
 		await Promise.all(activeDownloads).catch((e) => {
 			error(`downloadFile: ${e}`);
@@ -53,7 +56,7 @@ const download = async (
 	uuid: string,
 ): Promise<void> => {
 	const unlisten = await listen<{ progress: number; total: number }>(
-		`download://progress`,
+		`download://progress/${uuid}`,
 		({ payload }) => {
 			const status: Download = {
 				// Progress/total is stored as bytes. Convert to Megabytes
@@ -61,7 +64,7 @@ const download = async (
 				downloaded: payload.progress / 1024 ** 2,
 				total: payload.total / 1024 ** 2,
 			};
-			// info(`Downloaded ${status.downloaded.toFixed(2)} of ${status.total.toFixed(2)}Mb`,);
+			info(`Downloaded ${status.downloaded.toFixed(2)} of ${status.total.toFixed(2)}Mb`,);
 			downloads.set(uuid, status);
 			downloadEvent.dispatchEvent("downloadChanged", { uuid, status });
 		},
@@ -71,6 +74,7 @@ const download = async (
 		await invoke("download_file", {
 			downloadUrl: url,
 			destination: destination,
+			uuid: uuid,
 		}).catch((e) => {
 			console.error(`downloadFile: ${e}`);
 			unlisten();

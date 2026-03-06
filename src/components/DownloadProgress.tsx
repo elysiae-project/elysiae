@@ -27,8 +27,8 @@ export default function DownloadProgress() {
 					rawTotal += download.total;
 				});
 
-				setDownloaded(rawDownloaded / downloadSize);
-				setTotal(rawTotal / downloadSize);
+				setDownloaded(rawDownloaded);
+				setTotal(rawTotal);
 				setProgress((rawDownloaded / downloadSize) / (rawTotal / downloadSize) * 100);
 			}
 		};
@@ -41,9 +41,9 @@ export default function DownloadProgress() {
 
 	if (!isDownloading) return <></>;
 	return (
-		<div class="flex flex-col gap-y-1.5 bg-[#000000aa] p-2 mx-5 rounded-lg min-w-80">
-			<p class="text-lg">
-				Downloaded {(downloaded / 1024).toFixed(2)}GB of {(total / 1024).toFixed(2)}GB (
+		<div class="flex flex-col gap-y-1.5 bg-black p-2 mx-5 rounded-lg min-w-80">
+			<p class="text-lg text-white">
+				Downloaded {(downloaded / 1024).toFixed(2)}Gb of {(total / 1024).toFixed(2)}Gb (
 				{(progress).toFixed(2)}%)
 			</p>
 			<Progressbar progress={progress} />

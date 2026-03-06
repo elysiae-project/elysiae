@@ -17,6 +17,7 @@ struct DownloadProgress {
 pub async fn download_file(
     download_url: String,
     destination: String,
+    uuid: String,
     app: AppHandle,
 ) -> Result<(), String> {
     let client = Client::builder().build().map_err(|e| e.to_string())?;
@@ -43,7 +44,7 @@ pub async fn download_file(
         if downloaded_bytes - last_reported >= report_threshold {
             last_reported = downloaded_bytes;
             app.emit(
-                "download://progress",
+                &format!("download://progress/{}", uuid),
                 DownloadProgress {
                     progress: downloaded_bytes,
                     total,

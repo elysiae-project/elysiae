@@ -134,6 +134,7 @@ export type LauncherGamePkgRawData = {
 		major: {
 			version: string;
 			game_pkgs: GamePkg[];
+			audio_pkgs: AudioPkg[];
 		};
 	};
 	patches: {
@@ -182,6 +183,7 @@ export type LauncherPkgData = {
 	[key in Variants]: {
 		main: {
 			major: {
+				audio_pkgs: GamePkg[];
 				version: string;
 				game_pkgs: GamePkg[];
 			};
@@ -202,7 +204,7 @@ export type LauncherPkgData = {
 	};
 };
 
-export type Download = { 
+export type Download = {
 	downloaded: number;
 	total: number;
-}
+};
