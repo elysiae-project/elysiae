@@ -22,16 +22,9 @@ modules:
   - name: yoohoo
     buildsystem: simple
     sources:
-      - type: dir
-        path: .
-        skip:
-          - ./.flatpak-builder
-          - ./.yarn
-          - ./build
-          - ./dist
-          - ./flatpak-builder-tools
-          - ./node_modules
-          - ./src-tauri/target
+      - type: git
+        url: https://github.com/shob3r/yoohoo.git
+        branch: main
       - download-sources/cargo.json
       - download-sources/corepack.json
       - download-sources/yarn.json
