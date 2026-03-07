@@ -937,13 +937,6 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/plugin-upload/-/plugin-upload-2.4.0.tgz",
-        "sha512": "79b86ca979a210b9e92aeda9e3a1191b5e142b1bdb54fdbc069241887cd1faab9656b3319b8d39d7c3d74c39575dc2545b90a46e63ffe912f91114955c12fcb1",
-        "dest-filename": "plugin-upload-QHRhdXJpLWFwcHMvcGx1Z2luLXVwbG9hZEBucG06Mi40LjA=-bc38a61ac9.tgz",
-        "dest": "flatpak-node/yarn-berry/cache/locator"
-    },
-    {
-        "type": "file",
         "url": "https://registry.npmjs.org/@tybys/wasm-util/-/wasm-util-0.10.1.tgz",
         "sha512": "f6d4da3c92d289e8d92b1f819a8838b92b9bb5ea93bc5ad5ad44709261e2c41a341b8b1e0f4cd4c69f7c1350f35012712d0dcd3f05eb18a0e2563c31fc3a4fb2",
         "dest-filename": "wasm-util-QHR5YnlzL3dhc20tdXRpbEBucG06MC4xMC4x-b255094f29.tgz",
