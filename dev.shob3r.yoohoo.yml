@@ -2,8 +2,8 @@
 id: dev.shob3r.yoohoo
 command: yoohoo
 runtime: org.gnome.Platform
-runtime-version: "48"
-sdk: org.gnome.Sdk//48
+runtime-version: "49"
+sdk: org.gnome.Sdk//49
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node24
   - org.freedesktop.Sdk.Extension.rust-stable
