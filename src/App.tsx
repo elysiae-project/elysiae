@@ -9,7 +9,7 @@ import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
 import { createWineEnv, wineEnvAvailable } from "./util/WineTools.ts";
-import { downloadGame } from "./util/GameManager.ts";
+import { downloadGame, isGameInstalled, launchGame } from "./util/GameManager.ts";
 import { useEffect, useState } from "preact/hooks";
 import { error, info } from "@tauri-apps/plugin-log";
 import { join, resourceDir } from "@tauri-apps/api/path";
@@ -35,13 +35,20 @@ function App() {
 	const { game } = useGame();
 	const { graphics, gamePackages } = useApi();
 
-	let [wineEnvExists, setWineEnvExists] = useState(false);
+	let [wineEnvExists, setWineEnvExists] = useState<boolean>(false);
+	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
 	useEffect(() => {
 		wineEnvAvailable().then((res) => {
 			setWineEnvExists(res);
 		});
 	}, []);
+
+	useEffect(() => {
+		isGameInstalled(game).then((res) => {
+			setGameInstalled(res);
+		})
+	}, [game]);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
@@ -65,18 +72,12 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full">
 							{/* Page content */}
-							<DownloadProgress/>
+							<DownloadProgress />
 							<Button
 								intent="primary"
 								onClick={async () => {
-									if (wineEnvExists) {
-										const downloadPath = await join((await resourceDir()), getActiveGameCode(game));
-										const assets = gamePackages[game].main.major.game_pkgs;
-										assets.join(gamePackages[game].main.major.audio_pkgs[1].url); // TODO: language selection. rn, english only
-										info(assets.toString());
-										await downloadGame(assets, downloadPath);
-									} else {
-										// Download wine instead
+									if(!wineEnvExists) {
+										// Download wine
 										await createWineEnv()
 											.then(() => {
 												setWineEnvExists(true);
@@ -85,9 +86,28 @@ function App() {
 												error(`Error in creating wine environment: ${e}`);
 											});
 									}
+									else if(wineEnvExists && !gameInstalled) {
+										// Download Game
+										const downloadPath = await join(
+											await resourceDir(),
+											getActiveGameCode(game),
+										);
+										const assets = gamePackages[game].main.major.game_pkgs;
+										assets.join(
+											gamePackages[game].main.major.audio_pkgs[1].url,
+										); 
+										// TODO: language selection. rn, english only
+										info(assets.toString());
+										await downloadGame(assets, downloadPath);
+									}
+									else {
+										// Launch Game
+										await launchGame(game);
+									}
+
 								}}
 							>
-								{wineEnvExists ? "Download Game" : "Create Environment"}
+								{gameInstalled ? "Launch Game" : wineEnvExists ? "Download Game" : "Create Environment"}
 							</Button>
 						</div>
 

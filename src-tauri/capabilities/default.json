@@ -26,7 +26,7 @@
 					"url": "https://*.githubusercontent.com"
 				},
 				{
-					"url": "https://*"
+					"url": "https://*.codeberg.org"
 				}
 			]
 		},
@@ -60,7 +60,6 @@
 			"allow": [{ "path": "$APPDIR/**" }]
 		},
 		"store:default",
-		"upload:default",
 		"notification:default",
 		"shell:default",
 		"log:default",

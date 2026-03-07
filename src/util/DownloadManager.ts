@@ -14,26 +14,23 @@ export const downloadEvent = new CustomEventManager();
  * @param links Link(s) to download
  * @param destination destination to save links to
  */
-export const downloadFile = async (
-	links: string | string[],
+export const multiDownload = async (
+	links: string[],
 	destination: string,
 ): Promise<void> => {
-	if (typeof links == "string") {
-		// If typescript were to be able to do single-length strings implicitly... sigh....
-		return await downloadFile([links], destination);
-	}
+	info(`Download added: ${links}`);
 	const activeDownloads: Promise<any>[] = [];
-	const uuids = (links as string[]).map(() => crypto.randomUUID());
+	const uuids = links.map(() => crypto.randomUUID());
 
 	try {
-		for (let i = 0; i < (links as string[]).length; i++) {
+		for (let i = 0; i < links.length; i++) {
 			uuids.push(crypto.randomUUID());
-			const fileName = (links as string[])[i].split("/").pop() as string;
+			const fileName = links[i].split("/").pop() as string;
 			const downloadLocation = await join(destination, fileName);
 
 			if (!(await exists(downloadLocation))) {
 				activeDownloads.push(
-					download((links as string[])[i], downloadLocation, uuids[i]),
+					singleDownload(links[i], downloadLocation, uuids[i], false),
 				);
 			} else {
 				info(`Download Skipped as file already exists`);
@@ -50,10 +47,11 @@ export const downloadFile = async (
 	}
 };
 
-const download = async (
+export const singleDownload = async (
 	url: string,
 	destination: string,
-	uuid: string,
+	uuid: string = crypto.randomUUID(),
+	removeOnComplete: boolean = true,
 ): Promise<void> => {
 	const unlisten = await listen<{ progress: number; total: number }>(
 		`download://progress/${uuid}`,
@@ -64,7 +62,9 @@ const download = async (
 				downloaded: payload.progress / 1024 ** 2,
 				total: payload.total / 1024 ** 2,
 			};
-			info(`Downloaded ${status.downloaded.toFixed(2)} of ${status.total.toFixed(2)}Mb`,);
+			info(
+				`Downloaded ${status.downloaded.toFixed(2)} of ${status.total.toFixed(2)}Mb`,
+			);
 			downloads.set(uuid, status);
 			downloadEvent.dispatchEvent("downloadChanged", { uuid, status });
 		},
@@ -81,5 +81,8 @@ const download = async (
 		});
 	} finally {
 		unlisten();
+		if(removeOnComplete) {
+			downloads.delete(uuid);
+		}
 	}
 };

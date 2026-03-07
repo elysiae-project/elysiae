@@ -1,10 +1,12 @@
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { isURLValid } from "./WebUtils";
-import { downloadFile } from "./DownloadManager";
+import { multiDownload, singleDownload } from "./DownloadManager";
 import { dirname, join, resourceDir } from "@tauri-apps/api/path";
 import { extractFile } from "./FileUtils";
 import { exists, remove } from "@tauri-apps/plugin-fs";
-import { GamePkg } from "../types";
+import { GamePkg, Variants } from "../types";
+import { getActiveGameCode, getGameExeName } from "./AppFunctions";
+import { wineCommand } from "./WineTools";
 
 /**
  * Starts a fresh download for the current active game
@@ -24,10 +26,10 @@ export const downloadGame = async (
 	info(downloadLinks.toString());
 
 	let destFiles: string[] = [];
-	await downloadFile(downloadLinks, (await resourceDir()));
-	for(let i = 0; i < downloadLinks.length; i++) {
+	await multiDownload(downloadLinks, await resourceDir());
+	for (let i = 0; i < downloadLinks.length; i++) {
 		const fileName = downloadAsset[i].url.split("/").pop() as string;
-		const temporaryLocation = await join((await resourceDir()), fileName);
+		const temporaryLocation = await join(await resourceDir(), fileName);
 		destFiles.push(temporaryLocation);
 	}
 
@@ -40,12 +42,20 @@ export const downloadGame = async (
 	}
 };
 
-export const launchGame = async () => {};
+export const launchGame = async (gameCode: Variants) => {
+	const appDir = await resourceDir();
+	const jadeite = await join(appDir, "jadeite", "jadeite.exe");
+	const currentGame = await join(appDir, getActiveGameCode(gameCode), getGameExeName(gameCode));
+
+	await wineCommand(`${jadeite} ${currentGame}`);
+};
 
 export const cancelDownload = async () => {};
 
-export const isGameInstalled = async (): Promise<boolean> => {
-	return new Promise((resolve, reject) => {});
+export const isGameInstalled = async (gameCode: Variants): Promise<boolean> => {
+	const appDir = await resourceDir();
+	const currentGame = await join(appDir, getActiveGameCode(gameCode), getGameExeName(gameCode));
+	return await exists(currentGame);
 };
 
 /**
@@ -68,7 +78,7 @@ export const downloadUpdate = async (
 		const file = updateLink.split("/").pop() as string;
 		const fileLocation = await join(appDir, file);
 		if (!(await exists(fileLocation))) {
-			await downloadFile(updateLink, fileLocation);
+			await singleDownload(updateLink, fileLocation);
 		}
 		if (!isPreinstall) {
 			await applyUpdate(fileLocation);

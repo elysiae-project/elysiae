@@ -34,6 +34,19 @@ export const getActiveGameCode = (currentGame: Variants): "bh" | "ys" | "sr" | "
 	}
 };
 
+export const getGameExeName = (currentGame: Variants): string => {
+	switch(currentGame) {
+		case Variants.BH:
+			return "";
+		case Variants.YS:
+			return "";
+		case Variants.SR:
+			return "StarRail.exe"
+		case Variants.NAP:
+			return "ZZZ.exe";
+	}
+}
+
 /**
  * @returns ``boolean`` value based on weather or not the app is running in a development environment
  */

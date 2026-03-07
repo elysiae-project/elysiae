@@ -1,4 +1,4 @@
-# Yoohoo!
+# Yoohoo
 
 <p align="center">
 <img src="https://raw.githubusercontent.com/Shob3r/yoohoo/refs/heads/main/app-icon.png" alt="Yoohoo App Icon" width="256">
@@ -11,16 +11,18 @@
 
 Yoohoo aims to replace the separated game launchers from [an-anime-team](https://github.com/an-anime-team). From my experience, these launchers can be somewhat unreliable, are missing a few features, and are barely maintained. On top of that, each game requires its own launcher. While work has started on a [Unified Launcher](https://github.com/an-anime-team/anime-games-launcher) several years ago, the project has largely stagnated, leading me to believe that the project will likely never be finished at all. These factors led me to creating Yoohoo, which attempts to do the following:
 
-1. Function properly without any user intervention
+1. Function without any user intervention
 2. Implement any features available on the Windows counterpart of the launcher
 3. Be actively maintained
 
 ## Software Requirements
 
-To use Yoohoo properly, you will need the following:
+To use Yoohoo, you will need the following:
 
 - A 64-Bit CPU
-- A Desktop Environment running on the Wayland compositor (If you don't know what this is, you likely already meet this requirement)
+- Linux Kernel >=6.1 with support for futex2 (Most distros will have this)
+- systemd (Most Linux installs. If you don't know what this means, you have this)
+- A Desktop Environment running on the Wayland compositor (You most likely have this)
 - About 300Mb of storage
 - Enough additional storage to install any of the games you'd like to play
 

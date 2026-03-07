@@ -12,7 +12,6 @@ pub fn run() {
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
         )
-        .plugin(tauri_plugin_upload::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
