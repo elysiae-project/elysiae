@@ -3,7 +3,7 @@ import { Variants } from "../types";
 import { cva } from "class-variance-authority";
 
 const buttonStyles = cva(
-	"transition-all px-5 py-2 duration-175 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 min-w-60 text-[1.25em]",
+	"transition-all px-5 py-2 duration-175 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 text-[1.25em]",
 	{
 		variants: {
 			game: {
@@ -74,17 +74,19 @@ const buttonStyles = cva(
 export default function Button({
 	onClick,
 	children,
+	overrideMinWidth = false,
 	intent,
 }: {
 	onClick: () => void;
 	children: any;
+	overrideMinWidth?: boolean;
 	intent: "primary" | "secondary" | null | undefined;
 }) {
 	const { game, setGame } = useGame();
 	return (
 		<div
 			onClick={onClick}
-			class={buttonStyles({ game: game, variant: intent })}
+			class={`${buttonStyles({ game: game, variant: intent })} ${!overrideMinWidth ? "min-w-60" : ""}`}
 		>
 			{children}
 		</div>

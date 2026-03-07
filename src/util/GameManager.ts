@@ -63,16 +63,17 @@ export const isGameInstalled = async (gameCode: Variants): Promise<boolean> => {
  * @returns ``boolean`` condition based on if the current selected game in the frontend has a preinstallation publicly available
  */
 export const isPreinstallAvailable = async (): Promise<boolean> => {
-	return new Promise((resolve, reject) => {});
+	return true;
 };
 
 /**
  * @description Downloads preinstall/update package
  */
 export const downloadUpdate = async (
-	updateLink: string,
+	gameCode: Variants,
 	isPreinstall: boolean = false,
 ) => {
+	const updateLink = "";
 	const appDir = await resourceDir();
 	if (isURLValid(updateLink)) {
 		const file = updateLink.split("/").pop() as string;
