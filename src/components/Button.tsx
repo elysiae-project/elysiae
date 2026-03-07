@@ -3,7 +3,7 @@ import { Variants } from "../types";
 import { cva } from "class-variance-authority";
 
 const buttonStyles = cva(
-	"min-w-10 transition-all px-5 py-2 duration-175 flex flex-row gap-3 justify-center items-center transiton-all",
+	"transition-all px-5 py-2 duration-175 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 text-[1.25em]",
 	{
 		variants: {
 			game: {
@@ -12,7 +12,7 @@ const buttonStyles = cva(
 				[Variants.SR]:
 					"rounded-full py-3 outline-2 hover:outline-sr-btn-outline active:outline-sr-btn-outline drop-shadow-sm",
 				[Variants.NAP]:
-					"transition-colors duration-200 min-h-10 flex flex-row justify-center items-center border-3 rounded-full border-nap-btn-border active:border-transparent active:text-black active:animate-nap-pulsate",
+					"transition-colors duration-200 flex flex-row justify-center items-center border-3 rounded-full border-nap-btn-border active:border-transparent active:text-black active:animate-nap-pulsate",
 			},
 			variant: {
 				// These are needed so the primary/secondary variants below register properly
@@ -74,17 +74,19 @@ const buttonStyles = cva(
 export default function Button({
 	onClick,
 	children,
+	overrideMinWidth = false,
 	intent,
 }: {
 	onClick: () => void;
 	children: any;
+	overrideMinWidth?: boolean;
 	intent: "primary" | "secondary" | null | undefined;
 }) {
 	const { game, setGame } = useGame();
 	return (
 		<div
 			onClick={onClick}
-			class={buttonStyles({ game: game, variant: intent })}
+			class={`${buttonStyles({ game: game, variant: intent })} ${!overrideMinWidth ? "min-w-60" : ""}`}
 		>
 			{children}
 		</div>

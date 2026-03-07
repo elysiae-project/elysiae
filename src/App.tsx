@@ -8,7 +8,20 @@ import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
-import { createWineEnv } from "./util/WineTools.ts";
+import { createWineEnv, wineEnvAvailable } from "./util/WineTools.ts";
+import {
+	downloadGame,
+	downloadUpdate,
+	isGameInstalled,
+	isPreinstallAvailable,
+	launchGame,
+} from "./util/GameManager.ts";
+import { useEffect, useState } from "preact/hooks";
+import { error, info } from "@tauri-apps/plugin-log";
+import { join, resourceDir } from "@tauri-apps/api/path";
+import { getActiveGameCode } from "./util/AppFunctions.ts";
+import DownloadProgress from "./components/DownloadProgress.tsx";
+import { Save, X } from "lucide-preact";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -23,18 +36,55 @@ const theme = cva("h-full w-full overflow-hidden", {
 	},
 });
 
-function Background() {}
+function PreinstallButton() {
+	// A lot of placeholder stuff here. Just want to get the component to render so I can implement this stuff in the future
+	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
+	const { game } = useGame();
+
+	useEffect(() => {
+		isPreinstallAvailable().then((res) => {
+			setPreInstAvailable(res);
+		});
+	}, [game]);
+
+	if (!preInstAvailable) return null;
+
+	return (
+		<Button
+			intent="primary"
+			overrideMinWidth={true}
+			onClick={async () => {
+				downloadUpdate(game);
+			}}
+		>
+			<Save />
+		</Button>
+	);
+}
 
 function App() {
 	const { game } = useGame();
-	const { graphics } = useApi();
+	const { graphics, gamePackages } = useApi();
+
+	let [wineEnvExists, setWineEnvExists] = useState<boolean>(false);
+	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
+
+	useEffect(() => {
+		wineEnvAvailable().then((res) => {
+			setWineEnvExists(res);
+		});
+
+		isGameInstalled(game).then((res) => {
+			setGameInstalled(res);
+		});
+	}, [game]);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
 			<Titlebar />
 
 			<div class={theme({ intent: game })}>
-				{graphics ? (
+				{graphics && gamePackages ? (
 					<div class="relative h-full w-full">
 						<video
 							class="absolute inset-0 h-full w-full object-cover"
@@ -49,15 +99,46 @@ function App() {
 							alt=""
 						/>
 
-						<div class="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
+						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-5">
 							{/* Page content */}
+							<DownloadProgress />
+							<PreinstallButton/>
 							<Button
 								intent="primary"
 								onClick={async () => {
-									await createWineEnv();
+									if (!wineEnvExists) {
+										// Download wine
+										await createWineEnv()
+											.then(() => {
+												setWineEnvExists(true);
+											})
+											.catch((e) => {
+												error(`Error in creating wine environment: ${e}`);
+											});
+									} else if (wineEnvExists && !gameInstalled) {
+										// Download Game
+										const downloadPath = await join(
+											await resourceDir(),
+											getActiveGameCode(game),
+										);
+										const assets = gamePackages[game].main.major.game_pkgs;
+										assets.join(
+											gamePackages[game].main.major.audio_pkgs[1].url,
+										);
+										// TODO: language selection. rn, english only
+										info(assets.toString());
+										await downloadGame(assets, downloadPath);
+									} else {
+										// Launch Game
+										await launchGame(game);
+									}
 								}}
 							>
-								Wine Download Test
+								{gameInstalled
+									? "Launch Game"
+									: wineEnvExists
+										? "Download Game"
+										: "Create Environment"}
 							</Button>
 						</div>
 

@@ -1,68 +1,9 @@
-use std::{fs::File, path::Path};
-
-use bzip2::read::BzDecoder as Bz2;
-use flate2::read::GzDecoder as Gz;
+use std::path::Path;
 use walkdir::WalkDir;
-use xz::read::XzDecoder as Xz;
-use zstd::Decoder as Zstd;
 
 use sha256::try_digest;
 use tauri::command;
 
-use tar::Archive as Tar;
-use zip::ZipArchive as Zip;
-
-#[command]
-pub async fn extract_file(archive: String, destination: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let file = std::fs::File::open(&archive).map_err(|e| e.to_string())?;
-
-        if archive.ends_with(".tar.gz") {
-            let decoder = Gz::new(file);
-            let mut tar_archive = Tar::new(decoder);
-            tar_archive
-                .unpack(&destination)
-                .map_err(|e| e.to_string())?;
-        } else if archive.ends_with(".tar.xz") {
-            let decoder = Xz::new(file);
-            let mut tar_archive = Tar::new(decoder);
-            tar_archive
-                .unpack(&destination)
-                .map_err(|e| e.to_string())?;
-        } else if archive.ends_with(".tar.bz2") {
-            let decoder = Bz2::new(file);
-            let mut tar_archive = Tar::new(decoder);
-            tar_archive
-                .unpack(&destination)
-                .map_err(|e| e.to_string())?;
-        } else if archive.ends_with(".tar.zst") {
-            let decoder = Zstd::new(file).unwrap();
-            let mut tar_archive = Tar::new(decoder);
-            tar_archive
-                .unpack(&destination)
-                .map_err(|e| e.to_string())?;
-        } else if archive.ends_with(".tar") {
-            let mut tar_archive: Tar<File> = Tar::new(file);
-            tar_archive
-                .unpack(&destination)
-                .map_err(|e| e.to_string())?;
-        } else if archive.ends_with(".zip") {
-            let mut zip_archive = Zip::new(file).map_err(|e| e.to_string())?;
-            zip_archive
-                .extract(&destination)
-                .map_err(|e| e.to_string())?;
-        } else if archive.ends_with(".7z")
-            || archive.ends_with(".7z.001")
-            || archive.ends_with(".zip.001")
-        {
-            sevenz_rust::decompress(file, &destination).map_err(|e| e.to_string())?;
-        }
-
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
 
 #[command]
 pub fn get_sha256_sum(file: String) -> String {

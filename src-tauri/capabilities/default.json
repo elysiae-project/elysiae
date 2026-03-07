@@ -26,7 +26,7 @@
 					"url": "https://*.githubusercontent.com"
 				},
 				{
-					"url": "https://*"
+					"url": "https://*.codeberg.org"
 				}
 			]
 		},
@@ -47,6 +47,11 @@
 					"name": "rm",
 					"cmd": "rm",
 					"args": true
+				},
+				{
+					"name": "binaries/7za",
+					"sidecar": true,
+					"args": true
 				}
 			]
 		},
@@ -55,7 +60,6 @@
 			"allow": [{ "path": "$APPDIR/**" }]
 		},
 		"store:default",
-		"upload:default",
 		"notification:default",
 		"shell:default",
 		"log:default",

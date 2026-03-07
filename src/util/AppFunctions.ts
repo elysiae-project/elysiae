@@ -1,23 +1,28 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
-import { fetch } from "@tauri-apps/plugin-http";
-import { error, info } from "@tauri-apps/plugin-log";
-import { download } from "@tauri-apps/plugin-upload";
 import { invoke } from "@tauri-apps/api/core";
 
+/**
+ * @description Closes the app
+ */
 export const closeApp = (): void => {
 	getCurrentWindow().close();
 };
 
+/**
+ * @description Minimizes the app window
+ */
 export const minimizeApp = (): void => {
 	getCurrentWindow().minimize();
 };
 
-export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
-	const { game, setGame } = useGame();
+/**
+ * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
+ */
+export const getActiveGameCode = (currentGame: Variants): "bh" | "ys" | "sr" | "nap" => {
 
-	switch (game) {
+	switch (currentGame) {
 		case Variants.BH:
 			return "bh";
 		case Variants.YS:
@@ -29,6 +34,22 @@ export const getActiveGameCode = (): "bh" | "ys" | "sr" | "nap" => {
 	}
 };
 
+export const getGameExeName = (currentGame: Variants): string => {
+	switch(currentGame) {
+		case Variants.BH:
+			return "";
+		case Variants.YS:
+			return "";
+		case Variants.SR:
+			return "StarRail.exe"
+		case Variants.NAP:
+			return "ZZZ.exe";
+	}
+}
+
+/**
+ * @returns ``boolean`` value based on weather or not the app is running in a development environment
+ */
 export const inDevEnv = async (): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		invoke("in_dev_env")

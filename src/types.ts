@@ -37,6 +37,7 @@ export type LauncherGraphicsRawGameData = {
 		type: string;
 	}[];
 };
+
 export type LauncherGraphicsRawData = {
 	retcode: number;
 	message: string;
@@ -115,6 +116,55 @@ export type LauncherBrandingRawGameData = {
 		display_status: string;
 	}[];
 };
+
+export type LauncherPkgRawData = {
+	retcode: number;
+	message: string;
+	data: {
+		game_packages: LauncherGamePkgRawData[];
+	};
+};
+
+export type LauncherGamePkgRawData = {
+	game: {
+		id: string;
+		biz: string;
+	};
+	main: {
+		major: {
+			version: string;
+			game_pkgs: GamePkg[];
+			audio_pkgs: AudioPkg[];
+		};
+	};
+	patches: {
+		version: string;
+		game_pkgs: GamePkg[];
+		audio_pkgs: AudioPkg[];
+		res_list_url: string;
+	}[];
+	required_client_version: string;
+	pre_download: {
+		// TODO: Refine these properties when a preinstal is available (look at the values when they are filled in)
+		major: null | string;
+		patches: [];
+		required_client_version: string;
+	};
+};
+export type GamePkg = {
+	url: string;
+	md5: string;
+	size: string;
+	decompressed_size: string;
+};
+export type AudioPkg = {
+	language: string;
+	url: string;
+	md5: string;
+	size: string;
+	decompressed_size: string;
+};
+
 export type LauncherBrandingRawData = {
 	retcode: number;
 	message: string;
@@ -127,4 +177,34 @@ export type LauncherBrandingData = {
 		icon: string;
 		iconLarge: string;
 	};
+};
+
+export type LauncherPkgData = {
+	[key in Variants]: {
+		main: {
+			major: {
+				audio_pkgs: GamePkg[];
+				version: string;
+				game_pkgs: GamePkg[];
+			};
+		};
+		patches: {
+			version: string;
+			game_pkgs: GamePkg[];
+			audio_pkgs: AudioPkg[];
+			res_list_url: string;
+		}[];
+		required_client_version: string;
+		pre_download: {
+			// TODO: Refine these properties when a preinstal is available (look at the values that are filled in)
+			major: null | string;
+			patches: [];
+			required_client_version: string;
+		};
+	};
+};
+
+export type Download = {
+	downloaded: number;
+	total: number;
 };
