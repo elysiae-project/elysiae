@@ -24,7 +24,6 @@ export const multiDownload = async (
 
 	try {
 		for (let i = 0; i < links.length; i++) {
-			uuids.push(crypto.randomUUID());
 			const fileName = links[i].split("/").pop() as string;
 			const downloadLocation = await join(destination, fileName);
 

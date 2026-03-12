@@ -47,7 +47,7 @@ function PreinstallButton() {
 		});
 	}, [game]);
 
-	if (!preInstAvailable) return null;
+	if (!preInstAvailable) return <></>;
 
 	return (
 		<Button

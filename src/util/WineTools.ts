@@ -107,6 +107,11 @@ export const updateWine = async (): Promise<void> => {
 		},
 	}).execute();
 
+	// Kill wineserver to prevent it running after the app closes (I hope this is the bug that sometimes decides to appear)
+	await Command.create("sh", ["-c", `${finalLocation}/bin/wineserver -k`], {
+		env: { WINEPREFIX: finalLocation },
+	}).execute();
+
 	await remove(downloadLocation);
 	await remove(extractLocation, {
 		recursive: true,
