@@ -196,7 +196,7 @@ export type LauncherPkgData = {
 		}[];
 		required_client_version: string;
 		pre_download: {
-			// TODO: Refine these properties when a preinstal is available (look at the values that are filled in)
+			// TODO: Refine these properties when a preinstall is available (look at the values that are filled in)
 			major: null | string;
 			patches: [];
 			required_client_version: string;

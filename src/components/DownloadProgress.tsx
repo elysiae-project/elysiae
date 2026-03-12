@@ -26,6 +26,9 @@ export default function DownloadProgress() {
 					rawDownloaded += download.downloaded;
 					rawTotal += download.total;
 				});
+				if(rawDownloaded === 0 && rawTotal === 0) {
+					setIsDownloading(false);
+				} 
 
 				setDownloaded(rawDownloaded);
 				setTotal(rawTotal);
@@ -41,7 +44,7 @@ export default function DownloadProgress() {
 
 	if (!isDownloading) return <></>;
 	return (
-		<div class="flex flex-col gap-y-1.5 bg-black mr-5 p-2 rounded-lg min-w-80">
+		<div class="flex flex-col gap-y-1.5 bg-black mr-5 px-2 py-3 rounded-lg min-w-110 text-center">
 			<p class="text-lg text-white">
 				Downloaded {(downloaded / 1024).toFixed(2)}Gb of {(total / 1024).toFixed(2)}Gb (
 				{(progress).toFixed(2)}%)

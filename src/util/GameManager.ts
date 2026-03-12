@@ -32,7 +32,7 @@ export const downloadGame = async (
 		const temporaryLocation = await join(await resourceDir(), fileName);
 		destFiles.push(temporaryLocation);
 	}
-
+	
 	for (let i = 0; i < destFiles.length; i++) {
 		const file = destFiles[i];
 		info(file);
@@ -45,16 +45,29 @@ export const downloadGame = async (
 export const launchGame = async (gameCode: Variants) => {
 	const appDir = await resourceDir();
 	const jadeite = await join(appDir, "jadeite", "jadeite.exe");
-	const currentGame = await join(appDir, getActiveGameCode(gameCode), getGameExeName(gameCode));
+	const currentGame = await join(
+		appDir,
+		getActiveGameCode(gameCode),
+		getGameExeName(gameCode),
+	);
 
-	await wineCommand(`${jadeite} ${currentGame}`);
+	if (gameCode === Variants.SR || gameCode === Variants.BH) {
+		await wineCommand(`${jadeite} ${currentGame}`);
+	}
+	else {
+		await wineCommand(`${currentGame}`);
+	}
 };
 
 export const cancelDownload = async () => {};
 
 export const isGameInstalled = async (gameCode: Variants): Promise<boolean> => {
 	const appDir = await resourceDir();
-	const currentGame = await join(appDir, getActiveGameCode(gameCode), getGameExeName(gameCode));
+	const currentGame = await join(
+		appDir,
+		getActiveGameCode(gameCode),
+		getGameExeName(gameCode),
+	);
 	return await exists(currentGame);
 };
 

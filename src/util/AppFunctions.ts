@@ -20,8 +20,9 @@ export const minimizeApp = (): void => {
 /**
  * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
  */
-export const getActiveGameCode = (currentGame: Variants): "bh" | "ys" | "sr" | "nap" => {
-
+export const getActiveGameCode = (
+	currentGame: Variants,
+): "bh" | "ys" | "sr" | "nap" => {
 	switch (currentGame) {
 		case Variants.BH:
 			return "bh";
@@ -35,17 +36,17 @@ export const getActiveGameCode = (currentGame: Variants): "bh" | "ys" | "sr" | "
 };
 
 export const getGameExeName = (currentGame: Variants): string => {
-	switch(currentGame) {
+	switch (currentGame) {
 		case Variants.BH:
-			return "";
+			return "BH3.exe";
 		case Variants.YS:
-			return "";
+			return "GenshinImpact.exe";
 		case Variants.SR:
-			return "StarRail.exe"
+			return "StarRail.exe";
 		case Variants.NAP:
-			return "ZZZ.exe";
+			return "ZenlessZoneZero.exe";
 	}
-}
+};
 
 /**
  * @returns ``boolean`` value based on weather or not the app is running in a development environment

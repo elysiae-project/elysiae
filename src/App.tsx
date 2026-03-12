@@ -62,6 +62,37 @@ function PreinstallButton() {
 	);
 }
 
+function Background() {
+	const { game } = useGame();
+	const { graphics } = useApi();
+	if (!graphics) return null;
+
+	const url =
+		graphics[game].backgroundVideo === ""
+			? graphics[game].backgroundImage
+			: graphics[game].backgroundVideo;
+
+	return (
+		<>
+			<img
+				class="absolute inset-0 h-full w-full object-cover z-10"
+				src={graphics[game].backgroundVideoOverlay}
+			/>
+			{url.endsWith(".webp") ? (
+				<img class="absolute h-full w-full object-cover" src={url} alt=""/>
+			) : (
+				<video
+					class="absolute intset-0 h-full w-full object-cover"
+					src={url}
+					autoplay
+					loop
+					muted
+				/>
+			)}
+		</>
+	);
+}
+
 function App() {
 	const { game } = useGame();
 	const { graphics, gamePackages } = useApi();
@@ -86,23 +117,12 @@ function App() {
 			<div class={theme({ intent: game })}>
 				{graphics && gamePackages ? (
 					<div class="relative h-full w-full">
-						<video
-							class="absolute inset-0 h-full w-full object-cover"
-							src={graphics[game].backgroundVideo}
-							autoplay
-							loop
-							muted
-						></video>
-						<img
-							class="absolute inset-0 h-full w-full object-cover"
-							src={graphics[game].backgroundVideoOverlay}
-							alt=""
-						/>
+						<Background />
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-5">
 							{/* Page content */}
 							<DownloadProgress />
-							<PreinstallButton/>
+							<PreinstallButton />
 							<Button
 								intent="primary"
 								onClick={async () => {
@@ -122,9 +142,6 @@ function App() {
 											getActiveGameCode(game),
 										);
 										const assets = gamePackages[game].main.major.game_pkgs;
-										assets.join(
-											gamePackages[game].main.major.audio_pkgs[1].url,
-										);
 										// TODO: language selection. rn, english only
 										info(assets.toString());
 										await downloadGame(assets, downloadPath);
