@@ -34,20 +34,14 @@ jobs:
           python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
           flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
-
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v8.1.0
-        with:
-          commit-message: "chore: Update Flatpak Builder package sources"
-          title: "Automatic Flatpak Source Update"
-          body: |
-            This PR has been automatically generated as changes have been detected in at least one of:
-              - package.json
-              - yarn.lock
-              - src-tauri/Cargo.toml
-              - src-tauri/Cargo.lock
-
-            Merging this branch is **strongly recommended** to ensure that flatpak builder builds do not fail due to having incorrectly downloaded packages
-          branch: "bot/update-flatpak-sources-${{ github.run_id }}"
-          delete-branch: true
+  
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -m "Update Flatpak download sources"
+          git push origin HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           token: ${{ secrets.GITHUB_TOKEN }}
