@@ -45,6 +45,7 @@ modules:
         YARN_GLOBAL_FOLDER: /run/build/yoohoo/flatpak-node/yarn-berry
     build-commands:
       - set -e
+      - echo "127.0.0.1 localhost" >> /etc/hosts
       - ./flatpak-node/autogen.sh
       - yarn install
       - yarn tauri build

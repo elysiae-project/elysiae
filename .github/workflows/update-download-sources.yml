@@ -6,8 +6,8 @@ on:
       - "yarn.lock"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
-    branches: main
-  # In case it would be more efficient in one merge, or if regenerating the package caches seems necessary
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -15,9 +15,15 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    runs-on: "ubuntu-24.04"
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
 
       - name: Install Dependencies
         run: |
@@ -34,7 +40,8 @@ jobs:
           python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
           flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
-  
+          node scripts/gen-corepack.ts
+
       - name: Commit and push changes
         run: |
           git config --global user.name 'github-actions[bot]'
