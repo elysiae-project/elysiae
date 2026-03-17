@@ -28,6 +28,7 @@
 		"@preact/preset-vite": "^2.10.4",
 		"@tailwindcss/vite": "^4.2.1",
 		"@tauri-apps/cli": "^2.10.1",
+		"@types/node": "^25.5.0",
 		"prettier": "3.8.1",
 		"tailwindcss": "^4.2.1",
 		"typescript": "^5.9.3",
