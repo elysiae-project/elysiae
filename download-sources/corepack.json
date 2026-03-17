@@ -1,16 +1,16 @@
 [
 	{
 		"type": "file",
-		"url": "https://repo.yarnpkg.com/4.12.0/packages/yarnpkg-cli/bin/yarn.js",
+		"url": "https://repo.yarnpkg.com/4.13.0/packages/yarnpkg-cli/bin/yarn.js",
 		"sha512": "f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8",
 		"dest-filename": "yarn.js",
-		"dest": "flatpak-node/corepack-home/v1/yarn/4.12.0"
+		"dest": "flatpak-node/corepack-home/v1/yarn/4.13.0"
 	},
 	{
 		"type": "inline",
-		"contents": "{\"locator\":{\"name\":\"yarn\",\"reference\":\"4.12.0\"},\"bin\":[\"yarn\",\"yarnpkg\"],\"hash\":\"sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8\"}",
+		"contents": "{\"locator\":{\"name\":\"yarn\",\"reference\":\"4.13.0\"},\"bin\":[\"yarn\",\"yarnpkg\"],\"hash\":\"sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8\"}",
 		"dest-filename": ".corepack",
-		"dest": "flatpak-node/corepack-home/v1/yarn/4.12.0"
+		"dest": "flatpak-node/corepack-home/v1/yarn/4.13.0"
 	},
 	{
 		"type": "inline",
@@ -36,7 +36,7 @@
 			"yarn config set enableOfflineMode true",
 			"yarn config set globalFolder -- \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/yarn-berry\"",
 			"yarn plugin import \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/flatpak-yarn.js\"",
-			"yarn convertToZip \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/corepack-home/v1/yarn/4.12.0/yarn.js\""
+			"yarn convertToZip \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/corepack-home/v1/yarn/4.13.0/yarn.js\""
 		],
 		"dest": "flatpak-node"
 	}
