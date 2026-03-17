@@ -22,9 +22,8 @@ modules:
   - name: yoohoo
     buildsystem: simple
     sources:
-      - type: git
-        url: https://github.com/shob3r/yoohoo.git
-        branch: main
+      - type: dir
+        path: .
       - download-sources/cargo.json
       - download-sources/corepack.json
       - download-sources/yarn.json
@@ -45,6 +44,7 @@ modules:
         YARN_GLOBAL_FOLDER: /run/build/yoohoo/flatpak-node/yarn-berry
     build-commands:
       - set -e
+      - echo "127.0.0.1 localhost" >> /etc/hosts
       - ./flatpak-node/autogen.sh
       - yarn install
       - yarn tauri build

@@ -15,10 +15,10 @@ Make sure you have all of the following build dependencies installed before atte
 After installing the system dependencies, install the NodeJS dependencies in the project:
 
 > [!IMPORTANT]  
-> Yoohoo uses the yarn package manager for NodeJS package management. Please ensure that corepack is installed and enabled by running ``npm i -g corepack@latest && corepack enable``. Doing so will download the appropriate version of ``yarn`` once you run the installation command below
+> Yoohoo uses the yarn package manager for NodeJS package management. Please ensure that corepack is installed and enabled by running `npm i -g corepack@latest && corepack enable`. Doing so will download the appropriate version of `yarn` once you run the installation command below
 
 ```sh
-yarn
+yarn install
 ```
 
 ### Flatpak Build Support
@@ -31,8 +31,8 @@ Generating flatpak installers will require a bit of extra setup. You'll want to 
 You also want to install the flatpak Platforms/SDKs/Extensions that Yoohoo Uses:
 
 ```sh
-flatpak install org.gnome.{Platform,Sdk}//48 -y
-flatpak install org.freedesktop.Sdk.Extension.{node24,rust-stable}//24.08 -y
+flatpak install org.gnome.{Platform,Sdk}//49 -y
+flatpak install org.freedesktop.Sdk.Extension.{node24,rust-stable}//25.08 -y
 ```
 
 ## Build Instructions
@@ -52,6 +52,6 @@ yarn tauri build
 ### Building Flatpak
 
 ```sh
-flatpak-builder --repo=repo --force-clean build dev.shob3r.yoohoo.yml
+flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build dev.shob3r.yoohoo.yml
 flatpak build-bundle repo dev.shob3r.yoohoo.flatpak dev.shob3r.yoohoo
 ```
