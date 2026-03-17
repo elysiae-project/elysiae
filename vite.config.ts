@@ -1,17 +1,17 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
-import react from '@vitejs/plugin-react'
+import preact from "@preact/preset-vite";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
-	plugins: [react(), tailwindcss()],
+	plugins: [preact(), tailwindcss()],
 	resolve: {
 		alias: {
-			react: 'preact/compat',
-			'react-dom': 'preact/compat',
-			'react/jsx-runtime': 'preact/jsx-runtime'
-		}
+			react: "preact/compat",
+			"react-dom": "preact/compat",
+			"react/jsx-runtime": "preact/jsx-runtime",
+		},
 	},
 	clearScreen: false,
 	server: {
