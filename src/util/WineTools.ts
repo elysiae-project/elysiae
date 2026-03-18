@@ -14,6 +14,7 @@ import { extractFile, getAllDirs, moveDirItems } from "./FileUtils";
 import { Command } from "@tauri-apps/plugin-shell";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
+import { executeShellCommand } from "./AppFunctions";
 
 type WineAsset = "wine" | "vkd3d" | "jadeite";
 /**
@@ -59,12 +60,14 @@ export const updateJadeite = async (): Promise<void> => {
 	});
 
 	// The second half of this requires admin elevation to setup and must be performed
-	const script = await join(extractLocation, "block_analytics.sh");
+	const script = await join(
+		await appDataDir(),
+		extractLocation,
+		"block_analytics.sh",
+	);
 	const result = await Command.create("sh", [script]).execute();
 
 	if (result.code !== 0) {
-		await remove(extractLocation);
-		await remove(downloadLocation);
 		throw new Error("User Admin Prompt Failed");
 	}
 
@@ -79,9 +82,7 @@ export const updateWine = async (): Promise<void> => {
 	const extractLocation = "wine-temp";
 	const finalLocation = "wine";
 
-	if (!(await exists(finalLocation))) {
-		await mkdir(finalLocation);
-	}
+	const winePrefix = await join(await appDataDir(), "wine");
 
 	const repoInfo = await getGithubInfo(
 		"https://api.github.com/repos/NelloKudo/spritz-wine-aur/releases/latest",
@@ -93,26 +94,17 @@ export const updateWine = async (): Promise<void> => {
 	const folder = (await getAllDirs(extractLocation))[0];
 	await moveDirItems(folder, finalLocation);
 
-	// Quickly (re)-generate a wineprefix. Useful even when updating
-	await Command.create("sh", ["-c", `${finalLocation}/bin/wineboot -i`], {
-		env: {
-			WINEPREFIX: finalLocation,
+	// Quickly (re)-generate a wineprefix. Useful even when updating + kill wineserver to prevent it running after the app closes (I hope this is the bug that sometimes decides to appear)
+
+	await executeShellCommand(
+		`${winePrefix}/bin/wineboot -i && ${winePrefix}/bin/wineserver --wait && ${winePrefix}/bin/wineserver -k`,
+		{
+			WINEPREFIX: winePrefix,
 		},
-	}).execute();
+	);
 
-	await Command.create("sh", ["-c", `${finalLocation}/bin/wineserver --wait`], {
-		env: {
-			WINEPREFIX: finalLocation,
-		},
-	}).execute();
-
-	// Kill wineserver to prevent it running after the app closes (I hope this is the bug that sometimes decides to appear)
-	await Command.create("sh", ["-c", `${finalLocation}/bin/wineserver -k`], {
-		env: { WINEPREFIX: finalLocation },
-	}).execute();
-
-	await remove(downloadLocation);
-	await removeDir(extractLocation)
+	//await remove(downloadLocation);
+	//await removeDir(extractLocation);
 
 	await updateAssetTracker("wine", {
 		tag: repoInfo.tagName,
@@ -138,13 +130,11 @@ export const updateWinetricks = async (): Promise<void> => {
 };
 
 /**
- * @description Sets up vkd3d in the wine environment. if no wine environment exists, create it first.
+ * Sets up vkd3d in the wine environment. if no wine environment exists, create it first.
  */
-export const updateVkd3d = async (): Promise<void> => {
-	const appDir = await appDataDir();
-	const downloadLocation = await join(appDir, "wine.tar.zst");
-	const extractLocation = await join(appDir, "vkd3d-proton-temp");
-	const wineDir = await join(appDir, "wine");
+const updateVkd3d = async (): Promise<void> => {
+	const downloadLocation = "vkd3d.tar.zst";
+	const extractLocation = "vkd3d-proton-temp";
 
 	const repoInfo = await getGithubInfo(
 		"https://api.github.com/repos/HansKristian-Work/vkd3d-proton/releases/latest",
@@ -155,19 +145,14 @@ export const updateVkd3d = async (): Promise<void> => {
 	const folder = (await getAllDirs(extractLocation))[0];
 	await moveDirItems(folder, extractLocation);
 
-	if (!(await exists(wineDir))) {
-		await createWineEnv();
-		return;
-	}
-
 	const dirs = [
 		{
 			initialLocation: await join(extractLocation, "x64"),
-			moveTo: await join(wineDir, "drive_c", "windows", "system32"),
+			moveTo: await join("wine", "drive_c", "windows", "system32"),
 		},
 		{
 			initialLocation: await join(extractLocation, "x86"),
-			moveTo: await join(wineDir, "drive_c", "windows", "syswow64"),
+			moveTo: await join("wine", "drive_c", "windows", "syswow64"),
 		},
 	] as const;
 
@@ -205,7 +190,7 @@ export const updateVkd3d = async (): Promise<void> => {
 /**
  * Installs/Updates winetricks modules used in yoohoo
  */
-export const updateWinetricksModules = async (): Promise<void> => {
+const updateWinetricksModules = async (): Promise<void> => {
 	// Trying to install a few different redists to ensure that older games will still run properly.
 	// Not sure if just vcrun2022/vcrun2026 will be able to do this
 	await winetricksCommand("vcrun2022 vcrun2026 dxvk mfc140");
@@ -223,52 +208,39 @@ export const wineCommand = async (commands: string): Promise<void> => {
 		);
 		return;
 	}
-	const appDir = await appDataDir();
-	const winePrefix = await join(appDir, "wine");
+	const winePrefix = await join(await appDataDir(), "wine");
+
 	if (!(await wineEnvAvailable())) {
-		throw new Error("Wine Does not exist");
+		throw new Error("wineCommand: Wine env does not exist");
 	}
 
-	await Command.create("sh", ["-c", `${winePrefix}/bin/wine ${commands}`], {
-		env: {
-			WINEFSYNC: "1",
-			WINEPREFIX: winePrefix,
-		},
-	})
-		.execute()
-		.catch((e) => {
-			error(`wineCommand: ${e}`);
-		});
+	await executeShellCommand(`${winePrefix}/bin/wine ${commands}`, {
+		WINEPREFIX: winePrefix,
+		WINEFSYNC: "1",
+	});
 };
 
 /**
- * Executes a command with __winetricks__
+ * Executes a command with `winetricks`
  * @param commands list of commands to run
  */
 export const winetricksCommand = async (commands: string): Promise<void> => {
+	if (!(await wineEnvAvailable())) {
+		throw new Error("winetricksCommand: Wine env does not exist");
+	}
+
 	if (isCommandValid(commands)) {
 		warn(
 			`The command ${commands} includes one or more of: &&, &, ;. This is not allowed`,
 		);
 		return;
 	}
-	const appDir = await appDataDir();
 
-	const winePrefix = await join(appDir, "wine");
-	if (!(await wineEnvAvailable())) {
-		throw new Error("Wine env does not exist");
-	}
-
-	await Command.create(
-		"sh",
-		["-c", `${winePrefix}/winetricks -q ${commands}`],
-		{
-			env: {
-				WINEFSYNC: "1",
-				WINEPREFIX: winePrefix,
-			},
-		},
-	).execute();
+	const winePrefix = await join(await appDataDir(), "wine");
+	await executeShellCommand(`${winePrefix}/winetricks -q ${commands}`, {
+		WINEPREFIX: winePrefix,
+		WINEFSYNC: "1",
+	});
 };
 
 /**
@@ -283,15 +255,22 @@ const isCommandValid = (command: string) => {
 };
 
 /**
+ * Checks if the wine prefix is available
  * @returns value based on if the wine prefix directory exists
  */
 export const wineEnvAvailable = async (): Promise<boolean> => {
-	const wineBinary = await join(await appDataDir(), "wine", "bin", "wine");
-	if (await exists(wineBinary)) {
-		const testResult = await Command.create("sh", ["-c", wineBinary]).execute();
-		return testResult.code == 1;
-	}
-	return false;
+	const winePrefix = await join(await appDataDir(), "wine");
+	return new Promise((resolve) => {
+		Command.create("sh", ["-c", `${winePrefix}/bin/wine`])
+			.execute()
+			.then((res) => {
+				resolve(res.code === 1);
+			})
+			.catch((e) => {
+				error(e);
+				resolve(false);
+			});
+	});
 };
 
 /**
@@ -306,8 +285,7 @@ export const updateAssetTracker = async (
 		hash: string;
 	},
 ): Promise<void> => {
-	const appDir = await appDataDir();
-	const assetFile = await join(appDir, "assets.json");
+	const assetFile = "assets.json";
 
 	if (!(await exists(assetFile))) {
 		await writeTextFile(assetFile, "{}"); // Create an "Empty" asset file
@@ -318,12 +296,4 @@ export const updateAssetTracker = async (
 	json[tag] = info;
 
 	await writeTextFile(assetFile, JSON.stringify(json));
-};
-
-export const convertToWinPath = (path: string) => {
-	return `Z:\\${path.split("/").join("\\")}`;
-};
-
-export const convertToPosixPath = (path: string) => {
-	return `/${path.substring(3, path.length).split("\\").join("/")}`;
 };

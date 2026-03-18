@@ -66,9 +66,17 @@ export const inDevEnv = async (): Promise<boolean> => {
 
 export const executeShellCommand = async (
 	command: string,
-	env: Record<string, string> | undefined,
+	env?: Record<string, string> | undefined,
 ) => {
 	await Command.create("sh", ["-c", command], {
 		env: env,
 	}).execute();
+};
+
+export const convertToWinPath = (path: string) => {
+	return `Z:\\${path.split("/").join("\\")}`;
+};
+
+export const convertToPosixPath = (path: string) => {
+	return `/${path.substring(3, path.length).split("\\").join("/")}`;
 };

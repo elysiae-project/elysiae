@@ -61,7 +61,7 @@ export const getApiJson = async (url: string): Promise<any> => {
  * @param url link to a github api link
  * @returns Object containing only useful information used by yoohoo when getting data from GitHub repositories
  */
-export const getGithubInfo = async (url: string): Promise<any> => {
+export const getGithubInfo = async (url: string): Promise<{downloadURL: string; hash: string; tagName: string;}> => {
 	return new Promise((resolve, reject) => {
 		if (!url.includes("api.github.com")) {
 			reject("URL Does not point to the GitHub API");

@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { basename, join } from "@tauri-apps/api/path";
-import { exists } from "./Fs";
+import { appDataDir, basename, join } from "@tauri-apps/api/path";
+import { exists, remove } from "./Fs";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { Command } from "@tauri-apps/plugin-shell";
+import { executeShellCommand } from "./AppFunctions";
+import { rename } from "./Fs";
 
 /**
  * Checks integrity of a file with sha256sum
@@ -63,19 +65,23 @@ export const getAllDirs = async (dir: string): Promise<string[]> => {
 
 /**
  * Extracts a compressed archive to a specified location. Supports any archive format that ``7za`` supports
- * @param file Path to archive
+ * @param path Path to archive
  * @param destination destination to extract to
  */
 export const extractFile = async (
-	file: string,
+	path: string,
 	destination: string,
 ): Promise<void> => {
-	if (await exists(file)) {
+	info(path);
+	if (await exists(path)) {
+		info(await appDataDir());
+		const fullPath = await join(await appDataDir(), path);
+		const fullDestination = await join(await appDataDir(), destination);
 		await Command.sidecar("binaries/7za", [
 			"x",
-			file,
+			fullPath,
 			"-sdel",
-			`-o${destination}`, // 7z is weird like this. It only works like this
+			`-o${fullDestination}`,
 		])
 			.execute()
 			.catch((e) => {
@@ -84,16 +90,18 @@ export const extractFile = async (
 				return;
 			});
 
-		const regex: RegExp = /\.tar\.+/;
-		if (regex.test(file)) {
-			// Compressed tarball extracts to dest/filename.tar
-			const fileName = `${(await basename(file)).split(".")[0]}.tar`;
-			const tarballLocation = await join(destination, fileName);
-			info(tarballLocation);
-			await extractFile(tarballLocation, destination);
+		const tarRegex = /\.tar\.[^.]+$/; // e.g. .tar.gz, .tar.bz2
+		if (tarRegex.test(path)) {
+			// Use lastIndexOf to correctly strip only the last two extensions
+			const baseName = await basename(path);
+			const tarName = `${baseName.substring(0, baseName.lastIndexOf(".tar."))}.tar`;
+
+			// Pass relative path — join with destination (relative), not fullDestination (absolute)
+			const relativeTarball = await join(destination, tarName);
+			await extractFile(relativeTarball, destination);
 		}
 	} else {
-		warn(`extractFile: ${file} does not exist`);
+		error(`extractFile: ${path} does not exist`);
 	}
 };
 
@@ -108,13 +116,21 @@ export const moveDirItems = async (
 	newLocation: string,
 	removeOriginal: boolean = true,
 ) => {
-	await Command.create("sh", [
-		"-c",
-		`mv -v "${itemsDir}"/* "${newLocation}"`,
-	]).execute();
+	const dirs = await getTopLevelFiles(itemsDir);
+	for(let i = 0; i < dirs.length; i++) {
+		const fileName = await basename(dirs[i]);
+		const newPath = await join(newLocation, fileName);
+		await rename()
+	}
+
+	const appData = await appDataDir();
+	const fullItemsDir = await join(appData, itemsDir);
+	const fullNewLocation = await join(appData, newLocation);
+	info(`mv -v "${fullItemsDir}"/* "${fullNewLocation}"`)
+	await executeShellCommand(`mv -v "${fullItemsDir}"/* "${fullNewLocation}"`)
 
 	if (removeOriginal) {
-		await Command.create("sh", ["-c", `rm -rf "${itemsDir}"`]).execute();
+		await remove(itemsDir);
 	}
 };
 
@@ -141,4 +157,3 @@ export const getTopLevelFiles = async (dir: string): Promise<string[]> => {
 		});
 	});
 };
-

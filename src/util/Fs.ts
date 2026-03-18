@@ -12,7 +12,9 @@ import {
 
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
-		tauriExists(path)
+		tauriExists(path, {
+			baseDir: BaseDirectory.AppData
+		})
 			.then((res) => {
 				resolve(res as boolean);
 			})
