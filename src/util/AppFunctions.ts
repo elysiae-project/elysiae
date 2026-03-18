@@ -25,11 +25,11 @@ export const getActiveGameCode = (
 	currentGame: Variants,
 ): "bh" | "ys" | "sr" | "nap" => {
 	switch (currentGame) {
-		case Variants.BH:
+		case Variants.BH3:
 			return "bh";
-		case Variants.YS:
+		case Variants.HK4E:
 			return "ys";
-		case Variants.SR:
+		case Variants.HKRPG:
 			return "sr";
 		case Variants.NAP:
 			return "nap";
@@ -38,11 +38,11 @@ export const getActiveGameCode = (
 
 export const getGameExeName = (currentGame: Variants): string => {
 	switch (currentGame) {
-		case Variants.BH:
+		case Variants.BH3:
 			return "BH3.exe";
-		case Variants.YS:
+		case Variants.HK4E:
 			return "GenshinImpact.exe";
-		case Variants.SR:
+		case Variants.HKRPG:
 			return "StarRail.exe";
 		case Variants.NAP:
 			return "ZenlessZoneZero.exe";

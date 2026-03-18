@@ -6,29 +6,17 @@ import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
 import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
-import { GameContext, GameProvider } from "./contexts/GameContext.tsx";
+import { GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
-import { createWineEnv, wineEnvAvailable } from "./util/WineTools.ts";
-import {
-	downloadGame,
-	downloadUpdate,
-	isGameInstalled,
-	isPreinstallAvailable,
-	launchGame,
-} from "./util/GameManager.ts";
 import { useEffect, useState } from "preact/hooks";
-import { error, info } from "@tauri-apps/plugin-log";
-import { join, resourceDir } from "@tauri-apps/api/path";
-import { getActiveGameCode } from "./util/AppFunctions.ts";
-import DownloadProgress from "./components/DownloadProgress.tsx";
-import { Save, X } from "lucide-preact";
+import { Save } from "lucide-preact";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
-			[Variants.BH]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
-			[Variants.YS]: "bg-ys-bg font-ys text-black",
-			[Variants.SR]:
+			[Variants.BH3]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
+			[Variants.HK4E]: "bg-ys-bg font-ys text-black",
+			[Variants.HKRPG]:
 				"bg-sr-bg font-bh-sr rounded-b-xs border border-[#393939] text-black",
 			[Variants.NAP]:
 				"bg-nap-bg font-nap rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white",
@@ -41,22 +29,12 @@ function PreinstallButton() {
 	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
 	const { game } = useGame();
 
-	useEffect(() => {
-		isPreinstallAvailable().then((res) => {
-			setPreInstAvailable(res);
-		});
-	}, [game]);
+	useEffect(() => {}, [game]);
 
 	if (!preInstAvailable) return <></>;
 
 	return (
-		<Button
-			intent="primary"
-			overrideMinWidth={true}
-			onClick={async () => {
-				downloadUpdate(game);
-			}}
-		>
+		<Button intent="primary" overrideMinWidth={true} onClick={async () => {}}>
 			<Save />
 		</Button>
 	);
@@ -79,7 +57,7 @@ function Background() {
 				src={graphics[game].backgroundVideoOverlay}
 			/>
 			{url.endsWith(".webp") ? (
-				<img class="absolute h-full w-full object-cover" src={url} alt=""/>
+				<img class="absolute h-full w-full object-cover" src={url} alt="" />
 			) : (
 				<video
 					class="absolute intset-0 h-full w-full object-cover"
@@ -95,62 +73,26 @@ function Background() {
 
 function App() {
 	const { game } = useGame();
-	const { graphics, gamePackages } = useApi();
+	const { graphics } = useApi();
 
 	let [wineEnvExists, setWineEnvExists] = useState<boolean>(false);
 	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
-	useEffect(() => {
-		wineEnvAvailable().then((res) => {
-			setWineEnvExists(res);
-		});
-
-		isGameInstalled(game).then((res) => {
-			setGameInstalled(res);
-		});
-	}, [game]);
+	useEffect(() => {}, [game]);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
 			<Titlebar />
 
 			<div class={theme({ intent: game })}>
-				{graphics && gamePackages ? (
+				{graphics ? (
 					<div class="relative h-full w-full">
 						<Background />
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-5">
 							{/* Page content */}
-							<DownloadProgress />
 							<PreinstallButton />
-							<Button
-								intent="primary"
-								onClick={async () => {
-									if (!wineEnvExists) {
-										// Download wine
-										await createWineEnv()
-											.then(() => {
-												setWineEnvExists(true);
-											})
-											.catch((e) => {
-												error(`Error in creating wine environment: ${e}`);
-											});
-									} else if (wineEnvExists && !gameInstalled) {
-										// Download Game
-										const downloadPath = await join(
-											await resourceDir(),
-											getActiveGameCode(game),
-										);
-										const assets = gamePackages[game].main.major.game_pkgs;
-										// TODO: language selection. rn, english only
-										info(assets.toString());
-										await downloadGame(assets, downloadPath);
-									} else {
-										// Launch Game
-										await launchGame(game);
-									}
-								}}
-							>
+							<Button intent="primary" onClick={async () => {}}>
 								{gameInstalled
 									? "Launch Game"
 									: wineEnvExists

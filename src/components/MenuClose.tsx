@@ -10,10 +10,10 @@ const menuCloseStyles = cva(
 		variants: {
 			game: {
 				// Additional Styles aren't needed for bh or sr as they are just the icon
-				[Variants.BH]: "",
-				[Variants.YS]:
+				[Variants.BH3]: "",
+				[Variants.HK4E]:
 					"border-3 p-0.5 border-ys-btnborder bg-[#ece5d8] hover:border-transparent hover:drop-shadow-lg hover:drop-shadow[#fdfdfe] rounded-full active:bg-ys-btn-active-bg active:border-transparent",
-				[Variants.SR]: "",
+				[Variants.HKRPG]: "",
 				[Variants.NAP]:
 					"rounded-full nap-dots border-3 border-nap-btn-border-strong active:animate-nap-pulsate active:border-transparent",
 			},

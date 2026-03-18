@@ -7,25 +7,6 @@ import { executeShellCommand } from "./AppFunctions";
 import { rename } from "./Fs";
 
 /**
- * Checks integrity of a file with sha256sum
- * @param file path to a file
- * @param hash __sha256sum__ to verify the file with
- * @returns ``boolean`` condition based on weather the sha256sum of ``file`` matches ``hash``
- */
-export const isFileValid = async (
-	file: string,
-	hash: string,
-): Promise<boolean> => {
-	return new Promise((resolve) => {
-		invoke("get_sha256_sum", {
-			file: file,
-		}).then((fileHash) => {
-			resolve(fileHash === hash);
-		});
-	});
-};
-
-/**
  * @param dir Directory to search
  * @returns string array storing all files found within ``dir`` and any sub-dirs
  */
@@ -90,13 +71,11 @@ export const extractFile = async (
 				return;
 			});
 
-		const tarRegex = /\.tar\.[^.]+$/; // e.g. .tar.gz, .tar.bz2
+		const tarRegex = /\.tar\.[^.]+$/;
 		if (tarRegex.test(path)) {
-			// Use lastIndexOf to correctly strip only the last two extensions
 			const baseName = await basename(path);
 			const tarName = `${baseName.substring(0, baseName.lastIndexOf(".tar."))}.tar`;
 
-			// Pass relative path — join with destination (relative), not fullDestination (absolute)
 			const relativeTarball = await join(destination, tarName);
 			await extractFile(relativeTarball, destination);
 		}
@@ -116,22 +95,7 @@ export const moveDirItems = async (
 	newLocation: string,
 	removeOriginal: boolean = true,
 ) => {
-	const dirs = await getTopLevelFiles(itemsDir);
-	for(let i = 0; i < dirs.length; i++) {
-		const fileName = await basename(dirs[i]);
-		const newPath = await join(newLocation, fileName);
-		await rename()
-	}
 
-	const appData = await appDataDir();
-	const fullItemsDir = await join(appData, itemsDir);
-	const fullNewLocation = await join(appData, newLocation);
-	info(`mv -v "${fullItemsDir}"/* "${fullNewLocation}"`)
-	await executeShellCommand(`mv -v "${fullItemsDir}"/* "${fullNewLocation}"`)
-
-	if (removeOriginal) {
-		await remove(itemsDir);
-	}
 };
 
 /**

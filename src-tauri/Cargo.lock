@@ -1533,9 +1533,9 @@ dependencies = [
 
 [[package]]
 name = "glib"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16877c6e619447e0bcb6de326a42a8bd02b36328cfeeda210135425e576efa3d"
+checksum = "039f93465ac17e6cb02d16f16572cd3e43a77e736d5ecc461e71b9c9c5c0569c"
 dependencies = [
  "bitflags 2.10.0",
  "futures-channel",
@@ -4036,19 +4036,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha256"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f880fc8562bdeb709793f00eb42a2ad0e672c4f883bbe59122b926eca935c8f6"
-dependencies = [
- "async-trait",
- "bytes",
- "hex",
- "sha2",
- "tokio",
-]
-
-[[package]]
 name = "shared_child"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6198,11 +6185,10 @@ name = "yoohoo"
 version = "0.1.0"
 dependencies = [
  "futures-util",
- "glib 0.22.2",
+ "glib 0.22.3",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
- "sha256",
  "tauri",
  "tauri-build",
  "tauri-plugin-fs",
