@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
 import { invoke } from "@tauri-apps/api/core";
+import { Command } from "@tauri-apps/plugin-shell";
 
 /**
  * @description Closes the app
@@ -61,4 +62,13 @@ export const inDevEnv = async (): Promise<boolean> => {
 				reject(e);
 			});
 	});
+};
+
+export const executeShellCommand = async (
+	command: string,
+	env: Record<string, string> | undefined,
+) => {
+	await Command.create("sh", ["-c", command], {
+		env: env,
+	}).execute();
 };

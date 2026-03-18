@@ -5,10 +5,11 @@ import {
 	mkdir,
 	readTextFile,
 	remove,
+	removeDir,
 	rename,
 	writeTextFile,
-} from "@tauri-apps/plugin-fs";
-import { basename, join, resourceDir } from "@tauri-apps/api/path";
+} from "./Fs";
+import { appDataDir, basename, join } from "@tauri-apps/api/path";
 import { extractFile, getAllDirs, moveDirItems } from "./FileUtils";
 import { Command } from "@tauri-apps/plugin-shell";
 import { error, info, warn } from "@tauri-apps/plugin-log";
@@ -39,9 +40,8 @@ export const createWineEnv = async (): Promise<void> => {
 };
 
 export const updateJadeite = async (): Promise<void> => {
-	const appDir = await resourceDir();
-	const downloadLocation = await join(appDir, "jadeite.zip");
-	const extractLocation = await join(appDir, "jadeite");
+	const downloadLocation = "jadeite.zip";
+	const extractLocation = "jadeite";
 
 	const repoInfo = await getApiJson(
 		"https://codeberg.org/api/v1/repos/mkrsym1/jadeite/releases/latest",
@@ -75,10 +75,9 @@ export const updateJadeite = async (): Promise<void> => {
  * Updates the current wine install
  */
 export const updateWine = async (): Promise<void> => {
-	const appDir = await resourceDir();
-	const downloadLocation = await join(appDir, "wine.tar.xz");
-	const extractLocation = await join(appDir, "wine-temp");
-	const finalLocation = await join(appDir, "wine");
+	const downloadLocation = "wine.tar.xz";
+	const extractLocation = "wine-temp";
+	const finalLocation = "wine";
 
 	if (!(await exists(finalLocation))) {
 		await mkdir(finalLocation);
@@ -89,7 +88,7 @@ export const updateWine = async (): Promise<void> => {
 	);
 
 	await singleDownload(repoInfo.downloadURL, downloadLocation);
-	await extractFile(downloadLocation, extractLocation);
+	await extractFile(downloadLocation, "wine-temp");
 
 	const folder = (await getAllDirs(extractLocation))[0];
 	await moveDirItems(folder, finalLocation);
@@ -113,9 +112,7 @@ export const updateWine = async (): Promise<void> => {
 	}).execute();
 
 	await remove(downloadLocation);
-	await remove(extractLocation, {
-		recursive: true,
-	});
+	await removeDir(extractLocation)
 
 	await updateAssetTracker("wine", {
 		tag: repoInfo.tagName,
@@ -127,7 +124,7 @@ export const updateWine = async (): Promise<void> => {
  * @description Downloads winetricks
  */
 export const updateWinetricks = async (): Promise<void> => {
-	const appDir = await resourceDir();
+	const appDir = await appDataDir();
 	const wineDir = await join(appDir, "wine");
 	const downloadLocation = await join(wineDir, "winetricks");
 	if (!(await exists(wineDir))) {
@@ -144,7 +141,7 @@ export const updateWinetricks = async (): Promise<void> => {
  * @description Sets up vkd3d in the wine environment. if no wine environment exists, create it first.
  */
 export const updateVkd3d = async (): Promise<void> => {
-	const appDir = await resourceDir();
+	const appDir = await appDataDir();
 	const downloadLocation = await join(appDir, "wine.tar.zst");
 	const extractLocation = await join(appDir, "vkd3d-proton-temp");
 	const wineDir = await join(appDir, "wine");
@@ -197,9 +194,7 @@ export const updateVkd3d = async (): Promise<void> => {
 	);
 
 	await remove(downloadLocation);
-	await remove(extractLocation, {
-		recursive: true,
-	});
+	await removeDir(extractLocation);
 
 	await updateAssetTracker("vkd3d", {
 		tag: repoInfo.tagName,
@@ -228,7 +223,7 @@ export const wineCommand = async (commands: string): Promise<void> => {
 		);
 		return;
 	}
-	const appDir = await resourceDir();
+	const appDir = await appDataDir();
 	const winePrefix = await join(appDir, "wine");
 	if (!(await wineEnvAvailable())) {
 		throw new Error("Wine Does not exist");
@@ -257,7 +252,7 @@ export const winetricksCommand = async (commands: string): Promise<void> => {
 		);
 		return;
 	}
-	const appDir = await resourceDir();
+	const appDir = await appDataDir();
 
 	const winePrefix = await join(appDir, "wine");
 	if (!(await wineEnvAvailable())) {
@@ -291,7 +286,7 @@ const isCommandValid = (command: string) => {
  * @returns value based on if the wine prefix directory exists
  */
 export const wineEnvAvailable = async (): Promise<boolean> => {
-	const wineBinary = await join(await resourceDir(), "wine", "bin", "wine");
+	const wineBinary = await join(await appDataDir(), "wine", "bin", "wine");
 	if (await exists(wineBinary)) {
 		const testResult = await Command.create("sh", ["-c", wineBinary]).execute();
 		return testResult.code == 1;
@@ -311,7 +306,7 @@ export const updateAssetTracker = async (
 		hash: string;
 	},
 ): Promise<void> => {
-	const appDir = await resourceDir();
+	const appDir = await appDataDir();
 	const assetFile = await join(appDir, "assets.json");
 
 	if (!(await exists(assetFile))) {

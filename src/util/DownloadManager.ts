@@ -3,7 +3,7 @@ import { Download } from "../types";
 import { error, info } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomEventManager } from "./CustomEventManager";
-import { exists } from "@tauri-apps/plugin-fs";
+import { exists } from "./Fs";
 import { join } from "@tauri-apps/api/path";
 
 export const downloads = new Map<string, Download>();

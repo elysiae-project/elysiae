@@ -1,7 +1,3 @@
-import { info } from "@tauri-apps/plugin-log";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
-
 /**
  * @param url The URL to check
  * @returns HTTP status code of the URL

@@ -1,9 +1,9 @@
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { isURLValid } from "./WebUtils";
 import { multiDownload, singleDownload } from "./DownloadManager";
-import { dirname, join, resourceDir } from "@tauri-apps/api/path";
+import { appDataDir, dirname, join } from "@tauri-apps/api/path";
 import { extractFile } from "./FileUtils";
-import { exists, remove } from "@tauri-apps/plugin-fs";
+import { exists, remove } from "./Fs";
 import { GamePkg, Variants } from "../types";
 import { getActiveGameCode, getGameExeName } from "./AppFunctions";
 import { wineCommand } from "./WineTools";
@@ -26,10 +26,10 @@ export const downloadGame = async (
 	info(downloadLinks.toString());
 
 	let destFiles: string[] = [];
-	await multiDownload(downloadLinks, await resourceDir());
+	await multiDownload(downloadLinks, await appDataDir());
 	for (let i = 0; i < downloadLinks.length; i++) {
 		const fileName = downloadAsset[i].url.split("/").pop() as string;
-		const temporaryLocation = await join(await resourceDir(), fileName);
+		const temporaryLocation = await join(await appDataDir(), fileName);
 		destFiles.push(temporaryLocation);
 	}
 	
@@ -43,10 +43,10 @@ export const downloadGame = async (
 };
 
 export const launchGame = async (gameCode: Variants) => {
-	const appDir = await resourceDir();
-	const jadeite = await join(appDir, "jadeite", "jadeite.exe");
+	const appData = await appDataDir();
+	const jadeite = await join(appData, "jadeite", "jadeite.exe");
 	const currentGame = await join(
-		appDir,
+		appData,
 		getActiveGameCode(gameCode),
 		getGameExeName(gameCode),
 	);
@@ -62,9 +62,9 @@ export const launchGame = async (gameCode: Variants) => {
 export const cancelDownload = async () => {};
 
 export const isGameInstalled = async (gameCode: Variants): Promise<boolean> => {
-	const appDir = await resourceDir();
+	const appData = await appDataDir();
 	const currentGame = await join(
-		appDir,
+		appData,
 		getActiveGameCode(gameCode),
 		getGameExeName(gameCode),
 	);
@@ -87,10 +87,10 @@ export const downloadUpdate = async (
 	isPreinstall: boolean = false,
 ) => {
 	const updateLink = "";
-	const appDir = await resourceDir();
+	const appData = await appDataDir();
 	if (isURLValid(updateLink)) {
 		const file = updateLink.split("/").pop() as string;
-		const fileLocation = await join(appDir, file);
+		const fileLocation = await join(appData, file);
 		if (!(await exists(fileLocation))) {
 			await singleDownload(updateLink, fileLocation);
 		}

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { basename, dirname, join } from "@tauri-apps/api/path";
-import { exists } from "@tauri-apps/plugin-fs";
+import { basename, join } from "@tauri-apps/api/path";
+import { exists } from "./Fs";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { Command } from "@tauri-apps/plugin-shell";
 
@@ -141,3 +141,4 @@ export const getTopLevelFiles = async (dir: string): Promise<string[]> => {
 		});
 	});
 };
+
