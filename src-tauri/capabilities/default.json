@@ -20,13 +20,16 @@
 					"url": "https://*.hoyoverse.com"
 				},
 				{
-					"url": "https://*.github.com"
+					"url": "https://autopatch*.**"
 				},
 				{
-					"url": "https://*.githubusercontent.com"
+					"url": "https://api.github.com"
 				},
 				{
-					"url": "https://*.codeberg.org"
+					"url": "https://raw.githubusercontent.com"
+				},
+				{
+					"url": "https://codeberg.org"
 				}
 			]
 		},
@@ -57,7 +60,11 @@
 		},
 		{
 			"identifier": "fs:scope",
-			"allow": [{ "path": "$APPDIR/**" }]
+			"allow": [
+				{
+					"path": "$APPDATA/**"
+				}
+			]
 		},
 		"store:default",
 		"notification:default",
