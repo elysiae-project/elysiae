@@ -84,10 +84,7 @@ pub fn get_all_files(path: &str, app_handle: AppHandle) -> Vec<String> {
         .path()
         .resolve(&path, BaseDirectory::AppData)
         .unwrap();
-    let base = app_handle
-        .path()
-        .resolve("", BaseDirectory::AppData)
-        .unwrap();
+    let base = app_handle.path().app_data_dir().unwrap();
     let mut files = vec![];
     for e in WalkDir::new(&full_path).into_iter().filter_map(Result::ok) {
         if e.metadata().unwrap().is_file() {
@@ -104,10 +101,8 @@ pub fn get_all_directories(path: &str, app_handle: AppHandle) -> Vec<String> {
         .path()
         .resolve(&path, BaseDirectory::AppData)
         .unwrap();
-    let base = app_handle
-        .path()
-        .resolve("", BaseDirectory::AppData)
-        .unwrap();
+    let base = app_handle.path().app_data_dir().unwrap();
+
     let mut dirs = vec![];
     for e in WalkDir::new(&full_path).into_iter().filter_map(Result::ok) {
         if e.metadata().unwrap().is_dir() {
@@ -127,10 +122,8 @@ pub fn get_top_level_files(path: &str, app_handle: AppHandle) -> Vec<String> {
         .path()
         .resolve(&path, BaseDirectory::AppData)
         .unwrap();
-    let base = app_handle
-        .path()
-        .resolve("", BaseDirectory::AppData)
-        .unwrap();
+    let base = app_handle.path().app_data_dir().unwrap();
+
     let mut items = vec![];
     for item in WalkDir::new(&full_path).min_depth(1).max_depth(1) {
         let entry = item.unwrap();

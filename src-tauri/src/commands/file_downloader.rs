@@ -33,7 +33,7 @@ pub async fn download_file(
     let total = response.content_length().unwrap_or(0);
     let mut file = File::create(&full_path).map_err(|e| e.to_string())?;
     let mut downloaded_bytes: u64 = 0;
-    let mut last_emitted = Instant::now();
+    let mut last_emitted = Instant::now() - Duration::from_millis(250);
     let throttle = Duration::from_millis(250);
 
     let mut stream = response.bytes_stream();
@@ -56,6 +56,11 @@ pub async fn download_file(
                 .map_err(|e| e.to_string())?;
         }
     }
+    // Emit one last event after download is complete
+    app_handle.emit(&format!("download://progress/{}", uuid), DownloadProgress {
+        progress: downloaded_bytes,
+        total,
+    }).map_err(|e| e.to_string())?;
 
     Ok(())
 }

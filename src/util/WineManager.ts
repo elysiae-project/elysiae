@@ -1,4 +1,4 @@
-import { appDataDir, extname, join } from "@tauri-apps/api/path";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { ComponentData, WineComponent, WineModule } from "../types";
 import { exists, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
@@ -156,6 +156,16 @@ export const registerNewDLL = async (dllName: string) => {
 	await wineCommand(
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`,
 	);
+};
+
+export const wineEnvAvailable = async (): Promise<boolean> => {
+	const winePath = await winePrefix();
+	const driveC = await join(winePath, "drive_c");
+
+	if ((await exists(winePath)) && (await exists(driveC))) {
+		return true;
+	}
+	return false;
 };
 
 export const winePrefix = async (): Promise<string> => {

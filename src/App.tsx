@@ -10,7 +10,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Save } from "lucide-preact";
-import { updateWineComponents } from "./util/WineManager.ts";
+import { updateWineComponents, wineEnvAvailable } from "./util/WineManager.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -27,10 +27,12 @@ const theme = cva("h-full w-full overflow-hidden", {
 
 function PreinstallButton() {
 	// A lot of placeholder stuff here. Just want to get the component to render so I can implement this stuff in the future
-	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
+	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false); // Not implemented yet
 	const { game } = useGame();
 
-	useEffect(() => {}, [game]);
+	useEffect(() => {
+		// TODO: Add preinstall check each time game switches onces sophon downloader is implemented
+	}, [game]);
 
 	if (!preInstAvailable) return <></>;
 
@@ -76,10 +78,14 @@ function App() {
 	const { game } = useGame();
 	const { graphics } = useApi();
 
-	let [wineEnvExists, setWineEnvExists] = useState<boolean>(false);
-	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
+	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
+	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
 
-	useEffect(() => {}, [game]);
+	useEffect(() => {
+		wineEnvAvailable().then((res) => {
+			setWineAvailable(res);
+		});
+	}, [game]);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
@@ -96,10 +102,20 @@ function App() {
 							<Button
 								intent="primary"
 								onClick={async () => {
-									await updateWineComponents();
+									if (!wineAvailable) {
+										await updateWineComponents();
+									} else if (!gameInstalled) {
+										// TODO: Add game downloader functionality
+									} else {
+										// TODO: Add launch game functionality
+									}
 								}}
 							>
-								Create Environment
+								{!wineAvailable
+									? "Create Environment"
+									: !gameInstalled
+										? "Download"
+										: "Launch"}
 							</Button>
 						</div>
 

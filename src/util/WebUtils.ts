@@ -75,7 +75,7 @@ export const downloadFile = async (url: string, destination: string) => {
 		`download://progress/${downloadID}`,
 		({ payload }) => {
 			// TODO: Create some sort of function that can automatically determine the best size unit
-			// For now, just using Mb
+			// For now, just using MB
 			const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
 			const total = (payload.total / 1024 ** 2).toFixed(2);
 			info(`Downloaded ${downloaded}MB of ${total}MB`);

@@ -23,14 +23,14 @@ export const minimizeApp = (): void => {
  */
 export const getActiveGameCode = (
 	currentGame: Variants,
-): "bh" | "ys" | "sr" | "nap" => {
+): "bh3" | "hk4e" | "hkrpg" | "nap" => {
 	switch (currentGame) {
 		case Variants.BH3:
-			return "bh";
+			return "bh3";
 		case Variants.HK4E:
-			return "ys";
+			return "hk4e";
 		case Variants.HKRPG:
-			return "sr";
+			return "hkrpg";
 		case Variants.NAP:
 			return "nap";
 	}
@@ -41,11 +41,11 @@ export const getGameExeName = (currentGame: Variants): string => {
 		case Variants.BH3:
 			return "BH3.exe";
 		case Variants.HK4E:
-			return "GenshinImpact.exe";
+			return "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe";
 		case Variants.HKRPG:
-			return "StarRail.exe";
+			return "\x53\x74\x61\x72\x52\x61\x69\x6c.exe";
 		case Variants.NAP:
-			return "ZenlessZoneZero.exe";
+			return "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f.exe";
 	}
 };
 
@@ -104,7 +104,7 @@ export const executeLocalCommand = async (
  * @returns Wine Windows path converted froma POSIX path
  */
 export const convertToWinPath = (path: string) => {
-	return `Z:\\${path.split("/").join("\\")}`;
+	return `Z:\\${path.replaceAll("/", "\\")}`;
 };
 
 /**
@@ -113,5 +113,5 @@ export const convertToWinPath = (path: string) => {
  * @returns POSIX path converted from a Wine Windows Path
  */
 export const convertToPosixPath = (path: string) => {
-	return `/${path.substring(3, path.length).split("\\").join("/")}`;
+	return `/${path.slice(3).replaceAll("\\", "/")}`;
 };
