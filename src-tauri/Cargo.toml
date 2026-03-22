@@ -9,7 +9,7 @@ authors = [
 edition = "2024"
 
 [lib]
-name = "yoohoo_lib"
+name = "elysiae_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

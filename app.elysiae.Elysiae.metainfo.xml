@@ -8,7 +8,7 @@
     <developer id="app.elysiae">
         <name>Shob3r &amp; ChakornK </name>
     </developer>
-    <name>Yoohoo!</name>
+    <name>Elysiae</name>
     <summary>Unofficial "Anime Game" Launcher for Linux</summary>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>BSD-3-Clause</project_license>
@@ -16,16 +16,9 @@
     <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
     <description>
         <p>This app is in Alpha! Please use with caution, and expect bugs and missing features</p>
-        <p>Yoohoo! is a Universal "Anime Game" for x64 Linux hosts using Wine and DXVK.</p>
+        <p>Elysiae is a Universal "Anime Game" for x64 Linux hosts using Wine and DXVK.</p>
         <p>The application meant to replace the individual launchers created by an-anime-team, as
             work on a unified launcher has stalled</p>
-        <p>This app works with the following games:</p>
-        <ul>
-            <li>HI3</li>
-            <li>GI</li>
-            <li>HSR</li>
-            <li>ZZZ</li>
-        </ul>
     </description>
     <categories>
         <category>Game</category>
@@ -36,10 +29,10 @@
         <control>pointing</control>
         <display_length compare="ge">768</display_length>
     </requires>
-    <launchable type="desktop-id">dev.shob3r.yoohoo.desktop</launchable>
+    <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
     <!--
     The Flathub styling guide says that I should set the rating while also keeping in mind what this application downloads. 
-    However, the projects I'm trying to replace (from an-anime-team) do not. I will do the same, because the content that yoohoo
+    However, the projects I'm trying to replace (from an-anime-team) do not. I will do the same, because the content that Elysiae
     downloads is can't really define a global rating for the application, since each game contains different (albeit somewhat similar) 
     subject matter.
         -->
