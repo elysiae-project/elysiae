@@ -143,3 +143,21 @@ export type Download = {
 	downloaded: number;
 	total: number;
 };
+
+export type WineComponent = {
+	componentName: string;
+	extractTo: string;
+	postInstall?: () => Promise<void>;
+};
+
+export type ComponentData = {
+	tag: string;
+	download_url: string;
+	hash: string;
+};
+
+export type WineModule = {
+	name: string;
+	downloadLink: string;
+	moduleType: "exe" | "dll32" | "dll64";
+};

@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-    <id>dev.shob3r.yoohoo</id>
+    <id>app.elysiae.Elysiae</id>
     <branding>
         <color type="primary" scheme_preference="light">#4bcaf4</color>
         <color type="primary" scheme_preference="dark">#473a7c</color>    
     </branding>
-    <developer id="net.shob3r">
+    <developer id="app.elysiae">
         <name>Shob3r &amp; ChakornK </name>
     </developer>
     <name>Yoohoo!</name>
     <summary>Unofficial "Anime Game" Launcher for Linux</summary>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>BSD-3-Clause</project_license>
-    <url type="homepage">https://github.com/shob3r/yoohoo</url>
-    <url type="bugtracker">https://github.com/shob3r/yoohoo/issues</url>
+    <url type="homepage">https://github.com/elysiae-project/elysiae</url>
+    <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
     <description>
         <p>This app is in Alpha! Please use with caution, and expect bugs and missing features</p>
         <p>Yoohoo! is a Universal "Anime Game" for x64 Linux hosts using Wine and DXVK.</p>

@@ -3,6 +3,14 @@
     "esbenp.prettier-vscode",
     "wayou.vscode-todo-highlight",
     "kevinyouu.tailwind-raw-reorder-tw4",
-    "yzhang.markdown-all-in-one"
-  ]
+    "yzhang.markdown-all-in-one",
+    "formulahendry.auto-close-tag",
+    "formulahendry.auto-rename-tag",
+    "tamasfe.even-better-toml",
+    "rust-lang.rust-analyzer",
+    "bradlc.vscode-tailwindcss",
+    "tauri-apps.tauri-vscode",
+    "redhat.vscode-xml",
+    "redhat.vscode-yaml"
+  ],
 }

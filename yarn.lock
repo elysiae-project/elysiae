@@ -1169,6 +1169,33 @@ __metadata:
   languageName: node
   linkType: hard
 
+"elysiae@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "elysiae@workspace:."
+  dependencies:
+    "@preact/preset-vite": "npm:^2.10.4"
+    "@tailwindcss/vite": "npm:^4.2.1"
+    "@tauri-apps/api": "npm:^2.10.1"
+    "@tauri-apps/cli": "npm:^2.10.1"
+    "@tauri-apps/plugin-fs": "npm:~2.4.5"
+    "@tauri-apps/plugin-http": "npm:~2.5.7"
+    "@tauri-apps/plugin-log": "npm:~2.8.0"
+    "@tauri-apps/plugin-notification": "npm:~2.3.3"
+    "@tauri-apps/plugin-opener": "npm:~2.5.3"
+    "@tauri-apps/plugin-os": "npm:~2.3.2"
+    "@tauri-apps/plugin-shell": "npm:~2.3.5"
+    "@tauri-apps/plugin-store": "npm:~2.4.2"
+    "@types/node": "npm:^25.5.0"
+    class-variance-authority: "npm:^0.7.1"
+    lucide-preact: "npm:^0.577.0"
+    preact: "npm:^10.29.0"
+    prettier: "npm:3.8.1"
+    tailwindcss: "npm:^4.2.1"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.0.0"
+  languageName: unknown
+  linkType: soft
+
 "enhanced-resolve@npm:^5.19.0":
   version: 5.20.0
   resolution: "enhanced-resolve@npm:5.20.0"
@@ -2281,33 +2308,6 @@ __metadata:
   checksum: 10c0/a499c81ce6d4a1d260d4ea0f6d49ab4da09681e32c3f0472dee16667ed69d01dae63a3b81745a24bd78476ec4fcf856114cb4896ace738e01da34b2c42235416
   languageName: node
   linkType: hard
-
-"yoohoo@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "yoohoo@workspace:."
-  dependencies:
-    "@preact/preset-vite": "npm:^2.10.4"
-    "@tailwindcss/vite": "npm:^4.2.1"
-    "@tauri-apps/api": "npm:^2.10.1"
-    "@tauri-apps/cli": "npm:^2.10.1"
-    "@tauri-apps/plugin-fs": "npm:~2.4.5"
-    "@tauri-apps/plugin-http": "npm:~2.5.7"
-    "@tauri-apps/plugin-log": "npm:~2.8.0"
-    "@tauri-apps/plugin-notification": "npm:~2.3.3"
-    "@tauri-apps/plugin-opener": "npm:~2.5.3"
-    "@tauri-apps/plugin-os": "npm:~2.3.2"
-    "@tauri-apps/plugin-shell": "npm:~2.3.5"
-    "@tauri-apps/plugin-store": "npm:~2.4.2"
-    "@types/node": "npm:^25.5.0"
-    class-variance-authority: "npm:^0.7.1"
-    lucide-preact: "npm:^0.577.0"
-    preact: "npm:^10.29.0"
-    prettier: "npm:3.8.1"
-    tailwindcss: "npm:^4.2.1"
-    typescript: "npm:^5.9.3"
-    vite: "npm:^8.0.0"
-  languageName: unknown
-  linkType: soft
 
 "zimmerframe@npm:^1.1.4":
   version: 1.1.4

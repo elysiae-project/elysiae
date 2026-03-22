@@ -1,8 +1,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
+import { appDataDir } from "@tauri-apps/api/path";
 
 /**
  * @description Closes the app
@@ -64,6 +64,11 @@ export const inDevEnv = async (): Promise<boolean> => {
 	});
 };
 
+/**
+ * Executes a command on the shell
+ * @param command any command
+ * @param env (optional) environment variables
+ */
 export const executeShellCommand = async (
 	command: string,
 	env?: Record<string, string> | undefined,
@@ -73,10 +78,40 @@ export const executeShellCommand = async (
 	}).execute();
 };
 
+/**
+ * Executes a command of a binary found in the Elysiae's app data directory
+ * @param binaryPath path to binary, relative to the app data directory
+ * @param args arguments to pass into command
+ * @param env (optional) environment variables
+ */
+export const executeLocalCommand = async (
+	binaryPath: string,
+	args?: string,
+	env?: Record<string, string> | undefined,
+) => {
+	const appData = await appDataDir();
+	await executeShellCommand(
+		`${appData}/${binaryPath} ${typeof args !== "undefined" ? args : ""}`,
+		env,
+	).catch((e) => {
+		throw new Error(e);
+	});
+};
+
+/**
+ * Convert a POSIX path to a Windows path used by Wine
+ * @param path POSIX Path
+ * @returns Wine Windows path converted froma POSIX path
+ */
 export const convertToWinPath = (path: string) => {
 	return `Z:\\${path.split("/").join("\\")}`;
 };
 
+/**
+ * Convert a Windows path used by Wine to POSIX
+ * @param path Wine Windows Path
+ * @returns POSIX path converted from a Wine Windows Path
+ */
 export const convertToPosixPath = (path: string) => {
 	return `/${path.substring(3, path.length).split("\\").join("/")}`;
 };

@@ -1,8 +1,8 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "yoohoo",
+	"productName": "Elysiae",
 	"version": "0.1.0",
-	"identifier": "dev.shob3r.yoohoo",
+	"identifier": "app.elysiae.Elysiae",
 	"build": {
 		"beforeDevCommand": "yarn dev",
 		"devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
 	"app": {
 		"windows": [
 			{
-				"title": "yoohoo",
+				"title": "Elysiae",
 				"width": 1200,
 				"height": 700,
 				"minHeight": 700,
@@ -41,13 +41,12 @@
 		"resources": {
 			"resources/settings.json": "settings.json"
 		},
-		"externalBin": ["binaries/7za"],
 		"active": true,
 		"targets": ["deb"],
 		"linux": {
 			"deb": {
 				"files": {
-					"/usr/share/metainfo/dev.shob3r.yoohoo.metainfo.xml": "../dev.shob3r.yoohoo.metainfo.xml"
+					"/usr/share/metainfo/app.elysiae.Elysiae.metainfo.xml": "../app.elysiae.Elysiae.metainfo.xml"
 				}
 			}
 		}

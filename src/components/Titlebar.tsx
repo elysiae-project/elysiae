@@ -29,7 +29,7 @@ export default function Titlebar() {
 			class={titlebarStyles({ game: game })}
 		>
 			<h3 class="text-center text-xl" data-tauri-drag-region>
-				Yoohoo!
+				Elysiae
 			</h3>
 			<MenuClose clickAction={closeApp} />
 		</div>
