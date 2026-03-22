@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/flatpak/flatpak-builder/main/data/flatpak-manifest.schema.json
 id: app.elysiae.Elysiae
-command: Elysiae
+command: elysiae
 runtime: org.gnome.Platform
 runtime-version: "49"
 sdk: org.gnome.Sdk//49
