@@ -147,6 +147,7 @@ export type Download = {
 export type WineComponent = {
 	componentName: string;
 	extractTo: string;
+	saveTo: string;
 	postInstall?: () => Promise<void>;
 };
 

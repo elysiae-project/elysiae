@@ -10,6 +10,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Save } from "lucide-preact";
+import { updateWineComponents } from "./util/WineManager.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -92,12 +93,13 @@ function App() {
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-5">
 							{/* Page content */}
 							<PreinstallButton />
-							<Button intent="primary" onClick={async () => {}}>
-								{gameInstalled
-									? "Launch Game"
-									: wineEnvExists
-										? "Download Game"
-										: "Create Environment"}
+							<Button
+								intent="primary"
+								onClick={async () => {
+									await updateWineComponents();
+								}}
+							>
+								Create Environment
 							</Button>
 						</div>
 

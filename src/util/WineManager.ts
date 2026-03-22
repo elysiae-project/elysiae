@@ -4,7 +4,7 @@ import { exists, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile } from "./WebUtils";
 import { extractFile } from "./FileUtils";
-import { error } from "@tauri-apps/plugin-log";
+import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalCommand, executeShellCommand } from "./AppFunctions";
 
 // Components that get regular updates (i.e. wine, dxvk)
@@ -12,6 +12,7 @@ const components: WineComponent[] = [
 	{
 		componentName: "wine",
 		extractTo: "wine",
+		saveTo: "wine.tar.xz",
 		postInstall: async () => {
 			// Set up the wineprefix for use and install all additional wine modules
 			if (!(await exists(await join("wine", "drive_c")))) {
@@ -27,6 +28,7 @@ const components: WineComponent[] = [
 	{
 		componentName: "dxvk",
 		extractTo: "dxvk",
+		saveTo: "dxvk.tar.gz",
 		postInstall: async () => {
 			// Move contents into Wine's drive_c directory and add registry keys to associate the new DLL files with wine
 			const appData = await appDataDir();
@@ -52,6 +54,7 @@ const components: WineComponent[] = [
 	{
 		componentName: "jadeite",
 		extractTo: "jadeite",
+		saveTo: "jadeite.zip",
 		postInstall: async () => {
 			// Run the telemetry blocker script. Will ask for user admin permission if the telemetry blocking hasn't been applied before
 			await executeLocalCommand("jadeite/block_analytics.sh");
@@ -61,6 +64,7 @@ const components: WineComponent[] = [
 		// While not used right now, it will for certain be used in future games or game updates as DX12 becomes the industry standard. Best to install and stay ahead of updated
 		componentName: "vkd3d",
 		extractTo: "vkd3d-temp",
+		saveTo: "vkd3d.tar.zst",
 		postInstall: async () => {
 			// Run setup_vkd3d_proton.sh to automate the installation process
 			await executeLocalCommand("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
@@ -80,34 +84,30 @@ const wineModules: WineModule[] = [
 ] as const;
 
 export const updateWineComponents = async () => {
-	await Promise.all(
-		components.map(async (component) => {
+	info(`${await appDataDir()}`);
+	for (const component of components) {
+		try {
+			info(`Installing ${component.componentName}`);
+
 			const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${component.componentName}.json`;
 			const response = await fetch(assetURL);
 			if (response.status === 200) {
-				const json: ComponentData = await response.json();
-				const downloadURL = json.download_url;
-				const fileExtension = await extname(
-					downloadURL.split("/").pop() as string,
-				);
-
-				const downloadLocation = `${component.extractTo}.${fileExtension}`;
-
-				await downloadFile(json.download_url, downloadLocation);
+				const json: ComponentData[] = await response.json();
+				await downloadFile(json[0].download_url, component.saveTo);
 
 				// Extract file
-				await extractFile(downloadLocation, component.extractTo);
+				await extractFile(component.saveTo, component.extractTo);
 
 				if (typeof component.postInstall !== "undefined") {
 					await component.postInstall();
 				}
 			} else {
-				throw new Error("Endpoint returned non-OK response code!");
+				throw new Error("Endpoint returned non-OK response code");
 			}
-		}),
-	).catch((e) => {
-		error(e);
-	});
+		} catch (e) {
+			error(`updateWineComponents ${e}`);
+		}
+	}
 };
 
 const installWineModules = async () => {
@@ -128,7 +128,6 @@ const installWineModules = async () => {
 					const syswow = await join("wine", "drive_c", "windows", "syswow64");
 					await rename(filename, `${syswow}/${filename}`);
 				}
-
 				await registerNewDLL(filename.split(".")[0]);
 			}
 		}),
@@ -153,9 +152,11 @@ export const runExeWithWine = async (path: string, args?: string) => {
 	await wineCommand(`${fullPath} ${typeof args !== "undefined" ? args : ""}`);
 };
 
-export const registerNewDLL = async(dllName: string) => {
-	await wineCommand(`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`)
-}
+export const registerNewDLL = async (dllName: string) => {
+	await wineCommand(
+		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`,
+	);
+};
 
 export const winePrefix = async (): Promise<string> => {
 	return new Promise((resolve) => {

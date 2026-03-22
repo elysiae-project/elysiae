@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tauri::{AppHandle, Manager, command, path::BaseDirectory};
 use walkdir::WalkDir;
 
@@ -19,54 +21,61 @@ pub async fn extract_file(
             .path()
             .resolve(&archive, BaseDirectory::AppData)
             .unwrap();
-        let file = std::fs::File::open(&full_path).map_err(|e| e.to_string())?;
-        let dest_path = std::path::Path::new(&dest);
+        let full_dest = app_handle
+            .path()
+            .resolve(&dest, BaseDirectory::AppData)
+            .unwrap();
 
-        if full_path.ends_with(".tar.gz") {
+        // Use the string representation for suffix checks
+        let path_str = full_path.to_string_lossy();
+
+        let file = std::fs::File::open(&full_path).map_err(|e| e.to_string())?;
+
+        if path_str.ends_with(".tar.gz") {
             let decoder = Gz::new(file);
             let mut tar_archive = Tar::new(decoder);
-            tar_archive.unpack(dest_path).map_err(|e| e.to_string())?;
-        } else if full_path.ends_with(".tar.xz") {
+            tar_archive.unpack(&full_dest).map_err(|e| e.to_string())?;
+        } else if path_str.ends_with(".tar.xz") {
             let decoder = Xz::new(file);
             let mut tar_archive = Tar::new(decoder);
-            tar_archive.unpack(dest_path).map_err(|e| e.to_string())?;
-        } else if full_path.ends_with(".tar.zst") {
+            tar_archive.unpack(&full_dest).map_err(|e| e.to_string())?;
+        } else if path_str.ends_with(".tar.zst") {
             let decoder = Zstd::new(file).unwrap();
             let mut tar_archive = Tar::new(decoder);
-            tar_archive.unpack(dest_path).map_err(|e| e.to_string())?;
-        } else if full_path.ends_with(".zip") {
+            tar_archive.unpack(&full_dest).map_err(|e| e.to_string())?;
+        } else if path_str.ends_with(".zip") {
             let mut zip_archive = Zip::new(file).map_err(|e| e.to_string())?;
-            zip_archive.extract(dest_path).map_err(|e| e.to_string())?;
+            zip_archive.extract(&full_dest).map_err(|e| e.to_string())?;
+        } else {
+            return Err(format!("Unsupported archive format: {}", path_str));
         }
 
-        // If the archive extracted into a single subdirectory, flatten it
-        let top_level: Vec<_> = std::fs::read_dir(dest_path)
-            .map_err(|e| e.to_string())?
-            .collect::<Result<_, _>>()
-            .map_err(|e| e.to_string())?;
-
-        if top_level.len() == 1
-            && top_level[0]
-                .file_type()
-                .map_err(|e| e.to_string())?
-                .is_dir()
-        {
-            let subdir = top_level[0].path();
-            for entry in std::fs::read_dir(&subdir).map_err(|e| e.to_string())? {
-                let entry = entry.map_err(|e| e.to_string())?;
-                let target = dest_path.join(entry.file_name());
-                std::fs::rename(entry.path(), &target).map_err(|e| e.to_string())?;
-            }
-            std::fs::remove_dir(&subdir).map_err(|e| e.to_string())?;
-        }
-
-        // Remove the archive now that extraction is done
-        std::fs::remove_file(&full_path).map_err(|e| e.to_string())?;
-
+        flatten(&full_dest)?;
         Ok::<(), String>(())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn flatten(dest: &Path) -> Result<(), String> {
+    let entries: Vec<_> = std::fs::read_dir(dest)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e: std::io::Error| e.to_string())?;
+
+    if entries.len() == 1 && entries[0].path().is_dir() {
+        let inner_dir = entries[0].path();
+
+        for entry in std::fs::read_dir(&inner_dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let target = dest.join(entry.file_name());
+            std::fs::rename(entry.path(), &target).map_err(|e| e.to_string())?;
+        }
+
+        std::fs::remove_dir(&inner_dir).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 #[command]
