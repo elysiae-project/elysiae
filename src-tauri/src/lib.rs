@@ -17,9 +17,8 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            commands::file_manager::get_sha256_sum,
-            // commands::file_manager::extract_file,
             commands::file_downloader::download_file,
+            commands::file_manager::extract_file,
             commands::file_manager::get_all_directories,
             commands::file_manager::get_all_files,
             commands::file_manager::get_top_level_files,

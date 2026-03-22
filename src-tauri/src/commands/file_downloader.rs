@@ -1,10 +1,10 @@
-use std::fs::File;
-use std::io::Write;
 use reqwest::Client;
 use serde::Serialize;
-use tauri::command;
-use tauri::{AppHandle, Emitter};
+use std::fs::File;
+use std::io::Write;
 use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, path::BaseDirectory};
+use tauri::{Manager, command};
 
 #[derive(Serialize, Clone)]
 struct DownloadProgress {
@@ -12,24 +12,28 @@ struct DownloadProgress {
     total: u64,
 }
 
-// The bad webkit2gtk CORS policies strike back. FUCK CORS
 #[command]
 pub async fn download_file(
-    download_url: String,
-    destination: String,
+    url: String,
+    dest: String,
     uuid: String,
-    app: AppHandle,
+    app_handle: AppHandle,
 ) -> Result<(), String> {
     let client = Client::builder().build().map_err(|e| e.to_string())?;
+    let full_path = app_handle
+        .path()
+        .resolve(&dest, BaseDirectory::AppData)
+        .unwrap();
+
     let response = client
-        .get(&*download_url)
+        .get(&*url)
         .send()
         .await
         .map_err(|e| e.to_string())?;
     let total = response.content_length().unwrap_or(0);
-    let mut file = File::create(&destination).map_err(|e| e.to_string())?;
+    let mut file = File::create(&full_path).map_err(|e| e.to_string())?;
     let mut downloaded_bytes: u64 = 0;
-    let mut last_emitted = Instant::now();
+    let mut last_emitted = Instant::now() - Duration::from_millis(250);
     let throttle = Duration::from_millis(250);
 
     let mut stream = response.bytes_stream();
@@ -41,16 +45,22 @@ pub async fn download_file(
 
         if last_emitted.elapsed() >= throttle {
             last_emitted = Instant::now();
-            app.emit(
-                &format!("download://progress/{}", uuid),
-                DownloadProgress {
-                    progress: downloaded_bytes,
-                    total,
-                },
-            )
-            .map_err(|e| e.to_string())?;
+            app_handle
+                .emit(
+                    &format!("download://progress/{}", uuid),
+                    DownloadProgress {
+                        progress: downloaded_bytes,
+                        total,
+                    },
+                )
+                .map_err(|e| e.to_string())?;
         }
     }
+    // Emit one last event after download is complete
+    app_handle.emit(&format!("download://progress/{}", uuid), DownloadProgress {
+        progress: downloaded_bytes,
+        total,
+    }).map_err(|e| e.to_string())?;
 
     Ok(())
 }

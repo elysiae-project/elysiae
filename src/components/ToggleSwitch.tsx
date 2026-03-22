@@ -10,9 +10,9 @@ const toggleSwitchStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "rounded-none",
-				[Variants.YS]: "rounded-full border-2 border-white",
-				[Variants.SR]: "rounded-full",
+				[Variants.BH3]: "rounded-none",
+				[Variants.HK4E]: "rounded-full border-2 border-white",
+				[Variants.HKRPG]: "rounded-full",
 				[Variants.NAP]: "rounded-full border-4 border-[#353535]",
 			},
 			variant: {
@@ -22,32 +22,32 @@ const toggleSwitchStyles = cva(
 		},
 		compoundVariants: [
 			{
-				game: Variants.BH,
+				game: Variants.BH3,
 				variant: "inactive",
 				class: "bg-bh-toggle-inactive",
 			},
 			{
-				game: Variants.BH,
+				game: Variants.BH3,
 				variant: "active",
 				class: "bg-bh-toggle-active",
 			},
 			{
-				game: Variants.YS,
+				game: Variants.HK4E,
 				variant: "inactive",
 				class: "bg-ys-toggle-inactive",
 			},
 			{
-				game: Variants.YS,
+				game: Variants.HK4E,
 				variant: "active",
 				class: "bg-ys-toggle-active",
 			},
 			{
-				game: Variants.SR,
+				game: Variants.HKRPG,
 				variant: "inactive",
 				class: "bg-sr-toggle-inactive",
 			},
 			{
-				game: Variants.SR,
+				game: Variants.HKRPG,
 				variant: "active",
 				class: "bg-sr-toggle-active",
 			},
@@ -70,9 +70,9 @@ const toggleSwitchKnobStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "bg-white border-2 border-bh-knob-border",
-				[Variants.YS]: "bg-[#ece5d8] rounded-full",
-				[Variants.SR]: "bg-white rounded-full",
+				[Variants.BH3]: "bg-white border-2 border-bh-knob-border",
+				[Variants.HK4E]: "bg-[#ece5d8] rounded-full",
+				[Variants.HKRPG]: "bg-white rounded-full",
 				[Variants.NAP]: "rounded-full bg-nap-knob-bg",
 			},
 		},

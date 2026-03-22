@@ -1,24 +1,6 @@
-import { info } from "@tauri-apps/plugin-log";
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-
-/**
- * @param url The URL to check
- * @returns HTTP status code of the URL
- */
-export const getHttpStatus = async (url: string): Promise<number> => {
-	console.log(`Checking HTTP Status of ${url}`);
-	return new Promise((resolve, reject) => {
-		if (!isURLValid(url)) {
-			reject(`getHttpStatus: URL ${url} is invalid`);
-		}
-		fetch(url, {
-			method: "GET",
-		}).then((response) => {
-			resolve(response.status);
-		});
-	});
-};
+import { listen } from "@tauri-apps/api/event";
+import { info } from "@tauri-apps/plugin-log";
 
 /**
  * @param verifyingString the string you want to verify
@@ -65,7 +47,9 @@ export const getApiJson = async (url: string): Promise<any> => {
  * @param url link to a github api link
  * @returns Object containing only useful information used by yoohoo when getting data from GitHub repositories
  */
-export const getGithubInfo = async (url: string): Promise<any> => {
+export const getGithubInfo = async (
+	url: string,
+): Promise<{ downloadURL: string; hash: string; tagName: string }> => {
 	return new Promise((resolve, reject) => {
 		if (!url.includes("api.github.com")) {
 			reject("URL Does not point to the GitHub API");
@@ -82,4 +66,29 @@ export const getGithubInfo = async (url: string): Promise<any> => {
 				reject(e);
 			});
 	});
+};
+
+export const downloadFile = async (url: string, destination: string) => {
+	const downloadID = crypto.randomUUID();
+
+	const unlisten = await listen<{ progress: number; total: number }>(
+		`download://progress/${downloadID}`,
+		({ payload }) => {
+			// TODO: Create some sort of function that can automatically determine the best size unit
+			// For now, just using MB
+			const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
+			const total = (payload.total / 1024 ** 2).toFixed(2);
+			info(`Downloaded ${downloaded}MB of ${total}MB`);
+		},
+	);
+
+	try {
+		await invoke("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} finally {
+		unlisten();
+	}
 };

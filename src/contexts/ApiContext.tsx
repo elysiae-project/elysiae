@@ -8,10 +8,7 @@ import {
 	LauncherGraphicsData,
 	LauncherGraphicsRawData,
 	LauncherGraphicsRawGameData,
-	LauncherPkgRawData,
-	LauncherGamePkgRawData,
 	Variants,
-	LauncherPkgData,
 } from "../types";
 
 const LAUNCHER_ID = "VYTpXlbWo8";
@@ -22,13 +19,11 @@ const BH3_EN_ID = "bxPTXSET5t";
 interface ApiContextType {
 	graphics: LauncherGraphicsData | null;
 	branding: LauncherBrandingData | null;
-	gamePackages: LauncherPkgData | null;
 }
 
 export const ApiContext = createContext<ApiContextType>({
 	graphics: null,
 	branding: null,
-	gamePackages: null,
 });
 
 let loading = false;
@@ -40,8 +35,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	const [brandingData, setBrandingData] = useState<LauncherBrandingData | null>(
 		null,
 	);
-
-	const [pkgData, setPkgData] = useState<LauncherPkgData | null>(null);
 
 	useEffect(() => {
 		if (!loading) {
@@ -59,13 +52,13 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 							let id;
 							switch (game.game.biz) {
 								case "bh3_global":
-									if (game.game.id === BH3_EN_ID) id = Variants.BH;
+									if (game.game.id === BH3_EN_ID) id = Variants.BH3;
 									break;
 								case "hk4e_global":
-									id = Variants.YS;
+									id = Variants.HK4E;
 									break;
 								case "hkrpg_global":
-									id = Variants.SR;
+									id = Variants.HKRPG;
 									break;
 								case "nap_global":
 									id = Variants.NAP;
@@ -100,13 +93,13 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 							let id;
 							switch (game.biz) {
 								case "bh3_global":
-									id = Variants.BH;
+									id = Variants.BH3;
 									break;
 								case "hk4e_global":
-									id = Variants.YS;
+									id = Variants.HK4E;
 									break;
 								case "hkrpg_global":
-									id = Variants.SR;
+									id = Variants.HKRPG;
 									break;
 								case "nap_global":
 									id = Variants.NAP;
@@ -126,44 +119,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 				})
 				.catch((err) => console.log(err))
 				.finally(() => (loading = false));
-
-			fetch(
-				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getGamePackages"].join("/")}?launcher_id=${LAUNCHER_ID}`,
-			)
-				.then((res) => res.json())
-				.then((data: LauncherPkgRawData) => {
-					if (data.message !== "OK") throw new Error(data.message);
-					console.log(data);
-
-					// TODO: The downloader type json thingy. Too lazy to figure this out right now
-					const formatted = data.data.game_packages.reduce(
-						(acc: LauncherPkgData, game: LauncherGamePkgRawData) => {
-							let id;
-							switch (game.game.biz) {
-								case "bh3_global":
-									id = Variants.BH;
-									break;
-								case "hk4e_global":
-									id = Variants.YS;
-									break;
-								case "hkrpg_global":
-									id = Variants.SR;
-									break;
-								case "nap_global":
-									id = Variants.NAP;
-									break;
-							}
-							if (typeof id === "undefined") return acc;
-							// TODO: need to check this logic, may need to handle merging objects/arrays
-							acc[id] = game;
-							return acc as LauncherPkgData;
-						},
-						{} as LauncherPkgData,
-					);
-					console.log(formatted);
-					setPkgData(formatted);
-				})
-				.finally(() => (loading = false));
 		}
 	}, []);
 
@@ -172,7 +127,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 			value={{
 				graphics: graphicsData,
 				branding: brandingData,
-				gamePackages: pkgData,
 			}}
 		>
 			{children}

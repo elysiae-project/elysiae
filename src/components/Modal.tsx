@@ -9,9 +9,9 @@ const modalStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "bg-bh-modal-bg rounded-lg",
-				[Variants.YS]: "bg-ys-modal-bg rounded-md text-white",
-				[Variants.SR]: "bg-sr-modal-bg rounded-md",
+				[Variants.BH3]: "bg-bh-modal-bg rounded-lg",
+				[Variants.HK4E]: "bg-ys-modal-bg rounded-md text-white",
+				[Variants.HKRPG]: "bg-sr-modal-bg rounded-md",
 				[Variants.NAP]: "nap-dots rounded-xl border-4 border-nap-btn-border",
 			},
 		},
@@ -23,10 +23,10 @@ const modalTitlebarStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH]: "border-b-white",
-				[Variants.YS]:
+				[Variants.BH3]: "border-b-white",
+				[Variants.HK4E]:
 					"text-ys-modal-titlebar-text border-b-ys-modal-titlebar-border",
-				[Variants.SR]: "border-b-black",
+				[Variants.HKRPG]: "border-b-black",
 				[Variants.NAP]: "border-b-white",
 			},
 		},

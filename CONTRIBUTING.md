@@ -1,4 +1,4 @@
-# Contributing To Yoohoo!
+# Contributing To Elysiae
 
 I welcome changes with open arms! I am a (relatively) new software developer and will make some mistakes that some of you can see from miles away. Please, feel free to submit a pull request if you know how to fix an issue/improve a feature
 
@@ -15,7 +15,7 @@ Make sure you have all of the following build dependencies installed before atte
 After installing the system dependencies, install the NodeJS dependencies in the project:
 
 > [!IMPORTANT]  
-> Yoohoo uses the yarn package manager for NodeJS package management. Please ensure that corepack is installed and enabled by running `npm i -g corepack@latest && corepack enable`. Doing so will download the appropriate version of `yarn` once you run the installation command below
+> Elysiae uses the yarn package manager for NodeJS package management. Please ensure that corepack is installed and enabled by running `npm i -g corepack@latest && corepack enable`. Doing so will download the appropriate version of `yarn` once you run the installation command below
 
 ```sh
 yarn install
@@ -28,7 +28,7 @@ Generating flatpak installers will require a bit of extra setup. You'll want to 
 - Flatpak
 - Flatpak Builder
 
-You also want to install the flatpak Platforms/SDKs/Extensions that Yoohoo Uses:
+You also want to install the flatpak Platforms/SDKs/Extensions that Elysiae Uses:
 
 ```sh
 flatpak install org.gnome.{Platform,Sdk}//49 -y
@@ -52,6 +52,6 @@ yarn tauri build
 ### Building Flatpak
 
 ```sh
-flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build dev.shob3r.yoohoo.yml
-flatpak build-bundle repo dev.shob3r.yoohoo.flatpak dev.shob3r.yoohoo
+flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build app.elysiae.Elysiae.yml
+flatpak build-bundle repo app.elysiae.Elysiae.flatpak app.elysiae.Elysiae
 ```
