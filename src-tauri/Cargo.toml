@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Universal 'Anime Game' Launcher for Linux Hosts"
 authors = [
     "Shob3r <andrewpinter23@gmail.com>",
-    "ChakornK <ChakornK2007@gmail.com>",
+    "ChakornK <chakornk2007@gmail.com>",
+    "The Elysiae Project",
+    "Elysiae Contributors",
 ]
 edition = "2024"
 
@@ -37,7 +39,7 @@ walkdir = "2.5.0"
 zstd = "0.13.3"
 xz = "0.1.0"
 flate2 = "1.1.9"
-zip = "8.3.1"
+zip = "8.4.0"
 tar = "0.4.45"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
