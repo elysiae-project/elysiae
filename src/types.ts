@@ -134,6 +134,7 @@ export type LauncherBrandingRawData = {
 };
 export type LauncherBrandingData = {
 	[key in Variants]: {
+		id: string;
 		icon: string;
 		iconLarge: string;
 	};

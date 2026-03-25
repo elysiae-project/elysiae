@@ -82,13 +82,13 @@ export default function Button({
 	overrideMinWidth?: boolean;
 	intent: "primary" | "secondary" | null | undefined;
 }) {
-	const { game, setGame } = useGame();
+	const { game } = useGame();
 	return (
-		<div
+		<button
 			onClick={onClick}
 			class={`${buttonStyles({ game: game, variant: intent })} ${!overrideMinWidth ? "min-w-60" : ""}`}
 		>
 			{children}
-		</div>
+		</button>
 	);
 }

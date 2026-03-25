@@ -107,6 +107,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 							}
 							if (typeof id === "undefined") return acc;
 							acc[id] = {
+								id: game.id,
 								icon: game.display.icon.url,
 								iconLarge: game.display.shortcut.url,
 							};

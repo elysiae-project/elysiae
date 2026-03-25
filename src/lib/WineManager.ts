@@ -2,10 +2,10 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import { ComponentData, WineComponent, WineModule } from "../types";
 import { exists, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
-import { downloadFile } from "./WebUtils";
-import { extractFile } from "./FileUtils";
+import { downloadFile } from "../util/WebUtils";
+import { extractFile } from "../util/FileUtils";
 import { error, info } from "@tauri-apps/plugin-log";
-import { executeLocalCommand, executeShellCommand } from "./AppFunctions";
+import { executeLocalCommand, executeShellCommand } from "../util/AppFunctions";
 
 // Components that get regular updates (i.e. wine, dxvk)
 const components: WineComponent[] = [

@@ -10,7 +10,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import Button from "./components/Button.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Save } from "lucide-preact";
-import { updateWineComponents, wineEnvAvailable } from "./util/WineManager.ts";
+import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -63,7 +63,7 @@ function Background() {
 				<img class="absolute h-full w-full object-cover" src={url} alt="" />
 			) : (
 				<video
-					class="absolute intset-0 h-full w-full object-cover"
+					class="absolute inset-0 h-full w-full object-cover"
 					src={url}
 					autoplay
 					loop
@@ -118,7 +118,6 @@ function App() {
 										: "Launch"}
 							</Button>
 						</div>
-
 						<Sidebar />
 					</div>
 				) : (

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { exists, remove } from "./Fs";
+import { exists, remove } from "../lib/Fs";
 import { error, info } from "@tauri-apps/plugin-log";
 /**
  * @param dir Directory to search
@@ -50,9 +50,9 @@ export const extractFile = async (
 ): Promise<void> => {
 	info(archivePath);
 	if (await exists(archivePath)) {
-		await invoke('extract_file', {
+		await invoke("extract_file", {
 			archive: archivePath,
-			dest: dest
+			dest: dest,
 		});
 		remove(archivePath);
 	} else {
