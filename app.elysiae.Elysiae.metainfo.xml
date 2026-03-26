@@ -1,41 +1,81 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 The Elysiae Project -->
 <component type="desktop-application">
-    <id>app.elysiae.Elysiae</id>
-    <branding>
-        <color type="primary" scheme_preference="light">#4bcaf4</color>
-        <color type="primary" scheme_preference="dark">#473a7c</color>    
-    </branding>
-    <developer id="app.elysiae">
-        <name>Shob3r &amp; ChakornK </name>
-    </developer>
     <name>Elysiae</name>
-    <summary>Unofficial "Anime Game" Launcher for Linux</summary>
-    <metadata_license>CC0-1.0</metadata_license>
-    <project_license>BSD-3-Clause</project_license>
-    <url type="homepage">https://github.com/elysiae-project/elysiae</url>
-    <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
+    <id>app.elysiae.Elysiae</id>
+
+    <developer id="app.elysiae">
+        <name>Shob3r</name>
+        <name>ChakornK</name>
+        <name>Elysiae Contributors</name>
+    </developer>
+
+    <summary>Universal "Anime Game" Launcher</summary>
     <description>
-        <p>This app is in Alpha! Please use with caution, and expect bugs and missing features</p>
-        <p>Elysiae is a Universal "Anime Game" for x64 Linux hosts using Wine and DXVK.</p>
-        <p>The application meant to replace the individual launchers created by an-anime-team, as
-            work on a unified launcher has stalled</p>
+        <p>This app is in early development! Expect bugs and missing/unpolished features. Please report any bugs on our GitHub repository</p>
+        <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
+        <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and twintail/</p>
     </description>
+
+    <project_license>BSD-3-Clause</project_license>
+    <metadata_license>CC0-1.0</metadata_license>
+
     <categories>
         <category>Game</category>
         <category>LauncherStore</category>
     </categories>
+
+    <url type="homepage">https://elysiae.app</url>
+    <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
+
     <requires>
         <control>keyboard</control>
         <control>pointing</control>
-        <display_length compare="ge">768</display_length>
+        <control>gamepad</control>
+        <control>touch</control>
+        <display_length compare="ge">1279</display_length> <!--TODO: Handheld (i.e. Steam Deck, ROG Ally, etc.) support-->
     </requires>
+
     <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
+    <provides>
+        <id>Elysiae.desktop</id>
+    </provides>
+
+    <branding>
+        <color type="primary" scheme_preference="light">#4bcaf4</color>
+        <color type="primary" scheme_preference="dark">#473a7c</color>    
+    </branding>
+
     <!--
-    The Flathub styling guide says that I should set the rating while also keeping in mind what this application downloads. 
-    However, the projects I'm trying to replace (from an-anime-team) do not. I will do the same, because the content that Elysiae
-    downloads is can't really define a global rating for the application, since each game contains different (albeit somewhat similar) 
-    subject matter.
-        -->
+    TODO: Create actual release information after 0.1.0 releases
+
+    <screenshots>
+        <screenshot type="default">
+            <image></image>
+            <caption>Elysiae's main UI</caption>
+        </screenshot>
+        <screenshot>
+            <image></image>
+            <caption></caption>
+        </screenshot>
+    </screenshots>
+
+    <releases>
+        <release version="0.1.0" date="2026-05-20"> 
+
+        </release>
+    </releases>-->
+
+
+    <!--
+    "For example, an RSS reader that doesn't feature any content can be "All Ages", but the rating for a manga app with pre-configured servers 
+    should reflect the content of those default sources"
+
+    The Flathub style guide recommends setting age ratings based on content served from the download servers (see quote above). 
+    Other project do NOT do this, but I will do so regardless.
+    
+    Generally, all the content downloaded from this launcher falls into the criteria below, but some may be a bit more or less prevelant in each game
+    -->
     <content_rating type="oars-1.1">
         <content_attribute id="violence-fantasy">moderate</content_attribute>
         <content_attribute id="violence-bloodshed">mild</content_attribute>
