@@ -60,7 +60,7 @@ const buttonStyles = cva(
 			{
 				game: Variants.NAP,
 				variant: "primary",
-				class: "nap-dots",
+				class: "nap-dots-titlebar-btn",
 			},
 			{
 				game: Variants.NAP,
@@ -80,7 +80,7 @@ export default function Button({
 	onClick: () => void;
 	children: any;
 	overrideMinWidth?: boolean;
-	intent: "primary" | "secondary" | null | undefined;
+	intent: "primary" | "secondary";
 }) {
 	const { game } = useGame();
 	return (

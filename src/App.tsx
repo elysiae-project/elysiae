@@ -11,6 +11,7 @@ import Button from "./components/Button.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Save } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
+import { isGameInstalled } from "./lib/GameHandler.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -54,23 +55,28 @@ function Background() {
 			: graphics[game].backgroundVideo;
 
 	return (
-		<>
+		<div class="absolute inset-0 overflow-hidden">
 			<img
-				class="absolute inset-0 h-full w-full object-cover z-10"
+				class="absolute inset-0 h-full w-full object-cover z-10 scale-[1.005]"
 				src={graphics[game].backgroundVideoOverlay}
 			/>
 			{url.endsWith(".webp") ? (
-				<img class="absolute h-full w-full object-cover" src={url} alt="" />
+				<img
+					class="absolute inset-0 h-full w-full object-cover scale-[1.005]"
+					src={url}
+					alt=""
+				/>
 			) : (
 				<video
-					class="absolute inset-0 h-full w-full object-cover"
-					src={url}
+					class="absolute inset-0 h-full w-full object-cover scale-[1.005]"
 					autoplay
 					loop
 					muted
-				/>
+					src={url}
+				>
+				</video>
 			)}
-		</>
+		</div>
 	);
 }
 
@@ -84,6 +90,9 @@ function App() {
 	useEffect(() => {
 		wineEnvAvailable().then((res) => {
 			setWineAvailable(res);
+		});
+		isGameInstalled(game).then((res) => {
+			setGameInstalled(res);
 		});
 	}, [game]);
 

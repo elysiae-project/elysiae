@@ -9,6 +9,9 @@
 > [!WARNING]  
 > This project is in Alpha! Some features are missing and others may have issues.
 
+> [!IMPORTANT]
+> This project will only be available as source code until a 1.0 release is complete. Afterwards, it will be submitted to Flathub for distribution there.
+
 ## Why This Project Exists
 
 Elysiae aims to create a unified launcher for all "anime games", intending to serve as a replacement to the launchers that were developed by [an-anime-team](https://github.com/an-anime-team).
@@ -33,10 +36,6 @@ To use Elysiae, you will need the following:
 - A Desktop Environment running on the Wayland compositor (You most likely have this)
 - About 300Mb of storage (base install + wine environment)
 - Enough additional storage to install any of the games you'd like to play (~70-110GB per game)
-
-## Installing Elysiae
-
-**WIP**
 
 ## Building From Source / Contributing to Elysiae
 

@@ -1,6 +1,6 @@
 [package]
 name = "Elysiae"
-version = "0.1.0"
+version = "1.0.0"
 description = "Universal 'Anime Game' Launcher for Linux Hosts"
 authors = [
     "Shob3r <andrewpinter23@gmail.com>",

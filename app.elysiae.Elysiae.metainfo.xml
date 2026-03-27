@@ -12,7 +12,6 @@
 
     <summary>Universal "Anime Game" Launcher</summary>
     <description>
-        <p>This app is in early development! Expect bugs and missing/unpolished features. Please report any bugs on our GitHub repository</p>
         <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
         <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and twintail/</p>
     </description>
@@ -47,7 +46,7 @@
     </branding>
 
     <!--
-    TODO: Create actual release information after 0.1.0 releases
+    TODO: Create actual release information after 1.0.0 release
 
     <screenshots>
         <screenshot type="default">
@@ -61,7 +60,7 @@
     </screenshots>
 
     <releases>
-        <release version="0.1.0" date="2026-05-20"> 
+        <release version="1.0.0" date="2026-05-20"> 
 
         </release>
     </releases>-->

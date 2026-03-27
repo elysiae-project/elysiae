@@ -86,7 +86,7 @@ export default function ToggleSwitch({
 	onClick: (enabled: boolean) => void;
 	startActive: boolean;
 }) {
-	const { game, setGame } = useGame();
+	const { game } = useGame();
 	let [enabled, setEanbled] = useState<boolean>(startActive);
 
 	return (
