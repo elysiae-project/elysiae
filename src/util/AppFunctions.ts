@@ -39,7 +39,7 @@ export const getActiveGameCode = (
 export const getGameExeName = (currentGame: Variants): string => {
 	switch (currentGame) {
 		case Variants.BH3:
-			return "BH3.exe";
+			return "\x42\x48\x33.exe";
 		case Variants.HK4E:
 			return "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe";
 		case Variants.HKRPG:

@@ -1,17 +1,19 @@
 import "./App.css";
-import { useGame } from "./hooks/useGame.ts";
+import Button from "./components/Button.tsx";
+import Background from "./components/Background.tsx";
+import Sidebar from "./components/Sidebar.tsx";
 import Titlebar from "./components/Titlebar.tsx";
+import { useGame } from "./hooks/useGame.ts";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
-import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
-import Button from "./components/Button.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Save } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
 import { isGameInstalled } from "./lib/GameHandler.ts";
+
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -19,9 +21,9 @@ const theme = cva("h-full w-full overflow-hidden", {
 			[Variants.BH3]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
 			[Variants.HK4E]: "bg-ys-bg font-ys text-black",
 			[Variants.HKRPG]:
-				"bg-sr-bg font-bh-sr rounded-b-xs border border-[#393939] text-black",
+				"bg-sr-bg font-bh-sr rounded-b-xs text-black",
 			[Variants.NAP]:
-				"bg-nap-bg font-nap rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white",
+				"bg-nap-bg font-nap rounded-br-xl border-nap-border text-white",
 		},
 	},
 });
@@ -41,42 +43,6 @@ function PreinstallButton() {
 		<Button intent="primary" overrideMinWidth={true} onClick={async () => {}}>
 			<Save />
 		</Button>
-	);
-}
-
-function Background() {
-	const { game } = useGame();
-	const { graphics } = useApi();
-	if (!graphics) return null;
-
-	const url =
-		graphics[game].backgroundVideo === ""
-			? graphics[game].backgroundImage
-			: graphics[game].backgroundVideo;
-
-	return (
-		<div class="absolute inset-0 overflow-hidden">
-			<img
-				class="absolute inset-0 h-full w-full object-cover z-10 scale-[1.005]"
-				src={graphics[game].backgroundVideoOverlay}
-			/>
-			{url.endsWith(".webp") ? (
-				<img
-					class="absolute inset-0 h-full w-full object-cover scale-[1.005]"
-					src={url}
-					alt=""
-				/>
-			) : (
-				<video
-					class="absolute inset-0 h-full w-full object-cover scale-[1.005]"
-					autoplay
-					loop
-					muted
-					src={url}
-				>
-				</video>
-			)}
-		</div>
 	);
 }
 

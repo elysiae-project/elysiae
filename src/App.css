@@ -211,3 +211,7 @@
 	-webkit-filter: grayscale(100%);
 	filter: grayscale(100%);
 }
+
+.background {
+	@apply absolute inset-0 h-full w-full object-cover scale-[1.0045];
+}

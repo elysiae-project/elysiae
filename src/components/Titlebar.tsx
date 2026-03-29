@@ -12,7 +12,7 @@ const titlebarStyles = cva("h-15 min-w-full p-1 transition-all duration-175", {
 			[Variants.HK4E]: "bg-ys-titlebar font-ys",
 			[Variants.HKRPG]: "bg-sr-titlebar titlebar-sr-noise font-bh-sr",
 			[Variants.NAP]:
-				"bg-nap-titlebar nap-dots-titlebar font-nap border-t-2 border-r-2 border-l-2 border-nap-border rounded-tl-xl",
+				"bg-nap-titlebar nap-dots-titlebar font-nap rounded-tl-xl",
 		},
 	},
 });
