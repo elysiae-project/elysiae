@@ -1,11 +1,12 @@
 import { cva } from "class-variance-authority";
-import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
+import { useGame } from "../hooks/useGame";
 import { getActiveGameCode } from "../util/AppFunctions";
 import { useState } from "preact/hooks";
+import { motion } from "motion/react";
 
 const menuCloseStyles = cva(
-	"h-10 w-10 flex items-center justify-center transition-all duration-50",
+	"h-10 w-10 flex items-center justify-center transition-all duration-250",
 	{
 		variants: {
 			game: {
@@ -31,7 +32,11 @@ export default function MenuClose({
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
-		<button
+		<motion.button
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={{ opacity: 0 }}
+			transition={{ duration: 0.25, ease: "easeInOut" }}
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
@@ -49,18 +54,26 @@ export default function MenuClose({
 				}
 			}}
 		>
-			<img
+			<motion.img
+				initial={{ opacity: 0 }}
+				animate={{ opacity: 1 }}
+				exit={{ opacity: 0 }}
+				transition={{ duration: 0.25, ease: "easeInOut" }}
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}
 				width={18}
 				height={18}
 			/>
-			<img
+			<motion.img
+				initial={{ opacity: 0 }}
+				animate={{ opacity: 1 }}
+				exit={{ opacity: 0 }}
+				transition={{ duration: 0.25, ease: "easeInOut" }}
 				style={{ display: mouseDown ? "" : "none" }}
 				src={`${assetPath}/close-click.svg`}
 				width={18}
 				height={18}
 			/>
-		</button>
+		</motion.button>
 	);
 }
