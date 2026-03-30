@@ -1,9 +1,5 @@
 @import "tailwindcss";
 
-:root::view-transition {
-	background-color: #232323;
-}
-
 @theme {
 	/* Bh */
 	--color-bh-titlebar: #223651;
@@ -121,7 +117,6 @@
 	}
 }
 
-/* These fonts belong to Hoyoverse, I scraped them from legitimate game installs */
 @font-face {
 	font-family: ys;
 	src: url("/src/assets/font/YS.woff2");

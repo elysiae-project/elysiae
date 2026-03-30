@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useApi } from "../hooks/useApi";
 import { useGame } from "../hooks/useGame";
+import { Variants } from "../types";
 
 const BackgroundImage = ({ src }: { src: string }) => {
-    /* The extra scale is needed to prevent the overlay from
+	/* The extra scale is needed to prevent the overlay from
 	 * showing the border it has for some reason. scale is very miniscule,
 	 * I don't think it's noticable at all (1920x1080 -> 1928x1084)
 	 */
@@ -46,9 +47,23 @@ export default function Background() {
 		graphics[game];
 	const isVideo = backgroundVideo !== "";
 
+	// For some ungodly reason, hkrpg videos are encoded with yuv420p and not RGB/GBR, causing webkit2gtk to fail to render them.
+	// Manual override to background image for now
+	if (game === Variants.HKRPG) {
+		return (
+			<div class="absolute inset-0 overflow-hidden">
+				<BackgroundImage key={`${game}-bg`} src={backgroundImage} />
+				<BackgroundImage
+					key={`${game}-overlay`}
+					src={backgroundVideoOverlay}
+				/>{" "}
+			</div>
+		);
+	}
+
 	return (
 		<div class="absolute inset-0 overflow-hidden">
-			<AnimatePresence mode="sync" initial={false}>
+			<AnimatePresence mode="sync">
 				{/* Game Background */}
 				{isVideo ? (
 					<BackgroundVideo key={`${game}-bg`} src={backgroundVideo} />
