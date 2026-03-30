@@ -28,7 +28,7 @@ After multiple bad update cycles that I've experienced using their launchers, I 
 
 ## Software Requirements
 
-To use Elysiae, you will need the following:
+Minimum:
 
 - A 64-Bit CPU
 - Linux Kernel >= 6.1 with support for futex2 (Most distros will have this)
@@ -36,6 +36,10 @@ To use Elysiae, you will need the following:
 - A Desktop Environment running on the Wayland compositor (You most likely have this)
 - About 300Mb of storage (base install + wine environment)
 - Enough additional storage to install any of the games you'd like to play (~70-110GB per game)
+
+Recommended:
+
+- Linux Kernel >= 6.14. Support for futex2 is optional if you have at least 6.14 installed
 
 ## Building From Source / Contributing to Elysiae
 

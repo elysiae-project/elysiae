@@ -13,15 +13,14 @@ import { useEffect, useState } from "preact/hooks";
 import { Save } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
 import { isGameInstalled } from "./lib/GameHandler.ts";
-
+import Modal from "./components/Modal.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
 			[Variants.BH3]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
 			[Variants.HK4E]: "bg-ys-bg font-ys text-black",
-			[Variants.HKRPG]:
-				"bg-sr-bg font-bh-sr rounded-b-xs text-black",
+			[Variants.HKRPG]: "bg-sr-bg font-bh-sr rounded-b-xs text-black",
 			[Variants.NAP]:
 				"bg-nap-bg font-nap rounded-br-xl border-nap-border text-white",
 		},

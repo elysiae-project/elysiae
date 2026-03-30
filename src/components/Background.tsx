@@ -56,7 +56,7 @@ export default function Background() {
 				<BackgroundImage
 					key={`${game}-overlay`}
 					src={backgroundVideoOverlay}
-				/>{" "}
+				/>
 			</div>
 		);
 	}

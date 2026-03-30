@@ -48,8 +48,8 @@ export default function Modal({
 	open: boolean;
 	onOpenUpdate?: () => void;
 }) {
-	const { game, setGame } = useGame();
-	let [isOpen, setIsOpen] = useState(open);
+	const { game } = useGame();
+	let [isOpen, setIsOpen] = useState<boolean>(open);
 
 	const updateOpenState = () => {
 		setIsOpen(false);
