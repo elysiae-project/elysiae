@@ -7,7 +7,7 @@ import { motion } from "motion/react";
 import { fadeInOut } from "../util/Animations";
 
 const menuCloseStyles = cva(
-	"h-10 w-10 flex items-center justify-center transition-all duration-250",
+	"h-10 w-10 flex items-center justify-center transition-all duration-75",
 	{
 		variants: {
 			game: {
