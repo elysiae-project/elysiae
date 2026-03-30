@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useApi } from "../hooks/useApi";
 import { useGame } from "../hooks/useGame";
+import { fadeInOut } from "../util/Animations";
 
 const BackgroundImage = ({ src }: { src: string }) => {
 	/* The extra scale is needed to prevent the overlay from
@@ -8,15 +9,7 @@ const BackgroundImage = ({ src }: { src: string }) => {
 	 * I don't think it's noticable at all (1920x1080 -> 1928x1084)
 	 */
 	return (
-		<motion.img
-			class="background"
-			initial={{ opacity: 0 }}
-			animate={{ opacity: 1 }}
-			exit={{ opacity: 0 }}
-			transition={{ duration: 0.25, ease: "easeInOut" }}
-			src={src}
-			alt=""
-		/>
+		<motion.img class="background" {...(fadeInOut as any)} src={src} alt="" />
 	);
 };
 
@@ -24,10 +17,7 @@ function BackgroundVideo({ src }: { src: string }) {
 	return (
 		<motion.video
 			class="background"
-			initial={{ opacity: 0 }}
-			animate={{ opacity: 1 }}
-			exit={{ opacity: 0 }}
-			transition={{ duration: 0.25, ease: "easeInOut" }}
+			{...(fadeInOut as any)}
 			src={src}
 			autoplay
 			loop

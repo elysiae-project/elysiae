@@ -4,6 +4,7 @@ import { Variants } from "../types";
 import { closeApp } from "../util/AppFunctions.ts";
 import { motion, AnimatePresence } from "motion/react";
 import MenuClose from "./MenuClose.tsx";
+import { fadeInOut } from "../util/Animations.ts";
 
 const titlebarStyles = cva(
 	"h-15 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
@@ -21,6 +22,7 @@ const titlebarStyles = cva(
 	},
 );
 
+
 export default function Titlebar() {
 	const { game } = useGame();
 	return (
@@ -32,13 +34,10 @@ export default function Titlebar() {
 			>
 				<AnimatePresence mode="wait" initial={false}>
 					<motion.h1
+						{...fadeInOut as any}
 						key={`${game}-appTitle`}
 						class="text-center text-[1.35rem]"
 						data-tauri-drag-region
-						initial={{ opacity: 0 }}
-						animate={{ opacity: 1 }}
-						exit={{ opacity: 0 }}
-						transition={{ duration: 0.25, ease: "easeInOut" }}
 					>
 						Elysiae
 					</motion.h1>

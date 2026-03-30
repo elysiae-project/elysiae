@@ -4,6 +4,7 @@ import { useGame } from "../hooks/useGame";
 import { getActiveGameCode } from "../util/AppFunctions";
 import { useState } from "preact/hooks";
 import { motion } from "motion/react";
+import { fadeInOut } from "../util/Animations";
 
 const menuCloseStyles = cva(
 	"h-10 w-10 flex items-center justify-center transition-all duration-250",
@@ -33,10 +34,7 @@ export default function MenuClose({
 
 	return (
 		<motion.button
-			initial={{ opacity: 0 }}
-			animate={{ opacity: 1 }}
-			exit={{ opacity: 0 }}
-			transition={{ duration: 0.25, ease: "easeInOut" }}
+			{...(fadeInOut as any)}
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
@@ -55,20 +53,14 @@ export default function MenuClose({
 			}}
 		>
 			<motion.img
-				initial={{ opacity: 0 }}
-				animate={{ opacity: 1 }}
-				exit={{ opacity: 0 }}
-				transition={{ duration: 0.25, ease: "easeInOut" }}
+				{...(fadeInOut as any)}
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}
 				width={18}
 				height={18}
 			/>
 			<motion.img
-				initial={{ opacity: 0 }}
-				animate={{ opacity: 1 }}
-				exit={{ opacity: 0 }}
-				transition={{ duration: 0.25, ease: "easeInOut" }}
+				{...(fadeInOut as any)}
 				style={{ display: mouseDown ? "" : "none" }}
 				src={`${assetPath}/close-click.svg`}
 				width={18}
