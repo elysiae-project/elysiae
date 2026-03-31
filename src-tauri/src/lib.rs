@@ -33,6 +33,12 @@ pub fn run() {
 
 #[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
+    /* Extensive digging has revealed why this workaround is needed on NVIDIA devices (from my understanding):
+     *
+     * webkit2gtk isn't implementing some of the the wayland compositor protocols
+     * to the letter and NVIDIA drivers freak out because it expects implementations that do
+     * follow the standards to the letter
+     */
     if is_nvidia() && is_wayland() {
         unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
     }
@@ -40,6 +46,7 @@ fn apply_nvidia_wayland_workaround() {
 
 #[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
+    // If a NVIDIA graphics card is present, one of these two files should also be available
     std::path::Path::new("/proc/driver/nvidia/version").exists()
         || std::path::Path::new("/dev/nvidia0").exists()
 }
