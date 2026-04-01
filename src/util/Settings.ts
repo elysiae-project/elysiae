@@ -2,7 +2,7 @@ import { resolveResource } from "@tauri-apps/api/path";
 import { error } from "@tauri-apps/plugin-log";
 import { load, Store } from "@tauri-apps/plugin-store";
 
-type options = "selectedGame" | "voLanguage" | "";
+type Options = "selectedGame" | "voLanguage" | "";
 let store: Store | undefined;
 
 const loadStore = async (): Promise<Store> => {
@@ -24,7 +24,7 @@ const loadStore = async (): Promise<Store> => {
 	});
 };
 
-export const getOption = async (key: options): Promise<any> => {
+export const getOption = async (key: Options): Promise<any> => {
 	if (!store) {
 		store = await loadStore();
 	}
@@ -41,7 +41,7 @@ export const getOption = async (key: options): Promise<any> => {
 	});
 };
 
-export const setOption = async (key: options, value: any): Promise<void> => {
+export const setOption = async (key: Options, value: any): Promise<void> => {
 	if (!store) {
 		store = await loadStore();
 	}

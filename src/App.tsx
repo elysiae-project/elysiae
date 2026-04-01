@@ -10,10 +10,12 @@ import { useApi } from "./hooks/useApi.ts";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useEffect, useState } from "preact/hooks";
-import { Save } from "lucide-preact";
+import { Info, Save, Settings } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import { isGameInstalled } from "./lib/GameHandler.ts";
+import { isGameInstalled } from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
+import { settingsDetails } from "./util/SettingsDetails.ts";
+import Dropdown from "./components/Dropdown.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -51,6 +53,7 @@ function App() {
 
 	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
 	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
+	let [settingsOpen, setSettingsOpen] = useState<boolean>(true);
 
 	useEffect(() => {
 		wineEnvAvailable().then((res) => {
@@ -69,10 +72,36 @@ function App() {
 				{graphics ? (
 					<div class="relative h-full w-full">
 						<Background />
+						<Modal
+							onOpenUpdate={() => setSettingsOpen(false)}
+							title="Settings"
+							open={settingsOpen}
+						>
+							{settingsDetails.map((setting) => {
+								return <div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
+									<div class="flex flex-row items-center justify-left gap-x-1">
+										<p>{setting.name}</p>
+										{typeof setting.description !== 'undefined' ? <Info size={15}/> : null}
+									</div>
+									<div>
 
-						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-5">
+									</div>
+								</div>;
+							})}
+						</Modal>
+
+						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
 							{/* Page content */}
 							<PreinstallButton />
+							<Button
+								intent="primary"
+								onClick={() => {
+									setSettingsOpen(true);
+								}}
+								overrideMinWidth
+							>
+								<Settings />
+							</Button>
 							<Button
 								intent="primary"
 								onClick={async () => {

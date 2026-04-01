@@ -40,6 +40,7 @@ fn apply_nvidia_wayland_workaround() {
      * follow the standards to the letter
      */
     if is_nvidia() && is_wayland() {
+        println!("Applying NVIDIA Wayland Hotfix");
         unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
     }
 }

@@ -10,6 +10,11 @@ import {
 	rename as tauriRename,
 } from "@tauri-apps/plugin-fs";
 
+/**
+ * Checks if a folder exists, relative to the app data directory
+ * @param path path to file/folder
+ * @returns weather or not a path  exists
+ */
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		tauriExists(path, {
@@ -20,31 +25,22 @@ export const exists = async (path: string): Promise<boolean> => {
 	});
 };
 
+/**
+ * Write to a file within the app data directory
+ * @param path path to write to (relative to app data dir)
+ * @param contents Contents to write to the file, Can be binary or text
+ */
 export const writeFile = async (
 	path: string,
 	contents:
 		| Uint8Array<ArrayBufferLike>
-		| ReadableStream<Uint8Array<ArrayBufferLike>>,
-): Promise<void> => {
-	return new Promise((resolve, reject) => {
-		tauriWriteFile(path, contents, {
-			baseDir: BaseDirectory.AppData,
-		})
-			.then(resolve)
-			.catch(reject);
-	});
-};
-
-export const writeTextFile = async (
-	path: string,
-	contents: string,
-): Promise<void> => {
-	return new Promise((resolve, reject) => {
-		tauriWriteTextFile(path, contents, {
-			baseDir: BaseDirectory.AppData,
-		})
-			.then(resolve)
-			.catch(reject);
+		| ReadableStream<Uint8Array<ArrayBufferLike>>
+		| string,
+) => {
+	const writeFunction =
+		typeof contents === "string" ? tauriWriteTextFile : tauriWriteFile;
+	await writeFunction(path, contents as any, {
+		baseDir: BaseDirectory.AppData,
 	});
 };
 
