@@ -2,10 +2,10 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import { ComponentData, WineComponent, WineModule } from "../types";
 import { exists, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
-import { downloadFile } from "./WebUtils";
-import { extractFile } from "./FileUtils";
+import { downloadFile } from "../util/WebUtils";
+import { extractFile } from "../util/FileUtils";
 import { error, info } from "@tauri-apps/plugin-log";
-import { executeLocalCommand, executeShellCommand } from "./AppFunctions";
+import { executeLocalCommand, executeShellCommand } from "../util/AppFunctions";
 
 // Components that get regular updates (i.e. wine, dxvk)
 const components: WineComponent[] = [
@@ -83,6 +83,9 @@ const wineModules: WineModule[] = [
 	},
 ] as const;
 
+/**
+ * Update All Components in the wine install
+ */
 export const updateWineComponents = async () => {
 	info(`${await appDataDir()}`);
 	for (const component of components) {
@@ -110,6 +113,9 @@ export const updateWineComponents = async () => {
 	}
 };
 
+/**
+ * Install additional Windows programs/libraries required for the programs that Elysiae runs
+ */
 const installWineModules = async () => {
 	await Promise.all(
 		wineModules.map(async (module) => {
@@ -134,6 +140,11 @@ const installWineModules = async () => {
 	);
 };
 
+/**
+ * Run a command in the wine package or in the scope of a wine environment
+ * @param args Command arguments
+ * @param binary Which wine binary you want to run
+ */
 export const wineCommand = async (
 	args: string,
 	binary: "wine" | "wineboot" | "wineserver" = "wine",
@@ -145,6 +156,11 @@ export const wineCommand = async (
 	});
 };
 
+/**
+ * Execute a Windows executable (.exe) with Wine
+ * @param path path to the executable
+ * @param args Any additional arguments the executable may have
+ */
 export const runExeWithWine = async (path: string, args?: string) => {
 	const appData = await appDataDir();
 	const fullPath = await join(appData, path);
@@ -152,12 +168,19 @@ export const runExeWithWine = async (path: string, args?: string) => {
 	await wineCommand(`${fullPath} ${typeof args !== "undefined" ? args : ""}`);
 };
 
-export const registerNewDLL = async (dllName: string) => {
+/**
+ * Adds a DLL to the wine registry
+ * @param dllName name of the DLL. No path needed, just the name
+ */
+const registerNewDLL = async (dllName: string) => {
 	await wineCommand(
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`,
 	);
 };
 
+/**
+ * @returns weather or not a wine environment exists (checks if the drive_c folder exists, which indicates that a wine environment is present)
+ */
 export const wineEnvAvailable = async (): Promise<boolean> => {
 	const winePath = await winePrefix();
 	const driveC = await join(winePath, "drive_c");
@@ -168,6 +191,9 @@ export const wineEnvAvailable = async (): Promise<boolean> => {
 	return false;
 };
 
+/**
+ * @returns Path to the wine prefix directory
+ */
 export const winePrefix = async (): Promise<string> => {
 	return new Promise((resolve) => {
 		appDataDir().then((appData) => {

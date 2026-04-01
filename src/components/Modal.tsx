@@ -1,18 +1,18 @@
-import { useEffect, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
 import { cva } from "class-variance-authority";
 import MenuClose from "./MenuClose";
 
 const modalStyles = cva(
-	"px-5 py-3 overflow-y-scroll w-auto min-w-125 h-auto min-h-75",
+	"px-5 py-3 overflow-y-scroll w-[55%] min-w-125 h-auto min-h-75 ",
 	{
 		variants: {
 			game: {
 				[Variants.BH3]: "bg-bh-modal-bg rounded-lg",
 				[Variants.HK4E]: "bg-ys-modal-bg rounded-md text-white",
 				[Variants.HKRPG]: "bg-sr-modal-bg rounded-md",
-				[Variants.NAP]: "nap-dots rounded-xl border-4 border-nap-btn-border",
+				[Variants.NAP]:
+					"nap-dots rounded-br-2xl rounded-tl-2xl border-4 border-nap-btn-border",
 			},
 		},
 	},
@@ -37,48 +37,32 @@ export default function Modal({
 	children,
 	title,
 	open,
-	onOpenUpdate = () => {
-		// Extremely hacky way to fix an issue with the implementation of modals
-		// Do not use this prop please
-		open = !open;
-	},
+	onOpenUpdate,
 }: {
-	children: any;
+	children: React.ReactNode;
 	title: string;
 	open: boolean;
-	onOpenUpdate?: () => void;
+	onOpenUpdate: () => void;
 }) {
-	const { game, setGame } = useGame();
-	let [isOpen, setIsOpen] = useState(open);
+	const { game } = useGame();
 
-	const updateOpenState = () => {
-		setIsOpen(false);
-		onOpenUpdate();
-	};
-
-	useEffect(() => {
-		updateOpenState();
-	}, [open]);
-
-	if (!isOpen) return;
+	if (!open) return null;
 
 	return (
 		<div
-			class="fixed inset-0 flex h-full w-full items-center justify-center"
+			class="absolute inset-0 z-[1000] flex h-full w-full items-center justify-center"
 			style={{
 				backdropFilter: "blur(7px)",
 				backgroundColor: "rgba(13,13,13,0.6)",
-				zIndex: 1000,
-				pointerEvents: "none",
 			}}
-			onClick={() => updateOpenState()}
+			onClick={onOpenUpdate}
 		>
-			<div class={modalStyles({ game: game })}>
-				<div class={modalTitlebarStyles({ game: game })}>
+			<div class={modalStyles({ game })} onClick={(e) => e.stopPropagation()}>
+				<div className={modalTitlebarStyles({ game })}>
 					<h2>{title}</h2>
-					<MenuClose clickAction={() => setIsOpen(false)} />
+					<MenuClose clickAction={onOpenUpdate} />
 				</div>
-				{children}
+				<div class="w-full h-full">{children}</div>
 			</div>
 		</div>
 	);
