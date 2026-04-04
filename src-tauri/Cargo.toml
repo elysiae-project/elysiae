@@ -44,7 +44,6 @@ zip = "8.5.0"
 tar = "0.4.45"
 protobuf = "3.7.2" # Latest stable
 bytes = "1.11.1"
-protobuf-parse = "3.7.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.0"
