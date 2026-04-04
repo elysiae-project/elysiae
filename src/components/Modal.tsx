@@ -12,7 +12,7 @@ const modalStyles = cva(
 				[Variants.HK4E]: "bg-ys-modal-bg rounded-md text-white",
 				[Variants.HKRPG]: "bg-sr-modal-bg rounded-md",
 				[Variants.NAP]:
-					"nap-dots rounded-br-2xl rounded-tl-2xl border-4 border-nap-btn-border",
+					"nap-dots rounded-br-2xl rounded-tl-2xl border-[0.195rem] border-nap-btn-border",
 			},
 		},
 	},
