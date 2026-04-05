@@ -7,16 +7,11 @@ import { error, info } from "@tauri-apps/plugin-log";
  */
 export const getAllFiles = async (dir: string): Promise<string[]> => {
 	return new Promise((resolve, reject) => {
-		invoke("get_all_files", {
+		invoke<string[]>("get_all_files", {
 			path: dir,
 		})
-			.then((res) => {
-				resolve(res as string[]);
-			})
-			.catch((e) => {
-				error(e);
-				reject(e);
-			});
+			.then(resolve)
+			.catch(reject);
 	});
 };
 
@@ -26,16 +21,11 @@ export const getAllFiles = async (dir: string): Promise<string[]> => {
  */
 export const getAllDirs = async (dir: string): Promise<string[]> => {
 	return new Promise((resolve, reject) => {
-		invoke("get_all_directories", {
+		invoke<string[]>("get_all_directories", {
 			path: dir,
 		})
-			.then((res) => {
-				resolve(res as string[]);
-			})
-			.catch((e) => {
-				error(e);
-				reject(e);
-			});
+			.then(resolve)
+			.catch(reject);
 	});
 };
 
@@ -56,7 +46,7 @@ export const extractFile = async (
 		});
 		remove(archivePath);
 	} else {
-		error(`extractFile: ${archivePath} does not exist`);
+		error(`extractFile: "${archivePath}" does not exist`);
 	}
 };
 
@@ -68,17 +58,31 @@ export const getTopLevelFiles = async (dir: string): Promise<string[]> => {
 	return new Promise((resolve, reject) => {
 		exists(dir).then((locationExists) => {
 			if (locationExists) {
-				invoke("get_top_level_files", {
+				invoke<string[]>("get_top_level_files", {
 					path: dir,
 				})
-					.then((res) => {
-						resolve(res as string[]);
-					})
+					.then(resolve)
 					.catch((e) => {
 						reject(`getTopLevelFiles: ${e}`);
 					});
 			} else {
-				reject(`getTopLevelFiles: Location ${dir} does not exist`);
+				reject(`getTopLevelFiles: "${dir}" does not exist`);
+			}
+		});
+	});
+};
+
+export const getMd5Hash = async (path: string): Promise<string> => {
+	return new Promise((resolve, reject) => {
+		exists(path).then((locationExists) => {
+			if (locationExists) {
+				invoke<string>("get_md5_hash", {
+					path: path,
+				})
+					.then(resolve)
+					.catch(reject);
+			} else {
+				reject(`getMd5Hash: "${path}" does not exist`);
 			}
 		});
 	});

@@ -1,4 +1,9 @@
-import { BaseDirectory } from "@tauri-apps/plugin-fs";
+import {
+	BaseDirectory,
+	MkdirOptions,
+	ReadFileOptions,
+	WriteFileOptions,
+} from "@tauri-apps/plugin-fs";
 import {
 	exists as tauriExists,
 	writeTextFile as tauriWriteTextFile,
@@ -36,11 +41,13 @@ export const writeFile = async (
 		| Uint8Array<ArrayBufferLike>
 		| ReadableStream<Uint8Array<ArrayBufferLike>>
 		| string,
+	append: boolean = false,
 ) => {
 	const writeFunction =
 		typeof contents === "string" ? tauriWriteTextFile : tauriWriteFile;
 	await writeFunction(path, contents as any, {
 		baseDir: BaseDirectory.AppData,
+		append: append,
 	});
 };
 
@@ -91,6 +98,7 @@ export const mkdir = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
 		tauriMkdir(path, {
 			baseDir: BaseDirectory.AppData,
+			recursive: true
 		})
 			.then(resolve)
 			.catch(reject);

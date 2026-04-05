@@ -13,8 +13,7 @@ export const GameContext = createContext<GameContextType>({
 });
 
 export const GameProvider = ({ children }: { children: ComponentChildren }) => {
-	const [game, setGame] = useState<Variants>(Variants.NAP);
-
+	const [game, setGame] = useState<Variants>(Variants.HKRPG);
 	return (
 		<GameContext.Provider value={{ game, setGame }}>
 			{children}

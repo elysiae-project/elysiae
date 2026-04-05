@@ -1,15 +1,22 @@
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::io::Read;
+use std::os::unix::fs::FileExt;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::util::sophon_assets::{self, SophonChunkData};
 use crate::util::sophon_assets::{FrontDoorResponse, ManifestResposne, SophonChunk};
 use bytes::Bytes;
 use protobuf::CodedInputStream;
-use tauri::command;
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager, State, command};
 use zstd::Decoder as Zstd;
 
-type ProtoObject = HashMap<String, ProtoValue>;
+pub struct HttpClient(pub reqwest::Client);
 
+type ProtoObject = HashMap<String, ProtoValue>;
+#[allow(unused)]
 #[derive(Debug, Clone)]
 enum ProtoValue {
     Uint64(u64),
@@ -17,6 +24,92 @@ enum ProtoValue {
     String(String),
     Message(ProtoObject),
     Array(Vec<ProtoValue>),
+}
+
+pub struct FileStore {
+    files: RwLock<HashMap<u32, File>>,
+    next_id: AtomicU32,
+}
+
+impl FileStore {
+    #[allow(unused)]
+    pub fn new() -> Self {
+        Self {
+            files: RwLock::new(HashMap::new()),
+            next_id: AtomicU32::new(0),
+        }
+    }
+}
+
+#[command]
+pub fn open_file(
+    path: String,
+    total_size: u64,
+    store: State<FileStore>,
+    app_handle: AppHandle,
+) -> Result<u32, String> {
+    let full_path = app_handle
+        .path()
+        .resolve(&path, BaseDirectory::AppData)
+        .unwrap();
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&full_path)
+        .map_err(|e| e.to_string())?;
+
+    file.set_len(total_size).map_err(|e| e.to_string())?;
+
+    let id = store.next_id.fetch_add(1, Ordering::Relaxed);
+    store.files.write().unwrap().insert(id, file);
+    Ok(id)
+}
+
+#[command(async)]
+pub async fn download_and_write_chunk(
+    file_id: u32,
+    cdn_url: String,
+    offset: u64,
+    store: State<'_, FileStore>,
+    client: State<'_, HttpClient>,
+) -> Result<(), String> {
+    let compressed = client
+        .0
+        .get(&cdn_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Clone the file handle and let the store reference drop before spawn_blocking
+    let file = {
+        let files = store.files.read().unwrap();
+        files
+            .get(&file_id)
+            .ok_or("invalid file id")?
+            .try_clone()
+            .map_err(|e| e.to_string())?
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let decompressed = decompress_zstd_item(&compressed).map_err(|e| e.to_string())?;
+
+        file.write_at(&decompressed, offset)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(())
+}
+
+#[command]
+pub fn close_file(id: u32, store: State<FileStore>) {
+    store.files.write().unwrap().remove(&id);
 }
 
 #[command(async)]
@@ -52,15 +145,15 @@ async fn download_parse_manifest(
     let manifest_prefix = &manifest_data.manifest_download.url_prefix;
     let chunk_prefix = &manifest_data.chunk_download.url_prefix;
 
-    let manifest_url = format!("{}{}", manifest_prefix, manifest_data.manifest.id);
+    let manifest_url = format!("{}/{}", manifest_prefix, manifest_data.manifest.id);
     let compressed_manifest = reqwest::get(manifest_url).await?.bytes().await?;
-    let decompressed = decompress_manifest(&compressed_manifest)?;
+    let decompressed = decompress_zstd_item(&compressed_manifest)?;
 
     let proto = decode_protobuf(&decompressed)?;
     Ok(proto_to_sophon_chunks(&proto, chunk_prefix))
 }
 
-fn decompress_manifest(compressed: &Bytes) -> Result<Vec<u8>, std::io::Error> {
+fn decompress_zstd_item(compressed: &Bytes) -> Result<Vec<u8>, std::io::Error> {
     let mut decoder = Zstd::new(compressed.as_ref())?;
     let mut res = Vec::new();
     decoder.read_to_end(&mut res)?;

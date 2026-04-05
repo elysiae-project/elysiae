@@ -855,21 +855,21 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-fs@npm:~2.4.5":
-  version: 2.4.5
-  resolution: "@tauri-apps/plugin-fs@npm:2.4.5"
+"@tauri-apps/plugin-fs@npm:~2.5.0":
+  version: 2.5.0
+  resolution: "@tauri-apps/plugin-fs@npm:2.5.0"
   dependencies:
-    "@tauri-apps/api": "npm:^2.8.0"
-  checksum: 10c0/238d1864bfa505f6e1eb3dfcba0867678fb386b590f33d4754d7f7edd9bf17a9bc2b28a9e1a2b5a4490a379d79f176448919ce317803d502d2589b7aa0a75c47
+    "@tauri-apps/api": "npm:^2.10.1"
+  checksum: 10c0/4d171d922dab855667404fd160c65b82200f4ead9c657a925f5355f1d6e77a27db3c4a64d040abd4dbd120cd4c924d02cd5dacf97f0b288dbbb73f864c485705
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-http@npm:~2.5.7":
-  version: 2.5.7
-  resolution: "@tauri-apps/plugin-http@npm:2.5.7"
+"@tauri-apps/plugin-http@npm:~2.5.8":
+  version: 2.5.8
+  resolution: "@tauri-apps/plugin-http@npm:2.5.8"
   dependencies:
     "@tauri-apps/api": "npm:^2.10.1"
-  checksum: 10c0/d7cfac15a60feb6743ae44eb08fd6177c29a47f1b74b6eea318585000245d99fa5a5436be39309f00ecc91f0405a1cbc82e6829c458edb2c892e90e5a1b81e17
+  checksum: 10c0/1fda25dff3af027e75a2a6a7fa629846c496fb4f60a715396f2686892293f4b889a7c98dfcd75fb3e5d498491b23095c34b48533b1fcb0980c11ae546618949f
   languageName: node
   linkType: hard
 
@@ -984,12 +984,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^25.5.0":
-  version: 25.5.0
-  resolution: "@types/node@npm:25.5.0"
+"@types/node@npm:^25.5.2":
+  version: 25.5.2
+  resolution: "@types/node@npm:25.5.2"
   dependencies:
     undici-types: "npm:~7.18.0"
-  checksum: 10c0/70c508165b6758c4f88d4f91abca526c3985eee1985503d4c2bd994dbaf588e52ac57e571160f18f117d76e963570ac82bd20e743c18987e82564312b3b62119
+  checksum: 10c0/11e41a85401724cd1a4de6fb7bd4264ec46db10c09fc8cf8d41de4ede0a7063db458348f859ead4ec0929906aa26aaf45a5fef3aa59742ca0521cda9cee52377
   languageName: node
   linkType: hard
 
@@ -1212,8 +1212,8 @@ __metadata:
     "@tailwindcss/vite": "npm:^4.2.2"
     "@tauri-apps/api": "npm:^2.10.1"
     "@tauri-apps/cli": "npm:^2.10.1"
-    "@tauri-apps/plugin-fs": "npm:~2.4.5"
-    "@tauri-apps/plugin-http": "npm:~2.5.7"
+    "@tauri-apps/plugin-fs": "npm:~2.5.0"
+    "@tauri-apps/plugin-http": "npm:~2.5.8"
     "@tauri-apps/plugin-log": "npm:~2.8.0"
     "@tauri-apps/plugin-notification": "npm:~2.3.3"
     "@tauri-apps/plugin-opener": "npm:~2.5.3"
@@ -1221,11 +1221,12 @@ __metadata:
     "@tauri-apps/plugin-shell": "npm:~2.3.5"
     "@tauri-apps/plugin-store": "npm:~2.4.2"
     "@types/babel__core": "npm:^7.20.5"
-    "@types/node": "npm:^25.5.0"
+    "@types/node": "npm:^25.5.2"
     class-variance-authority: "npm:^0.7.1"
     lucide-preact: "npm:^1.7.0"
     motion: "npm:^12.38.0"
-    preact: "npm:^10.29.0"
+    p-limit: "npm:^7.3.0"
+    preact: "npm:^10.29.1"
     prettier: "npm:3.8.1"
     tailwindcss: "npm:^4.2.2"
     typescript: "npm:^6.0.2"
@@ -1847,6 +1848,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"p-limit@npm:^7.3.0":
+  version: 7.3.0
+  resolution: "p-limit@npm:7.3.0"
+  dependencies:
+    yocto-queue: "npm:^1.2.1"
+  checksum: 10c0/8030f0ccc67d80d9c12f2b4ed277c5ede151f80a09cb1b143ab0ee597940784f2cf6e07e92d54c023fe9836784329750c25c6cd4488a7a326c0ae0ec2efca982
+  languageName: node
+  linkType: hard
+
 "p-map@npm:^7.0.2":
   version: 7.0.4
   resolution: "p-map@npm:7.0.4"
@@ -1903,10 +1913,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"preact@npm:^10.29.0":
-  version: 10.29.0
-  resolution: "preact@npm:10.29.0"
-  checksum: 10c0/d111381e5b48335e3a797a03adb83521cf5e9bdf880570fb2eff4fe9da9c82e6dedcbdf54538b1ed8f60bf813a0df0f4891b03dc32140ad93f8f720a8812dd5c
+"preact@npm:^10.29.1":
+  version: 10.29.1
+  resolution: "preact@npm:10.29.1"
+  checksum: 10c0/55da3994d0d9ebcc26476552c6571f8be1150cccdafe842aad40eff9abc84c867555f6d01db386fc63ac4cbe9f9da245002468bb24df0642365162d8f1b545e2
   languageName: node
   linkType: hard
 
@@ -2288,6 +2298,13 @@ __metadata:
   version: 5.0.0
   resolution: "yallist@npm:5.0.0"
   checksum: 10c0/a499c81ce6d4a1d260d4ea0f6d49ab4da09681e32c3f0472dee16667ed69d01dae63a3b81745a24bd78476ec4fcf856114cb4896ace738e01da34b2c42235416
+  languageName: node
+  linkType: hard
+
+"yocto-queue@npm:^1.2.1":
+  version: 1.2.2
+  resolution: "yocto-queue@npm:1.2.2"
+  checksum: 10c0/36d4793e9cf7060f9da543baf67c55e354f4862c8d3d34de1a1b1d7c382d44171315cc54abf84d8900b8113d742b830108a1434f4898fb244f9b7e8426d4b8f5
   languageName: node
   linkType: hard
 

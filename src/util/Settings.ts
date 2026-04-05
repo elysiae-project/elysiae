@@ -24,7 +24,7 @@ const loadStore = async (): Promise<Store> => {
 	});
 };
 
-export const getOption = async (key: Options): Promise<any> => {
+export const getSettingValue = async (key: Options): Promise<any> => {
 	if (!store) {
 		store = await loadStore();
 	}

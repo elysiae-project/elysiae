@@ -5,17 +5,18 @@ import Sidebar from "./components/Sidebar.tsx";
 import Titlebar from "./components/Titlebar.tsx";
 import { useGame } from "./hooks/useGame.ts";
 import { cva } from "class-variance-authority";
-import { Variants } from "./types";
+import { SophonChunk, Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Info, Save, Settings } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import { isGameInstalled } from "./lib/GameDownloader.ts";
+import { downloadGame, isGameInstalled } from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
 import { settingsDetails } from "./util/SettingsDetails.ts";
 import Dropdown from "./components/Dropdown.tsx";
+import { invoke } from "@tauri-apps/api/core";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -53,7 +54,7 @@ function App() {
 
 	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
 	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
-	let [settingsOpen, setSettingsOpen] = useState<boolean>(true);
+	let [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
 	useEffect(() => {
 		wineEnvAvailable().then((res) => {
@@ -78,15 +79,17 @@ function App() {
 							open={settingsOpen}
 						>
 							{settingsDetails.map((setting) => {
-								return <div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
-									<div class="flex flex-row items-center justify-left gap-x-1">
-										<p>{setting.name}</p>
-										{typeof setting.description !== 'undefined' ? <Info size={15}/> : null}
+								return (
+									<div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
+										<div class="flex flex-row items-center justify-left gap-x-1">
+											<p>{setting.name}</p>
+											{typeof setting.description !== "undefined" ? (
+												<Info size={15} />
+											) : null}
+										</div>
+										<div></div>
 									</div>
-									<div>
-
-									</div>
-								</div>;
+								);
 							})}
 						</Modal>
 
@@ -108,7 +111,11 @@ function App() {
 									if (!wineAvailable) {
 										await updateWineComponents();
 									} else if (!gameInstalled) {
-										// TODO: Add game downloader functionality
+										const activeGame = game;
+										await downloadGame(activeGame);
+										if (game === activeGame) {
+											setGameInstalled(true);
+										}
 									} else {
 										// TODO: Add launch game functionality
 									}

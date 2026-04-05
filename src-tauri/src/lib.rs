@@ -1,4 +1,7 @@
-use crate::commands::{app_functions,file_downloader,file_manager,sophon_manager};
+use crate::commands::{
+    app_functions, file_downloader, file_manager,
+    sophon_manager::{self, FileStore, HttpClient},
+};
 mod commands;
 mod util;
 
@@ -8,6 +11,13 @@ pub fn run() {
     apply_nvidia_wayland_workaround();
 
     tauri::Builder::default()
+        .manage(FileStore::new())
+        .manage(HttpClient(
+            reqwest::Client::builder()
+                .pool_max_idle_per_host(64)
+                .build()
+                .unwrap(),
+        )) //  Required for sophon chunk downloading
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -27,8 +37,12 @@ pub fn run() {
             file_manager::get_all_directories,
             file_manager::get_all_files,
             file_manager::get_top_level_files,
+            file_manager::get_md5_hash,
             app_functions::in_dev_env,
-            sophon_manager::get_all_chunks
+            sophon_manager::get_all_chunks,
+            sophon_manager::open_file,
+            sophon_manager::download_and_write_chunk,
+            sophon_manager::close_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -36,9 +50,8 @@ pub fn run() {
 
 #[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
-    /* Extensive digging has revealed why this workaround is needed on NVIDIA devices (from my understanding):
-     *
-     * webkit2gtk isn't implementing some of the the wayland compositor protocols
+    /*
+     * webkit2gtk/webkit isn't implementing some of the the wayland compositor protocols
      * to the letter and NVIDIA drivers freak out because it expects implementations that do
      * follow the standards to the letter
      */

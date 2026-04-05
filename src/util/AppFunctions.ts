@@ -103,7 +103,7 @@ export const executeLocalCommand = async (
  * @param path POSIX Path
  * @returns Wine Windows path converted froma POSIX path
  */
-export const convertToWinPath = (path: string) => {
+export const posixToWinPath = (path: string) => {
 	return `Z:\\${path.replaceAll("/", "\\")}`;
 };
 
@@ -112,6 +112,6 @@ export const convertToWinPath = (path: string) => {
  * @param path Wine Windows Path
  * @returns POSIX path converted from a Wine Windows Path
  */
-export const convertToPosixPath = (path: string) => {
+export const winToPosixPath = (path: string) => {
 	return `/${path.slice(3).replaceAll("\\", "/")}`;
 };

@@ -163,3 +163,20 @@ export type WineModule = {
 	downloadLink: string;
 	moduleType: "exe" | "dll32" | "dll64";
 };
+
+export type SophonChunk = {
+	filename: string;
+	size: number;
+	md5: string;
+	chunks: SophonChunkData[];
+};
+
+export type SophonChunkData = {
+	cdn_url: string;
+	compressed_md5: string;
+	offset: number;
+	compressed_size: number;
+	uncompressed_size: number;
+	xxhash64: number;
+	uncompressed_md5: string;
+};

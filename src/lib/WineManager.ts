@@ -86,7 +86,7 @@ const wineModules: WineModule[] = [
 /**
  * Update All Components in the wine install
  */
-export const updateWineComponents = async () => {
+export const updateWineComponents = async (): Promise<void> => {
 	info(`${await appDataDir()}`);
 	for (const component of components) {
 		try {
@@ -116,7 +116,7 @@ export const updateWineComponents = async () => {
 /**
  * Install additional Windows programs/libraries required for the programs that Elysiae runs
  */
-const installWineModules = async () => {
+const installWineModules = async (): Promise<void> => {
 	await Promise.all(
 		wineModules.map(async (module) => {
 			const filename = module.downloadLink.split("/").pop() as string;
@@ -148,7 +148,7 @@ const installWineModules = async () => {
 export const wineCommand = async (
 	args: string,
 	binary: "wine" | "wineboot" | "wineserver" = "wine",
-) => {
+): Promise<void> => {
 	const prefix = await winePrefix();
 	await executeLocalCommand(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
@@ -161,18 +161,28 @@ export const wineCommand = async (
  * @param path path to the executable
  * @param args Any additional arguments the executable may have
  */
-export const runExeWithWine = async (path: string, args?: string) => {
+export const runExeWithWine = async (
+	path: string,
+	args?: string,
+): Promise<void> => {
 	const appData = await appDataDir();
 	const fullPath = await join(appData, path);
 
 	await wineCommand(`${fullPath} ${typeof args !== "undefined" ? args : ""}`);
 };
 
+export const runExeWithJadeite = async (path: string): Promise<void> => {
+	const appData = await appDataDir();
+	const fullJadeitePath = await join(appData, "jadeite", "jadeite.exe");
+	const fullExePath = await join(appData, path);
+	await wineCommand(`${fullJadeitePath} ${fullExePath}`);
+};
+
 /**
  * Adds a DLL to the wine registry
  * @param dllName name of the DLL. No path needed, just the name
  */
-const registerNewDLL = async (dllName: string) => {
+const registerNewDLL = async (dllName: string): Promise<void> => {
 	await wineCommand(
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`,
 	);

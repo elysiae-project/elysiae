@@ -1,5 +1,6 @@
+use std::fs;
+use std::io::Read;
 use std::path::Path;
-
 use tauri::{AppHandle, Manager, command, path::BaseDirectory};
 use walkdir::WalkDir;
 
@@ -131,4 +132,19 @@ pub fn get_top_level_files(path: &str, app_handle: AppHandle) -> Vec<String> {
         items.push(relative.display().to_string());
     }
     items
+}
+
+#[command]
+pub fn get_md5_hash(path: &str, app_handle: AppHandle) -> Result<String, String> {
+    let full_path = app_handle
+        .path()
+        .resolve(&path, BaseDirectory::AppData)
+        .unwrap();
+
+    let mut file = fs::File::open(full_path).map_err(|e| e.to_string())?;
+    let mut buffer = Vec::new();
+    let _ = file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+
+    let digest = md5::compute(&buffer);
+    Ok(format!("{:x}", digest))
 }
