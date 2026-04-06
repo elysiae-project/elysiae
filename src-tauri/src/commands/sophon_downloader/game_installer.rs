@@ -1,17 +1,21 @@
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use futures::StreamExt;
+use futures_util::StreamExt;
 use reqwest::Client;
+use tokio::sync::mpsc;
 
 use super::api_scrape::{
     DownloadInfo, FrontDoorResponse, SophonBuildResponse, SophonManifestMeta,
     front_door_game_index, vo_manifest_index,
 };
-use super::proto_parse::{SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest};
+use super::proto_parse::{
+    SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest,
+};
 use super::SophonProgress;
 
 
@@ -24,12 +28,31 @@ const FRONT_DOOR_URL: &str = concat!(
 const SOPHON_BUILD_URL_BASE: &str =
     "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild";
 
+pub struct SophonInstaller {
+    client: Client,
+    manifest: SophonManifestProto,
+    chunk_download: DownloadInfo,
+}
+
+impl SophonInstaller {
+    pub async fn from_manifest_meta(
+        client: &Client,
+        meta: &SophonManifestMeta,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let manifest =
+            fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        Ok(Self {
+            client: client.clone(),
+            manifest,
+            chunk_download: meta.chunk_download.clone(),
+        })
+    }
+}
 
 pub async fn build_installers(
     client: &Client,
     game_id: &str,
     vo_lang: &str,
-    temp_dir: &Path,
 ) -> Result<Vec<SophonInstaller>, Box<dyn std::error::Error + Send + Sync>> {
     let branch_resp: FrontDoorResponse = client
         .get(FRONT_DOOR_URL)
@@ -66,126 +89,219 @@ pub async fn build_installers(
     if manifests.is_empty() {
         return Err("No manifests returned from the API".into());
     }
-    let game_installer = SophonInstaller::from_manifest_meta(
-        client,
-        &manifests[0],
-        temp_dir,
-    ).await?;
 
+    // Get Game and VO manifests
     let vo_idx =
         vo_manifest_index(game_id, vo_lang).ok_or_else(|| format!("Unknown vo_lang: {vo_lang}"))?;
-
     let vo_meta = manifests
         .get(vo_idx)
         .ok_or("VO manifest index out of range")?;
 
-    let vo_installer = SophonInstaller::from_manifest_meta(
-        client,
-        vo_meta,
-        temp_dir,
-    ).await?;
+    let (game_installer, vo_installer) = tokio::try_join!(
+        SophonInstaller::from_manifest_meta(client, &manifests[0]),
+        SophonInstaller::from_manifest_meta(client, vo_meta),
+    )?;
 
     Ok(vec![game_installer, vo_installer])
 }
 
-pub struct SophonInstaller {
-    client: Client,
-    manifest: SophonManifestProto,
-    chunk_download: DownloadInfo,
-    temp_dir: PathBuf,
-}
+pub async fn install(
+    installers: Vec<SophonInstaller>,
+    game_dir: &Path,
+    updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
+) -> Result<(), String> {
+    let chunks_dir = game_dir.join("chunks");
+    tokio::task::spawn_blocking({
+        let chunks_dir = chunks_dir.clone();
+        move || fs::create_dir_all(&chunks_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
-impl SophonInstaller {
-    pub async fn from_manifest_meta(
-        client: &Client,
-        meta: &SophonManifestMeta,
-        temp_dir: &Path,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let manifest = fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
-
-        let inst_temp = temp_dir.join(format!("downloading-{}", meta.matching_field));
-        let inst_temp_clone = inst_temp.clone();
-        tokio::task::spawn_blocking(move || {
-            fs::create_dir_all(inst_temp_clone.join("chunks"))
-        })
-        .await??;
-
-        Ok(Self {
-            client: client.clone(),
-            manifest,
-            chunk_download: meta.chunk_download.clone(),
-            temp_dir: inst_temp,
-        })
+    struct InstallerData {
+        client: Client,
+        chunk_download: DownloadInfo,
+        files: Vec<SophonManifestAssetProperty>,
+        label: String,
     }
 
-    pub async fn install(
-        self,
-        game_dir: &Path,
-        updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
-    ) -> Result<(), String> {
-        let SophonInstaller { client, manifest, chunk_download, temp_dir } = self;
+    let installer_data: Vec<InstallerData> = installers
+        .into_iter()
+        .map(|inst| InstallerData {
+            label: inst
+                .chunk_download
+                .url_suffix
+                .trim_matches('/')
+                .replace('/', "-"),
+            client: inst.client,
+            chunk_download: inst.chunk_download,
+            files: inst
+                .manifest
+                .assets
+                .into_iter()
+                .filter(|a| !a.is_directory())
+                .collect(),
+        })
+        .collect();
 
-        let files: Vec<SophonManifestAssetProperty> = manifest
-            .assets
-            .into_iter()
-            .filter(|a| !a.is_directory())
-            .collect();
+    let total_compressed: u64 = installer_data
+        .iter()
+        .flat_map(|d| d.files.iter())
+        .flat_map(|f| f.asset_chunks.iter())
+        .map(|c| c.chunk_size)
+        .sum();
 
-        let total_compressed: u64 = files
-            .iter()
-            .flat_map(|f| f.asset_chunks.iter())
-            .map(|c| c.chunk_size)
-            .sum();
+    let total_files: u64 = installer_data
+        .iter()
+        .map(|d| d.files.len() as u64)
+        .sum();
 
-        let total_files = files.len() as u64;
+    let downloaded_bytes = Arc::new(Mutex::new(0u64));
+    let assembled_files = Arc::new(Mutex::new(0u64));
 
-        let chunks_dir = temp_dir.join("chunks");
+    let chunk_refcounts: Arc<Mutex<HashMap<String, usize>>> = {
+        let mut map = HashMap::new();
+        for data in &installer_data {
+            for file in &data.files {
+                for chunk in &file.asset_chunks {
+                    *map.entry(chunk.chunk_name.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+        Arc::new(Mutex::new(map))
+    };
 
-        let mut seen = std::collections::HashSet::new();
-        let unique_chunks: Vec<SophonManifestAssetChunk> = files
-            .iter()
-            .flat_map(|f| f.asset_chunks.iter())
-            .filter(|c| seen.insert(c.chunk_name.clone()))
-            .cloned()
-            .collect();
+    let (assemble_tx, mut assemble_rx) =
+        mpsc::unbounded_channel::<(SophonManifestAssetProperty, PathBuf)>();
 
-        let downloaded_bytes = Arc::new(Mutex::new(0u64));
+    let assembly_task = {
+        let chunks_dir = chunks_dir.clone();
+        let game_dir = game_dir.to_path_buf();
+        let chunk_refcounts = Arc::clone(&chunk_refcounts);
+        let assembled_files = Arc::clone(&assembled_files);
+        let updater = updater.clone();
 
-        let results: Vec<Result<(), String>> = futures::stream::iter(unique_chunks)
-            .map(|chunk| {
-                let client = client.clone();
-                let chunk_download = chunk_download.clone();
+        tokio::spawn(async move {
+            while let Some((file, tmp_dir)) = assemble_rx.recv().await {
                 let chunks_dir = chunks_dir.clone();
-                let downloaded_bytes = Arc::clone(&downloaded_bytes);
+                let game_dir = game_dir.clone();
+                let chunk_refcounts = Arc::clone(&chunk_refcounts);
+                let assembled_files = Arc::clone(&assembled_files);
                 let updater = updater.clone();
 
-                async move {
-                    let dest = chunks_dir.join(chunk_filename(&chunk));
+                tokio::task::spawn_blocking(move || {
+                    assemble_file(
+                        &file,
+                        &game_dir,
+                        &chunks_dir,
+                        &tmp_dir,
+                        &chunk_refcounts,
+                    )
+                    .map_err(|e| format!("Failed to assemble {}: {e}", file.asset_name))?;
 
-                    let dest_clone = dest.clone();
-                    let chunk_size = chunk.chunk_size;
-                    let expected_md5 = chunk.chunk_compressed_hash_md5.clone();
-                    let already_done = tokio::task::spawn_blocking(move || {
-                        dest_clone.exists()
-                            && check_file_md5(&dest_clone, chunk_size, &expected_md5)
-                    })
-                    .await
-                    .map_err(|e| e.to_string())?;
+                    let count = {
+                        let mut guard = assembled_files.lock().unwrap();
+                        *guard += 1;
+                        *guard
+                    };
+                    updater(SophonProgress::Assembling {
+                        assembled_files: count,
+                        total_files,
+                    });
 
-                    if already_done {
-                        let mut guard = downloaded_bytes.lock().unwrap();
-                        *guard += chunk.chunk_size;
-                        updater(SophonProgress::Downloading {
-                            downloaded_bytes: *guard,
-                            total_bytes: total_compressed,
-                        });
-                        return Ok(());
-                    }
+                    Ok::<(), String>(())
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+            }
+            Ok::<(), String>(())
+        })
+    };
 
+    type PendingCount = Arc<Mutex<usize>>;
+    type FileEntry = (SophonManifestAssetProperty, PathBuf, PendingCount);
+
+    struct DownloadItem {
+        chunk: SophonManifestAssetChunk,
+        client: Client,
+        chunk_download: DownloadInfo,
+    }
+
+    let mut chunk_to_files: HashMap<String, Vec<FileEntry>> = HashMap::new();
+    let mut download_items: Vec<DownloadItem> = Vec::new();
+    let mut seen_chunks: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for data in installer_data {
+        let tmp_dir = game_dir.join(format!("tmp-{}", data.label));
+        tokio::task::spawn_blocking({
+            let tmp_dir = tmp_dir.clone();
+            move || fs::create_dir_all(&tmp_dir)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+        for file in data.files {
+            let chunk_count = file.asset_chunks.len();
+            if chunk_count == 0 {
+                let _ = assemble_tx.send((file, tmp_dir.clone()));
+                continue;
+            }
+
+            let pending = Arc::new(Mutex::new(chunk_count));
+            for chunk in &file.asset_chunks {
+                chunk_to_files
+                    .entry(chunk.chunk_name.clone())
+                    .or_default()
+                    .push((file.clone(), tmp_dir.clone(), Arc::clone(&pending)));
+
+                if seen_chunks.insert(chunk.chunk_name.clone()) {
+                    download_items.push(DownloadItem {
+                        chunk: chunk.clone(),
+                        client: data.client.clone(),
+                        chunk_download: data.chunk_download.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    let chunk_to_files = Arc::new(Mutex::new(chunk_to_files));
+    let results: Vec<Result<(), String>> = futures_util::stream::iter(download_items)
+        .map(|item| {
+            let chunks_dir = chunks_dir.clone();
+            let downloaded_bytes = Arc::clone(&downloaded_bytes);
+            let chunk_to_files = Arc::clone(&chunk_to_files);
+            let assemble_tx = assemble_tx.clone();
+            let updater = updater.clone();
+
+            async move {
+                let dest = chunks_dir.join(chunk_filename(&item.chunk));
+
+                // Skip if already on disk and valid
+                let dest_check = dest.clone();
+                let chunk_size = item.chunk.chunk_size;
+                let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
+                let already_done = tokio::task::spawn_blocking(move || {
+                    dest_check.exists()
+                        && check_file_md5(&dest_check, chunk_size, &expected_md5)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if !already_done {
                     let mut last_err = String::new();
                     let mut success = false;
                     for attempt in 0..MAX_RETRIES {
-                        match download_chunk(&client, &chunk_download, &chunk, &dest).await {
+                        match download_chunk(
+                            &item.client,
+                            &item.chunk_download,
+                            &item.chunk,
+                            &dest,
+                        )
+                        .await
+                        {
                             Ok(()) => {
                                 success = true;
                                 break;
@@ -196,7 +312,7 @@ impl SophonInstaller {
                                     updater(SophonProgress::Warning {
                                         message: format!(
                                             "Chunk {} failed (attempt {}/{}): {last_err}",
-                                            chunk.chunk_name,
+                                            item.chunk.chunk_name,
                                             attempt + 1,
                                             MAX_RETRIES
                                         ),
@@ -210,69 +326,55 @@ impl SophonInstaller {
                     if !success {
                         let msg = format!(
                             "Failed to download chunk {} after {MAX_RETRIES} attempts: {last_err}",
-                            chunk.chunk_name
+                            item.chunk.chunk_name
                         );
                         updater(SophonProgress::Error { message: msg.clone() });
                         return Err(msg);
                     }
-
+                }
+                {
                     let mut guard = downloaded_bytes.lock().unwrap();
-                    *guard += chunk.chunk_size;
+                    *guard += item.chunk.chunk_size;
                     updater(SophonProgress::Downloading {
                         downloaded_bytes: *guard,
                         total_bytes: total_compressed,
                     });
-
-                    Ok(())
                 }
-            })
-            .buffer_unordered(DOWNLOAD_CONCURRENCY)
-            .collect()
-            .await;
 
-        results.into_iter().find(|r| r.is_err()).transpose()?;
-        let chunk_refcounts: Arc<Mutex<std::collections::HashMap<String, usize>>> = {
-            let mut map = std::collections::HashMap::new();
-            for file in &files {
-                for chunk in &file.asset_chunks {
-                    *map.entry(chunk.chunk_name.clone()).or_insert(0) += 1;
+                let ready_files: Vec<(SophonManifestAssetProperty, PathBuf)> = {
+                    let mut map = chunk_to_files.lock().unwrap();
+                    if let Some(entries) = map.remove(&item.chunk.chunk_name) {
+                        entries
+                            .into_iter()
+                            .filter_map(|(file, tmp_dir, pending)| {
+                                let mut count = pending.lock().unwrap();
+                                *count -= 1;
+                                if *count == 0 { Some((file, tmp_dir)) } else { None }
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    }
+                };
+
+                for entry in ready_files {
+                    let _ = assemble_tx.send(entry);
                 }
+
+                Ok(())
             }
-            Arc::new(Mutex::new(map))
-        };
+        })
+        .buffer_unordered(DOWNLOAD_CONCURRENCY)
+        .collect()
+        .await;
+    drop(assemble_tx);
+    results.into_iter().find(|r| r.is_err()).transpose()?;
+    assembly_task
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
 
-        let game_dir = game_dir.to_path_buf();
-
-        for (idx, file) in files.iter().enumerate() {
-            let file = file.clone();
-            let game_dir = game_dir.clone();
-            let chunks_dir = chunks_dir.clone();
-            let temp_dir = temp_dir.clone();
-            let updater = updater.clone();
-            let chunk_refcounts = Arc::clone(&chunk_refcounts);
-
-            tokio::task::spawn_blocking(move || {
-                assemble_file(&file, &game_dir, &chunks_dir, &temp_dir, &chunk_refcounts)
-                    .map_err(|e| {
-                        let msg = format!("Failed to assemble {}: {e}", file.asset_name);
-                        updater(SophonProgress::Error { message: msg.clone() });
-                        msg
-                    })?;
-
-                updater(SophonProgress::Assembling {
-                    assembled_files: idx as u64 + 1,
-                    total_files,
-                });
-
-                Ok::<(), String>(())
-            })
-            .await
-            .map_err(|e| e.to_string())??;
-        }
-
-        Ok(())
-    }
-
+    Ok(())
 }
 
 async fn download_chunk(
@@ -282,8 +384,8 @@ async fn download_chunk(
     dest: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let url = chunk_download.url_for(&chunk.chunk_name);
-
     let resp = client.get(&url).send().await?.error_for_status()?;
+
     if let Some(len) = resp.content_length() {
         if len != chunk.chunk_size {
             return Err(format!(
@@ -305,6 +407,7 @@ async fn download_chunk(
         )
         .into());
     }
+
     if !chunk.chunk_compressed_hash_md5.is_empty() {
         let actual = md5_hex(&bytes);
         if actual != chunk.chunk_compressed_hash_md5 {
@@ -315,9 +418,9 @@ async fn download_chunk(
             .into());
         }
     }
+
     let dest = dest.to_path_buf();
-    tokio::task::spawn_blocking(move || fs::write(&dest, &bytes))
-        .await??;
+    tokio::task::spawn_blocking(move || fs::write(&dest, &bytes)).await??;
 
     Ok(())
 }
@@ -328,11 +431,16 @@ async fn fetch_manifest(
     manifest_id: &str,
 ) -> Result<SophonManifestProto, Box<dyn std::error::Error + Send + Sync>> {
     let url = dl.url_for(manifest_id);
-    let bytes = client.get(&url).send().await?.error_for_status()?.bytes().await?;
+    let bytes = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
 
     let raw = if dl.is_compressed() {
-        tokio::task::spawn_blocking(move || zstd_decompress(&bytes))
-            .await??
+        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
     } else {
         bytes.to_vec()
     };
@@ -345,13 +453,12 @@ fn assemble_file(
     game_dir: &Path,
     chunks_dir: &Path,
     temp_dir: &Path,
-    chunk_refcounts: &Mutex<std::collections::HashMap<String, usize>>,
+    chunk_refcounts: &Mutex<HashMap<String, usize>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
 
-    if target_path.exists()
-        && check_file_md5(&target_path, file.asset_size, &file.asset_hash_md5)
+    if target_path.exists() && check_file_md5(&target_path, file.asset_size, &file.asset_hash_md5)
     {
         let mut map = chunk_refcounts.lock().unwrap();
         for chunk in &file.asset_chunks {
@@ -380,8 +487,8 @@ fn assemble_file(
 
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
-
         let decompressed = decompress_chunk(&chunk_path)?;
+
         if !chunk.chunk_decompressed_hash_md5.is_empty() {
             let actual = md5_hex(&decompressed);
             if actual != chunk.chunk_decompressed_hash_md5 {
@@ -435,7 +542,6 @@ fn assemble_file(
     }
 
     fs::rename(&tmp_path, &target_path)?;
-
     Ok(())
 }
 
