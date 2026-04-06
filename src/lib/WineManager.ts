@@ -48,7 +48,7 @@ const components: WineComponent[] = [
 			);
 
 			// Remove Temporary Directory
-			removeDir("dxvk");
+			await removeDir("dxvk");
 		},
 	},
 	{
@@ -70,6 +70,8 @@ const components: WineComponent[] = [
 			await executeLocalCommand("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
 				WINEPREFIX: await winePrefix(),
 			});
+
+			await removeDir("vkd3d");
 		},
 	},
 ] as const;
@@ -77,9 +79,26 @@ const components: WineComponent[] = [
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)
 const wineModules: WineModule[] = [
 	{
-		name: "vcrun2026",
+		name: "vcrun2026-x64",
 		downloadLink: "https://aka.ms/vc14/vc_redist.x64.exe",
 		moduleType: "exe",
+	},
+	{
+		name: "vcrun2026-x86",
+		downloadLink: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
+		moduleType: "exe",
+	},
+	{
+		name: "d3dcompiler_47.dll",
+		downloadLink:
+			"https://raw.githubusercontent.com/mozilla/fxc2/master/dll/d3dcompiler_47.dll",
+		moduleType: "dll64",
+	},
+	{
+		name: "d3dcompiler_47.dll",
+		downloadLink:
+			"https://raw.githubusercontent.com/mozilla/fxc2/master/dll/d3dcompiler_47_32.dll",
+		moduleType: "dll32",
 	},
 ] as const;
 
@@ -111,6 +130,7 @@ export const updateWineComponents = async (): Promise<void> => {
 			error(`updateWineComponents ${e}`);
 		}
 	}
+	info("Wine Component Download Complete");
 };
 
 /**
@@ -119,6 +139,8 @@ export const updateWineComponents = async (): Promise<void> => {
 const installWineModules = async (): Promise<void> => {
 	await Promise.all(
 		wineModules.map(async (module) => {
+			info(`Installing ${module.name}`);
+
 			const filename = module.downloadLink.split("/").pop() as string;
 			await downloadFile(module.downloadLink, filename);
 
@@ -138,6 +160,7 @@ const installWineModules = async (): Promise<void> => {
 			}
 		}),
 	);
+	info("Wine Module Download Complete");
 };
 
 /**
@@ -150,9 +173,16 @@ export const wineCommand = async (
 	binary: "wine" | "wineboot" | "wineserver" = "wine",
 ): Promise<void> => {
 	const prefix = await winePrefix();
+	const appData = await appDataDir();
+	const wineLib = await join(appData, "wine", "lib");
+	const wineLib64 = await join(appData, "wine", "lib64");
+
 	await executeLocalCommand(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
+		WINEARCH: "win64",
 		WINEFSYNC: "1",
+		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
+		DXVK_ASYNC: "1",
 	});
 };
 

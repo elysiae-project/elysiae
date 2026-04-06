@@ -12,8 +12,10 @@ import { info } from "@tauri-apps/plugin-log";
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameCode = getActiveGameCode(game);
 	info("Check if dir exists");
-	if (!(await exists(gameCode))) {
-		await mkdir(gameCode);
+
+	const gameDir = await join("games", gameCode);
+	if (!(await exists(gameDir))) {
+		await mkdir(gameDir);
 	}
 
 	const requestedLanguage = (await getSettingValue("voLanguage")) as string;
@@ -24,7 +26,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 	info("Got Game Chunks");
 
 	let downloadedBytes = 0;
-	const totalSize = getTotalChunkSize(gameChunks);
+	const totalSize = getDownloadSize(gameChunks);
 
 	const fileLimit = pLimit(8);
 	const chunkLimit = pLimit(32);
@@ -32,7 +34,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 	info("Starting thread mapping");
 	const fileDownloadTasks = gameChunks.map((file) =>
 		fileLimit(async () => {
-			const path = await join(gameCode, file.filename);
+			const path = await join("games", gameCode, file.filename);
 
 			if (await exists(path)) {
 				const localMd5 = await getMd5Hash(path);
@@ -90,7 +92,11 @@ const getChunkSize = (chunkData: SophonChunkData[]) => {
 };
 
 export const runGame = async (game: Variants) => {
-	const gamePath = await join(getActiveGameCode(game), getGameExeName(game));
+	const gamePath = await join(
+		"games",
+		getActiveGameCode(game),
+		getGameExeName(game),
+	);
 	[Variants.BH3, Variants.HKRPG].includes(game)
 		? await runExeWithJadeite(gamePath)
 		: await runExeWithWine(gamePath);
@@ -116,15 +122,12 @@ export const pauseDownload = async () => {};
 
 export const cancelDownload = async () => {};
 
-const getTotalChunkSize = (chunks: SophonChunk[]): number => {
-	let size = 0;
+const getDownloadSize = (chunks: SophonChunk[]): number => {
+	let totalSize = 0;
 	chunks.forEach((chunk) => {
-		chunk.chunks.forEach((chunkData) => {
-			// Add compressed size because that's what's being downloaded
-			size += chunkData.compressed_size;
-		});
+		totalSize += chunk.size;
 	});
-	return size;
+	return totalSize;
 };
 
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {

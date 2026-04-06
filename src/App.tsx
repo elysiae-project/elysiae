@@ -12,7 +12,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Info, Save, Settings } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import { downloadGame, isGameInstalled } from "./lib/GameDownloader.ts";
+import { downloadGame, isGameInstalled, runGame } from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
 import { settingsDetails } from "./util/SettingsDetails.ts";
 import Dropdown from "./components/Dropdown.tsx";
@@ -110,6 +110,7 @@ function App() {
 								onClick={async () => {
 									if (!wineAvailable) {
 										await updateWineComponents();
+										setWineAvailable(true);
 									} else if (!gameInstalled) {
 										const activeGame = game;
 										await downloadGame(activeGame);
@@ -117,7 +118,7 @@ function App() {
 											setGameInstalled(true);
 										}
 									} else {
-										// TODO: Add launch game functionality
+										await runGame(game);
 									}
 								}}
 							>

@@ -177,6 +177,6 @@ export type SophonChunkData = {
 	offset: number;
 	compressed_size: number;
 	uncompressed_size: number;
-	xxhash64: number;
+	xxhash64: string;
 	uncompressed_md5: string;
 };

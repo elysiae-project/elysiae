@@ -98,8 +98,20 @@ pub async fn download_and_write_chunk(
     tokio::task::spawn_blocking(move || {
         let decompressed = decompress_zstd_item(&compressed).map_err(|e| e.to_string())?;
 
-        file.write_at(&decompressed, offset)
-            .map_err(|e| e.to_string())
+        let mut written = 0;
+
+        while written < decompressed.len() {
+            let n = file
+                .write_at(&decompressed[written..], offset + written as u64)
+                .map_err(|e| e.to_string())?;
+
+            if n == 0 {
+                return Err("write_at returned 0 bytes (disk full or IO error)".to_string());
+            }
+            written += n;
+        }
+
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -282,7 +294,7 @@ fn proto_to_sophon_chunks(obj: &ProtoObject, cdn_prefix: &str) -> Vec<SophonChun
 
             SophonChunk {
                 filename: get_str(file, "1").to_string(),
-                size: get_u64(file, "4") as i32,
+                size: get_u64(file, "4"),
                 md5: get_str(file, "5").to_string(),
                 chunks,
             }
@@ -294,9 +306,9 @@ fn map_chunk_data(c: &ProtoObject, cdn_prefix: &str) -> SophonChunkData {
     SophonChunkData {
         cdn_url: format!("{}/{}", cdn_prefix, get_str(c, "1")),
         compressed_md5: get_str(c, "2").to_string(),
-        offset: get_u64(c, "3") as i32,
-        compressed_size: get_u64(c, "4") as i32,
-        uncompressed_size: get_u64(c, "5") as i32,
+        offset: get_u64(c, "3"),
+        compressed_size: get_u64(c, "4"),
+        uncompressed_size: get_u64(c, "5"),
         xxhash64: get_u64(c, "6").to_string(),
         uncompressed_md5: get_str(c, "7").to_string(),
     }

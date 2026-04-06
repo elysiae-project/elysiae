@@ -120,7 +120,7 @@ pub struct Stats {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SophonChunk {
     pub(crate) filename: String,
-    pub(crate) size: i32,
+    pub(crate) size: u64,
     pub(crate) md5: String,
     pub(crate) chunks: Vec<SophonChunkData>,
 }
@@ -129,9 +129,9 @@ pub struct SophonChunk {
 pub struct SophonChunkData {
     pub(crate) cdn_url: String,
     pub(crate) compressed_md5: String,
-    pub(crate) offset: i32,
-    pub(crate) compressed_size: i32,
-    pub(crate) uncompressed_size: i32,
+    pub(crate) offset: u64,
+    pub(crate) compressed_size: u64,
+    pub(crate) uncompressed_size: u64,
     pub(crate) xxhash64: String,
     pub(crate) uncompressed_md5: String,
 }
