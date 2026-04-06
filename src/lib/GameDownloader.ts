@@ -4,7 +4,7 @@ import {
 	Variants,
 } from "../types";
 import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
-import { exists, mkdir, remove } from "./Fs";
+import { exists, mkdir } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getSettingValue } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";

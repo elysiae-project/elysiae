@@ -2,8 +2,6 @@ pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
 
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
