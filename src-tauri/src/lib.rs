@@ -1,9 +1,5 @@
-use crate::commands::{
-    app_functions, file_downloader, file_manager,
-    sophon_manager::{self, FileStore, HttpClient},
-};
+use crate::commands::{app_functions, file_downloader, file_manager};
 mod commands;
-mod util;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,8 +7,7 @@ pub fn run() {
     apply_nvidia_wayland_workaround();
 
     tauri::Builder::default()
-        .manage(FileStore::new())
-        .manage(HttpClient(
+        .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(64)
                 .build()
@@ -39,10 +34,7 @@ pub fn run() {
             file_manager::get_top_level_files,
             file_manager::get_md5_hash,
             app_functions::in_dev_env,
-            sophon_manager::get_all_chunks,
-            sophon_manager::open_file,
-            sophon_manager::download_and_write_chunk,
-            sophon_manager::close_file,
+            commands::sophon_downloader::sophon_download
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

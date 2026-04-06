@@ -1,5 +1,10 @@
 import { dirname, join } from "@tauri-apps/api/path";
-import { SophonChunk, SophonChunkData, Variants } from "../types";
+import {
+	SophonChunk,
+	SophonChunkData,
+	SophonProgress,
+	Variants,
+} from "../types";
 import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
 import { exists, mkdir, remove } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
@@ -8,6 +13,7 @@ import pLimit from "p-limit";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 import { getMd5Hash } from "../util/FileUtils";
 import { info } from "@tauri-apps/plugin-log";
+import { listen } from "@tauri-apps/api/event";
 
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameCode = getActiveGameCode(game);
@@ -19,68 +25,50 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 	}
 
 	const requestedLanguage = (await getSettingValue("voLanguage")) as string;
-	const gameChunks: SophonChunk[] = await getGameChunks(
-		gameCode,
-		requestedLanguage,
-	);
-	info("Got Game Chunks");
 
-	let downloadedBytes = 0;
-	const totalSize = getDownloadSize(gameChunks);
+	const unlisten = await listen("sophon://progress", (event) => {
+		const progress = event.payload as SophonProgress;
+		switch (progress.type) {
+			case "fetchingManifest":
+				console.log("Fetching manifest...");
+				break;
+			case "downloading":
+				const downloaded = progress.downloadedBytes / 1024 ** 2;
+				const total = progress.totalBytes / 1024 ** 2;
 
-	const fileLimit = pLimit(8);
-	const chunkLimit = pLimit(32);
-
-	info("Starting thread mapping");
-	const fileDownloadTasks = gameChunks.map((file) =>
-		fileLimit(async () => {
-			const path = await join("games", gameCode, file.filename);
-
-			if (await exists(path)) {
-				const localMd5 = await getMd5Hash(path);
-				if (localMd5 === file.md5) {
-					//info(`File ${file.filename} Downloaded. Skipping.`);
-					downloadedBytes += getChunkSize(file.chunks);
-					return;
-				} else {
-					info(`File ${file.filename} needs updating. Removing...`);
-					await remove(path);
-				}
-			}
-
-			const parentDir = await dirname(path);
-			if (!(await exists(parentDir))) {
-				await mkdir(parentDir);
-			}
-
-			const fileId = await invoke<number>("open_file", {
-				path,
-				totalSize: file.size,
-			});
-
-			try {
-				await Promise.all(
-					file.chunks.map((chunk) =>
-						chunkLimit(async () => {
-							await invoke("download_and_write_chunk", {
-								fileId,
-								cdnUrl: chunk.cdn_url,
-								offset: chunk.offset,
-							});
-							downloadedBytes += chunk.uncompressed_size;
-							info(
-								`${(downloadedBytes / 1024 ** 2).toFixed(1)}MB / ${(totalSize / 1024 ** 2).toFixed(1)}MB (${((downloadedBytes / totalSize) * 100).toFixed(1)}%)`,
-							);
-						}),
-					),
+				console.log(
+					`Downloading: ${downloaded.toFixed(2)}MB / ${total.toFixed(2)}MB (${(downloaded / total).toFixed(2)}%)`,
 				);
-			} finally {
-				await invoke("close_file", { id: fileId });
-			}
-		}),
-	);
+				break;
+			case "assembling":
+				console.log(
+					`Assembling: ${progress.assembledFiles} / ${progress.totalFiles}`,
+				);
+				break;
+			case "warning":
+				console.warn(progress.message);
+				break;
+			case "error":
+				console.error(progress.message);
+				break;
+			case "finished":
+				console.log("Done!");
+				unlisten(); // stop listening once complete
+				break;
+		}
 
-	await Promise.all(fileDownloadTasks);
+		//info("DOWNLOADING!!!!!!!!!!!");
+	});
+	try {
+		info("Beginning sophon download sequence");
+		await invoke("sophon_download", {
+			gameId: gameCode,
+			voLang: requestedLanguage,
+			outputPath: "games/hkrpg",
+		});
+	} finally {
+		unlisten();
+	}
 };
 
 const getChunkSize = (chunkData: SophonChunkData[]) => {

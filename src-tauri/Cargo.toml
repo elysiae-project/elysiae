@@ -31,7 +31,7 @@ tauri-plugin-log = "2.8.0"
 tauri-plugin-store = "2.4.2"
 tauri-plugin-notification = "2.3.3"
 
-glib = "0.22.3"
+glib = "0.22.4"
 tauri-plugin-shell = "2.3.5"
 reqwest = { version = "0.13.2", features = ["stream", "blocking", "json"] }
 futures-util = "0.3.32"
@@ -42,7 +42,6 @@ xz = "0.1.0"
 flate2 = "1.1.9"
 zip = "8.5.0"
 tar = "0.4.45"
-protobuf = "3.7.2"
 bytes = "1.11.1"
 md5 = "0.8.0"
 tokio = { version = "1.51.0", features = ["rt"] }

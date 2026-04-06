@@ -180,3 +180,11 @@ export type SophonChunkData = {
 	xxhash64: string;
 	uncompressed_md5: string;
 };
+
+export type SophonProgress =
+	| { type: "fetchingManifest" }
+	| { type: "downloading"; downloadedBytes: number; totalBytes: number }
+	| { type: "assembling"; assembledFiles: number; totalFiles: number }
+	| { type: "warning"; message: string }
+	| { type: "error"; message: string }
+	| { type: "finished" };
