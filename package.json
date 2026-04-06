@@ -23,7 +23,6 @@
 		"class-variance-authority": "^0.7.1",
 		"lucide-preact": "^1.7.0",
 		"motion": "^12.38.0",
-		"p-limit": "^7.3.0",
 		"preact": "^10.29.1"
 	},
 	"devDependencies": {

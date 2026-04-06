@@ -164,27 +164,10 @@ export type WineModule = {
 	moduleType: "exe" | "dll32" | "dll64";
 };
 
-export type SophonChunk = {
-	filename: string;
-	size: number;
-	md5: string;
-	chunks: SophonChunkData[];
-};
-
-export type SophonChunkData = {
-	cdn_url: string;
-	compressed_md5: string;
-	offset: number;
-	compressed_size: number;
-	uncompressed_size: number;
-	xxhash64: string;
-	uncompressed_md5: string;
-};
-
 export type SophonProgress =
-	| { type: "fetchingManifest" }
-	| { type: "downloading"; downloadedBytes: number; totalBytes: number }
-	| { type: "assembling"; assembledFiles: number; totalFiles: number }
-	| { type: "warning"; message: string }
-	| { type: "error"; message: string }
-	| { type: "finished" };
+  | { type: "fetchingManifest" }
+  | { type: "downloading"; downloaded_bytes: number; total_bytes: number }
+  | { type: "assembling"; assembled_files: number; total_files: number }
+  | { type: "warning"; message: string }
+  | { type: "error"; message: string }
+  | { type: "finished" };

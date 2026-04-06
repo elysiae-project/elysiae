@@ -1,7 +1,5 @@
-import { dirname, join } from "@tauri-apps/api/path";
+import { join } from "@tauri-apps/api/path";
 import {
-	SophonChunk,
-	SophonChunkData,
 	SophonProgress,
 	Variants,
 } from "../types";
@@ -9,10 +7,8 @@ import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
 import { exists, mkdir, remove } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getSettingValue } from "../util/Settings";
-import pLimit from "p-limit";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
-import { getMd5Hash } from "../util/FileUtils";
-import { info } from "@tauri-apps/plugin-log";
+import { error, info, warn } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
 
 export const downloadGame = async (game: Variants): Promise<void> => {
@@ -32,51 +28,46 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 			case "fetchingManifest":
 				console.log("Fetching manifest...");
 				break;
-			case "downloading":
-				const downloaded = progress.downloadedBytes / 1024 ** 2;
-				const total = progress.totalBytes / 1024 ** 2;
+			case "downloading": {
+				const downloaded = progress.downloaded_bytes / 1024 ** 2;
+				const total = progress.total_bytes / 1024 ** 2;
+				const percentage = ((downloaded / total) * 100).toFixed(2);
 
-				console.log(
-					`Downloading: ${downloaded.toFixed(2)}MB / ${total.toFixed(2)}MB (${(downloaded / total).toFixed(2)}%)`,
+				info(
+					`Downloaded ${downloaded.toFixed(2)}MB/${total.toFixed(2)}MB (${percentage}%)`,
 				);
 				break;
-			case "assembling":
-				console.log(
-					`Assembling: ${progress.assembledFiles} / ${progress.totalFiles}`,
+			}
+			case "assembling": {
+				const assembled = progress.assembled_files;
+				const total = progress.total_files;
+				info(
+					`Assembling file ${assembled} of ${total} (${((assembled / total) * 100).toFixed(2)}% Complete)`,
 				);
 				break;
+			}
 			case "warning":
-				console.warn(progress.message);
+				warn(progress.message);
 				break;
 			case "error":
-				console.error(progress.message);
+				error(progress.message);
 				break;
 			case "finished":
-				console.log("Done!");
+				info(`Download of ${gameCode} completed.`);
 				unlisten(); // stop listening once complete
 				break;
 		}
-
-		//info("DOWNLOADING!!!!!!!!!!!");
 	});
 	try {
 		info("Beginning sophon download sequence");
 		await invoke("sophon_download", {
 			gameId: gameCode,
 			voLang: requestedLanguage,
-			outputPath: "games/hkrpg",
+			outputPath: gameDir,
 		});
 	} finally {
 		unlisten();
 	}
-};
-
-const getChunkSize = (chunkData: SophonChunkData[]) => {
-	let res = 0;
-	for (let i = 0; i < chunkData.length; i++) {
-		res += chunkData[i].uncompressed_size;
-	}
-	return res;
 };
 
 export const runGame = async (game: Variants) => {
@@ -90,33 +81,10 @@ export const runGame = async (game: Variants) => {
 		: await runExeWithWine(gamePath);
 };
 
-export const getGameChunks = async (
-	game: string,
-	voLanguage: string,
-): Promise<SophonChunk[]> => {
-	return new Promise((resolve, reject) => {
-		invoke("get_all_chunks", {
-			gameId: game.toLowerCase(),
-			voLang: voLanguage.toLowerCase(),
-		})
-			.then((res) => {
-				resolve(res as SophonChunk[]);
-			})
-			.catch(reject);
-	});
-};
-
 export const pauseDownload = async () => {};
 
 export const cancelDownload = async () => {};
 
-const getDownloadSize = (chunks: SophonChunk[]): number => {
-	let totalSize = 0;
-	chunks.forEach((chunk) => {
-		totalSize += chunk.size;
-	});
-	return totalSize;
-};
 
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	return new Promise((resolve, reject) => {

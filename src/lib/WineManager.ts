@@ -182,7 +182,6 @@ export const wineCommand = async (
 		WINEARCH: "win64",
 		WINEFSYNC: "1",
 		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
-		DXVK_ASYNC: "1",
 	});
 };
 
