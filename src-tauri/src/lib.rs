@@ -1,6 +1,6 @@
 use crate::commands::{app_functions, file_downloader, file_manager};
 mod commands;
-use crate::commands::sophon_downloader::{ActiveDownload, HttpClient};
+use crate::commands::sophon_downloader::{ActiveDownload};
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
