@@ -882,15 +882,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-notification@npm:~2.3.3":
-  version: 2.3.3
-  resolution: "@tauri-apps/plugin-notification@npm:2.3.3"
-  dependencies:
-    "@tauri-apps/api": "npm:^2.8.0"
-  checksum: 10c0/a0af7a159a2e71ef080d356789fa219f8df98eff3b9adf7b8a37367b1de6a8a51eb8bc1aa91d42217a41f8fad4931a17251d86f66ab904b738416c3f272fa6df
-  languageName: node
-  linkType: hard
-
 "@tauri-apps/plugin-opener@npm:~2.5.3":
   version: 2.5.3
   resolution: "@tauri-apps/plugin-opener@npm:2.5.3"
@@ -936,7 +927,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/babel__core@npm:^7.20.5":
+"@types/babel__core@npm:^7":
   version: 7.20.5
   resolution: "@types/babel__core@npm:7.20.5"
   dependencies:
@@ -1215,18 +1206,16 @@ __metadata:
     "@tauri-apps/plugin-fs": "npm:~2.5.0"
     "@tauri-apps/plugin-http": "npm:~2.5.8"
     "@tauri-apps/plugin-log": "npm:~2.8.0"
-    "@tauri-apps/plugin-notification": "npm:~2.3.3"
     "@tauri-apps/plugin-opener": "npm:~2.5.3"
     "@tauri-apps/plugin-os": "npm:~2.3.2"
     "@tauri-apps/plugin-shell": "npm:~2.3.5"
     "@tauri-apps/plugin-store": "npm:~2.4.2"
-    "@types/babel__core": "npm:^7.20.5"
+    "@types/babel__core": "npm:^7"
     "@types/node": "npm:^25.5.2"
     class-variance-authority: "npm:^0.7.1"
     lucide-preact: "npm:^1.7.0"
     motion: "npm:^12.38.0"
     preact: "npm:^10.29.1"
-    prettier: "npm:3.8.1"
     tailwindcss: "npm:^4.2.2"
     typescript: "npm:^6.0.2"
     vite: "npm:^8.0.5"
@@ -1907,15 +1896,6 @@ __metadata:
   version: 10.29.1
   resolution: "preact@npm:10.29.1"
   checksum: 10c0/55da3994d0d9ebcc26476552c6571f8be1150cccdafe842aad40eff9abc84c867555f6d01db386fc63ac4cbe9f9da245002468bb24df0642365162d8f1b545e2
-  languageName: node
-  linkType: hard
-
-"prettier@npm:3.8.1":
-  version: 3.8.1
-  resolution: "prettier@npm:3.8.1"
-  bin:
-    prettier: bin/prettier.cjs
-  checksum: 10c0/33169b594009e48f570471271be7eac7cdcf88a209eed39ac3b8d6d78984039bfa9132f82b7e6ba3b06711f3bfe0222a62a1bfb87c43f50c25a83df1b78a2c42
   languageName: node
   linkType: hard
 

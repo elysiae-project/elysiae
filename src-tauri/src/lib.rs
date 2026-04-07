@@ -17,7 +17,6 @@ pub fn run() {
         )) //  Required for sophon chunk downloading
         .manage(ActiveDownload(Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(
@@ -32,10 +31,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
-            file_manager::get_all_directories,
-            file_manager::get_all_files,
-            file_manager::get_top_level_files,
-            file_manager::get_md5_hash,
             app_functions::in_dev_env,
             commands::sophon_downloader::sophon_download,
             commands::sophon_downloader::sophon_update,

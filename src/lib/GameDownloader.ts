@@ -1,19 +1,17 @@
 import { join } from "@tauri-apps/api/path";
-import { SophonProgress, Variants } from "../types";
+import { GameData, SophonProgress, Variants } from "../types";
 import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
-import { exists, mkdir } from "./Fs";
+import { exists } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getSettingValue } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
 
-type GameData = {
-	gameCode: string;
-	gameDir: string;
-	requestedLanguage: string;
-};
-
+/**
+ * Downloads a fresh install of any game to `games/gameCode`
+ * @param game
+ */
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
 
@@ -65,7 +63,11 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 	}
 };
 
-export const runGame = async (game: Variants) => {
+/**
+ * Launches a game with wine. Games that require Jadeite are launched with jadeite instead
+ * @param game
+ */
+export const runGame = async (game: Variants): Promise<void> => {
 	const gamePath = await join(
 		"games",
 		getActiveGameCode(game),
@@ -76,19 +78,35 @@ export const runGame = async (game: Variants) => {
 		: await runExeWithWine(gamePath);
 };
 
-export const pauseDownload = async () => {
+/**
+ * Pause Sophon Chunk Download
+ */
+export const pauseDownload = async (): Promise<void> => {
 	await invoke("sophon_pause");
 };
 
-export const resumeDownload = async () => {
+/**
+ * Resume Sophon Chunk Download
+ */
+export const resumeDownload = async (): Promise<void> => {
 	await invoke("sophon_resume");
 };
 
-export const cancelDownload = async () => {
+/**
+ * Cancel Sophon Chunk Download (All downloaded chunks will be deleted)
+ */
+export const cancelDownload = async (): Promise<void> => {
 	await invoke("sophon_cancel");
 };
 
-export const isPreinstallAvailable = async (game: Variants) => {
+/**
+ * Check if a preinstall for a specified game is available
+ * @param game The game in question
+ * @returns weather or not a preinstall for the specified game is available
+ */
+export const isPreinstallAvailable = async (
+	game: Variants,
+): Promise<boolean> => {
 	const gameData = await getGameData(game);
 	const infoData = await invoke<{
 		preinstall_available: boolean;
@@ -102,6 +120,11 @@ export const isPreinstallAvailable = async (game: Variants) => {
 	return infoData.preinstall_available && !infoData.preinstall_downloaded;
 };
 
+/**
+ * Downloads an update/preinstall for a specified game
+ * @param game The specified game
+ * @param isPreinstall weather or not the download is for a preinstall
+ */
 export const downloadUpdate = async (
 	game: Variants,
 	isPreinstall: boolean = false,
@@ -123,6 +146,10 @@ export const downloadUpdate = async (
 	}
 };
 
+/**
+ * Applies a preinstall for a game, if available
+ * @param game Game to apply preinstall to
+ */
 export const applyUpdate = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
 
@@ -145,6 +172,11 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
 	});
 };
 
+/**
+ * Check if a game is installed
+ * @param game game to check if installed
+ * @returns weather or not `game` is installed
+ */
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		join("games", getActiveGameCode(game), getGameExeName(game)).then(
@@ -155,6 +187,11 @@ export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	});
 };
 
+/**
+ * Returns a simple object with basic game information used by other functions in this file
+ * @param game game code that is currently being used
+ * @returns Information about the game code, the install directory, and what voice over language the user requested in their settings
+ */
 const getGameData = async (game: Variants): Promise<GameData> => {
 	const gameCode = getActiveGameCode(game);
 	const gameDir = await join("games", gameCode);

@@ -1,11 +1,10 @@
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { ComponentData, WineComponent, WineModule } from "../types";
-import { exists, remove, removeDir, rename } from "./Fs";
+import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile } from "../util/WebUtils";
-import { extractFile } from "../util/FileUtils";
 import { error, info } from "@tauri-apps/plugin-log";
-import { executeLocalCommand, executeShellCommand } from "../util/AppFunctions";
+import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
 
 // Components that get regular updates (i.e. wine, dxvk)
 const components: WineComponent[] = [
@@ -57,7 +56,7 @@ const components: WineComponent[] = [
 		saveTo: "jadeite.zip",
 		postInstall: async () => {
 			// Run the telemetry blocker script. Will ask for user admin permission if the telemetry blocking hasn't been applied before
-			await executeLocalCommand("jadeite/block_analytics.sh");
+			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
 	},
 	{
@@ -67,7 +66,7 @@ const components: WineComponent[] = [
 		saveTo: "vkd3d.tar.zst",
 		postInstall: async () => {
 			// Run setup_vkd3d_proton.sh to automate the installation process
-			await executeLocalCommand("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
+			await executeLocalBinary("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
 				WINEPREFIX: await winePrefix(),
 			});
 
@@ -177,7 +176,7 @@ export const wineCommand = async (
 	const wineLib = await join(appData, "wine", "lib");
 	const wineLib64 = await join(appData, "wine", "lib64");
 
-	await executeLocalCommand(`wine/bin/${binary}`, args, {
+	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
 		WINEARCH: "win64",
 		WINEFSYNC: "1",
