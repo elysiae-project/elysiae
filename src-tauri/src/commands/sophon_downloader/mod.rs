@@ -1,17 +1,13 @@
 pub mod api_scrape;
-pub mod proto_parse;
 pub mod game_installer;
-
-use std::sync::Mutex;
-
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State, command};
-use tauri::path::BaseDirectory;
-
+pub mod proto_parse;
 use game_installer::{DownloadHandle, UpdateInfo};
+use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Emitter, Manager, State, command};
 
 pub struct HttpClient(pub reqwest::Client);
-
 pub struct ActiveDownload(pub Mutex<Option<DownloadHandle>>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,8 +26,12 @@ pub enum SophonProgress {
         assembled_files: u64,
         total_files: u64,
     },
-    Warning { message: String },
-    Error { message: String },
+    Warning {
+        message: String,
+    },
+    Error {
+        message: String,
+    },
     Finished,
 }
 
@@ -51,10 +51,9 @@ pub async fn sophon_download(
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-    let (installers, tag) =
-        game_installer::build_installers(&client.0, &game_id, &vo_lang)
-            .await
-            .map_err(|e| e.to_string())?;
+    let (installers, tag) = game_installer::build_installers(&client.0, &game_id, &vo_lang)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
     *active.0.lock().unwrap() = Some(handle.clone());

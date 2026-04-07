@@ -1,15 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, File, OpenOptions};
-use std::io::Read;
-use std::os::unix::fs::FileExt;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-
-use futures_util::StreamExt;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
-
+use super::SophonProgress;
 use super::api_scrape::{
     DownloadInfo, FrontDoorResponse, SophonBuildData, SophonBuildResponse, SophonManifestMeta,
     front_door_game_index,
@@ -17,8 +6,16 @@ use super::api_scrape::{
 use super::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest,
 };
-use super::SophonProgress;
-
+use futures_util::StreamExt;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File, OpenOptions};
+use std::io::Read;
+use std::os::unix::fs::FileExt;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 const MAX_RETRIES: u32 = 4;
 const DOWNLOAD_CONCURRENCY: usize = 8;
@@ -97,7 +94,9 @@ fn version_file_path(game_dir: &Path) -> PathBuf {
 }
 
 fn read_installed_tag(game_dir: &Path) -> Option<String> {
-    fs::read_to_string(version_file_path(game_dir)).ok().map(|s| s.trim().to_owned())
+    fs::read_to_string(version_file_path(game_dir))
+        .ok()
+        .map(|s| s.trim().to_owned())
 }
 
 /// Public re-export for use from mod.rs.
@@ -139,10 +138,9 @@ pub async fn check_update(
     vo_lang: &str,
     game_dir: &Path,
 ) -> Result<UpdateInfo, Box<dyn std::error::Error + Send + Sync>> {
-    let (front_door, current_tag) = tokio::join!(
-        fetch_front_door(client, game_id),
-        async { read_installed_tag(game_dir) },
-    );
+    let (front_door, current_tag) = tokio::join!(fetch_front_door(client, game_id), async {
+        read_installed_tag(game_dir)
+    },);
     let (branch, pre_download_branch) = front_door?;
 
     let remote_tag = branch.main.tag.clone();
@@ -167,8 +165,12 @@ pub async fn check_update(
     };
 
     // Preinstall
-    let (preinstall_available, preinstall_tag, preinstall_compressed_size,
-         preinstall_decompressed_size) = match pre_download_branch {
+    let (
+        preinstall_available,
+        preinstall_tag,
+        preinstall_compressed_size,
+        preinstall_decompressed_size,
+    ) = match pre_download_branch {
         Some(ref pre) => {
             let tag = pre.tag.clone();
             let (cs, ds) = fetch_build_sizes(client, pre).await.unwrap_or((0, 0));
@@ -208,8 +210,8 @@ async fn fetch_build_sizes(
     let vo_idx = 1usize; // approximate; real index depends on game/lang
     let vo_meta = build.manifests.get(vo_idx).unwrap_or(game_meta);
 
-    let cs = parse_size(&game_meta.stats.compressed_size)
-        + parse_size(&vo_meta.stats.compressed_size);
+    let cs =
+        parse_size(&game_meta.stats.compressed_size) + parse_size(&vo_meta.stats.compressed_size);
     let ds = parse_size(&game_meta.stats.uncompressed_size)
         + parse_size(&vo_meta.stats.uncompressed_size);
     Ok((cs, ds))
@@ -241,8 +243,7 @@ async fn fetch_diff_sizes(
 
     for new_meta in &new_build.manifests {
         // Only consider game + selected VO
-        if new_meta.matching_field != "game"
-            && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+        if new_meta.matching_field != "game" && !vo_lang_matches(&new_meta.matching_field, vo_lang)
         {
             continue;
         }
@@ -250,23 +251,22 @@ async fn fetch_diff_sizes(
         let new_manifest =
             fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id).await?;
 
-        let _old_files: HashMap<String, &SophonManifestAssetProperty> = match old_map
-            .get(&new_meta.matching_field)
-        {
-            Some(old_meta) => {
-                // We'd need to fetch and cache this too, but for size estimation
-                // we just use the stats delta.
-                let old_cs = parse_size(&old_meta.stats.compressed_size);
-                let new_cs = parse_size(&new_meta.stats.compressed_size);
-                let old_ds = parse_size(&old_meta.stats.uncompressed_size);
-                let new_ds = parse_size(&new_meta.stats.uncompressed_size);
-                // Delta is an approximation; real diff is smaller
-                cs += new_cs.saturating_sub(old_cs);
-                ds += new_ds.saturating_sub(old_ds);
-                continue;
-            }
-            None => HashMap::new(),
-        };
+        let _old_files: HashMap<String, &SophonManifestAssetProperty> =
+            match old_map.get(&new_meta.matching_field) {
+                Some(old_meta) => {
+                    // We'd need to fetch and cache this too, but for size estimation
+                    // we just use the stats delta.
+                    let old_cs = parse_size(&old_meta.stats.compressed_size);
+                    let new_cs = parse_size(&new_meta.stats.compressed_size);
+                    let old_ds = parse_size(&old_meta.stats.uncompressed_size);
+                    let new_ds = parse_size(&new_meta.stats.uncompressed_size);
+                    // Delta is an approximation; real diff is smaller
+                    cs += new_cs.saturating_sub(old_cs);
+                    ds += new_ds.saturating_sub(old_ds);
+                    continue;
+                }
+                None => HashMap::new(),
+            };
         // If matching_field is entirely new, count everything
         for file in &new_manifest.assets {
             for chunk in &file.asset_chunks {
@@ -285,14 +285,13 @@ fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
         "en" => matching_field.contains("en"),
         "jp" => matching_field.contains("ja"),
         "kr" => matching_field.contains("ko"),
-        _    => false,
+        _ => false,
     }
 }
 
 fn parse_size(s: &str) -> u64 {
     s.parse().unwrap_or(0)
 }
-
 
 #[allow(unused)]
 pub struct SophonInstaller {
@@ -311,8 +310,7 @@ impl SophonInstaller {
         meta: &SophonManifestMeta,
         tag: &str,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let manifest =
-            fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        let manifest = fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
         Ok(Self {
             client: client.clone(),
             manifest,
@@ -346,8 +344,7 @@ pub async fn build_update_installers(
     game_id: &str,
     vo_lang: &str,
     from_tag: &str,
-) -> Result<(Vec<SophonInstaller>, Vec<String>, String), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<(Vec<SophonInstaller>, Vec<String>, String), Box<dyn std::error::Error + Send + Sync>> {
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
     let (old_build, new_build) = tokio::try_join!(
@@ -405,7 +402,7 @@ pub async fn install(
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
     }
-    
+
     {
         let gd = game_dir.to_path_buf();
         tokio::task::spawn_blocking(move || cleanup_tmp_files(&gd))
@@ -608,7 +605,9 @@ pub async fn install(
                 // Pause / cancel check before each chunk.
                 {
                     let db = *downloaded_bytes.lock().unwrap();
-                    handle.wait_if_paused(&updater, db, total_compressed).await?;
+                    handle
+                        .wait_if_paused(&updater, db, total_compressed)
+                        .await?;
                 }
 
                 let dest = chunks_dir.join(chunk_filename(&item.chunk));
@@ -618,8 +617,7 @@ pub async fn install(
                 let chunk_size = item.chunk.chunk_size;
                 let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
                 let already_done = tokio::task::spawn_blocking(move || {
-                    dest_check.exists()
-                        && check_file_md5(&dest_check, chunk_size, &expected_md5)
+                    dest_check.exists() && check_file_md5(&dest_check, chunk_size, &expected_md5)
                 })
                 .await
                 .map_err(|e| e.to_string())?;
@@ -633,13 +631,8 @@ pub async fn install(
                             return Err("cancelled".into());
                         }
 
-                        match download_chunk(
-                            &item.client,
-                            &item.chunk_download,
-                            &item.chunk,
-                            &dest,
-                        )
-                        .await
+                        match download_chunk(&item.client, &item.chunk_download, &item.chunk, &dest)
+                            .await
                         {
                             Ok(()) => {
                                 success = true;
@@ -667,7 +660,9 @@ pub async fn install(
                             "Failed to download chunk {} after {MAX_RETRIES} attempts: {last_err}",
                             item.chunk.chunk_name
                         );
-                        updater(SophonProgress::Error { message: msg.clone() });
+                        updater(SophonProgress::Error {
+                            message: msg.clone(),
+                        });
                         return Err(msg);
                     }
                 }
@@ -692,7 +687,11 @@ pub async fn install(
                         .filter_map(|(file, tmp_dir, pending)| {
                             let mut count = pending.lock().unwrap();
                             *count -= 1;
-                            if *count == 0 { Some((file, tmp_dir)) } else { None }
+                            if *count == 0 {
+                                Some((file, tmp_dir))
+                            } else {
+                                None
+                            }
                         })
                         .collect()
                 };
@@ -714,9 +713,9 @@ pub async fn install(
     drop(assemble_tx);
 
     // Handle cancel: delete all chunks, report Finished (as per spec).
-    let cancelled = results.iter().any(|r| {
-        r.as_ref().err().map(|e| e == "cancelled").unwrap_or(false)
-    });
+    let cancelled = results
+        .iter()
+        .any(|r| r.as_ref().err().map(|e| e == "cancelled").unwrap_or(false));
     if cancelled {
         let cd = chunks_dir.clone();
         let _ = tokio::task::spawn_blocking(move || {
@@ -772,10 +771,7 @@ pub async fn install(
 
 /// Promote a previously downloaded preinstall to the live install by renaming
 /// the marker file to the version file. Call this after `install(..., is_preinstall=true)`.
-pub async fn apply_preinstall(
-    game_dir: &Path,
-    preinstall_tag: &str,
-) -> Result<(), String> {
+pub async fn apply_preinstall(game_dir: &Path, preinstall_tag: &str) -> Result<(), String> {
     let marker = game_dir.join(format!(".sophon_preinstall_{preinstall_tag}"));
     if !marker.exists() {
         return Err(format!("Preinstall marker for {preinstall_tag} not found"));
@@ -784,8 +780,7 @@ pub async fn apply_preinstall(
     let tag = preinstall_tag.to_owned();
     tokio::task::spawn_blocking(move || {
         write_installed_tag(&gd, &tag).map_err(|e| e.to_string())?;
-        fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}")))
-            .map_err(|e| e.to_string())
+        fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -801,15 +796,10 @@ async fn fetch_front_door(
     ),
     Box<dyn std::error::Error + Send + Sync>,
 > {
-    let resp: FrontDoorResponse = client
-        .get(FRONT_DOOR_URL)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: FrontDoorResponse = client.get(FRONT_DOOR_URL).send().await?.json().await?;
 
-    let idx = front_door_game_index(game_id)
-        .ok_or_else(|| format!("Unknown game_id: {game_id}"))?;
+    let idx =
+        front_door_game_index(game_id).ok_or_else(|| format!("Unknown game_id: {game_id}"))?;
 
     let branch = resp
         .data
@@ -887,8 +877,7 @@ async fn build_diff_installers(
 
     for new_meta in &new_build.manifests {
         // Only process game + selected VO.
-        if new_meta.matching_field != "game"
-            && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+        if new_meta.matching_field != "game" && !vo_lang_matches(&new_meta.matching_field, vo_lang)
         {
             continue;
         }
@@ -897,46 +886,43 @@ async fn build_diff_installers(
             fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id).await?;
 
         // Build a map of old files by name → md5.
-        let _old_file_map: HashMap<&str, &str> = match old_by_field.get(new_meta.matching_field.as_str()) {
-            Some(old_meta) => {
-                // Fetch old manifest to compare file-by-file.
-                let old_manifest =
-                    fetch_manifest(client, &old_meta.manifest_download, &old_meta.manifest.id)
-                        .await?;
+        let _old_file_map: HashMap<&str, &str> =
+            match old_by_field.get(new_meta.matching_field.as_str()) {
+                Some(old_meta) => {
+                    // Fetch old manifest to compare file-by-file.
+                    let old_manifest =
+                        fetch_manifest(client, &old_meta.manifest_download, &old_meta.manifest.id)
+                            .await?;
 
-                // Files present in old but absent in new → deleted.
-                let new_names: HashSet<&str> = new_manifest
-                    .assets
-                    .iter()
-                    .map(|f| f.asset_name.as_str())
-                    .collect();
+                    // Files present in old but absent in new → deleted.
+                    let new_names: HashSet<&str> = new_manifest
+                        .assets
+                        .iter()
+                        .map(|f| f.asset_name.as_str())
+                        .collect();
 
-                // We hold old_manifest here temporarily; collect deleted names.
-                let mut dels: Vec<String> = old_manifest
-                    .assets
-                    .iter()
-                    .filter(|f| !f.is_directory() && !new_names.contains(f.asset_name.as_str()))
-                    .map(|f| f.asset_name.clone())
-                    .collect();
-                deleted_files.append(&mut dels);
+                    // We hold old_manifest here temporarily; collect deleted names.
+                    let mut dels: Vec<String> = old_manifest
+                        .assets
+                        .iter()
+                        .filter(|f| !f.is_directory() && !new_names.contains(f.asset_name.as_str()))
+                        .map(|f| f.asset_name.clone())
+                        .collect();
+                    deleted_files.append(&mut dels);
 
-                // Build old md5 map — but old_manifest is consumed above, so we
-                // need to refetch. To avoid a double fetch we'll do it differently:
-                // collect into a local vec first.
-                HashMap::new() // populated below after second fetch
-            }
-            None => HashMap::new(), // entirely new category → all files are new
-        };
+                    // Build old md5 map — but old_manifest is consumed above, so we
+                    // need to refetch. To avoid a double fetch we'll do it differently:
+                    // collect into a local vec first.
+                    HashMap::new() // populated below after second fetch
+                }
+                None => HashMap::new(), // entirely new category → all files are new
+            };
 
         // Re-fetch old manifest to compare md5s (only if it existed).
         let old_md5_map: HashMap<String, String> =
             if let Some(old_meta) = old_by_field.get(new_meta.matching_field.as_str()) {
-                let om = fetch_manifest(
-                    client,
-                    &old_meta.manifest_download,
-                    &old_meta.manifest.id,
-                )
-                .await?;
+                let om = fetch_manifest(client, &old_meta.manifest_download, &old_meta.manifest.id)
+                    .await?;
                 om.assets
                     .into_iter()
                     .filter(|f| !f.is_directory())
@@ -984,7 +970,6 @@ async fn build_diff_installers(
 
     Ok((installers, deleted_files))
 }
-
 
 async fn download_chunk(
     client: &Client,
@@ -1084,8 +1069,7 @@ fn assemble_file(
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
 
-    if target_path.exists() && check_file_md5(&target_path, file.asset_size, &file.asset_hash_md5)
-    {
+    if target_path.exists() && check_file_md5(&target_path, file.asset_size, &file.asset_hash_md5) {
         let mut map = chunk_refcounts.lock().unwrap();
         for chunk in &file.asset_chunks {
             if let Some(count) = map.get_mut(&chunk.chunk_name) {

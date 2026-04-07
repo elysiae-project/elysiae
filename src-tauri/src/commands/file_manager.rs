@@ -1,12 +1,10 @@
-use std::path::Path;
-use tauri::{AppHandle, Manager, command, path::BaseDirectory};
-
 use flate2::read::GzDecoder as Gz;
-use xz::read::XzDecoder as Xz;
-use zstd::Decoder as Zstd;
-
+use std::path::Path;
 use tar::Archive as Tar;
+use tauri::{AppHandle, Manager, command, path::BaseDirectory};
+use xz::read::XzDecoder as Xz;
 use zip::ZipArchive as Zip;
+use zstd::Decoder as Zstd;
 
 #[command]
 pub async fn extract_file(
@@ -75,4 +73,3 @@ fn flatten(dest: &Path) -> Result<(), String> {
 
     Ok(())
 }
-
