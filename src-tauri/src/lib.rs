@@ -1,5 +1,7 @@
 use crate::commands::{app_functions, file_downloader, file_manager};
 mod commands;
+use crate::commands::sophon_downloader::{ActiveDownload, HttpClient};
+use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +15,7 @@ pub fn run() {
                 .build()
                 .unwrap(),
         )) //  Required for sophon chunk downloading
+        .manage(ActiveDownload(Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -34,7 +37,14 @@ pub fn run() {
             file_manager::get_top_level_files,
             file_manager::get_md5_hash,
             app_functions::in_dev_env,
-            commands::sophon_downloader::sophon_download
+            commands::sophon_downloader::sophon_download,
+            commands::sophon_downloader::sophon_update,
+            commands::sophon_downloader::sophon_preinstall,
+            commands::sophon_downloader::sophon_apply_preinstall,
+            commands::sophon_downloader::sophon_pause,
+            commands::sophon_downloader::sophon_resume,
+            commands::sophon_downloader::sophon_cancel,
+            commands::sophon_downloader::sophon_check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

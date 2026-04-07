@@ -5,18 +5,22 @@ import Sidebar from "./components/Sidebar.tsx";
 import Titlebar from "./components/Titlebar.tsx";
 import { useGame } from "./hooks/useGame.ts";
 import { cva } from "class-variance-authority";
-import { SophonChunk, Variants } from "./types";
+import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Info, Save, Settings } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import { downloadGame, isGameInstalled, runGame } from "./lib/GameDownloader.ts";
+import {
+	downloadGame,
+	downloadUpdate,
+	isGameInstalled,
+	isPreinstallAvailable,
+	runGame,
+} from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
 import { settingsDetails } from "./util/SettingsDetails.ts";
-import Dropdown from "./components/Dropdown.tsx";
-import { invoke } from "@tauri-apps/api/core";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -36,13 +40,23 @@ function PreinstallButton() {
 	const { game } = useGame();
 
 	useEffect(() => {
-		// TODO: Add preinstall check each time game switches onces sophon downloader is implemented
+		isPreinstallAvailable(game).then((preinstallRes) => {
+			isGameInstalled(game).then((gameRes) => {
+				setPreInstAvailable(preinstallRes && gameRes);
+			})
+		});
 	}, [game]);
 
 	if (!preInstAvailable) return <></>;
 
 	return (
-		<Button intent="primary" overrideMinWidth={true} onClick={async () => {}}>
+		<Button
+			intent="primary"
+			overrideMinWidth={true}
+			onClick={async () => {
+				await downloadUpdate(game, true);
+			}}
+		>
 			<Save />
 		</Button>
 	);

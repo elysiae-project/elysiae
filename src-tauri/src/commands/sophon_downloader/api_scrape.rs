@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// "Front Door" Structs
+// Sophon "Front Door" response
 #[allow(unused)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct FrontDoorResponse {
@@ -29,7 +29,6 @@ pub struct GameId {
     pub biz: String,
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct PackageBranch {
     pub package_id: String,
@@ -38,7 +37,7 @@ pub struct PackageBranch {
     pub tag: String,
 }
 
-// "Manifest endpoint" structs
+// Sophon Manifest endpoint structs
 #[allow(unused)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonBuildResponse {
@@ -76,14 +75,11 @@ pub struct ManifestFileInfo {
     pub uncompressed_size: String,
 }
 
-/// How to build a URL for either chunks or the manifest file.
+/// Describes where to download chunks or the manifest file.
 ///
-/// URL formula  (mirrors the an-anime-team implementation):
-///   `{url_prefix}{url_suffix}/{item_name}`
-#[allow(unused)]
+/// URL formula: `{url_prefix}{url_suffix}/{item_name}`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DownloadInfo {
-    /// 0 = not encrypted.
     pub encryption: i32,
     pub password: String,
     /// 0 = uncompressed, 1 = zstd-compressed.
@@ -93,7 +89,6 @@ pub struct DownloadInfo {
 }
 
 impl DownloadInfo {
-    /// Build a full download URL for a named item (chunk or manifest).
     pub fn url_for(&self, item_name: &str) -> String {
         format!("{}{}/{}", self.url_prefix, self.url_suffix, item_name)
     }
@@ -103,8 +98,8 @@ impl DownloadInfo {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Stats {
     pub compressed_size: String,
     pub uncompressed_size: String,
@@ -114,24 +109,10 @@ pub struct Stats {
 
 pub fn front_door_game_index(game_id: &str) -> Option<usize> {
     match game_id.to_lowercase().as_str() {
-        "bh3" => Some(3),
-        "hk4e" => Some(2),
-        "hkrpg" => Some(1),
-        "napo" => Some(0),
-        _ => None,
-    }
-}
-
-pub fn vo_manifest_index(game_id: &str, vo_lang: &str) -> Option<usize> {
-    if game_id.to_lowercase().contains("bh3") {
-        return Some(1);
-    }
-
-    match vo_lang.to_lowercase().as_str() {
-        "cn" => Some(1),
-        "en" => Some(2),
-        "jp" => Some(3),
-        "kr" => Some(4),
-        _ => None,
+        "bh3"    => Some(3),
+        "hk4e"   => Some(2),
+        "hkrpg"  => Some(1),
+        "napo"   => Some(0),
+        _        => None,
     }
 }
