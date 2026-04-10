@@ -9,6 +9,9 @@
 > [!WARNING]  
 > This project is in Alpha! Some features are missing and others may have issues.
 
+> [!IMPORTANT]
+> This project will only be available as source code until a 1.0 release is complete. Afterwards, it will be submitted to Flathub for distribution there.
+
 ## Why This Project Exists
 
 Elysiae aims to create a unified launcher for all "anime games", intending to serve as a replacement to the launchers that were developed by [an-anime-team](https://github.com/an-anime-team).
@@ -25,7 +28,7 @@ After multiple bad update cycles that I've experienced using their launchers, I 
 
 ## Software Requirements
 
-To use Elysiae, you will need the following:
+Minimum:
 
 - A 64-Bit CPU
 - Linux Kernel >= 6.1 with support for futex2 (Most distros will have this)
@@ -34,9 +37,9 @@ To use Elysiae, you will need the following:
 - About 300Mb of storage (base install + wine environment)
 - Enough additional storage to install any of the games you'd like to play (~70-110GB per game)
 
-## Installing Elysiae
+Recommended:
 
-**WIP**
+- Linux Kernel >= 6.14. Support for futex2 is optional if you have at least 6.14 installed
 
 ## Building From Source / Contributing to Elysiae
 

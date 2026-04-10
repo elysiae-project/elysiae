@@ -63,7 +63,7 @@ export default function Dropdown({
 	initialIndex: number;
 	onChangeAction: (index: number) => void;
 }) {
-	const { game, setGame } = useGame();
+	const { game } = useGame();
 
 	let [open, setOpen] = useState<boolean>(false);
 	let [label, setLabel] = useState<string>(labels[initialIndex]);

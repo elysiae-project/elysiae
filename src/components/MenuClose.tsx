@@ -1,11 +1,13 @@
 import { cva } from "class-variance-authority";
-import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
+import { useGame } from "../hooks/useGame";
 import { getActiveGameCode } from "../util/AppFunctions";
 import { useState } from "preact/hooks";
+import { motion } from "motion/react";
+import { fadeInOut } from "../util/Animations";
 
 const menuCloseStyles = cva(
-	"h-10 w-10 flex items-center justify-center transition-all duration-50",
+	"h-10 w-10 flex items-center justify-center transition-all duration-75",
 	{
 		variants: {
 			game: {
@@ -15,7 +17,7 @@ const menuCloseStyles = cva(
 					"border-3 p-0.5 border-ys-btnborder bg-[#ece5d8] hover:border-transparent hover:drop-shadow-lg hover:drop-shadow[#fdfdfe] rounded-full active:bg-ys-btn-active-bg active:border-transparent",
 				[Variants.HKRPG]: "",
 				[Variants.NAP]:
-					"rounded-full nap-dots border-3 border-nap-btn-border-strong active:animate-nap-pulsate active:border-transparent",
+					"rounded-full nap-dots-titlebar-btn border-3 border-nap-btn-border-strong active:animate-nap-pulsate active:border-transparent",
 			},
 		},
 	},
@@ -26,12 +28,12 @@ export default function MenuClose({
 }: {
 	clickAction: () => void;
 }) {
-	const { game, setGame } = useGame();
+	const { game } = useGame();
 	const assetPath = `src/assets/icon/${getActiveGameCode(game)}`;
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
-		<div
+		<button
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
@@ -61,6 +63,6 @@ export default function MenuClose({
 				width={18}
 				height={18}
 			/>
-		</div>
+		</button>
 	);
 }

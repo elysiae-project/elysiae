@@ -1,29 +1,20 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Variants } from "../types";
+import { GameCodes, Variants } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
 
 /**
- * @description Closes the app
+ * Closes the app
  */
 export const closeApp = (): void => {
 	getCurrentWindow().close();
 };
 
 /**
- * @description Minimizes the app window
- */
-export const minimizeApp = (): void => {
-	getCurrentWindow().minimize();
-};
-
-/**
  * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
  */
-export const getActiveGameCode = (
-	currentGame: Variants,
-): "bh3" | "hk4e" | "hkrpg" | "nap" => {
+export const getActiveGameCode = (currentGame: Variants): GameCodes => {
 	switch (currentGame) {
 		case Variants.BH3:
 			return "bh3";
@@ -39,7 +30,7 @@ export const getActiveGameCode = (
 export const getGameExeName = (currentGame: Variants): string => {
 	switch (currentGame) {
 		case Variants.BH3:
-			return "BH3.exe";
+			return "\x42\x48\x33.exe";
 		case Variants.HK4E:
 			return "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe";
 		case Variants.HKRPG:
@@ -54,13 +45,7 @@ export const getGameExeName = (currentGame: Variants): string => {
  */
 export const inDevEnv = async (): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
-		invoke("in_dev_env")
-			.then((res) => {
-				resolve(res as boolean);
-			})
-			.catch((e) => {
-				reject(e);
-			});
+		invoke<boolean>("in_dev_env").then(resolve).catch(reject);
 	});
 };
 
@@ -72,7 +57,7 @@ export const inDevEnv = async (): Promise<boolean> => {
 export const executeShellCommand = async (
 	command: string,
 	env?: Record<string, string> | undefined,
-) => {
+): Promise<void> => {
 	await Command.create("sh", ["-c", command], {
 		env: env,
 	}).execute();
@@ -84,11 +69,11 @@ export const executeShellCommand = async (
  * @param args arguments to pass into command
  * @param env (optional) environment variables
  */
-export const executeLocalCommand = async (
+export const executeLocalBinary = async (
 	binaryPath: string,
 	args?: string,
 	env?: Record<string, string> | undefined,
-) => {
+): Promise<void> => {
 	const appData = await appDataDir();
 	await executeShellCommand(
 		`${appData}/${binaryPath} ${typeof args !== "undefined" ? args : ""}`,
@@ -103,7 +88,7 @@ export const executeLocalCommand = async (
  * @param path POSIX Path
  * @returns Wine Windows path converted froma POSIX path
  */
-export const convertToWinPath = (path: string) => {
+export const posixToWinPath = (path: string): string => {
 	return `Z:\\${path.replaceAll("/", "\\")}`;
 };
 
@@ -112,6 +97,6 @@ export const convertToWinPath = (path: string) => {
  * @param path Wine Windows Path
  * @returns POSIX path converted from a Wine Windows Path
  */
-export const convertToPosixPath = (path: string) => {
+export const winToPosixPath = (path: string): string => {
 	return `/${path.slice(3).replaceAll("\\", "/")}`;
 };

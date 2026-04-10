@@ -134,14 +134,10 @@ export type LauncherBrandingRawData = {
 };
 export type LauncherBrandingData = {
 	[key in Variants]: {
+		id: string;
 		icon: string;
 		iconLarge: string;
 	};
-};
-
-export type Download = {
-	downloaded: number;
-	total: number;
 };
 
 export type WineComponent = {
@@ -162,3 +158,20 @@ export type WineModule = {
 	downloadLink: string;
 	moduleType: "exe" | "dll32" | "dll64";
 };
+
+export type SophonProgress =
+	| { type: "fetchingManifest" }
+	| { type: "downloading"; downloaded_bytes: number; total_bytes: number }
+	| { type: "assembling"; assembled_files: number; total_files: number }
+	| { type: "warning"; message: string }
+	| { type: "error"; message: string }
+	| { type: "finished" };
+
+export type GameData = {
+	gameCode: string;
+	gameDir: string;
+	requestedLanguage: string;
+};
+
+export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
+export type AppOptions = "selectedGame" | "voLanguage";

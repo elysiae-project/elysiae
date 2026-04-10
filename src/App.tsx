@@ -1,26 +1,35 @@
 import "./App.css";
-import { useGame } from "./hooks/useGame.ts";
+import Button from "./components/Button.tsx";
+import Background from "./components/Background.tsx";
+import Sidebar from "./components/Sidebar.tsx";
 import Titlebar from "./components/Titlebar.tsx";
+import { useGame } from "./hooks/useGame.ts";
 import { cva } from "class-variance-authority";
 import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
-import Sidebar from "./components/Sidebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
-import Button from "./components/Button.tsx";
 import { useEffect, useState } from "preact/hooks";
-import { Save } from "lucide-preact";
-import { updateWineComponents, wineEnvAvailable } from "./util/WineManager.ts";
+import { Info, Save, Settings } from "lucide-preact";
+import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
+import {
+	downloadGame,
+	downloadUpdate,
+	isGameInstalled,
+	isPreinstallAvailable,
+	runGame,
+} from "./lib/GameDownloader.ts";
+import Modal from "./components/Modal.tsx";
+import { settingsDetails } from "./util/SettingsDetails.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
 			[Variants.BH3]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
 			[Variants.HK4E]: "bg-ys-bg font-ys text-black",
-			[Variants.HKRPG]:
-				"bg-sr-bg font-bh-sr rounded-b-xs border border-[#393939] text-black",
+			[Variants.HKRPG]: "bg-sr-bg font-bh-sr rounded-b-xs text-black",
 			[Variants.NAP]:
-				"bg-nap-bg font-nap rounded-br-xl border-b-2 border-r-2 border-l-2 border-nap-border text-white",
+				"bg-nap-bg font-nap rounded-br-xl border-nap-border text-white",
 		},
 	},
 });
@@ -31,46 +40,25 @@ function PreinstallButton() {
 	const { game } = useGame();
 
 	useEffect(() => {
-		// TODO: Add preinstall check each time game switches onces sophon downloader is implemented
+		isPreinstallAvailable(game).then((preinstallRes) => {
+			isGameInstalled(game).then((gameRes) => {
+				setPreInstAvailable(preinstallRes && gameRes);
+			})
+		});
 	}, [game]);
 
 	if (!preInstAvailable) return <></>;
 
 	return (
-		<Button intent="primary" overrideMinWidth={true} onClick={async () => {}}>
+		<Button
+			intent="primary"
+			overrideMinWidth={true}
+			onClick={async () => {
+				await downloadUpdate(game, true);
+			}}
+		>
 			<Save />
 		</Button>
-	);
-}
-
-function Background() {
-	const { game } = useGame();
-	const { graphics } = useApi();
-	if (!graphics) return null;
-
-	const url =
-		graphics[game].backgroundVideo === ""
-			? graphics[game].backgroundImage
-			: graphics[game].backgroundVideo;
-
-	return (
-		<>
-			<img
-				class="absolute inset-0 h-full w-full object-cover z-10"
-				src={graphics[game].backgroundVideoOverlay}
-			/>
-			{url.endsWith(".webp") ? (
-				<img class="absolute h-full w-full object-cover" src={url} alt="" />
-			) : (
-				<video
-					class="absolute intset-0 h-full w-full object-cover"
-					src={url}
-					autoplay
-					loop
-					muted
-				/>
-			)}
-		</>
 	);
 }
 
@@ -80,10 +68,14 @@ function App() {
 
 	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
 	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
+	let [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
 	useEffect(() => {
 		wineEnvAvailable().then((res) => {
 			setWineAvailable(res);
+		});
+		isGameInstalled(game).then((res) => {
+			setGameInstalled(res);
 		});
 	}, [game]);
 
@@ -95,19 +87,52 @@ function App() {
 				{graphics ? (
 					<div class="relative h-full w-full">
 						<Background />
+						<Modal
+							onOpenUpdate={() => setSettingsOpen(false)}
+							title="Settings"
+							open={settingsOpen}
+						>
+							{settingsDetails.map((setting) => {
+								return (
+									<div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
+										<div class="flex flex-row items-center justify-left gap-x-1">
+											<p>{setting.name}</p>
+											{typeof setting.description !== "undefined" ? (
+												<Info size={15} />
+											) : null}
+										</div>
+										<div></div>
+									</div>
+								);
+							})}
+						</Modal>
 
-						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-5">
+						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
 							{/* Page content */}
 							<PreinstallButton />
+							<Button
+								intent="primary"
+								onClick={() => {
+									setSettingsOpen(true);
+								}}
+								overrideMinWidth
+							>
+								<Settings />
+							</Button>
 							<Button
 								intent="primary"
 								onClick={async () => {
 									if (!wineAvailable) {
 										await updateWineComponents();
+										setWineAvailable(true);
 									} else if (!gameInstalled) {
-										// TODO: Add game downloader functionality
+										const activeGame = game;
+										await downloadGame(activeGame);
+										if (game === activeGame) {
+											setGameInstalled(true);
+										}
 									} else {
-										// TODO: Add launch game functionality
+										await runGame(game);
 									}
 								}}
 							>
@@ -118,7 +143,6 @@ function App() {
 										: "Launch"}
 							</Button>
 						</div>
-
 						<Sidebar />
 					</div>
 				) : (
