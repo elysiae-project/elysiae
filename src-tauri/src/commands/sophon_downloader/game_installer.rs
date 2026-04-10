@@ -15,7 +15,7 @@ use std::io::Read;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 const MAX_RETRIES: u32 = 4;
 const DOWNLOAD_CONCURRENCY: usize = 8;
@@ -42,12 +42,14 @@ enum ControlState {
 #[derive(Clone)]
 pub struct DownloadHandle {
     state: Arc<Mutex<ControlState>>,
+    pause_notify: Arc<Notify>,
 }
 
 impl DownloadHandle {
     pub fn new() -> Self {
         Self {
             state: Arc::new(Mutex::new(ControlState::Running)),
+            pause_notify: Arc::new(Notify::new()),
         }
     }
 
@@ -57,10 +59,12 @@ impl DownloadHandle {
 
     pub fn resume(&self) {
         *self.state.lock().unwrap() = ControlState::Running;
+        self.pause_notify.notify_one();
     }
 
     pub fn cancel(&self) {
         *self.state.lock().unwrap() = ControlState::Cancelled;
+        self.pause_notify.notify_one();
     }
 
     fn is_cancelled(&self) -> bool {
@@ -84,7 +88,7 @@ impl DownloadHandle {
                         downloaded_bytes,
                         total_bytes,
                     });
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    self.pause_notify.notified().await;
                 }
             }
         }
