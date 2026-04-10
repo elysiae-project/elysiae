@@ -112,7 +112,7 @@ pub fn front_door_game_index(game_id: &str) -> Option<usize> {
         "bh3"    => Some(3),
         "hk4e"   => Some(2),
         "hkrpg"  => Some(1),
-        "napo"   => Some(0),
+        "nap"   => Some(0),
         _        => None,
     }
 }

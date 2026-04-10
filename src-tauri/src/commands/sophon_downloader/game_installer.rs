@@ -26,8 +26,10 @@ const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
     "/hyp/hyp-connect/api/getGameBranches?&launcher_id=VYTpXlbWo8"
 );
-const SOPHON_BUILD_URL_BASE: &str =
-    "https://sg-public-api.hoyoverse.com/downloader/sophon_chunk/api/getBuild";
+const SOPHON_BUILD_URL_BASE: &str = concat!(
+    "https://sg-public-api.hoyoverse.com",
+    "/downloader/sophon_chunk/api/getBuild"
+);
 
 /// Shared state used by the pause/resume/cancel Tauri commands.
 #[derive(Debug, Clone, PartialEq)]
@@ -840,7 +842,7 @@ async fn build_installers_from_data(
 ) -> Result<Vec<SophonInstaller>, Box<dyn std::error::Error + Send + Sync>> {
     // Determine game_id from context isn't available here; use index 0 for game
     // and find the VO by matching_field.
-    let game_meta = build.manifests.first().ok_or("no game manifest")?;
+    let game_meta = build.manifests.first().ok_or("No game manifest")?;
 
     // Find VO manifest by matching_field name.
     let vo_meta = build
@@ -848,7 +850,7 @@ async fn build_installers_from_data(
         .iter()
         .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
         .or_else(|| build.manifests.get(1))
-        .ok_or("no VO manifest")?;
+        .ok_or("No VO manifest")?;
 
     let (game_inst, vo_inst) = tokio::try_join!(
         SophonInstaller::from_manifest_meta(client, game_meta, tag),
