@@ -8,7 +8,7 @@ You **MUST** be running on a Linux system to have the program work. If you are d
 
 Make sure you have all of the following build dependencies installed before attempting to build:
 
-- rust >= 1.85.0 (Download via [rustup](https://rustup.rs))
+- rust >= 1.92.0 (Download via [rustup](https://rustup.rs))
 - NodeJS >= 24.0.0
 - Any dependencies listed on the [Tauri prerequisites page](https://tauri.app/start/prerequisites/)
 

@@ -1,5 +1,6 @@
 {
 	"name": "elysiae",
+	"author": "The Elysiae Project",
 	"private": true,
 	"version": "1.0.0",
 	"type": "module",

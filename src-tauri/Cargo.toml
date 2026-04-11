@@ -2,12 +2,7 @@
 name = "Elysiae"
 version = "1.0.0"
 description = "Universal 'Anime Game' Launcher for Linux Hosts"
-authors = [
-    "Shob3r <andrewpinter23@gmail.com>",
-    "ChakornK <chakornk2007@gmail.com>",
-    "The Elysiae Project",
-    "Elysiae Contributors",
-]
+authors = ["The Elysiae Project"]
 edition = "2024"
 
 [lib]
