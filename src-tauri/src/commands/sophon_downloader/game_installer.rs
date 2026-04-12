@@ -6,7 +6,9 @@ use super::api_scrape::{
 use super::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest,
 };
+use dashmap::DashMap;
 use futures_util::StreamExt;
+use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -14,7 +16,10 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
 
 const MAX_RETRIES: u32 = 4;
@@ -448,36 +453,30 @@ pub async fn install(
 
     let total_files: u64 = installer_data.iter().map(|d| d.files.len() as u64).sum();
 
-    let downloaded_bytes = Arc::new(Mutex::new(0u64));
-    let assembled_files = Arc::new(Mutex::new(0u64));
+    let downloaded_bytes = Arc::new(AtomicU64::new(0));
+    let assembled_files = Arc::new(AtomicU64::new(0));
 
-    let chunk_refcounts: Arc<Mutex<HashMap<String, usize>>> = {
-        let mut map = HashMap::new();
-        for data in &installer_data {
-            for file in &data.files {
-                for chunk in &file.asset_chunks {
-                    *map.entry(chunk.chunk_name.clone()).or_insert(0) += 1;
-                }
+    let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
+    for data in &installer_data {
+        for file in &data.files {
+            for chunk in &file.asset_chunks {
+                chunk_refcounts
+                    .entry(chunk.chunk_name.clone())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
             }
         }
-        Arc::new(Mutex::new(map))
-    };
+    }
 
     // Sends (file, tmp_dir) to the assembly pool once all chunks are ready.
     let (assemble_tx, assemble_rx) =
         mpsc::unbounded_channel::<(SophonManifestAssetProperty, PathBuf)>();
-
-    // Runs up to ASSEMBLY_CONCURRENCY file assemblies in parallel.
-    // Assembly only begins reporting after all downloads are done (tracked via
-    // `downloads_done` flag), but assembly itself can start earlier to overlap.
-    let downloads_done = Arc::new(Mutex::new(false));
 
     let assembly_task = {
         let chunks_dir = chunks_dir.clone();
         let game_dir = game_dir.to_path_buf();
         let chunk_refcounts = Arc::clone(&chunk_refcounts);
         let assembled_files = Arc::clone(&assembled_files);
-        let downloads_done = Arc::clone(&downloads_done);
         let updater = updater.clone();
 
         tokio::spawn(async move {
@@ -493,7 +492,6 @@ pub async fn install(
                             let game_dir = game_dir.clone();
                             let chunk_refcounts = Arc::clone(&chunk_refcounts);
                             let assembled_files = Arc::clone(&assembled_files);
-                            let downloads_done = Arc::clone(&downloads_done);
                             let updater = updater.clone();
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
@@ -508,21 +506,11 @@ pub async fn install(
                                     format!("Failed to assemble {}: {e}", file.asset_name)
                                 })?;
 
-                                // Only report Assembling progress once downloads are done.
-                                if *downloads_done.lock().unwrap() {
-                                    let count = {
-                                        let mut g = assembled_files.lock().unwrap();
-                                        *g += 1;
-                                        *g
-                                    };
-                                    updater(SophonProgress::Assembling {
-                                        assembled_files: count,
-                                        total_files,
-                                    });
-                                } else {
-                                    let mut g = assembled_files.lock().unwrap();
-                                    *g += 1;
-                                }
+                                let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
+                                updater(SophonProgress::Assembling {
+                                    assembled_files: count,
+                                    total_files,
+                                });
 
                                 Ok::<(), String>(())
                             }));
@@ -557,7 +545,7 @@ pub async fn install(
         chunk_download: DownloadInfo,
     }
 
-    let mut chunk_to_files: HashMap<String, Vec<FileEntry>> = HashMap::new();
+    let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::new();
     let mut seen_chunks: HashSet<String> = HashSet::new();
 
@@ -596,7 +584,7 @@ pub async fn install(
         }
     }
 
-    let chunk_to_files = Arc::new(Mutex::new(chunk_to_files));
+    let last_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
 
     let results: Vec<Result<(), String>> = futures_util::stream::iter(download_items)
         .map(|item| {
@@ -606,11 +594,12 @@ pub async fn install(
             let assemble_tx = assemble_tx.clone();
             let handle = handle.clone();
             let updater = updater.clone();
+            let last_update = Arc::clone(&last_update);
 
             async move {
                 // Pause / cancel check before each chunk.
                 {
-                    let db = *downloaded_bytes.lock().unwrap();
+                    let db = downloaded_bytes.load(Ordering::Relaxed);
                     handle
                         .wait_if_paused(&updater, db, total_compressed)
                         .await?;
@@ -673,34 +662,39 @@ pub async fn install(
                     }
                 }
 
-                // Update download counter.
-                let db = {
-                    let mut g = downloaded_bytes.lock().unwrap();
-                    *g += item.chunk.chunk_size;
-                    *g
-                };
-                updater(SophonProgress::Downloading {
-                    downloaded_bytes: db,
-                    total_bytes: total_compressed,
-                });
+                // Update download counter with atomic fetch_add
+                let db = downloaded_bytes.fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
+                    + item.chunk.chunk_size;
+
+                // Throttle progress updates to 1000ms
+                {
+                    let mut lu = last_update.lock().unwrap();
+                    if lu.elapsed() >= Duration::from_millis(1000) {
+                        updater(SophonProgress::Downloading {
+                            downloaded_bytes: db,
+                            total_bytes: total_compressed,
+                        });
+                        *lu = Instant::now();
+                    }
+                }
 
                 // Decrement pending counts; queue any newly-ready files.
-                let ready: Vec<(SophonManifestAssetProperty, PathBuf)> = {
-                    let mut map = chunk_to_files.lock().unwrap();
-                    map.remove(&item.chunk.chunk_name)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|(file, tmp_dir, pending)| {
-                            let mut count = pending.lock().unwrap();
-                            *count -= 1;
-                            if *count == 0 {
-                                Some((file, tmp_dir))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                };
+                let ready: Vec<(SophonManifestAssetProperty, PathBuf)> =
+                    match chunk_to_files.remove(&item.chunk.chunk_name) {
+                        Some((_, entries)) => entries
+                            .into_iter()
+                            .filter_map(|(file, tmp_dir, pending)| {
+                                let mut count = pending.lock().unwrap();
+                                *count -= 1;
+                                if *count == 0 {
+                                    Some((file, tmp_dir))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        None => Vec::new(),
+                    };
 
                 for entry in ready {
                     let _ = assemble_tx.send(entry);
@@ -713,9 +707,6 @@ pub async fn install(
         .collect()
         .await;
 
-    // Downloads are done — signal assembly to start reporting progress,
-    // then drop the sender so the assembly loop terminates.
-    *downloads_done.lock().unwrap() = true;
     drop(assemble_tx);
 
     // Handle cancel: delete all chunks, report Finished (as per spec).
@@ -996,20 +987,28 @@ async fn download_chunk(
         }
     }
 
-    let bytes = resp.bytes().await?;
+    let mut file = tokio::fs::File::create(dest).await?;
+    let mut stream = resp.bytes_stream();
+    let mut hasher = Md5::new();
+    let mut total_len = 0u64;
 
-    if bytes.len() as u64 != chunk.chunk_size {
+    while let Some(chunk_bytes) = stream.next().await {
+        let bytes = chunk_bytes?;
+        hasher.update(&bytes);
+        file.write_all(&bytes).await?;
+        total_len += bytes.len() as u64;
+    }
+
+    if total_len != chunk.chunk_size {
         return Err(format!(
             "Downloaded size mismatch for {}: expected {}, got {}",
-            chunk.chunk_name,
-            chunk.chunk_size,
-            bytes.len()
+            chunk.chunk_name, chunk.chunk_size, total_len
         )
         .into());
     }
 
     if !chunk.chunk_compressed_hash_md5.is_empty() {
-        let actual = md5_hex(&bytes);
+        let actual = format!("{:x}", hasher.finalize());
         if actual != chunk.chunk_compressed_hash_md5 {
             return Err(format!(
                 "Compressed MD5 mismatch for {}: expected {}, got {actual}",
@@ -1018,9 +1017,6 @@ async fn download_chunk(
             .into());
         }
     }
-
-    let dest = dest.to_path_buf();
-    tokio::task::spawn_blocking(move || fs::write(&dest, &bytes)).await??;
 
     Ok(())
 }
@@ -1070,17 +1066,18 @@ fn assemble_file(
     game_dir: &Path,
     chunks_dir: &Path,
     temp_dir: &Path,
-    chunk_refcounts: &Mutex<HashMap<String, usize>>,
+    chunk_refcounts: &DashMap<String, usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
 
     if target_path.exists() && check_file_md5(&target_path, file.asset_size, &file.asset_hash_md5) {
-        let mut map = chunk_refcounts.lock().unwrap();
         for chunk in &file.asset_chunks {
-            if let Some(count) = map.get_mut(&chunk.chunk_name) {
+            if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
                 *count -= 1;
                 if *count == 0 {
+                    drop(count);
+                    chunk_refcounts.remove(&chunk.chunk_name);
                     let _ = fs::remove_file(chunks_dir.join(chunk_filename(chunk)));
                 }
             }
@@ -1088,7 +1085,6 @@ fn assemble_file(
         return Ok(());
     }
 
-    // Delete any leftover tmp file from a previous interrupted run.
     if tmp_path.exists() {
         fs::remove_file(&tmp_path)?;
     }
@@ -1105,10 +1101,13 @@ fn assemble_file(
     out_file.set_len(file.asset_size)?;
 
     let mut total_written: u64 = 0;
+    let mut hasher = Md5::new();
 
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
         let decompressed = decompress_chunk(&chunk_path)?;
+
+        hasher.update(&decompressed);
 
         if !chunk.chunk_decompressed_hash_md5.is_empty() {
             let actual = md5_hex(&decompressed);
@@ -1131,10 +1130,11 @@ fn assemble_file(
         }
         total_written += written;
 
-        let mut map = chunk_refcounts.lock().unwrap();
-        if let Some(count) = map.get_mut(&chunk.chunk_name) {
+        if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
             *count -= 1;
             if *count == 0 {
+                drop(count);
+                chunk_refcounts.remove(&chunk.chunk_name);
                 let _ = fs::remove_file(&chunk_path);
             }
         }
@@ -1152,7 +1152,7 @@ fn assemble_file(
     }
 
     if !file.asset_hash_md5.is_empty() {
-        let actual = file_md5_hex(&tmp_path)?;
+        let actual = format!("{:x}", hasher.finalize());
         if actual != file.asset_hash_md5 {
             return Err(format!(
                 "Final file MD5 mismatch for {}: expected {}, got {actual}",
@@ -1201,12 +1201,23 @@ fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
 }
 
 fn md5_hex(data: &[u8]) -> String {
-    format!("{:x}", md5::compute(data))
+    let mut hasher = Md5::new();
+    hasher.update(data);
+    format!("{:x}", hasher.finalize())
 }
 
 fn file_md5_hex(path: &Path) -> std::io::Result<String> {
-    let data = fs::read(path)?;
-    Ok(format!("{:x}", md5::compute(data)))
+    let mut file = File::open(path)?;
+    let mut hasher = Md5::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn check_file_md5(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
