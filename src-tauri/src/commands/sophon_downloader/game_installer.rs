@@ -904,51 +904,33 @@ async fn build_diff_installers(
         let new_manifest =
             fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id).await?;
 
-        // Build a map of old files by name → md5.
-        let _old_file_map: HashMap<&str, &str> =
+        let new_names: HashSet<&str> = new_manifest
+            .assets
+            .iter()
+            .map(|f| f.asset_name.as_str())
+            .collect();
+
+        let old_md5_map: HashMap<String, String> =
             match old_by_field.get(new_meta.matching_field.as_str()) {
                 Some(old_meta) => {
-                    // Fetch old manifest to compare file-by-file.
                     let old_manifest =
                         fetch_manifest(client, &old_meta.manifest_download, &old_meta.manifest.id)
                             .await?;
 
-                    // Files present in old but absent in new → deleted.
-                    let new_names: HashSet<&str> = new_manifest
-                        .assets
-                        .iter()
-                        .map(|f| f.asset_name.as_str())
-                        .collect();
+                    for f in old_manifest.assets.iter().filter(|f| !f.is_directory()) {
+                        if !new_names.contains(f.asset_name.as_str()) {
+                            deleted_files.push(f.asset_name.clone());
+                        }
+                    }
 
-                    // We hold old_manifest here temporarily; collect deleted names.
-                    let mut dels: Vec<String> = old_manifest
+                    old_manifest
                         .assets
-                        .iter()
-                        .filter(|f| !f.is_directory() && !new_names.contains(f.asset_name.as_str()))
-                        .map(|f| f.asset_name.clone())
-                        .collect();
-                    deleted_files.append(&mut dels);
-
-                    // Build old md5 map — but old_manifest is consumed above, so we
-                    // need to refetch. To avoid a double fetch we'll do it differently:
-                    // collect into a local vec first.
-                    HashMap::new() // populated below after second fetch
+                        .into_iter()
+                        .filter(|f| !f.is_directory())
+                        .map(|f| (f.asset_name, f.asset_hash_md5))
+                        .collect()
                 }
-                None => HashMap::new(), // entirely new category → all files are new
-            };
-
-        // Re-fetch old manifest to compare md5s (only if it existed).
-        let old_md5_map: HashMap<String, String> =
-            if let Some(old_meta) = old_by_field.get(new_meta.matching_field.as_str()) {
-                let om = fetch_manifest(client, &old_meta.manifest_download, &old_meta.manifest.id)
-                    .await?;
-                om.assets
-                    .into_iter()
-                    .filter(|f| !f.is_directory())
-                    .map(|f| (f.asset_name, f.asset_hash_md5))
-                    .collect()
-            } else {
-                HashMap::new()
+                None => HashMap::new(),
             };
 
         // Keep only files that are new or have a changed MD5.
