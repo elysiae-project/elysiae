@@ -13,7 +13,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1123,30 +1123,32 @@ fn assemble_file(
         fs::create_dir_all(parent)?;
     }
 
-    let mut out_file = OpenOptions::new()
+    let out_file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .open(&tmp_path)?;
     out_file.set_len(file.asset_size)?;
 
+    let mut buf_writer = BufWriter::with_capacity(1024 * 1024, out_file);
     let mut total_written: u64 = 0;
     let mut file_hasher = Md5::new();
 
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
-        decompress_and_write_chunk(
+        decompress_and_write_chunk_buffered(
             &chunk_path,
-            &mut out_file,
+            &mut buf_writer,
             chunk.chunk_on_file_offset,
             chunk.chunk_size_decompressed,
             &chunk.chunk_decompressed_hash_md5,
         )?;
 
+        buf_writer.flush()?;
+        buf_writer.seek(SeekFrom::Start(chunk.chunk_on_file_offset))?;
         let mut chunk_data = vec![0u8; chunk.chunk_size_decompressed as usize];
-        out_file.seek(std::io::SeekFrom::Start(chunk.chunk_on_file_offset))?;
-        out_file.read_exact(&mut chunk_data)?;
+        buf_writer.get_mut().read_exact(&mut chunk_data)?;
         file_hasher.update(&chunk_data);
 
         total_written += chunk.chunk_size_decompressed;
@@ -1161,6 +1163,8 @@ fn assemble_file(
         }
     }
 
+    buf_writer.flush()?;
+    let out_file = buf_writer.into_inner().map_err(|e| e.into_error())?;
     out_file.sync_data()?;
 
     if total_written != file.asset_size {
@@ -1186,22 +1190,20 @@ fn assemble_file(
     Ok(())
 }
 
-fn decompress_and_write_chunk(
+fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     chunk_path: &Path,
-    out_file: &mut File,
+    writer: &mut W,
     offset: u64,
     expected_size: u64,
     expected_hash: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    use std::io::{Seek, SeekFrom, Write};
-
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
     let mut hasher = Md5::new();
     let mut total_written = 0u64;
     let mut buf = vec![0u8; 64 * 1024];
 
-    out_file.seek(SeekFrom::Start(offset))?;
+    writer.seek(SeekFrom::Start(offset))?;
 
     loop {
         let n = decoder.read(&mut buf)?;
@@ -1209,7 +1211,7 @@ fn decompress_and_write_chunk(
             break;
         }
         hasher.update(&buf[..n]);
-        out_file.write_all(&buf[..n])?;
+        writer.write_all(&buf[..n])?;
         total_written += n as u64;
     }
 
