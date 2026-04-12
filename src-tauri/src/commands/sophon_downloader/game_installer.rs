@@ -18,7 +18,7 @@ use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
 
@@ -26,6 +26,7 @@ const MAX_RETRIES: u32 = 4;
 const DOWNLOAD_CONCURRENCY: usize = 8;
 const ASSEMBLY_CONCURRENCY: usize = 4;
 const VERSION_FILE_NAME: &str = ".sophon_version";
+const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
 const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
@@ -36,7 +37,18 @@ const SOPHON_BUILD_URL_BASE: &str = concat!(
     "/downloader/sophon_chunk/api/getBuild"
 );
 
-/// Shared state used by the pause/resume/cancel Tauri commands.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct VerificationCache {
+    files: HashMap<String, VerificationEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VerificationEntry {
+    size: u64,
+    md5: String,
+    mtime_secs: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum ControlState {
     Running,
@@ -455,6 +467,8 @@ pub async fn install(
 
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let assembled_files = Arc::new(AtomicU64::new(0));
+    let verify_cache: Arc<Mutex<VerificationCache>> =
+        Arc::new(Mutex::new(load_verification_cache(game_dir)));
 
     let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
     for data in &installer_data {
@@ -477,6 +491,7 @@ pub async fn install(
         let game_dir = game_dir.to_path_buf();
         let chunk_refcounts = Arc::clone(&chunk_refcounts);
         let assembled_files = Arc::clone(&assembled_files);
+        let verify_cache = Arc::clone(&verify_cache);
         let updater = updater.clone();
 
         tokio::spawn(async move {
@@ -484,7 +499,6 @@ pub async fn install(
             let mut join_set = tokio::task::JoinSet::new();
 
             loop {
-                // Drain the channel and spawn up to ASSEMBLY_CONCURRENCY tasks.
                 while join_set.len() < ASSEMBLY_CONCURRENCY {
                     match rx.try_recv() {
                         Ok((file, tmp_dir)) => {
@@ -492,15 +506,18 @@ pub async fn install(
                             let game_dir = game_dir.clone();
                             let chunk_refcounts = Arc::clone(&chunk_refcounts);
                             let assembled_files = Arc::clone(&assembled_files);
+                            let verify_cache = Arc::clone(&verify_cache);
                             let updater = updater.clone();
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
+                                let mut cache = verify_cache.lock().unwrap();
                                 assemble_file(
                                     &file,
                                     &game_dir,
                                     &chunks_dir,
                                     &tmp_dir,
                                     &chunk_refcounts,
+                                    &mut cache,
                                 )
                                 .map_err(|e| {
                                     format!("Failed to assemble {}: {e}", file.asset_name)
@@ -736,7 +753,11 @@ pub async fn install(
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
 
-    // Delete files removed in this version.
+    {
+        let cache = verify_cache.lock().unwrap();
+        let _ = save_verification_cache(game_dir, &cache);
+    }
+
     if !deleted_files.is_empty() {
         let gd = game_dir.to_path_buf();
         let df = deleted_files.clone();
@@ -1069,11 +1090,19 @@ fn assemble_file(
     chunks_dir: &Path,
     temp_dir: &Path,
     chunk_refcounts: &DashMap<String, usize>,
+    verify_cache: &mut VerificationCache,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
 
-    if target_path.exists() && check_file_md5(&target_path, file.asset_size, &file.asset_hash_md5) {
+    if target_path.exists()
+        && check_file_md5_cached(
+            &target_path,
+            file.asset_size,
+            &file.asset_hash_md5,
+            verify_cache,
+        )?
+    {
         for chunk in &file.asset_chunks {
             if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
                 *count -= 1;
@@ -1234,4 +1263,65 @@ fn check_file_md5(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
         Ok(actual) => actual == expected_md5,
         Err(_) => false,
     }
+}
+
+fn get_file_mtime(path: &Path) -> std::io::Result<u64> {
+    let metadata = path.metadata()?;
+    let mtime = metadata.modified()?;
+    Ok(mtime
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs())
+}
+
+fn load_verification_cache(game_dir: &Path) -> VerificationCache {
+    let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+    match File::open(&cache_path) {
+        Ok(f) => serde_json::from_reader(f).unwrap_or_default(),
+        Err(_) => VerificationCache::default(),
+    }
+}
+
+fn save_verification_cache(game_dir: &Path, cache: &VerificationCache) -> std::io::Result<()> {
+    let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+    let f = File::create(&cache_path)?;
+    serde_json::to_writer(f, cache)?;
+    Ok(())
+}
+
+fn check_file_md5_cached(
+    path: &Path,
+    expected_size: u64,
+    expected_md5: &str,
+    cache: &mut VerificationCache,
+) -> std::io::Result<bool> {
+    let path_str = path.to_string_lossy().to_string();
+    let mtime = get_file_mtime(path)?;
+
+    if let Some(entry) = cache.files.get(&path_str) {
+        if entry.size == expected_size && entry.md5 == expected_md5 && entry.mtime_secs == mtime {
+            return Ok(true);
+        }
+    }
+
+    let metadata = path.metadata()?;
+    if metadata.len() != expected_size {
+        return Ok(false);
+    }
+
+    let actual = file_md5_hex(path)?;
+    let matches = actual == expected_md5;
+
+    if matches {
+        cache.files.insert(
+            path_str,
+            VerificationEntry {
+                size: expected_size,
+                md5: expected_md5.to_string(),
+                mtime_secs: mtime,
+            },
+        );
+    }
+
+    Ok(matches)
 }
