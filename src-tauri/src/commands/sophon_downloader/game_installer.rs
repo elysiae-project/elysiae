@@ -1183,7 +1183,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     let mut decoder = zstd::Decoder::new(f)?;
     let mut hasher = Md5::new();
     let mut total_written = 0u64;
-    let mut buf = vec![0u8; 64 * 1024];
+    let mut buf = vec![0u8; 1024 * 1024];
 
     writer.seek(SeekFrom::Start(offset))?;
 
