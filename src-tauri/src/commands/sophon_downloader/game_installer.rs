@@ -509,14 +509,14 @@ pub async fn install(
                             let updater = updater.clone();
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
-                                let mut cache = verify_cache.lock().unwrap();
+                                let verify_cache = Arc::clone(&verify_cache);
                                 assemble_file(
                                     &file,
                                     &game_dir,
                                     &chunks_dir,
                                     &tmp_dir,
                                     &chunk_refcounts,
-                                    &mut cache,
+                                    &verify_cache,
                                 )
                                 .map_err(|e| {
                                     format!("Failed to assemble {}: {e}", file.asset_name)
@@ -1089,30 +1089,34 @@ fn assemble_file(
     chunks_dir: &Path,
     temp_dir: &Path,
     chunk_refcounts: &DashMap<String, usize>,
-    verify_cache: &mut VerificationCache,
+    verify_cache: &Arc<Mutex<VerificationCache>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
 
-    if target_path.exists()
-        && check_file_md5_cached(
+    if target_path.exists() {
+        let mut cache = verify_cache.lock().unwrap();
+        let already_valid = check_file_md5_cached(
             &target_path,
             file.asset_size,
             &file.asset_hash_md5,
-            verify_cache,
-        )?
-    {
-        for chunk in &file.asset_chunks {
-            if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
-                *count -= 1;
-                if *count == 0 {
-                    drop(count);
-                    chunk_refcounts.remove(&chunk.chunk_name);
-                    let _ = fs::remove_file(chunks_dir.join(chunk_filename(chunk)));
+            &mut cache,
+        )?;
+        drop(cache);
+
+        if already_valid {
+            for chunk in &file.asset_chunks {
+                if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
+                    *count -= 1;
+                    if *count == 0 {
+                        drop(count);
+                        chunk_refcounts.remove(&chunk.chunk_name);
+                        let _ = fs::remove_file(chunks_dir.join(chunk_filename(chunk)));
+                    }
                 }
             }
+            return Ok(());
         }
-        return Ok(());
     }
 
     if tmp_path.exists() {
