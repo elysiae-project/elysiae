@@ -607,21 +607,23 @@ pub async fn install(
 
                 let dest = chunks_dir.join(chunk_filename(&item.chunk));
 
-                // Skip if already valid on disk.
-                let dest_check = dest.clone();
-                let chunk_size = item.chunk.chunk_size;
-                let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
-                let already_done = tokio::task::spawn_blocking(move || {
-                    dest_check.exists() && check_file_md5(&dest_check, chunk_size, &expected_md5)
-                })
-                .await
-                .map_err(|e| e.to_string())?;
+                let needs_download = if dest.exists() {
+                    let dest_check = dest.clone();
+                    let chunk_size = item.chunk.chunk_size;
+                    let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
+                    !tokio::task::spawn_blocking(move || {
+                        check_file_md5(&dest_check, chunk_size, &expected_md5)
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?
+                } else {
+                    true
+                };
 
-                if !already_done {
+                if needs_download {
                     let mut last_err = String::new();
                     let mut success = false;
                     for attempt in 0..MAX_RETRIES {
-                        // Check for cancel/pause between retry attempts too.
                         if handle.is_cancelled() {
                             return Err("cancelled".into());
                         }
