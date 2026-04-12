@@ -1294,7 +1294,12 @@ fn check_file_md5_cached(
     cache: &mut VerificationCache,
 ) -> std::io::Result<bool> {
     let path_str = path.to_string_lossy().to_string();
-    let mtime = get_file_mtime(path)?;
+    let metadata = path.metadata()?;
+    let mtime = metadata
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
 
     if let Some(entry) = cache.files.get(&path_str) {
         if entry.size == expected_size && entry.md5 == expected_md5 && entry.mtime_secs == mtime {
@@ -1302,7 +1307,6 @@ fn check_file_md5_cached(
         }
     }
 
-    let metadata = path.metadata()?;
     if metadata.len() != expected_size {
         return Ok(false);
     }
