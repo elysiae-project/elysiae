@@ -13,22 +13,113 @@ use lru::LruCache;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{Notify, Semaphore, mpsc};
+use tokio_util::sync::CancellationToken;
 
 const MAX_RETRIES: u32 = 4;
-const DOWNLOAD_CONCURRENCY: usize = 8;
 const ASSEMBLY_CONCURRENCY: usize = 4;
 const VERSION_FILE_NAME: &str = ".sophon_version";
 const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
+
+const ADAPTIVE_MIN_CONCURRENCY: usize = 4;
+const ADAPTIVE_MAX_CONCURRENCY: usize = 32;
+const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
+const ADAPTIVE_WINDOW_SECS: u64 = 5;
+const ADAPTIVE_INCREASE_THRESHOLD: f64 = 0.05;
+const ADAPTIVE_DECREASE_THRESHOLD: f64 = 0.10;
+
+struct AdaptiveConcurrency {
+    current: AtomicUsize,
+    total_bytes: AtomicU64,
+    samples: Mutex<VecDeque<(Instant, u64)>>,
+}
+
+impl AdaptiveConcurrency {
+    fn new() -> Self {
+        Self {
+            current: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
+            total_bytes: AtomicU64::new(0),
+            samples: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    fn record_bytes(&self, bytes: u64) {
+        let total = self.total_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        let now = Instant::now();
+        let mut samples = self.samples.lock().unwrap();
+        samples.push_back((now, total));
+
+        let cutoff = now - Duration::from_secs(ADAPTIVE_WINDOW_SECS);
+        while let Some((time, _)) = samples.front() {
+            if *time < cutoff {
+                samples.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn adjust(&self) -> usize {
+        let samples = self.samples.lock().unwrap();
+        if samples.len() < 4 {
+            drop(samples);
+            return self.current.load(Ordering::Relaxed);
+        }
+
+        let mid = samples.len() / 2;
+        let samples_vec: Vec<_> = samples.iter().collect();
+        
+        let (t1_first, b1_first) = samples_vec[0];
+        let (t1_last, b1_last) = samples_vec[mid - 1];
+        let (t2_first, b2_first) = samples_vec[mid];
+        let (t2_last, b2_last) = samples_vec[samples_vec.len() - 1];
+
+        let dt1 = t1_last.duration_since(*t1_first).as_secs_f64();
+        let dt2 = t2_last.duration_since(*t2_first).as_secs_f64();
+
+        let bw1 = if dt1 > 0.0 {
+            (b1_last - b1_first) as f64 / dt1
+        } else {
+            0.0
+        };
+        let bw2 = if dt2 > 0.0 {
+            (b2_last - b2_first) as f64 / dt2
+        } else {
+            0.0
+        };
+
+        drop(samples);
+
+        let current = self.current.load(Ordering::Relaxed);
+        let new_limit = if bw2 > bw1 {
+            let increase_rate = (bw2 - bw1) / bw1.max(1.0);
+            if increase_rate < ADAPTIVE_INCREASE_THRESHOLD {
+                (current + 4).min(ADAPTIVE_MAX_CONCURRENCY)
+            } else {
+                current
+            }
+        } else {
+            let decrease_rate = (bw1 - bw2) / bw1.max(1.0);
+            if decrease_rate > ADAPTIVE_DECREASE_THRESHOLD {
+                (current.saturating_sub(2)).max(ADAPTIVE_MIN_CONCURRENCY)
+            } else {
+                current
+            }
+        };
+
+        self.current.store(new_limit, Ordering::Relaxed);
+        new_limit
+    }
+}
 
 const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
@@ -639,6 +730,32 @@ pub async fn install(
         }
     }
 
+    let adaptive = Arc::new(AdaptiveConcurrency::new());
+    let semaphore = Arc::new(Semaphore::new(ADAPTIVE_INITIAL_CONCURRENCY));
+    let cancel_token = CancellationToken::new();
+
+    {
+        let adaptive = Arc::clone(&adaptive);
+        let semaphore = Arc::clone(&semaphore);
+        let token = cancel_token.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(ADAPTIVE_WINDOW_SECS));
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => break,
+                    _ = interval.tick() => {
+                        let new_limit = adaptive.adjust();
+                        let current = semaphore.available_permits();
+                        if new_limit > current {
+                            semaphore.add_permits(new_limit - current);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     let last_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
 
     let results: Vec<Result<(), String>> = futures_util::stream::iter(download_items)
@@ -651,8 +768,11 @@ pub async fn install(
             let updater = updater.clone();
             let last_update = Arc::clone(&last_update);
             let verify_cache = Arc::clone(&verify_cache);
+            let adaptive = Arc::clone(&adaptive);
+            let semaphore = Arc::clone(&semaphore);
 
             async move {
+                let _permit = semaphore.acquire().await.unwrap();
                 // Pause / cancel check before each chunk.
                 {
                     let db = downloaded_bytes.load(Ordering::Relaxed);
@@ -727,6 +847,8 @@ pub async fn install(
                 let db = downloaded_bytes.fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
                     + item.chunk.chunk_size;
 
+                adaptive.record_bytes(item.chunk.chunk_size);
+
                 // Throttle progress updates to 1000ms
                 {
                     let mut lu = last_update.lock().unwrap();
@@ -764,11 +886,12 @@ pub async fn install(
                 Ok(())
             }
         })
-        .buffer_unordered(DOWNLOAD_CONCURRENCY)
+        .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
         .collect()
         .await;
 
     drop(assemble_tx);
+    cancel_token.cancel();
 
     // Handle cancel: delete all chunks, report Finished (as per spec).
     let cancelled = results
