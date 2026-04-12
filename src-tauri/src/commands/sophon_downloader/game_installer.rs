@@ -498,6 +498,8 @@ pub async fn install(
 
     let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
 
+    let last_assembly_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
+
     let (assemble_tx, assemble_rx) = mpsc::unbounded_channel::<(usize, usize)>();
 
     let assembly_task = {
@@ -509,6 +511,7 @@ pub async fn install(
         let updater = updater.clone();
         let all_files = Arc::clone(&all_files);
         let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
+        let last_assembly_update = Arc::clone(&last_assembly_update);
 
         tokio::spawn(async move {
             let mut rx = assemble_rx;
@@ -526,6 +529,7 @@ pub async fn install(
                             let updater = updater.clone();
                             let all_files = Arc::clone(&all_files);
                             let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
+                            let last_assembly_update = Arc::clone(&last_assembly_update);
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
                                 let file = &all_files[file_idx];
@@ -544,10 +548,17 @@ pub async fn install(
                                 })?;
 
                                 let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
-                                updater(SophonProgress::Assembling {
-                                    assembled_files: count,
-                                    total_files,
-                                });
+
+                                {
+                                    let mut lu = last_assembly_update.lock().unwrap();
+                                    if lu.elapsed() >= Duration::from_millis(1000) {
+                                        updater(SophonProgress::Assembling {
+                                            assembled_files: count,
+                                            total_files,
+                                        });
+                                        *lu = Instant::now();
+                                    }
+                                }
 
                                 Ok::<(), String>(())
                             }));
