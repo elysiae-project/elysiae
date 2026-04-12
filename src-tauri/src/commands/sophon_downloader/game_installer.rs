@@ -434,8 +434,8 @@ pub async fn install(
     }
 
     struct InstallerData {
-        client: Client,
-        chunk_download: DownloadInfo,
+        client: Arc<Client>,
+        chunk_download: Arc<DownloadInfo>,
         files: Vec<SophonManifestAssetProperty>,
         label: String,
     }
@@ -444,8 +444,8 @@ pub async fn install(
         .into_iter()
         .map(|inst| InstallerData {
             label: inst.label,
-            client: inst.client,
-            chunk_download: inst.chunk_download,
+            client: Arc::new(inst.client),
+            chunk_download: Arc::new(inst.chunk_download),
             files: inst
                 .manifest
                 .assets
@@ -573,8 +573,8 @@ pub async fn install(
 
     struct DownloadItem {
         chunk: SophonManifestAssetChunk,
-        client: Client,
-        chunk_download: DownloadInfo,
+        client: Arc<Client>,
+        chunk_download: Arc<DownloadInfo>,
     }
 
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
@@ -611,8 +611,8 @@ pub async fn install(
                 if seen_chunks.insert(chunk.chunk_name.clone()) {
                     download_items.push(DownloadItem {
                         chunk: chunk.clone(),
-                        client: data.client.clone(),
-                        chunk_download: data.chunk_download.clone(),
+                        client: Arc::clone(&data.client),
+                        chunk_download: Arc::clone(&data.chunk_download),
                     });
                 }
             }
