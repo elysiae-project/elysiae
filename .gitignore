@@ -7,6 +7,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# NodeJS/Frontend Project generated files/folders
 node_modules
 dist
 dist-ssr
@@ -22,7 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# Flatpak stuff
+# flatpak-builder generated files/folders 
 .flatpak-builder
 repo
 *.flatpak

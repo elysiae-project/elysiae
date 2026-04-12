@@ -2,12 +2,7 @@
 name = "Elysiae"
 version = "1.0.0"
 description = "Universal 'Anime Game' Launcher for Linux Hosts"
-authors = [
-    "Shob3r <andrewpinter23@gmail.com>",
-    "ChakornK <chakornk2007@gmail.com>",
-    "The Elysiae Project",
-    "Elysiae Contributors",
-]
+authors = ["The Elysiae Project"]
 edition = "2024"
 
 [lib]
@@ -18,35 +13,44 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
+glib = "0.22.4"
+tokio = { version = "1.51.1", features = ["rt"] }
+futures = "0.3.32"
+futures-util = "0.3.32"
+
 tauri = { version = "2.10.3", features = ["protocol-asset"] }
 tauri-plugin-opener = "2.5.3"
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
-tauri-plugin-http = "2.5.7"
-tauri-plugin-fs = "2.4.5"
-tauri-plugin-os = "2.3.2"
+tauri-plugin-fs = "2.5.0"
+tauri-plugin-http = "2.5.8"
 tauri-plugin-log = "2.8.0"
-tauri-plugin-store = "2.4.2"
-tauri-plugin-notification = "2.3.3"
-
-glib = "0.22.3"
+tauri-plugin-os = "2.3.2"
 tauri-plugin-shell = "2.3.5"
-reqwest = { version = "0.13.2", features = ["stream"] }
-futures-util = "0.3.32"
-walkdir = "2.5.0"
+tauri-plugin-store = "2.4.2"
+
+reqwest = { version = "0.13.2", features = ["stream", "blocking", "json"] }
+
 zstd = "0.13.3"
 xz = "0.1.0"
 flate2 = "1.1.9"
-zip = "8.5.0"
+zip = "8.5.1"
 tar = "0.4.45"
+md-5 = "0.10"
+dashmap = "6.0"
+prost = "0.14.3"
+lru = "0.12"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-single-instance = "2.4.0"
+tauri-plugin-single-instance = "2.4.1"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
+panic = "abort"
+
+[profile.dev]
 panic = "abort"

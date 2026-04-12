@@ -6,5 +6,6 @@
 	"semi": true,
 	"singleQuote": false,
 	"endOfLine": "lf",
-	"arrowParens": "always"
+	"arrowParens": "always",
+	"bracketSameLine": true
 }

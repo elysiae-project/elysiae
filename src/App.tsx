@@ -12,10 +12,15 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { Info, Save, Settings } from "lucide-preact";
 import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import { isGameInstalled } from "./lib/GameDownloader.ts";
+import {
+	downloadGame,
+	downloadUpdate,
+	isGameInstalled,
+	isPreinstallAvailable,
+	runGame,
+} from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
 import { settingsDetails } from "./util/SettingsDetails.ts";
-import Dropdown from "./components/Dropdown.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -35,13 +40,23 @@ function PreinstallButton() {
 	const { game } = useGame();
 
 	useEffect(() => {
-		// TODO: Add preinstall check each time game switches onces sophon downloader is implemented
+		isPreinstallAvailable(game).then((preinstallRes) => {
+			isGameInstalled(game).then((gameRes) => {
+				setPreInstAvailable(preinstallRes && gameRes);
+			})
+		});
 	}, [game]);
 
 	if (!preInstAvailable) return <></>;
 
 	return (
-		<Button intent="primary" overrideMinWidth={true} onClick={async () => {}}>
+		<Button
+			intent="primary"
+			overrideMinWidth={true}
+			onClick={async () => {
+				await downloadUpdate(game, true);
+			}}
+		>
 			<Save />
 		</Button>
 	);
@@ -53,7 +68,7 @@ function App() {
 
 	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
 	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
-	let [settingsOpen, setSettingsOpen] = useState<boolean>(true);
+	let [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
 	useEffect(() => {
 		wineEnvAvailable().then((res) => {
@@ -78,15 +93,17 @@ function App() {
 							open={settingsOpen}
 						>
 							{settingsDetails.map((setting) => {
-								return <div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
-									<div class="flex flex-row items-center justify-left gap-x-1">
-										<p>{setting.name}</p>
-										{typeof setting.description !== 'undefined' ? <Info size={15}/> : null}
+								return (
+									<div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
+										<div class="flex flex-row items-center justify-left gap-x-1">
+											<p>{setting.name}</p>
+											{typeof setting.description !== "undefined" ? (
+												<Info size={15} />
+											) : null}
+										</div>
+										<div></div>
 									</div>
-									<div>
-
-									</div>
-								</div>;
+								);
 							})}
 						</Modal>
 
@@ -107,10 +124,15 @@ function App() {
 								onClick={async () => {
 									if (!wineAvailable) {
 										await updateWineComponents();
+										setWineAvailable(true);
 									} else if (!gameInstalled) {
-										// TODO: Add game downloader functionality
+										const activeGame = game;
+										await downloadGame(activeGame);
+										if (game === activeGame) {
+											setGameInstalled(true);
+										}
 									} else {
-										// TODO: Add launch game functionality
+										await runGame(game);
 									}
 								}}
 							>

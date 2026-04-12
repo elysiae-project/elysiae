@@ -33,8 +33,7 @@ export default function MenuClose({
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
-		<motion.button
-			{...(fadeInOut as any)}
+		<button
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
@@ -52,20 +51,18 @@ export default function MenuClose({
 				}
 			}}
 		>
-			<motion.img
-				{...(fadeInOut as any)}
+			<img
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}
 				width={18}
 				height={18}
 			/>
-			<motion.img
-				{...(fadeInOut as any)}
+			<img
 				style={{ display: mouseDown ? "" : "none" }}
 				src={`${assetPath}/close-click.svg`}
 				width={18}
 				height={18}
 			/>
-		</motion.button>
+		</button>
 	);
 }

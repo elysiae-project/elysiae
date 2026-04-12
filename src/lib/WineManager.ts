@@ -1,11 +1,10 @@
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { ComponentData, WineComponent, WineModule } from "../types";
-import { exists, remove, removeDir, rename } from "./Fs";
+import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile } from "../util/WebUtils";
-import { extractFile } from "../util/FileUtils";
 import { error, info } from "@tauri-apps/plugin-log";
-import { executeLocalCommand, executeShellCommand } from "../util/AppFunctions";
+import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
 
 // Components that get regular updates (i.e. wine, dxvk)
 const components: WineComponent[] = [
@@ -48,7 +47,7 @@ const components: WineComponent[] = [
 			);
 
 			// Remove Temporary Directory
-			removeDir("dxvk");
+			await removeDir("dxvk");
 		},
 	},
 	{
@@ -57,7 +56,7 @@ const components: WineComponent[] = [
 		saveTo: "jadeite.zip",
 		postInstall: async () => {
 			// Run the telemetry blocker script. Will ask for user admin permission if the telemetry blocking hasn't been applied before
-			await executeLocalCommand("jadeite/block_analytics.sh");
+			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
 	},
 	{
@@ -67,9 +66,11 @@ const components: WineComponent[] = [
 		saveTo: "vkd3d.tar.zst",
 		postInstall: async () => {
 			// Run setup_vkd3d_proton.sh to automate the installation process
-			await executeLocalCommand("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
+			await executeLocalBinary("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
 				WINEPREFIX: await winePrefix(),
 			});
+
+			await removeDir("vkd3d");
 		},
 	},
 ] as const;
@@ -77,16 +78,33 @@ const components: WineComponent[] = [
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)
 const wineModules: WineModule[] = [
 	{
-		name: "vcrun2026",
+		name: "vcrun2026-x64",
 		downloadLink: "https://aka.ms/vc14/vc_redist.x64.exe",
 		moduleType: "exe",
+	},
+	{
+		name: "vcrun2026-x86",
+		downloadLink: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
+		moduleType: "exe",
+	},
+	{
+		name: "d3dcompiler_47.dll",
+		downloadLink:
+			"https://raw.githubusercontent.com/mozilla/fxc2/master/dll/d3dcompiler_47.dll",
+		moduleType: "dll64",
+	},
+	{
+		name: "d3dcompiler_47.dll",
+		downloadLink:
+			"https://raw.githubusercontent.com/mozilla/fxc2/master/dll/d3dcompiler_47_32.dll",
+		moduleType: "dll32",
 	},
 ] as const;
 
 /**
  * Update All Components in the wine install
  */
-export const updateWineComponents = async () => {
+export const updateWineComponents = async (): Promise<void> => {
 	info(`${await appDataDir()}`);
 	for (const component of components) {
 		try {
@@ -111,14 +129,17 @@ export const updateWineComponents = async () => {
 			error(`updateWineComponents ${e}`);
 		}
 	}
+	info("Wine Component Download Complete");
 };
 
 /**
  * Install additional Windows programs/libraries required for the programs that Elysiae runs
  */
-const installWineModules = async () => {
+const installWineModules = async (): Promise<void> => {
 	await Promise.all(
 		wineModules.map(async (module) => {
+			info(`Installing ${module.name}`);
+
 			const filename = module.downloadLink.split("/").pop() as string;
 			await downloadFile(module.downloadLink, filename);
 
@@ -138,6 +159,7 @@ const installWineModules = async () => {
 			}
 		}),
 	);
+	info("Wine Module Download Complete");
 };
 
 /**
@@ -148,11 +170,17 @@ const installWineModules = async () => {
 export const wineCommand = async (
 	args: string,
 	binary: "wine" | "wineboot" | "wineserver" = "wine",
-) => {
+): Promise<void> => {
 	const prefix = await winePrefix();
-	await executeLocalCommand(`wine/bin/${binary}`, args, {
+	const appData = await appDataDir();
+	const wineLib = await join(appData, "wine", "lib");
+	const wineLib64 = await join(appData, "wine", "lib64");
+
+	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
+		WINEARCH: "win64",
 		WINEFSYNC: "1",
+		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
 	});
 };
 
@@ -161,18 +189,28 @@ export const wineCommand = async (
  * @param path path to the executable
  * @param args Any additional arguments the executable may have
  */
-export const runExeWithWine = async (path: string, args?: string) => {
+export const runExeWithWine = async (
+	path: string,
+	args?: string,
+): Promise<void> => {
 	const appData = await appDataDir();
 	const fullPath = await join(appData, path);
 
 	await wineCommand(`${fullPath} ${typeof args !== "undefined" ? args : ""}`);
 };
 
+export const runExeWithJadeite = async (path: string): Promise<void> => {
+	const appData = await appDataDir();
+	const fullJadeitePath = await join(appData, "jadeite", "jadeite.exe");
+	const fullExePath = await join(appData, path);
+	await wineCommand(`${fullJadeitePath} ${fullExePath}`);
+};
+
 /**
  * Adds a DLL to the wine registry
  * @param dllName name of the DLL. No path needed, just the name
  */
-const registerNewDLL = async (dllName: string) => {
+const registerNewDLL = async (dllName: string): Promise<void> => {
 	await wineCommand(
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`,
 	);

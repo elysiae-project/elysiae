@@ -32,16 +32,7 @@ export default function Titlebar() {
 				class="flex flex-row justify-between items-center px-5 py-1.5"
 				data-tauri-drag-region
 			>
-				<AnimatePresence mode="wait" initial={false}>
-					<motion.h1
-						{...fadeInOut as any}
-						key={`${game}-appTitle`}
-						class="text-center text-[1.35rem]"
-						data-tauri-drag-region
-					>
-						Elysiae
-					</motion.h1>
-				</AnimatePresence>
+				<h1 class="text-center text-[1.35rem]">Elysiae</h1>
 				<AnimatePresence mode="wait" initial={false}>
 					<MenuClose clickAction={closeApp} />
 				</AnimatePresence>

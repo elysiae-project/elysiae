@@ -25,11 +25,7 @@ pub async fn download_file(
         .resolve(&dest, BaseDirectory::AppData)
         .unwrap();
 
-    let response = client
-        .get(&*url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = client.get(&*url).send().await.map_err(|e| e.to_string())?;
     let total = response.content_length().unwrap_or(0);
     let mut file = File::create(&full_path).map_err(|e| e.to_string())?;
     let mut downloaded_bytes: u64 = 0;
@@ -57,10 +53,15 @@ pub async fn download_file(
         }
     }
     // Emit one last event after download is complete
-    app_handle.emit(&format!("download://progress/{}", uuid), DownloadProgress {
-        progress: downloaded_bytes,
-        total,
-    }).map_err(|e| e.to_string())?;
+    app_handle
+        .emit(
+            &format!("download://progress/{}", uuid),
+            DownloadProgress {
+                progress: downloaded_bytes,
+                total,
+            },
+        )
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
