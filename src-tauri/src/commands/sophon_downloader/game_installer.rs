@@ -13,8 +13,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::Read;
-use std::os::unix::fs::FileExt;
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1124,7 +1123,7 @@ fn assemble_file(
         fs::create_dir_all(parent)?;
     }
 
-    let out_file = OpenOptions::new()
+    let mut out_file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
@@ -1132,34 +1131,25 @@ fn assemble_file(
     out_file.set_len(file.asset_size)?;
 
     let mut total_written: u64 = 0;
-    let mut hasher = Md5::new();
+    let mut file_hasher = Md5::new();
 
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
-        let decompressed = decompress_chunk(&chunk_path)?;
 
-        hasher.update(&decompressed);
+        decompress_and_write_chunk(
+            &chunk_path,
+            &mut out_file,
+            chunk.chunk_on_file_offset,
+            chunk.chunk_size_decompressed,
+            &chunk.chunk_decompressed_hash_md5,
+        )?;
 
-        if !chunk.chunk_decompressed_hash_md5.is_empty() {
-            let actual = md5_hex(&decompressed);
-            if actual != chunk.chunk_decompressed_hash_md5 {
-                return Err(format!(
-                    "Decompressed MD5 mismatch for chunk {} in file {}: expected {}, got {actual}",
-                    chunk.chunk_name, file.asset_name, chunk.chunk_decompressed_hash_md5
-                )
-                .into());
-            }
-        }
+        let mut chunk_data = vec![0u8; chunk.chunk_size_decompressed as usize];
+        out_file.seek(std::io::SeekFrom::Start(chunk.chunk_on_file_offset))?;
+        out_file.read_exact(&mut chunk_data)?;
+        file_hasher.update(&chunk_data);
 
-        let written = write_all_at(&out_file, &decompressed, chunk.chunk_on_file_offset)?;
-        if written != chunk.chunk_size_decompressed {
-            return Err(format!(
-                "Chunk {} written {} bytes but expected {}",
-                chunk.chunk_name, written, chunk.chunk_size_decompressed
-            )
-            .into());
-        }
-        total_written += written;
+        total_written += chunk.chunk_size_decompressed;
 
         if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
             *count -= 1;
@@ -1172,7 +1162,6 @@ fn assemble_file(
     }
 
     out_file.sync_data()?;
-    drop(out_file);
 
     if total_written != file.asset_size {
         return Err(format!(
@@ -1183,11 +1172,11 @@ fn assemble_file(
     }
 
     if !file.asset_hash_md5.is_empty() {
-        let actual = format!("{:x}", hasher.finalize());
+        let actual = format!("{:x}", file_hasher.finalize());
         if actual != file.asset_hash_md5 {
             return Err(format!(
-                "Final file MD5 mismatch for {}: expected {}, got {actual}",
-                file.asset_name, file.asset_hash_md5
+                "Final file MD5 mismatch for {}: expected {}, got {}",
+                file.asset_name, file.asset_hash_md5, actual
             )
             .into());
         }
@@ -1197,12 +1186,51 @@ fn assemble_file(
     Ok(())
 }
 
-fn decompress_chunk(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let f = File::open(path)?;
+fn decompress_and_write_chunk(
+    chunk_path: &Path,
+    out_file: &mut File,
+    offset: u64,
+    expected_size: u64,
+    expected_hash: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::{Seek, SeekFrom, Write};
+
+    let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
-    let mut out = Vec::new();
-    decoder.read_to_end(&mut out)?;
-    Ok(out)
+    let mut hasher = Md5::new();
+    let mut total_written = 0u64;
+    let mut buf = vec![0u8; 64 * 1024];
+
+    out_file.seek(SeekFrom::Start(offset))?;
+
+    loop {
+        let n = decoder.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        out_file.write_all(&buf[..n])?;
+        total_written += n as u64;
+    }
+
+    if total_written != expected_size {
+        return Err(format!(
+            "Decompressed size mismatch: expected {}, got {}",
+            expected_size, total_written
+        )
+        .into());
+    }
+
+    let hash = format!("{:x}", hasher.finalize());
+    if !expected_hash.is_empty() && hash != expected_hash {
+        return Err(format!(
+            "Decompressed hash mismatch: expected {}, got {}",
+            expected_hash, hash
+        )
+        .into());
+    }
+
+    Ok(hash)
 }
 
 fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -1210,21 +1238,6 @@ fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + 
     let mut out = Vec::new();
     decoder.read_to_end(&mut out)?;
     Ok(out)
-}
-
-fn write_all_at(file: &File, data: &[u8], offset: u64) -> std::io::Result<u64> {
-    let mut written = 0usize;
-    while written < data.len() {
-        let n = file.write_at(&data[written..], offset + written as u64)?;
-        if n == 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::WriteZero,
-                "write_at returned 0",
-            ));
-        }
-        written += n;
-    }
-    Ok(written as u64)
 }
 
 fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
