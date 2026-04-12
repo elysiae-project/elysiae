@@ -1263,15 +1263,6 @@ fn check_file_md5(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
     }
 }
 
-fn get_file_mtime(path: &Path) -> std::io::Result<u64> {
-    let metadata = path.metadata()?;
-    let mtime = metadata.modified()?;
-    Ok(mtime
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs())
-}
-
 fn load_verification_cache(game_dir: &Path) -> VerificationCache {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
     match File::open(&cache_path) {
