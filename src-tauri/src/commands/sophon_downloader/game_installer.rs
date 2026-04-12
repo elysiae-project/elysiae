@@ -650,6 +650,7 @@ pub async fn install(
             let handle = handle.clone();
             let updater = updater.clone();
             let last_update = Arc::clone(&last_update);
+            let verify_cache = Arc::clone(&verify_cache);
 
             async move {
                 // Pause / cancel check before each chunk.
@@ -666,8 +667,11 @@ pub async fn install(
                     let dest_check = dest.clone();
                     let chunk_size = item.chunk.chunk_size;
                     let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
+                    let cache = Arc::clone(&verify_cache);
                     !tokio::task::spawn_blocking(move || {
-                        check_file_md5(&dest_check, chunk_size, &expected_md5)
+                        let mut cache = cache.write().unwrap();
+                        check_file_md5_cached(&dest_check, chunk_size, &expected_md5, &mut cache)
+                            .unwrap_or(false)
                     })
                     .await
                     .map_err(|e| e.to_string())?
@@ -1286,20 +1290,6 @@ fn file_md5_hex(path: &Path) -> std::io::Result<String> {
         hasher.update(&buf[..n]);
     }
     Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn check_file_md5(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
-    if expected_md5.is_empty() {
-        return false;
-    }
-    match path.metadata() {
-        Ok(m) if m.len() == expected_size => {}
-        _ => return false,
-    }
-    match file_md5_hex(path) {
-        Ok(actual) => actual == expected_md5,
-        Err(_) => false,
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
