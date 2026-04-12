@@ -1143,13 +1143,8 @@ fn assemble_file(
             chunk.chunk_on_file_offset,
             chunk.chunk_size_decompressed,
             &chunk.chunk_decompressed_hash_md5,
+            &mut file_hasher,
         )?;
-
-        buf_writer.flush()?;
-        buf_writer.seek(SeekFrom::Start(chunk.chunk_on_file_offset))?;
-        let mut chunk_data = vec![0u8; chunk.chunk_size_decompressed as usize];
-        buf_writer.get_mut().read_exact(&mut chunk_data)?;
-        file_hasher.update(&chunk_data);
 
         total_written += chunk.chunk_size_decompressed;
 
@@ -1196,6 +1191,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     offset: u64,
     expected_size: u64,
     expected_hash: &str,
+    file_hasher: &mut Md5,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
@@ -1211,6 +1207,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
             break;
         }
         hasher.update(&buf[..n]);
+        file_hasher.update(&buf[..n]);
         writer.write_all(&buf[..n])?;
         total_written += n as u64;
     }
