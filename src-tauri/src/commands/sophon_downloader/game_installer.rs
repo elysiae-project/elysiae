@@ -455,6 +455,20 @@ pub async fn install(
         })
         .collect();
 
+    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(
+        installer_data
+            .iter()
+            .flat_map(|d| d.files.clone())
+            .collect(),
+    );
+
+    let all_tmp_dirs: Arc<Vec<PathBuf>> = Arc::new(
+        installer_data
+            .iter()
+            .map(|d| game_dir.join(format!("tmp-{}", d.label)))
+            .collect(),
+    );
+
     let total_compressed: u64 = installer_data
         .iter()
         .flat_map(|d| d.files.iter())
@@ -481,9 +495,7 @@ pub async fn install(
         }
     }
 
-    // Sends (file, tmp_dir) to the assembly pool once all chunks are ready.
-    let (assemble_tx, assemble_rx) =
-        mpsc::unbounded_channel::<(SophonManifestAssetProperty, PathBuf)>();
+    let (assemble_tx, assemble_rx) = mpsc::unbounded_channel::<(usize, usize)>();
 
     let assembly_task = {
         let chunks_dir = chunks_dir.clone();
@@ -492,6 +504,8 @@ pub async fn install(
         let assembled_files = Arc::clone(&assembled_files);
         let verify_cache = Arc::clone(&verify_cache);
         let updater = updater.clone();
+        let all_files = Arc::clone(&all_files);
+        let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
 
         tokio::spawn(async move {
             let mut rx = assemble_rx;
@@ -500,21 +514,25 @@ pub async fn install(
             loop {
                 while join_set.len() < ASSEMBLY_CONCURRENCY {
                     match rx.try_recv() {
-                        Ok((file, tmp_dir)) => {
+                        Ok((file_idx, tmp_dir_idx)) => {
                             let chunks_dir = chunks_dir.clone();
                             let game_dir = game_dir.clone();
                             let chunk_refcounts = Arc::clone(&chunk_refcounts);
                             let assembled_files = Arc::clone(&assembled_files);
                             let verify_cache = Arc::clone(&verify_cache);
                             let updater = updater.clone();
+                            let all_files = Arc::clone(&all_files);
+                            let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
+                                let file = &all_files[file_idx];
+                                let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
                                 let verify_cache = Arc::clone(&verify_cache);
                                 assemble_file(
-                                    &file,
+                                    file,
                                     &game_dir,
                                     &chunks_dir,
-                                    &tmp_dir,
+                                    tmp_dir,
                                     &chunk_refcounts,
                                     &verify_cache,
                                 )
@@ -533,7 +551,6 @@ pub async fn install(
                         }
                         Err(mpsc::error::TryRecvError::Empty) => break,
                         Err(mpsc::error::TryRecvError::Disconnected) => {
-                            // Channel closed — drain remaining tasks and exit.
                             while let Some(res) = join_set.join_next().await {
                                 let _ = res.map_err(|e| e.to_string())?;
                             }
@@ -545,7 +562,6 @@ pub async fn install(
                 if let Some(res) = join_set.join_next().await {
                     let _ = res.map_err(|e| e.to_string())?;
                 } else {
-                    // Nothing in flight; wait for new work.
                     tokio::task::yield_now().await;
                 }
             }
@@ -553,7 +569,7 @@ pub async fn install(
     };
 
     type PendingCount = Arc<Mutex<usize>>;
-    type FileEntry = (SophonManifestAssetProperty, PathBuf, PendingCount);
+    type FileEntry = (usize, usize, PendingCount);
 
     struct DownloadItem {
         chunk: SophonManifestAssetChunk,
@@ -565,8 +581,9 @@ pub async fn install(
     let mut download_items: Vec<DownloadItem> = Vec::new();
     let mut seen_chunks: HashSet<String> = HashSet::new();
 
-    for data in installer_data {
-        let tmp_dir = game_dir.join(format!("tmp-{}", data.label));
+    let mut file_idx = 0usize;
+    for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
+        let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
         {
             let td = tmp_dir.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&td))
@@ -575,10 +592,12 @@ pub async fn install(
                 .map_err(|e| e.to_string())?;
         }
 
-        for file in data.files {
+        for _file in &data.files {
+            let file = &all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
-                let _ = assemble_tx.send((file, tmp_dir.clone()));
+                let _ = assemble_tx.send((file_idx, tmp_dir_idx));
+                file_idx += 1;
                 continue;
             }
 
@@ -587,7 +606,7 @@ pub async fn install(
                 chunk_to_files
                     .entry(chunk.chunk_name.clone())
                     .or_default()
-                    .push((file.clone(), tmp_dir.clone(), Arc::clone(&pending)));
+                    .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
 
                 if seen_chunks.insert(chunk.chunk_name.clone()) {
                     download_items.push(DownloadItem {
@@ -597,6 +616,7 @@ pub async fn install(
                     });
                 }
             }
+            file_idx += 1;
         }
     }
 
@@ -697,22 +717,22 @@ pub async fn install(
                 }
 
                 // Decrement pending counts; queue any newly-ready files.
-                let ready: Vec<(SophonManifestAssetProperty, PathBuf)> =
-                    match chunk_to_files.remove(&item.chunk.chunk_name) {
-                        Some((_, entries)) => entries
-                            .into_iter()
-                            .filter_map(|(file, tmp_dir, pending)| {
-                                let mut count = pending.lock().unwrap();
-                                *count -= 1;
-                                if *count == 0 {
-                                    Some((file, tmp_dir))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
-                        None => Vec::new(),
-                    };
+                let ready: Vec<(usize, usize)> = match chunk_to_files.remove(&item.chunk.chunk_name)
+                {
+                    Some((_, entries)) => entries
+                        .into_iter()
+                        .filter_map(|(file_idx, tmp_dir_idx, pending)| {
+                            let mut count = pending.lock().unwrap();
+                            *count -= 1;
+                            if *count == 0 {
+                                Some((file_idx, tmp_dir_idx))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    None => Vec::new(),
+                };
 
                 for entry in ready {
                     let _ = assemble_tx.send(entry);
