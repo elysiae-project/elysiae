@@ -7,6 +7,7 @@ use super::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest,
 };
 use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
@@ -484,16 +485,6 @@ pub async fn install(
         Arc::new(RwLock::new(load_verification_cache(game_dir)));
 
     let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
-    for data in &installer_data {
-        for file in &data.files {
-            for chunk in &file.asset_chunks {
-                chunk_refcounts
-                    .entry(chunk.chunk_name.clone())
-                    .and_modify(|c| *c += 1)
-                    .or_insert(1);
-            }
-        }
-    }
 
     let (assemble_tx, assemble_rx) = mpsc::unbounded_channel::<(usize, usize)>();
 
@@ -579,7 +570,6 @@ pub async fn install(
 
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::new();
-    let mut seen_chunks: HashSet<String> = HashSet::new();
 
     let mut file_idx = 0usize;
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
@@ -608,12 +598,18 @@ pub async fn install(
                     .or_default()
                     .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
 
-                if seen_chunks.insert(chunk.chunk_name.clone()) {
-                    download_items.push(DownloadItem {
-                        chunk: chunk.clone(),
-                        client: Arc::clone(&data.client),
-                        chunk_download: Arc::clone(&data.chunk_download),
-                    });
+                match chunk_refcounts.entry(chunk.chunk_name.clone()) {
+                    Entry::Vacant(vacant) => {
+                        vacant.insert(1);
+                        download_items.push(DownloadItem {
+                            chunk: chunk.clone(),
+                            client: Arc::clone(&data.client),
+                            chunk_download: Arc::clone(&data.chunk_download),
+                        });
+                    }
+                    Entry::Occupied(mut occupied) => {
+                        *occupied.get_mut() += 1;
+                    }
                 }
             }
             file_idx += 1;
