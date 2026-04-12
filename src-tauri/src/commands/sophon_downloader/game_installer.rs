@@ -16,7 +16,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
@@ -466,8 +466,8 @@ pub async fn install(
 
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let assembled_files = Arc::new(AtomicU64::new(0));
-    let verify_cache: Arc<Mutex<VerificationCache>> =
-        Arc::new(Mutex::new(load_verification_cache(game_dir)));
+    let verify_cache: Arc<RwLock<VerificationCache>> =
+        Arc::new(RwLock::new(load_verification_cache(game_dir)));
 
     let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
     for data in &installer_data {
@@ -753,7 +753,7 @@ pub async fn install(
         .map_err(|e| e.to_string())?;
 
     {
-        let cache = verify_cache.lock().unwrap();
+        let cache = verify_cache.read().unwrap();
         let _ = save_verification_cache(game_dir, &cache);
     }
 
@@ -1071,13 +1071,13 @@ fn assemble_file(
     chunks_dir: &Path,
     temp_dir: &Path,
     chunk_refcounts: &DashMap<String, usize>,
-    verify_cache: &Arc<Mutex<VerificationCache>>,
+    verify_cache: &Arc<RwLock<VerificationCache>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
 
     if target_path.exists() {
-        let mut cache = verify_cache.lock().unwrap();
+        let mut cache = verify_cache.write().unwrap();
         let already_valid = check_file_md5_cached(
             &target_path,
             file.asset_size,
