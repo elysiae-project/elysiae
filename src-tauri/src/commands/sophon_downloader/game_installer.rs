@@ -1305,7 +1305,6 @@ fn assemble_file(
             &mut buf_writer,
             chunk.chunk_on_file_offset,
             chunk.chunk_size_decompressed,
-            &chunk.chunk_decompressed_hash_md5,
             &mut file_hasher,
         )?;
 
@@ -1353,12 +1352,10 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     writer: &mut W,
     offset: u64,
     expected_size: u64,
-    expected_hash: &str,
     file_hasher: &mut Md5,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
-    let mut hasher = Md5::new();
     let mut total_written = 0u64;
     let mut buf = vec![0u8; 1024 * 1024];
 
@@ -1369,7 +1366,6 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
         if n == 0 {
             break;
         }
-        hasher.update(&buf[..n]);
         file_hasher.update(&buf[..n]);
         writer.write_all(&buf[..n])?;
         total_written += n as u64;
@@ -1383,16 +1379,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
         .into());
     }
 
-    let hash = format!("{:x}", hasher.finalize());
-    if !expected_hash.is_empty() && hash != expected_hash {
-        return Err(format!(
-            "Decompressed hash mismatch: expected {}, got {}",
-            expected_hash, hash
-        )
-        .into());
-    }
-
-    Ok(hash)
+    Ok(())
 }
 
 fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
