@@ -1251,7 +1251,10 @@ fn assemble_file(
     verify_cache: &Arc<RwLock<VerificationCache>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
-    let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
+    let tmp_path = temp_dir.join(format!(
+        "{}.tmp",
+        file.asset_name.replace(['/', '\\', ':'], "_")
+    ));
 
     if target_path.exists() {
         let mut cache = verify_cache.write().unwrap();
@@ -1397,12 +1400,6 @@ fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + 
 
 fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
     format!("{}.zstd", chunk.chunk_name)
-}
-
-fn md5_hex(data: &[u8]) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(data);
-    format!("{:x}", hasher.finalize())
 }
 
 fn file_md5_hex(path: &Path) -> std::io::Result<String> {
