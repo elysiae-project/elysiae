@@ -614,6 +614,15 @@ pub async fn install(
                             let last_assembly_update = Arc::clone(&last_assembly_update);
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
+                                if file_idx >= all_files.len() {
+                                    return Err(format!("file index {} out of bounds", file_idx));
+                                }
+                                if tmp_dir_idx >= all_tmp_dirs.len() {
+                                    return Err(format!(
+                                        "tmp_dir index {} out of bounds",
+                                        tmp_dir_idx
+                                    ));
+                                }
                                 let file = &all_files[file_idx];
                                 let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
                                 let verify_cache = Arc::clone(&verify_cache);
@@ -669,6 +678,15 @@ pub async fn install(
                             let last_assembly_update = Arc::clone(&last_assembly_update);
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
+                                if file_idx >= all_files.len() {
+                                    return Err(format!("file index {} out of bounds", file_idx));
+                                }
+                                if tmp_dir_idx >= all_tmp_dirs.len() {
+                                    return Err(format!(
+                                        "tmp_dir index {} out of bounds",
+                                        tmp_dir_idx
+                                    ));
+                                }
                                 let file = &all_files[file_idx];
                                 let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
                                 let verify_cache = Arc::clone(&verify_cache);
