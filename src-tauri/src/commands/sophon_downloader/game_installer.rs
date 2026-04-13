@@ -508,6 +508,58 @@ pub async fn build_preinstall_installers(
     Ok((installers, tag))
 }
 
+struct InstallContext {
+    chunks_dir: Arc<PathBuf>,
+    game_dir: PathBuf,
+    downloaded_bytes: Arc<AtomicU64>,
+    assembled_files: Arc<AtomicU64>,
+    verify_cache: Arc<DashMap<String, VerificationEntry>>,
+    chunk_refcounts: Arc<DashMap<String, usize>>,
+    last_download_update: Arc<Mutex<Instant>>,
+    last_assembly_update: Arc<Mutex<Instant>>,
+    all_files: Arc<Vec<SophonManifestAssetProperty>>,
+    all_tmp_dirs: Arc<Vec<PathBuf>>,
+    assemble_tx: mpsc::Sender<(usize, usize)>,
+    total_compressed: u64,
+    total_files: u64,
+}
+
+struct AssemblyTaskParams {
+    file_idx: usize,
+    tmp_dir_idx: usize,
+    all_files: Arc<Vec<SophonManifestAssetProperty>>,
+    all_tmp_dirs: Arc<Vec<PathBuf>>,
+    game_dir: PathBuf,
+    chunks_dir: Arc<PathBuf>,
+    chunk_refcounts: Arc<DashMap<String, usize>>,
+    verify_cache: Arc<DashMap<String, VerificationEntry>>,
+    assembled_files: Arc<AtomicU64>,
+    last_assembly_update: Arc<Mutex<Instant>>,
+    total_files: u64,
+}
+
+fn spawn_assembly_task(
+    params: AssemblyTaskParams,
+    updater: impl Fn(SophonProgress) + Send + Sync + 'static,
+) -> tokio::task::JoinHandle<Result<(), String>> {
+    tokio::task::spawn_blocking(move || {
+        run_assembly_task(
+            params.file_idx,
+            params.tmp_dir_idx,
+            params.all_files,
+            params.all_tmp_dirs,
+            params.game_dir,
+            params.chunks_dir,
+            params.chunk_refcounts,
+            params.verify_cache,
+            params.assembled_files,
+            params.last_assembly_update,
+            updater,
+            params.total_files,
+        )
+    })
+}
+
 /// Install all provided installers concurrently into `game_dir`.
 ///
 /// - All installers share `game_dir/chunks` for downloaded chunks.
@@ -620,32 +672,21 @@ pub async fn install(
                 while join_set.len() < ASSEMBLY_CONCURRENCY {
                     match rx.try_recv() {
                         Ok((file_idx, tmp_dir_idx)) => {
-                            let chunks_dir = Arc::clone(&chunks_dir);
-                            let game_dir = game_dir.clone();
-                            let chunk_refcounts = Arc::clone(&chunk_refcounts);
-                            let assembled_files = Arc::clone(&assembled_files);
-                            let verify_cache = Arc::clone(&verify_cache);
+                            let params = AssemblyTaskParams {
+                                file_idx,
+                                tmp_dir_idx,
+                                all_files: Arc::clone(&all_files),
+                                all_tmp_dirs: Arc::clone(&all_tmp_dirs),
+                                game_dir: game_dir.clone(),
+                                chunks_dir: Arc::clone(&chunks_dir),
+                                chunk_refcounts: Arc::clone(&chunk_refcounts),
+                                verify_cache: Arc::clone(&verify_cache),
+                                assembled_files: Arc::clone(&assembled_files),
+                                last_assembly_update: Arc::clone(&last_assembly_update),
+                                total_files,
+                            };
                             let updater = updater.clone();
-                            let all_files = Arc::clone(&all_files);
-                            let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
-                            let last_assembly_update = Arc::clone(&last_assembly_update);
-
-                            join_set.spawn(tokio::task::spawn_blocking(move || {
-                                run_assembly_task(
-                                    file_idx,
-                                    tmp_dir_idx,
-                                    all_files,
-                                    all_tmp_dirs,
-                                    game_dir,
-                                    chunks_dir,
-                                    chunk_refcounts,
-                                    verify_cache,
-                                    assembled_files,
-                                    last_assembly_update,
-                                    updater,
-                                    total_files,
-                                )
-                            }));
+                            join_set.spawn(spawn_assembly_task(params, updater));
                         }
                         Err(mpsc::error::TryRecvError::Empty) => break,
                         Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -660,32 +701,21 @@ pub async fn install(
                 if join_set.is_empty() {
                     match rx.recv().await {
                         Some((file_idx, tmp_dir_idx)) => {
-                            let chunks_dir = Arc::clone(&chunks_dir);
-                            let game_dir = game_dir.clone();
-                            let chunk_refcounts = Arc::clone(&chunk_refcounts);
-                            let assembled_files = Arc::clone(&assembled_files);
-                            let verify_cache = Arc::clone(&verify_cache);
+                            let params = AssemblyTaskParams {
+                                file_idx,
+                                tmp_dir_idx,
+                                all_files: Arc::clone(&all_files),
+                                all_tmp_dirs: Arc::clone(&all_tmp_dirs),
+                                game_dir: game_dir.clone(),
+                                chunks_dir: Arc::clone(&chunks_dir),
+                                chunk_refcounts: Arc::clone(&chunk_refcounts),
+                                verify_cache: Arc::clone(&verify_cache),
+                                assembled_files: Arc::clone(&assembled_files),
+                                last_assembly_update: Arc::clone(&last_assembly_update),
+                                total_files,
+                            };
                             let updater = updater.clone();
-                            let all_files = Arc::clone(&all_files);
-                            let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
-                            let last_assembly_update = Arc::clone(&last_assembly_update);
-
-                            join_set.spawn(tokio::task::spawn_blocking(move || {
-                                run_assembly_task(
-                                    file_idx,
-                                    tmp_dir_idx,
-                                    all_files,
-                                    all_tmp_dirs,
-                                    game_dir,
-                                    chunks_dir,
-                                    chunk_refcounts,
-                                    verify_cache,
-                                    assembled_files,
-                                    last_assembly_update,
-                                    updater,
-                                    total_files,
-                                )
-                            }));
+                            join_set.spawn(spawn_assembly_task(params, updater));
                         }
                         None => {
                             while let Some(res) = join_set.join_next().await {
