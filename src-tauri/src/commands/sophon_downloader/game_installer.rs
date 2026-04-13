@@ -1426,7 +1426,7 @@ fn assemble_file(
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
-        let bytes_written = decompress_and_write_chunk_buffered(
+        let bytes_written = write_decompressed_chunk_at(
             &chunk_path,
             &mut buf_writer,
             chunk.chunk_on_file_offset,
@@ -1466,7 +1466,7 @@ fn assemble_file(
     Ok(())
 }
 
-fn decompress_and_write_chunk_buffered<W: Write + Seek>(
+fn write_decompressed_chunk_at<W: Write + Seek>(
     chunk_path: &Path,
     writer: &mut W,
     offset: u64,
