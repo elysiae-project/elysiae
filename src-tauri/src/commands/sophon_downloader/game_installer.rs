@@ -428,6 +428,9 @@ fn parse_size(s: &str) -> u64 {
     s.parse().unwrap_or(0)
 }
 
+/// Installer for a single manifest (game or voice-over language pack).
+/// Contains the manifest data, HTTP client, and download configuration
+/// needed to download and assemble files.
 pub struct SophonInstaller {
     client: Client,
     manifest: SophonManifestProto,
@@ -435,6 +438,7 @@ pub struct SophonInstaller {
     /// Human-readable label used to name the tmp directory.
     label: String,
     /// The remote build tag this installer was created from.
+    #[allow(unused)]
     pub tag: String,
 }
 
@@ -508,22 +512,6 @@ pub async fn build_preinstall_installers(
     Ok((installers, tag))
 }
 
-struct InstallContext {
-    chunks_dir: Arc<PathBuf>,
-    game_dir: PathBuf,
-    downloaded_bytes: Arc<AtomicU64>,
-    assembled_files: Arc<AtomicU64>,
-    verify_cache: Arc<DashMap<String, VerificationEntry>>,
-    chunk_refcounts: Arc<DashMap<String, usize>>,
-    last_download_update: Arc<Mutex<Instant>>,
-    last_assembly_update: Arc<Mutex<Instant>>,
-    all_files: Arc<Vec<SophonManifestAssetProperty>>,
-    all_tmp_dirs: Arc<Vec<PathBuf>>,
-    assemble_tx: mpsc::Sender<(usize, usize)>,
-    total_compressed: u64,
-    total_files: u64,
-}
-
 struct AssemblyTaskParams {
     file_idx: usize,
     tmp_dir_idx: usize,
@@ -567,7 +555,8 @@ fn spawn_assembly_task(
 ///   all its chunks are on disk.
 /// - Multiple files are assembled in parallel up to `ASSEMBLY_CONCURRENCY`.
 /// - Respects pause/cancel via `handle`.
-/// - On completion, writes `tag` to `game_dir/.sophon_version`.
+/// - After assembly completes, writes `tag` to `game_dir/.sophon_version` (or
+///   a preinstall marker file if `is_preinstall` is true).
 /// - `deleted_files` are removed from `game_dir` after assembly completes.
 /// - If `is_preinstall` is true, writes a marker file instead of the version
 ///   file, leaving it for `apply_preinstall` to promote.
