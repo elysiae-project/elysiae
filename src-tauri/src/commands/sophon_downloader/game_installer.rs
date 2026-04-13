@@ -1295,7 +1295,11 @@ fn assemble_file(
 
     let mut buf_writer = BufWriter::with_capacity(1024 * 1024, out_file);
     let mut total_written: u64 = 0;
-    let mut file_hasher = Md5::new();
+    let mut file_hasher = if file.asset_hash_md5.is_empty() {
+        None
+    } else {
+        Some(Md5::new())
+    };
 
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
@@ -1305,7 +1309,7 @@ fn assemble_file(
             &mut buf_writer,
             chunk.chunk_on_file_offset,
             chunk.chunk_size_decompressed,
-            &mut file_hasher,
+            file_hasher.as_mut(),
         )?;
 
         total_written += chunk.chunk_size_decompressed;
@@ -1332,8 +1336,8 @@ fn assemble_file(
         .into());
     }
 
-    if !file.asset_hash_md5.is_empty() {
-        let actual = format!("{:x}", file_hasher.finalize());
+    if let Some(hasher) = file_hasher {
+        let actual = format!("{:x}", hasher.finalize());
         if actual != file.asset_hash_md5 {
             return Err(format!(
                 "Final file MD5 mismatch for {}: expected {}, got {}",
@@ -1352,7 +1356,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     writer: &mut W,
     offset: u64,
     expected_size: u64,
-    file_hasher: &mut Md5,
+    mut file_hasher: Option<&mut Md5>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
@@ -1366,7 +1370,9 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
         if n == 0 {
             break;
         }
-        file_hasher.update(&buf[..n]);
+        if let Some(hasher) = file_hasher.as_mut() {
+            hasher.update(&buf[..n]);
+        }
         writer.write_all(&buf[..n])?;
         total_written += n as u64;
     }
