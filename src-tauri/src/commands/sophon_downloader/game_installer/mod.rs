@@ -4,9 +4,9 @@ mod assembly;
 mod cache;
 mod constants;
 mod download;
+mod error;
 mod handle;
 mod installer;
-mod manifest;
 mod update;
 mod version;
 

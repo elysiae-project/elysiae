@@ -12,9 +12,11 @@ use super::cache::VerificationEntry;
 use super::constants::{
     DECOMPRESSION_BUFFER_SIZE, FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS,
 };
-use super::manifest::SophonManifestAssetChunk;
+use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::SophonProgress;
-use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
+use crate::commands::sophon_downloader::proto_parse::{
+    SophonManifestAssetChunk, SophonManifestAssetProperty,
+};
 
 pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
     format!("{}.zstd", chunk.chunk_name)
@@ -51,23 +53,27 @@ pub fn cleanup_tmp_files(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn validate_asset_name(name: &str) -> Result<(), String> {
+pub fn validate_asset_name(name: &str) -> SophonResult<()> {
     if name.is_empty() {
-        return Err("asset_name cannot be empty".to_string());
+        return Err(SophonError::InvalidAssetName(
+            "asset_name cannot be empty".into(),
+        ));
     }
     if name.starts_with('/') || name.starts_with('\\') {
-        return Err(format!("asset_name cannot be absolute path: {}", name));
+        return Err(SophonError::PathTraversal(name.into()));
     }
     if name.contains("..") {
-        return Err(format!("asset_name cannot contain '..': {}", name));
+        return Err(SophonError::PathTraversal(name.into()));
     }
     if name.contains('\0') {
-        return Err("asset_name cannot contain null bytes".to_string());
+        return Err(SophonError::InvalidAssetName(
+            "asset_name cannot contain null bytes".into(),
+        ));
     }
     let mut chars = name.chars();
     if let (Some(first), Some(':')) = (chars.next(), chars.next()) {
         if first.is_ascii_alphabetic() {
-            return Err(format!("asset_name cannot contain drive letters: {}", name));
+            return Err(SophonError::PathTraversal(name.into()));
         }
     }
     Ok(())
@@ -80,7 +86,7 @@ pub fn assemble_file(
     temp_dir: &Path,
     chunk_refcounts: &DashMap<String, usize>,
     verify_cache: &DashMap<String, VerificationEntry>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> SophonResult<()> {
     validate_asset_name(&file.asset_name)?;
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!(
@@ -144,25 +150,27 @@ pub fn assemble_file(
     }
 
     buf_writer.flush()?;
-    let out_file = buf_writer.into_inner().map_err(|e| e.into_error())?;
+    let out_file = buf_writer
+        .into_inner()
+        .map_err(|e| SophonError::Io(e.into_error()))?;
     out_file.sync_data()?;
 
     if total_written != file.asset_size {
-        return Err(format!(
-            "File {} total written {} != expected {}",
-            file.asset_name, total_written, file.asset_size
-        )
-        .into());
+        return Err(SophonError::SizeMismatch {
+            item: file.asset_name.clone(),
+            expected: file.asset_size,
+            actual: total_written,
+        });
     }
 
     if let Some(hasher) = file_hasher {
         let actual = format!("{:x}", hasher.finalize());
         if actual != file.asset_hash_md5 {
-            return Err(format!(
-                "Final file MD5 mismatch for {}: expected {}, got {}",
-                file.asset_name, file.asset_hash_md5, actual
-            )
-            .into());
+            return Err(SophonError::Md5Mismatch {
+                item: file.asset_name.clone(),
+                expected: file.asset_hash_md5.clone(),
+                actual,
+            });
         }
     }
 
@@ -176,7 +184,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     offset: u64,
     expected_size: u64,
     mut file_hasher: Option<&mut Md5>,
-) -> Result<u64, Box<dyn std::error::Error>> {
+) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
     let mut total_written = 0u64;
@@ -197,11 +205,11 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     }
 
     if total_written != expected_size {
-        return Err(format!(
-            "Decompressed size mismatch: expected {}, got {}",
-            expected_size, total_written
-        )
-        .into());
+        return Err(SophonError::SizeMismatch {
+            item: chunk_path.display().to_string(),
+            expected: expected_size,
+            actual: total_written,
+        });
     }
 
     Ok(total_written)
@@ -224,7 +232,7 @@ pub struct AssemblyTaskParams {
 pub fn run_assembly_task(
     params: AssemblyTaskParams,
     updater: impl Fn(SophonProgress) + Send + Sync + 'static,
-) -> Result<(), String> {
+) -> SophonResult<()> {
     let AssemblyTaskParams {
         file_idx,
         tmp_dir_idx,
@@ -240,10 +248,10 @@ pub fn run_assembly_task(
     } = params;
 
     if file_idx >= all_files.len() {
-        return Err(format!("file index {} out of bounds", file_idx));
+        return Err(SophonError::FileIndexOutOfBounds { index: file_idx });
     }
     if tmp_dir_idx >= all_tmp_dirs.len() {
-        return Err(format!("tmp_dir index {} out of bounds", tmp_dir_idx));
+        return Err(SophonError::TmpDirIndexOutOfBounds { index: tmp_dir_idx });
     }
 
     let file = &all_files[file_idx];
@@ -257,7 +265,10 @@ pub fn run_assembly_task(
         &chunk_refcounts,
         &verify_cache,
     )
-    .map_err(|e| format!("Failed to assemble {}: {e}", file.asset_name))?;
+    .map_err(|e| SophonError::AssemblyFailed {
+        file: file.asset_name.clone(),
+        error: e.to_string(),
+    })?;
 
     let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
 
@@ -278,6 +289,6 @@ pub fn run_assembly_task(
 pub fn spawn_assembly_task(
     params: AssemblyTaskParams,
     updater: impl Fn(SophonProgress) + Send + Sync + 'static,
-) -> tokio::task::JoinHandle<Result<(), String>> {
+) -> tokio::task::JoinHandle<SophonResult<()>> {
     tokio::task::spawn_blocking(move || run_assembly_task(params, updater))
 }

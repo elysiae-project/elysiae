@@ -17,20 +17,22 @@ use super::api::{fetch_build, fetch_front_door, vo_lang_matches};
 use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
 use super::cache::{self, VerificationEntry};
 use super::constants::*;
+use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
-use super::manifest::{
-    DownloadInfo, SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto,
-};
 use super::version::write_installed_tag;
 use crate::commands::sophon_downloader::SophonProgress;
-use crate::commands::sophon_downloader::api_scrape::{SophonBuildData, SophonManifestMeta};
+use crate::commands::sophon_downloader::api_scrape::{
+    DownloadInfo, SophonBuildData, SophonManifestMeta,
+};
+use crate::commands::sophon_downloader::proto_parse::{
+    SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto,
+};
 
 pub struct SophonInstaller {
     pub client: Client,
     pub manifest: SophonManifestProto,
     pub chunk_download: DownloadInfo,
     pub label: String,
-    #[allow(unused)]
     pub tag: String,
 }
 
@@ -39,7 +41,7 @@ impl SophonInstaller {
         client: &Client,
         meta: &SophonManifestMeta,
         tag: &str,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> SophonResult<Self> {
         let manifest =
             super::api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
         Ok(Self {
@@ -60,7 +62,7 @@ pub async fn build_installers(
     client: &Client,
     game_id: &str,
     vo_lang: &str,
-) -> Result<(Vec<SophonInstaller>, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(Vec<SophonInstaller>, String)> {
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
     let build = fetch_build(client, &branch.main, None).await?;
@@ -75,7 +77,7 @@ pub async fn build_update_installers(
     game_id: &str,
     vo_lang: &str,
     from_tag: &str,
-) -> Result<(Vec<SophonInstaller>, Vec<String>, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(Vec<SophonInstaller>, Vec<String>, String)> {
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
     let (old_build, new_build) = tokio::try_join!(
@@ -94,9 +96,9 @@ pub async fn build_preinstall_installers(
     client: &Client,
     game_id: &str,
     vo_lang: &str,
-) -> Result<(Vec<SophonInstaller>, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(Vec<SophonInstaller>, String)> {
     let (_, pre_branch) = fetch_front_door(client, game_id).await?;
-    let pre_branch = pre_branch.ok_or("No preinstall available")?;
+    let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
 
     let build = fetch_build(client, &pre_branch, None).await?;
     let tag = build.tag.clone();
@@ -110,15 +112,15 @@ async fn build_installers_from_data(
     build: &SophonBuildData,
     vo_lang: &str,
     tag: &str,
-) -> Result<Vec<SophonInstaller>, Box<dyn std::error::Error + Send + Sync>> {
-    let game_meta = build.manifests.first().ok_or("No game manifest")?;
+) -> SophonResult<Vec<SophonInstaller>> {
+    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
 
     let vo_meta = build
         .manifests
         .iter()
         .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
         .or_else(|| build.manifests.get(1))
-        .ok_or("No VO manifest")?;
+        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
 
     let (game_inst, vo_inst) = tokio::try_join!(
         SophonInstaller::from_manifest_meta(client, game_meta, tag),
@@ -134,7 +136,7 @@ async fn build_diff_installers(
     new_build: &SophonBuildData,
     vo_lang: &str,
     tag: &str,
-) -> Result<(Vec<SophonInstaller>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(Vec<SophonInstaller>, Vec<String>)> {
     let old_by_field: std::collections::HashMap<&str, &SophonManifestMeta> = old_build
         .manifests
         .iter()
@@ -231,22 +233,20 @@ pub async fn install(
     is_preinstall: bool,
     handle: DownloadHandle,
     updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
-) -> Result<(), String> {
+) -> SophonResult<()> {
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     {
         let cd = Arc::clone(&chunks_dir);
         tokio::task::spawn_blocking(move || fs::create_dir_all(&*cd))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
+            .await?
+            .map_err(SophonError::from)?;
     }
 
     {
         let gd = game_dir.to_path_buf();
         tokio::task::spawn_blocking(move || cleanup_tmp_files(&gd))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
+            .await?
+            .map_err(SophonError::from)?;
     }
 
     struct InstallerData {
@@ -343,9 +343,9 @@ pub async fn install(
                         Err(mpsc::error::TryRecvError::Empty) => break,
                         Err(mpsc::error::TryRecvError::Disconnected) => {
                             while let Some(res) = join_set.join_next().await {
-                                let _ = res.map_err(|e| e.to_string())?;
+                                let _ = res.map_err(|e| SophonError::from(e.to_string()))?;
                             }
-                            return Ok::<(), String>(());
+                            return Ok::<(), SophonError>(());
                         }
                     }
                 }
@@ -371,13 +371,13 @@ pub async fn install(
                         }
                         None => {
                             while let Some(res) = join_set.join_next().await {
-                                let _ = res.map_err(|e| e.to_string())?;
+                                let _ = res.map_err(|e| SophonError::from(e.to_string()))?;
                             }
-                            return Ok::<(), String>(());
+                            return Ok::<(), SophonError>(());
                         }
                     }
                 } else if let Some(res) = join_set.join_next().await {
-                    let _ = res.map_err(|e| e.to_string())?;
+                    let _ = res.map_err(|e| SophonError::from(e.to_string()))?;
                 }
             }
         })
@@ -401,9 +401,8 @@ pub async fn install(
         {
             let td = tmp_dir.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&td))
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| e.to_string())?;
+                .await?
+                .map_err(SophonError::from)?;
         }
 
         for _ in 0..data.files.len() {
@@ -464,7 +463,7 @@ pub async fn install(
 
     let last_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
 
-    let results: Vec<Result<(), String>> = futures_util::stream::iter(download_items)
+    let results: Vec<SophonResult<()>> = futures_util::stream::iter(download_items)
         .map(|item| {
             let chunks_dir = Arc::clone(&chunks_dir);
             let downloaded_bytes = Arc::clone(&downloaded_bytes);
@@ -482,7 +481,7 @@ pub async fn install(
                     tokio::task::yield_now().await;
                 }
                 let _guard = ActiveGuard::new(&adaptive);
-                let _permit = semaphore.acquire().await.map_err(|e| format!("{e}"))?;
+                let _permit = semaphore.acquire().await?;
 
                 {
                     let db = downloaded_bytes.load(Ordering::Relaxed);
@@ -502,8 +501,7 @@ pub async fn install(
                         cache::check_file_md5_cached(&dest_check, chunk_size, &expected_md5, &cache)
                             .unwrap_or(false)
                     })
-                    .await
-                    .map_err(|e| e.to_string())?
+                    .await?
                 } else {
                     true
                 };
@@ -513,7 +511,7 @@ pub async fn install(
                     let mut success = false;
                     for attempt in 0..MAX_RETRIES {
                         if handle.is_cancelled() {
-                            return Err("cancelled".into());
+                            return Err(SophonError::Cancelled);
                         }
 
                         match super::download::download_chunk(
@@ -546,14 +544,11 @@ pub async fn install(
                     }
 
                     if !success {
-                        let msg = format!(
-                            "Failed to download chunk {} after {MAX_RETRIES} attempts: {last_err}",
-                            item.chunk.chunk_name
-                        );
-                        updater(SophonProgress::Error {
-                            message: msg.clone(),
+                        return Err(SophonError::DownloadFailed {
+                            chunk: item.chunk.chunk_name.clone(),
+                            attempts: MAX_RETRIES,
+                            error: last_err,
                         });
-                        return Err(msg);
                     }
                 }
 
@@ -607,7 +602,7 @@ pub async fn install(
 
     let cancelled = results
         .iter()
-        .any(|r| r.as_ref().err().map(|e| e == "cancelled").unwrap_or(false));
+        .any(|r| matches!(r, Err(SophonError::Cancelled)));
     if cancelled {
         let cd = Arc::clone(&chunks_dir);
         let _ = tokio::task::spawn_blocking(move || {
@@ -621,10 +616,7 @@ pub async fn install(
 
     results.into_iter().find(|r| r.is_err()).transpose()?;
 
-    assembly_task
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    assembly_task.await??;
 
     {
         let _ = cache::save_verification_cache(game_dir, &verify_cache);
@@ -638,8 +630,7 @@ pub async fn install(
                 let _ = fs::remove_file(gd.join(rel));
             }
         })
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     }
 
     let gd = game_dir.to_path_buf();
@@ -652,24 +643,21 @@ pub async fn install(
             write_installed_tag(&gd, &tag_str)
         }
     })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    .await??;
 
     Ok(())
 }
 
-pub async fn apply_preinstall(game_dir: &Path, preinstall_tag: &str) -> Result<(), String> {
+pub async fn apply_preinstall(game_dir: &Path, preinstall_tag: &str) -> SophonResult<()> {
     let marker = game_dir.join(format!(".sophon_preinstall_{preinstall_tag}"));
     if !marker.exists() {
-        return Err(format!("Preinstall marker for {preinstall_tag} not found"));
+        return Err(SophonError::PreinstallMarkerNotFound(preinstall_tag.into()));
     }
     let gd = game_dir.to_path_buf();
     let tag = preinstall_tag.to_owned();
     tokio::task::spawn_blocking(move || {
-        write_installed_tag(&gd, &tag).map_err(|e| e.to_string())?;
-        fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(|e| e.to_string())
+        write_installed_tag(&gd, &tag)?;
+        fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(SophonError::from)
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }

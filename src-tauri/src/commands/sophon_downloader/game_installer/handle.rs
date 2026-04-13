@@ -2,9 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::Notify;
 
+use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::SophonProgress;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlState {
     Running,
     Paused,
@@ -48,12 +49,12 @@ impl DownloadHandle {
         updater: &(impl Fn(SophonProgress) + Send + Sync),
         downloaded_bytes: u64,
         total_bytes: u64,
-    ) -> Result<(), String> {
+    ) -> SophonResult<()> {
         loop {
             let state = self.state.lock().unwrap().clone();
             match state {
                 ControlState::Running => return Ok(()),
-                ControlState::Cancelled => return Err("cancelled".into()),
+                ControlState::Cancelled => return Err(SophonError::Cancelled),
                 ControlState::Paused => {
                     updater(SophonProgress::Paused {
                         downloaded_bytes,

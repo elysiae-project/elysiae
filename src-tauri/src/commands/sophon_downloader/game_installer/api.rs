@@ -7,23 +7,24 @@ use crate::commands::sophon_downloader::api_scrape::{
 use crate::commands::sophon_downloader::proto_parse::{SophonManifestProto, decode_manifest};
 
 use super::constants::{FRONT_DOOR_URL, SOPHON_BUILD_URL_BASE};
-use super::manifest::DownloadInfo;
+use super::error::{SophonError, SophonResult};
+use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 
 pub async fn fetch_front_door(
     client: &Client,
     game_id: &str,
-) -> Result<(GameBranch, Option<PackageBranch>), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(GameBranch, Option<PackageBranch>)> {
     let resp: FrontDoorResponse = client.get(FRONT_DOOR_URL).send().await?.json().await?;
 
     let idx =
-        front_door_game_index(game_id).ok_or_else(|| format!("Unknown game_id: {game_id}"))?;
+        front_door_game_index(game_id).ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
 
     let branch = resp
         .data
         .game_branches
         .into_iter()
         .nth(idx)
-        .ok_or("Front-door branch index out of range")?;
+        .ok_or(SophonError::BranchIndexOutOfRange)?;
 
     let pre = branch.pre_download.clone();
     Ok((branch, pre))
@@ -33,7 +34,7 @@ pub async fn fetch_build(
     client: &Client,
     branch: &PackageBranch,
     tag: Option<&str>,
-) -> Result<SophonBuildData, Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<SophonBuildData> {
     let mut url = format!(
         "{}?branch={}&package_id={}&password={}",
         SOPHON_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password,
@@ -44,7 +45,7 @@ pub async fn fetch_build(
 
     let resp: SophonBuildResponse = client.get(&url).send().await?.json().await?;
     if resp.data.manifests.is_empty() {
-        return Err("No manifests returned from the API".into());
+        return Err(SophonError::NoManifests);
     }
     Ok(resp.data)
 }
@@ -53,7 +54,7 @@ pub async fn fetch_manifest(
     client: &Client,
     dl: &DownloadInfo,
     manifest_id: &str,
-) -> Result<SophonManifestProto, Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<SophonManifestProto> {
     let url = dl.url_for(manifest_id);
     let bytes = client
         .get(&url)
@@ -72,7 +73,7 @@ pub async fn fetch_manifest(
     decode_manifest(&raw).map_err(|e| e.into())
 }
 
-fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
     use std::io::Read;
     let mut decoder = zstd::Decoder::new(bytes)?;
     let mut out = Vec::new();

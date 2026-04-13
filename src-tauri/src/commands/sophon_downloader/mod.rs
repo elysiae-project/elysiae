@@ -89,8 +89,8 @@ pub async fn sophon_update(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    let current_tag = read_installed_tag(&game_dir)
-        .ok_or("No installed version found — cannot update")?;
+    let current_tag =
+        read_installed_tag(&game_dir).ok_or("No installed version found — cannot update")?;
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
@@ -171,7 +171,9 @@ pub async fn sophon_apply_preinstall(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    game_installer::apply_preinstall(&game_dir, &preinstall_tag).await
+    game_installer::apply_preinstall(&game_dir, &preinstall_tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[command]

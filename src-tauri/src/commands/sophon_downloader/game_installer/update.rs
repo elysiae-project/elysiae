@@ -5,6 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use super::api::{fetch_build, vo_lang_matches};
+use super::error::{SophonError, SophonResult};
 use super::version::read_installed_tag;
 use crate::commands::sophon_downloader::api_scrape::PackageBranch;
 use crate::commands::sophon_downloader::api_scrape::SophonManifestMeta;
@@ -28,7 +29,7 @@ pub async fn check_update(
     game_id: &str,
     vo_lang: &str,
     game_dir: &Path,
-) -> Result<UpdateInfo, Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<UpdateInfo> {
     let (front_door, current_tag) =
         tokio::join!(super::api::fetch_front_door(client, game_id), async {
             read_installed_tag(game_dir)
@@ -95,14 +96,14 @@ pub async fn fetch_build_sizes(
     client: &Client,
     branch: &PackageBranch,
     vo_lang: &str,
-) -> Result<(u64, u64), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(u64, u64)> {
     let build = fetch_build(client, branch, None).await?;
-    let game_meta = build.manifests.first().ok_or("no manifests")?;
+    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
     let vo_meta = build
         .manifests
         .iter()
         .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
-        .ok_or("No VO manifest matching language")?;
+        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
 
     let cs = super::api::parse_size(&game_meta.stats.compressed_size)
         + super::api::parse_size(&vo_meta.stats.compressed_size);
@@ -117,7 +118,7 @@ pub async fn fetch_diff_sizes(
     from_tag: &str,
     to_tag: &str,
     vo_lang: &str,
-) -> Result<(u64, u64), Box<dyn std::error::Error + Send + Sync>> {
+) -> SophonResult<(u64, u64)> {
     let (old_build, new_build) = tokio::try_join!(
         fetch_build(client, branch, Some(from_tag)),
         fetch_build(client, branch, Some(to_tag)),

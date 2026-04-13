@@ -7,24 +7,26 @@ use reqwest::Client;
 use tokio::io::AsyncWriteExt;
 
 use super::constants::DOWNLOAD_STREAM_BUFFER_SIZE;
-use super::manifest::{DownloadInfo, SophonManifestAssetChunk};
+use super::error::{SophonError, SophonResult};
+use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
+use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
 pub async fn download_chunk(
     client: &Client,
     chunk_download: &DownloadInfo,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> SophonResult<()> {
     let url = chunk_download.url_for(&chunk.chunk_name);
     let resp = client.get(&url).send().await?.error_for_status()?;
 
     if let Some(len) = resp.content_length() {
         if len != chunk.chunk_size {
-            return Err(format!(
-                "Content-Length mismatch for {}: expected {}, got {len}",
-                chunk.chunk_name, chunk.chunk_size
-            )
-            .into());
+            return Err(SophonError::SizeMismatch {
+                item: chunk.chunk_name.clone(),
+                expected: chunk.chunk_size,
+                actual: len,
+            });
         }
     }
 
@@ -51,21 +53,21 @@ pub async fn download_chunk(
     }
 
     if total_len != chunk.chunk_size {
-        return Err(format!(
-            "Downloaded size mismatch for {}: expected {}, got {}",
-            chunk.chunk_name, chunk.chunk_size, total_len
-        )
-        .into());
+        return Err(SophonError::SizeMismatch {
+            item: chunk.chunk_name.clone(),
+            expected: chunk.chunk_size,
+            actual: total_len,
+        });
     }
 
     if !chunk.chunk_compressed_hash_md5.is_empty() {
         let actual = format!("{:x}", hasher.finalize());
         if actual != chunk.chunk_compressed_hash_md5 {
-            return Err(format!(
-                "Compressed MD5 mismatch for {}: expected {}, got {actual}",
-                chunk.chunk_name, chunk.chunk_compressed_hash_md5
-            )
-            .into());
+            return Err(SophonError::Md5Mismatch {
+                item: chunk.chunk_name.clone(),
+                expected: chunk.chunk_compressed_hash_md5.clone(),
+                actual,
+            });
         }
     }
 
