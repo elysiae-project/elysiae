@@ -657,10 +657,62 @@ pub async fn install(
                     }
                 }
 
-                if let Some(res) = join_set.join_next().await {
-                    let _ = res.map_err(|e| e.to_string())?;
+                if join_set.is_empty() {
+                    match rx.recv().await {
+                        Some((file_idx, tmp_dir_idx)) => {
+                            let chunks_dir = chunks_dir.clone();
+                            let game_dir = game_dir.clone();
+                            let chunk_refcounts = Arc::clone(&chunk_refcounts);
+                            let assembled_files = Arc::clone(&assembled_files);
+                            let verify_cache = Arc::clone(&verify_cache);
+                            let updater = updater.clone();
+                            let all_files = Arc::clone(&all_files);
+                            let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
+                            let last_assembly_update = Arc::clone(&last_assembly_update);
+
+                            join_set.spawn(tokio::task::spawn_blocking(move || {
+                                let file = &all_files[file_idx];
+                                let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
+                                let verify_cache = Arc::clone(&verify_cache);
+                                assemble_file(
+                                    file,
+                                    &game_dir,
+                                    &chunks_dir,
+                                    tmp_dir,
+                                    &chunk_refcounts,
+                                    &verify_cache,
+                                )
+                                .map_err(|e| {
+                                    format!("Failed to assemble {}: {e}", file.asset_name)
+                                })?;
+
+                                let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
+
+                                {
+                                    let mut lu = last_assembly_update.lock().unwrap();
+                                    if lu.elapsed() >= Duration::from_millis(1000) {
+                                        updater(SophonProgress::Assembling {
+                                            assembled_files: count,
+                                            total_files,
+                                        });
+                                        *lu = Instant::now();
+                                    }
+                                }
+
+                                Ok::<(), String>(())
+                            }));
+                        }
+                        None => {
+                            while let Some(res) = join_set.join_next().await {
+                                let _ = res.map_err(|e| e.to_string())?;
+                            }
+                            return Ok::<(), String>(());
+                        }
+                    }
                 } else {
-                    tokio::task::yield_now().await;
+                    if let Some(res) = join_set.join_next().await {
+                        let _ = res.map_err(|e| e.to_string())?;
+                    }
                 }
             }
         })
