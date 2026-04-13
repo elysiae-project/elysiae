@@ -86,10 +86,6 @@ impl AdaptiveConcurrency {
         self.active.fetch_sub(1, Ordering::Relaxed);
     }
 
-    fn target(&self) -> usize {
-        self.target.load(Ordering::Relaxed)
-    }
-
     fn adjust(&self) -> usize {
         let mut window_start = self.window_start.lock().unwrap();
         let now = Instant::now();
