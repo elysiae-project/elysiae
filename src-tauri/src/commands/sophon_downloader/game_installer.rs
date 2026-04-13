@@ -475,10 +475,10 @@ pub async fn install(
     handle: DownloadHandle,
     updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
 ) -> Result<(), String> {
-    let chunks_dir = game_dir.join("chunks");
+    let chunks_dir = Arc::new(game_dir.join("chunks"));
     {
-        let cd = chunks_dir.clone();
-        tokio::task::spawn_blocking(move || fs::create_dir_all(&cd))
+        let cd = Arc::clone(&chunks_dir);
+        tokio::task::spawn_blocking(move || fs::create_dir_all(&*cd))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
@@ -549,7 +549,7 @@ pub async fn install(
     let (assemble_tx, assemble_rx) = mpsc::unbounded_channel::<(usize, usize)>();
 
     let assembly_task = {
-        let chunks_dir = chunks_dir.clone();
+        let chunks_dir = Arc::clone(&chunks_dir);
         let game_dir = game_dir.to_path_buf();
         let chunk_refcounts = Arc::clone(&chunk_refcounts);
         let assembled_files = Arc::clone(&assembled_files);
@@ -567,7 +567,7 @@ pub async fn install(
                 while join_set.len() < ASSEMBLY_CONCURRENCY {
                     match rx.try_recv() {
                         Ok((file_idx, tmp_dir_idx)) => {
-                            let chunks_dir = chunks_dir.clone();
+                            let chunks_dir = Arc::clone(&chunks_dir);
                             let game_dir = game_dir.clone();
                             let chunk_refcounts = Arc::clone(&chunk_refcounts);
                             let assembled_files = Arc::clone(&assembled_files);
@@ -622,7 +622,7 @@ pub async fn install(
                 if join_set.is_empty() {
                     match rx.recv().await {
                         Some((file_idx, tmp_dir_idx)) => {
-                            let chunks_dir = chunks_dir.clone();
+                            let chunks_dir = Arc::clone(&chunks_dir);
                             let game_dir = game_dir.clone();
                             let chunk_refcounts = Arc::clone(&chunk_refcounts);
                             let assembled_files = Arc::clone(&assembled_files);
@@ -767,7 +767,7 @@ pub async fn install(
 
     let results: Vec<Result<(), String>> = futures_util::stream::iter(download_items)
         .map(|item| {
-            let chunks_dir = chunks_dir.clone();
+            let chunks_dir = Arc::clone(&chunks_dir);
             let downloaded_bytes = Arc::clone(&downloaded_bytes);
             let chunk_to_files = Arc::clone(&chunk_to_files);
             let assemble_tx = assemble_tx.clone();
@@ -907,9 +907,9 @@ pub async fn install(
         .iter()
         .any(|r| r.as_ref().err().map(|e| e == "cancelled").unwrap_or(false));
     if cancelled {
-        let cd = chunks_dir.clone();
+        let cd = Arc::clone(&chunks_dir);
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = fs::remove_dir_all(&cd);
+            let _ = fs::remove_dir_all(&*cd);
         })
         .await;
         // Wait for assembly to drain before returning.
