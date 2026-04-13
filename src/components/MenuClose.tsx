@@ -3,8 +3,6 @@ import { Variants } from "../types";
 import { useGame } from "../hooks/useGame";
 import { getActiveGameCode } from "../util/AppFunctions";
 import { useState } from "preact/hooks";
-import { motion } from "motion/react";
-import { fadeInOut } from "../util/Animations";
 
 const menuCloseStyles = cva(
 	"h-10 w-10 flex items-center justify-center transition-all duration-75",
@@ -29,7 +27,7 @@ export default function MenuClose({
 	clickAction: () => void;
 }) {
 	const { game } = useGame();
-	const assetPath = `src/assets/icon/${getActiveGameCode(game)}`;
+	const assetPath = `/assets/icon/${getActiveGameCode(game)}`;
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
