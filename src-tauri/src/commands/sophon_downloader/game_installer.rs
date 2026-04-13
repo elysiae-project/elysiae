@@ -1281,6 +1281,28 @@ fn cleanup_tmp_files(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn validate_asset_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("asset_name cannot be empty".to_string());
+    }
+    if name.starts_with('/') || name.starts_with('\\') {
+        return Err(format!("asset_name cannot be absolute path: {}", name));
+    }
+    if name.contains("..") {
+        return Err(format!("asset_name cannot contain '..': {}", name));
+    }
+    if name.contains('\0') {
+        return Err("asset_name cannot contain null bytes".to_string());
+    }
+    let mut chars = name.chars();
+    if let (Some(first), Some(':')) = (chars.next(), chars.next()) {
+        if first.is_ascii_alphabetic() {
+            return Err(format!("asset_name cannot contain drive letters: {}", name));
+        }
+    }
+    Ok(())
+}
+
 fn assemble_file(
     file: &SophonManifestAssetProperty,
     game_dir: &Path,
@@ -1289,6 +1311,7 @@ fn assemble_file(
     chunk_refcounts: &DashMap<String, usize>,
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    validate_asset_name(&file.asset_name)?;
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!(
         "{}.tmp",
