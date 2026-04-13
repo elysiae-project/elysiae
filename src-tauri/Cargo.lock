@@ -6,6 +6,7 @@ version = 4
 name = "Elysiae"
 version = "1.0.0"
 dependencies = [
+ "bytes",
  "dashmap",
  "flate2",
  "futures",
@@ -29,6 +30,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tokio",
+ "tokio-util",
  "xz",
  "zip",
  "zstd",

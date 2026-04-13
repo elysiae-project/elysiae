@@ -6,29 +6,126 @@ use super::api_scrape::{
 use super::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest,
 };
+use bytes::BytesMut;
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
-use lru::LruCache;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
-use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{Notify, Semaphore, mpsc};
+use tokio_util::sync::CancellationToken;
 
 const MAX_RETRIES: u32 = 4;
-const DOWNLOAD_CONCURRENCY: usize = 8;
 const ASSEMBLY_CONCURRENCY: usize = 4;
 const VERSION_FILE_NAME: &str = ".sophon_version";
 const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
+
+const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 256 * 1024;
+const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
+const DECOMPRESSION_BUFFER_SIZE: usize = 1024 * 1024;
+const MD5_HASH_BUFFER_SIZE: usize = 1024 * 1024;
+
+const ADAPTIVE_MIN_CONCURRENCY: usize = 4;
+const ADAPTIVE_MAX_CONCURRENCY: usize = 32;
+const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
+const ADAPTIVE_WINDOW_SECS: u64 = 2;
+
+struct ActiveGuard<'a> {
+    adaptive: &'a AdaptiveConcurrency,
+}
+
+impl<'a> ActiveGuard<'a> {
+    fn new(adaptive: &'a AdaptiveConcurrency) -> Self {
+        adaptive.inc_active();
+        Self { adaptive }
+    }
+}
+
+impl<'a> Drop for ActiveGuard<'a> {
+    fn drop(&mut self) {
+        self.adaptive.dec_active();
+    }
+}
+
+struct AdaptiveConcurrency {
+    target: AtomicUsize,
+    active: AtomicUsize,
+    total_bytes: AtomicU64,
+    window_start: Mutex<Instant>,
+    window_start_bytes: AtomicU64,
+}
+
+impl AdaptiveConcurrency {
+    fn new() -> Self {
+        Self {
+            target: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
+            active: AtomicUsize::new(0),
+            total_bytes: AtomicU64::new(0),
+            window_start: Mutex::new(Instant::now()),
+            window_start_bytes: AtomicU64::new(0),
+        }
+    }
+
+    fn record_bytes(&self, bytes: u64) {
+        self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn can_start(&self) -> bool {
+        self.active.load(Ordering::Relaxed) < self.target.load(Ordering::Relaxed)
+    }
+
+    fn inc_active(&self) {
+        self.active.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn dec_active(&self) {
+        self.active.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn adjust(&self) -> usize {
+        let mut window_start = self.window_start.lock().unwrap();
+        let now = Instant::now();
+        let elapsed = now.duration_since(*window_start).as_secs_f64();
+        let current = self.target.load(Ordering::Relaxed);
+
+        if elapsed < ADAPTIVE_WINDOW_SECS as f64 {
+            drop(window_start);
+            return current;
+        }
+
+        let total = self.total_bytes.load(Ordering::Relaxed);
+        let start_bytes = self.window_start_bytes.load(Ordering::Relaxed);
+        let bytes_this_window = total.saturating_sub(start_bytes);
+        let throughput_bps = bytes_this_window as f64 / elapsed;
+        let throughput_mbps = throughput_bps / 1_048_576.0;
+
+        let new_limit = if throughput_mbps > 100.0 {
+            (current + 4).min(ADAPTIVE_MAX_CONCURRENCY)
+        } else if throughput_mbps > 50.0 {
+            (current + 2).min(ADAPTIVE_MAX_CONCURRENCY)
+        } else if throughput_mbps > 20.0 {
+            current
+        } else if throughput_mbps > 10.0 {
+            current.saturating_sub(1).max(ADAPTIVE_MIN_CONCURRENCY)
+        } else {
+            current.saturating_sub(2).max(ADAPTIVE_MIN_CONCURRENCY)
+        };
+
+        *window_start = now;
+        self.window_start_bytes.store(total, Ordering::Relaxed);
+        self.target.store(new_limit, Ordering::Relaxed);
+        new_limit
+    }
+}
 
 const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
@@ -38,21 +135,6 @@ const SOPHON_BUILD_URL_BASE: &str = concat!(
     "https://sg-public-api.hoyoverse.com",
     "/downloader/sophon_chunk/api/getBuild"
 );
-
-const VERIFICATION_CACHE_MAX_ENTRIES: usize = 50000;
-
-#[derive(Debug)]
-struct VerificationCache {
-    files: LruCache<String, VerificationEntry>,
-}
-
-impl Default for VerificationCache {
-    fn default() -> Self {
-        Self {
-            files: LruCache::new(NonZeroUsize::new(VERIFICATION_CACHE_MAX_ENTRIES).unwrap()),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VerificationEntry {
@@ -429,10 +511,10 @@ pub async fn install(
     handle: DownloadHandle,
     updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
 ) -> Result<(), String> {
-    let chunks_dir = game_dir.join("chunks");
+    let chunks_dir = Arc::new(game_dir.join("chunks"));
     {
-        let cd = chunks_dir.clone();
-        tokio::task::spawn_blocking(move || fs::create_dir_all(&cd))
+        let cd = Arc::clone(&chunks_dir);
+        tokio::task::spawn_blocking(move || fs::create_dir_all(&*cd))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
@@ -493,8 +575,8 @@ pub async fn install(
 
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let assembled_files = Arc::new(AtomicU64::new(0));
-    let verify_cache: Arc<RwLock<VerificationCache>> =
-        Arc::new(RwLock::new(load_verification_cache(game_dir)));
+    let verify_cache: Arc<DashMap<String, VerificationEntry>> =
+        Arc::new(load_verification_cache(game_dir));
 
     let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
 
@@ -503,7 +585,7 @@ pub async fn install(
     let (assemble_tx, assemble_rx) = mpsc::unbounded_channel::<(usize, usize)>();
 
     let assembly_task = {
-        let chunks_dir = chunks_dir.clone();
+        let chunks_dir = Arc::clone(&chunks_dir);
         let game_dir = game_dir.to_path_buf();
         let chunk_refcounts = Arc::clone(&chunk_refcounts);
         let assembled_files = Arc::clone(&assembled_files);
@@ -521,7 +603,7 @@ pub async fn install(
                 while join_set.len() < ASSEMBLY_CONCURRENCY {
                     match rx.try_recv() {
                         Ok((file_idx, tmp_dir_idx)) => {
-                            let chunks_dir = chunks_dir.clone();
+                            let chunks_dir = Arc::clone(&chunks_dir);
                             let game_dir = game_dir.clone();
                             let chunk_refcounts = Arc::clone(&chunk_refcounts);
                             let assembled_files = Arc::clone(&assembled_files);
@@ -573,10 +655,62 @@ pub async fn install(
                     }
                 }
 
-                if let Some(res) = join_set.join_next().await {
-                    let _ = res.map_err(|e| e.to_string())?;
+                if join_set.is_empty() {
+                    match rx.recv().await {
+                        Some((file_idx, tmp_dir_idx)) => {
+                            let chunks_dir = Arc::clone(&chunks_dir);
+                            let game_dir = game_dir.clone();
+                            let chunk_refcounts = Arc::clone(&chunk_refcounts);
+                            let assembled_files = Arc::clone(&assembled_files);
+                            let verify_cache = Arc::clone(&verify_cache);
+                            let updater = updater.clone();
+                            let all_files = Arc::clone(&all_files);
+                            let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
+                            let last_assembly_update = Arc::clone(&last_assembly_update);
+
+                            join_set.spawn(tokio::task::spawn_blocking(move || {
+                                let file = &all_files[file_idx];
+                                let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
+                                let verify_cache = Arc::clone(&verify_cache);
+                                assemble_file(
+                                    file,
+                                    &game_dir,
+                                    &chunks_dir,
+                                    tmp_dir,
+                                    &chunk_refcounts,
+                                    &verify_cache,
+                                )
+                                .map_err(|e| {
+                                    format!("Failed to assemble {}: {e}", file.asset_name)
+                                })?;
+
+                                let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
+
+                                {
+                                    let mut lu = last_assembly_update.lock().unwrap();
+                                    if lu.elapsed() >= Duration::from_millis(1000) {
+                                        updater(SophonProgress::Assembling {
+                                            assembled_files: count,
+                                            total_files,
+                                        });
+                                        *lu = Instant::now();
+                                    }
+                                }
+
+                                Ok::<(), String>(())
+                            }));
+                        }
+                        None => {
+                            while let Some(res) = join_set.join_next().await {
+                                let _ = res.map_err(|e| e.to_string())?;
+                            }
+                            return Ok::<(), String>(());
+                        }
+                    }
                 } else {
-                    tokio::task::yield_now().await;
+                    if let Some(res) = join_set.join_next().await {
+                        let _ = res.map_err(|e| e.to_string())?;
+                    }
                 }
             }
         })
@@ -605,7 +739,7 @@ pub async fn install(
                 .map_err(|e| e.to_string())?;
         }
 
-        for _file in &data.files {
+        for _ in 0..data.files.len() {
             let file = &all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
@@ -639,19 +773,48 @@ pub async fn install(
         }
     }
 
+    let adaptive = Arc::new(AdaptiveConcurrency::new());
+    let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
+    let cancel_token = CancellationToken::new();
+
+    {
+        let adaptive = Arc::clone(&adaptive);
+        let token = cancel_token.clone();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(ADAPTIVE_WINDOW_SECS));
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => break,
+                    _ = interval.tick() => {
+                        adaptive.adjust();
+                    }
+                }
+            }
+        });
+    }
+
     let last_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
 
     let results: Vec<Result<(), String>> = futures_util::stream::iter(download_items)
         .map(|item| {
-            let chunks_dir = chunks_dir.clone();
+            let chunks_dir = Arc::clone(&chunks_dir);
             let downloaded_bytes = Arc::clone(&downloaded_bytes);
             let chunk_to_files = Arc::clone(&chunk_to_files);
             let assemble_tx = assemble_tx.clone();
             let handle = handle.clone();
             let updater = updater.clone();
             let last_update = Arc::clone(&last_update);
+            let verify_cache = Arc::clone(&verify_cache);
+            let adaptive = Arc::clone(&adaptive);
+            let semaphore = Arc::clone(&semaphore);
 
             async move {
+                while !adaptive.can_start() {
+                    tokio::task::yield_now().await;
+                }
+                let _guard = ActiveGuard::new(&adaptive);
+                let _permit = semaphore.acquire().await.map_err(|e| format!("{e}"))?;
                 // Pause / cancel check before each chunk.
                 {
                     let db = downloaded_bytes.load(Ordering::Relaxed);
@@ -666,8 +829,10 @@ pub async fn install(
                     let dest_check = dest.clone();
                     let chunk_size = item.chunk.chunk_size;
                     let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
+                    let cache = Arc::clone(&verify_cache);
                     !tokio::task::spawn_blocking(move || {
-                        check_file_md5(&dest_check, chunk_size, &expected_md5)
+                        check_file_md5_cached(&dest_check, chunk_size, &expected_md5, &cache)
+                            .unwrap_or(false)
                     })
                     .await
                     .map_err(|e| e.to_string())?
@@ -723,6 +888,8 @@ pub async fn install(
                 let db = downloaded_bytes.fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
                     + item.chunk.chunk_size;
 
+                adaptive.record_bytes(item.chunk.chunk_size);
+
                 // Throttle progress updates to 1000ms
                 {
                     let mut lu = last_update.lock().unwrap();
@@ -760,20 +927,21 @@ pub async fn install(
                 Ok(())
             }
         })
-        .buffer_unordered(DOWNLOAD_CONCURRENCY)
+        .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
         .collect()
         .await;
 
     drop(assemble_tx);
+    cancel_token.cancel();
 
     // Handle cancel: delete all chunks, report Finished (as per spec).
     let cancelled = results
         .iter()
         .any(|r| r.as_ref().err().map(|e| e == "cancelled").unwrap_or(false));
     if cancelled {
-        let cd = chunks_dir.clone();
+        let cd = Arc::clone(&chunks_dir);
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = fs::remove_dir_all(&cd);
+            let _ = fs::remove_dir_all(&*cd);
         })
         .await;
         // Wait for assembly to drain before returning.
@@ -792,8 +960,7 @@ pub async fn install(
         .map_err(|e| e.to_string())?;
 
     {
-        let cache = verify_cache.read().unwrap();
-        let _ = save_verification_cache(game_dir, &cache);
+        let _ = save_verification_cache(game_dir, &verify_cache);
     }
 
     if !deleted_files.is_empty() {
@@ -1035,11 +1202,21 @@ async fn download_chunk(
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
+    let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
+
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;
         hasher.update(&bytes);
-        file.write_all(&bytes).await?;
+        buffer.extend_from_slice(&bytes);
+        if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
+            file.write_all(&buffer).await?;
+            buffer.clear();
+        }
         total_len += bytes.len() as u64;
+    }
+
+    if !buffer.is_empty() {
+        file.write_all(&buffer).await?;
     }
 
     if total_len != chunk.chunk_size {
@@ -1110,31 +1287,25 @@ fn assemble_file(
     chunks_dir: &Path,
     temp_dir: &Path,
     chunk_refcounts: &DashMap<String, usize>,
-    verify_cache: &Arc<RwLock<VerificationCache>>,
+    verify_cache: &DashMap<String, VerificationEntry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
-    let tmp_path = temp_dir.join(format!("{}.tmp", md5_hex(file.asset_name.as_bytes())));
+    let tmp_path = temp_dir.join(format!(
+        "{}.tmp",
+        file.asset_name.replace(['/', '\\', ':'], "_")
+    ));
 
     if target_path.exists() {
-        let mut cache = verify_cache.write().unwrap();
         let already_valid = check_file_md5_cached(
             &target_path,
             file.asset_size,
             &file.asset_hash_md5,
-            &mut cache,
+            verify_cache,
         )?;
-        drop(cache);
 
         if already_valid {
             for chunk in &file.asset_chunks {
-                if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
-                    *count -= 1;
-                    if *count == 0 {
-                        drop(count);
-                        chunk_refcounts.remove(&chunk.chunk_name);
-                        let _ = fs::remove_file(chunks_dir.join(chunk_filename(chunk)));
-                    }
-                }
+                decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
             }
             return Ok(());
         }
@@ -1155,32 +1326,28 @@ fn assemble_file(
         .open(&tmp_path)?;
     out_file.set_len(file.asset_size)?;
 
-    let mut buf_writer = BufWriter::with_capacity(1024 * 1024, out_file);
+    let mut buf_writer = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, out_file);
     let mut total_written: u64 = 0;
-    let mut file_hasher = Md5::new();
+    let mut file_hasher = if file.asset_hash_md5.is_empty() {
+        None
+    } else {
+        Some(Md5::new())
+    };
 
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
-        decompress_and_write_chunk_buffered(
+        let bytes_written = decompress_and_write_chunk_buffered(
             &chunk_path,
             &mut buf_writer,
             chunk.chunk_on_file_offset,
             chunk.chunk_size_decompressed,
-            &chunk.chunk_decompressed_hash_md5,
-            &mut file_hasher,
+            file_hasher.as_mut(),
         )?;
 
-        total_written += chunk.chunk_size_decompressed;
+        total_written += bytes_written;
 
-        if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
-            *count -= 1;
-            if *count == 0 {
-                drop(count);
-                chunk_refcounts.remove(&chunk.chunk_name);
-                let _ = fs::remove_file(&chunk_path);
-            }
-        }
+        decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
     }
 
     buf_writer.flush()?;
@@ -1195,8 +1362,8 @@ fn assemble_file(
         .into());
     }
 
-    if !file.asset_hash_md5.is_empty() {
-        let actual = format!("{:x}", file_hasher.finalize());
+    if let Some(hasher) = file_hasher {
+        let actual = format!("{:x}", hasher.finalize());
         if actual != file.asset_hash_md5 {
             return Err(format!(
                 "Final file MD5 mismatch for {}: expected {}, got {}",
@@ -1215,14 +1382,12 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     writer: &mut W,
     offset: u64,
     expected_size: u64,
-    expected_hash: &str,
-    file_hasher: &mut Md5,
-) -> Result<String, Box<dyn std::error::Error>> {
+    mut file_hasher: Option<&mut Md5>,
+) -> Result<u64, Box<dyn std::error::Error>> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
-    let mut hasher = Md5::new();
     let mut total_written = 0u64;
-    let mut buf = vec![0u8; 1024 * 1024];
+    let mut buf = vec![0u8; DECOMPRESSION_BUFFER_SIZE];
 
     writer.seek(SeekFrom::Start(offset))?;
 
@@ -1231,8 +1396,9 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
         if n == 0 {
             break;
         }
-        hasher.update(&buf[..n]);
-        file_hasher.update(&buf[..n]);
+        if let Some(hasher) = file_hasher.as_mut() {
+            hasher.update(&buf[..n]);
+        }
         writer.write_all(&buf[..n])?;
         total_written += n as u64;
     }
@@ -1245,16 +1411,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
         .into());
     }
 
-    let hash = format!("{:x}", hasher.finalize());
-    if !expected_hash.is_empty() && hash != expected_hash {
-        return Err(format!(
-            "Decompressed hash mismatch: expected {}, got {}",
-            expected_hash, hash
-        )
-        .into());
-    }
-
-    Ok(hash)
+    Ok(total_written)
 }
 
 fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -1268,16 +1425,25 @@ fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
     format!("{}.zstd", chunk.chunk_name)
 }
 
-fn md5_hex(data: &[u8]) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(data);
-    format!("{:x}", hasher.finalize())
+fn decrement_chunk_refcount(
+    chunk_name: &str,
+    chunk_refcounts: &DashMap<String, usize>,
+    chunks_dir: &Path,
+) {
+    if let Some(mut count) = chunk_refcounts.get_mut(chunk_name) {
+        *count -= 1;
+        if *count == 0 {
+            drop(count);
+            chunk_refcounts.remove(chunk_name);
+            let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_name)));
+        }
+    }
 }
 
 fn file_md5_hex(path: &Path) -> std::io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Md5::new();
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = [0u8; MD5_HASH_BUFFER_SIZE];
     loop {
         let n = file.read(&mut buf)?;
         if n == 0 {
@@ -1288,26 +1454,12 @@ fn file_md5_hex(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn check_file_md5(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
-    if expected_md5.is_empty() {
-        return false;
-    }
-    match path.metadata() {
-        Ok(m) if m.len() == expected_size => {}
-        _ => return false,
-    }
-    match file_md5_hex(path) {
-        Ok(actual) => actual == expected_md5,
-        Err(_) => false,
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VerificationCacheSerializable {
     files: HashMap<String, VerificationEntry>,
 }
 
-fn load_verification_cache(game_dir: &Path) -> VerificationCache {
+fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationEntry> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
     let serializable: VerificationCacheSerializable = match File::open(&cache_path) {
         Ok(f) => serde_json::from_reader(f).unwrap_or(VerificationCacheSerializable {
@@ -1317,21 +1469,23 @@ fn load_verification_cache(game_dir: &Path) -> VerificationCache {
             files: HashMap::new(),
         },
     };
-    let mut cache = VerificationCache::default();
+    let cache = DashMap::new();
     for (k, v) in serializable.files {
-        cache.files.put(k, v);
+        cache.insert(k, v);
     }
     cache
 }
 
-fn save_verification_cache(game_dir: &Path, cache: &VerificationCache) -> std::io::Result<()> {
+fn save_verification_cache(
+    game_dir: &Path,
+    cache: &DashMap<String, VerificationEntry>,
+) -> std::io::Result<()> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
     let f = File::create(&cache_path)?;
     let serializable = VerificationCacheSerializable {
         files: cache
-            .files
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect(),
     };
     serde_json::to_writer(f, &serializable)?;
@@ -1342,7 +1496,7 @@ fn check_file_md5_cached(
     path: &Path,
     expected_size: u64,
     expected_md5: &str,
-    cache: &mut VerificationCache,
+    cache: &DashMap<String, VerificationEntry>,
 ) -> std::io::Result<bool> {
     let path_str = path.to_string_lossy().to_string();
     let metadata = path.metadata()?;
@@ -1352,7 +1506,7 @@ fn check_file_md5_cached(
         .unwrap_or_default()
         .as_secs();
 
-    if let Some(entry) = cache.files.get(&path_str) {
+    if let Some(entry) = cache.get(&path_str) {
         if entry.size == expected_size && entry.md5 == expected_md5 && entry.mtime_secs == mtime {
             return Ok(true);
         }
@@ -1366,7 +1520,7 @@ fn check_file_md5_cached(
     let matches = actual == expected_md5;
 
     if matches {
-        cache.files.put(
+        cache.insert(
             path_str,
             VerificationEntry {
                 size: expected_size,
