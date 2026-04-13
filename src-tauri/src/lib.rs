@@ -9,6 +9,7 @@ pub fn run() {
     apply_nvidia_wayland_workaround();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(64)

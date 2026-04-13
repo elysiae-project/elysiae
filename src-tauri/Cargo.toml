@@ -42,6 +42,7 @@ md-5 = "0.10"
 dashmap = "6.0"
 prost = "0.14.3"
 lru = "0.12"
+tauri-plugin-notification = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.1"

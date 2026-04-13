@@ -1,90 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 The Elysiae Project -->
 <component type="desktop-application">
-    <name>Elysiae</name>
-    <id>app.elysiae.Elysiae</id>
-
-    <developer id="app.elysiae">
-        <name>The Elysiae Project</name>
-    </developer>
-
-    <summary>Universal "Anime Game" Launcher</summary>
-    <description>
-        <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
-        <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and twintail/</p>
-    </description>
-
-    <project_license>BSD-3-Clause</project_license>
-    <metadata_license>CC0-1.0</metadata_license>
-
-    <categories>
-        <category>Game</category>
-        <category>LauncherStore</category>
-    </categories>
-
-    <url type="homepage">https://elysiae.app</url>
-    <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
-
-    <requires>
-        <control>keyboard</control>
-        <control>pointing</control>
-        <control>gamepad</control>
-        <control>touch</control>
-        <display_length compare="ge">1279</display_length> <!--TODO: Handheld (i.e. Steam Deck, ROG Ally, etc.) support-->
-    </requires>
-
-    <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
-    <provides>
-        <id>Elysiae.desktop</id>
-    </provides>
-
-    <branding>
-        <color type="primary" scheme_preference="light">#4bcaf4</color>
-        <color type="primary" scheme_preference="dark">#473a7c</color>    
-    </branding>
-
-    <!--
-    TODO: Create actual release information after 1.0.0 release
-
-    <screenshots>
-        <screenshot type="default">
-            <image></image>
-            <caption>Elysiae's main UI</caption>
-        </screenshot>
-        <screenshot>
-            <image></image>
+  <id>app.elysiae.Elysiae</id>
+  <name>Elysiae</name>
+  <summary>Universal "Anime Game" Launcher</summary>
+  <developer id="app.elysiae">
+    <name>The Elysiae Project</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>BSD-3-Clause</project_license>
+  <description>
+    <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
+    <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and other Linux-based launchers/</p>
+  </description>
+  <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
+  <categories>
+    <category>Game</category>
+    <category>LauncherStore</category>
+  </categories>
+  <provides>
+    <binary>Elysiae</binary>
+    <id>Elysiae.desktop</id>
+  </provides>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>gamepad</control>    <!--No clue if this works, I don't own a controller to be able to test it with-->
+    <control>touch</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">1279</display_length>
+  </requires>
+  <url type="homepage">https://elysiae.app</url>
+  <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
+  <branding>
+    <color type="primary" scheme_preference="light">#4bcaf4</color>
+    <color type="primary" scheme_preference="dark">#473a7c</color>
+  </branding>
+  <!-- TODO: Create actual release information after 1.0.0 release 
+   <screenshots>
+        <screenshot type="default"> 
+            <caption>Elysiae's main UI</caption> 
+        </screenshot> 
+        <screenshot> 
             <caption></caption>
         </screenshot>
     </screenshots>
-
-    <releases>
+    <releases> 
         <release version="1.0.0" date="2026-05-20"> 
-
-        </release>
-    </releases>-->
-
-
-    <!--
-
-
-    The Flathub style guide recommends setting age ratings based on content served from the download servers ("For example, an RSS reader that 
-    doesn't feature any content can be "All Ages", but the rating for a manga app with pre-configured servers should reflect 
-    the content of those default sources"). 
-
-    Similar projects don't do this, but I will do so regardless.
-    Generally, all the content downloaded from this launcher falls into the criteria below, but some may be a bit more or less prevelant in each game
+        </release> 
+    </releases>
     -->
-    <content_rating type="oars-1.1">
-        <content_attribute id="violence-fantasy">moderate</content_attribute>
-        <content_attribute id="violence-bloodshed">mild</content_attribute>
-        <content_attribute id="drugs-alcohol">mild</content_attribute>
-        <content_attribute id="sex-themes">mild</content_attribute>
-        <content_attribute id="language-profanity">mild</content_attribute>
-        <content_attribute id="language-humor">mild</content_attribute>
-        <content_attribute id="social-chat">moderate</content_attribute>
-        <content_attribute id="social-info">moderate</content_attribute>
-        <content_attribute id="social-audio">moderate</content_attribute>
-        <content_attribute id="money-purchasing">intense</content_attribute>
-        <content_attribute id="money-gambling">mild</content_attribute>
-    </content_rating>
+   <content_rating type="oars-1.1">
+    <content_attribute id="violence-fantasy">moderate</content_attribute>
+    <content_attribute id="violence-bloodshed">mild</content_attribute>
+    <content_attribute id="drugs-alcohol">mild</content_attribute>
+    <content_attribute id="sex-themes">mild</content_attribute>
+    <content_attribute id="language-profanity">mild</content_attribute>
+    <content_attribute id="language-humor">mild</content_attribute>
+    <content_attribute id="social-chat">moderate</content_attribute>
+    <content_attribute id="social-info">moderate</content_attribute>
+    <content_attribute id="social-audio">moderate</content_attribute>
+    <content_attribute id="money-purchasing">intense</content_attribute>
+    <content_attribute id="money-gambling">mild</content_attribute>
+  </content_rating>
 </component>

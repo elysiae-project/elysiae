@@ -21,6 +21,7 @@ import {
 } from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
 import { settingsDetails } from "./util/SettingsDetails.ts";
+import GameDownloadProgress from "./components/DownloadProgress.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -109,6 +110,7 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
 							{/* Page content */}
+							<GameDownloadProgress/>
 							<PreinstallButton />
 							<Button
 								intent="primary"

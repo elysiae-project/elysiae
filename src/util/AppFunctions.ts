@@ -100,3 +100,8 @@ export const posixToWinPath = (path: string): string => {
 export const winToPosixPath = (path: string): string => {
 	return `/${path.slice(3).replaceAll("\\", "/")}`;
 };
+
+export const formatNumber = (num: number): string => {
+	return new Intl.NumberFormat(navigator.language).format(num);
+}
+

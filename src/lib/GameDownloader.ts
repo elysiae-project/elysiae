@@ -3,10 +3,11 @@ import { GameData, SophonProgress, Variants } from "../types";
 import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
 import { exists } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
-import { getSettingValue } from "../util/Settings";
+import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
+import { broadcastNotification } from "../util/NotificationHelper";
 
 /**
  * Downloads a fresh install of any game to `games/gameCode`
@@ -14,12 +15,12 @@ import { listen } from "@tauri-apps/api/event";
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
-
+	await broadcastNotification("Download Started!");
 	const unlisten = await listen("sophon://progress", (event) => {
 		const progress = event.payload as SophonProgress;
 		switch (progress.type) {
 			case "fetchingManifest":
-				console.log("Fetching manifest...");
+				info("Fetching manifest...");
 				break;
 			case "downloading": {
 				const downloaded = progress.downloaded_bytes / 1024 ** 2;
@@ -60,6 +61,9 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		});
 	} finally {
 		unlisten();
+		await broadcastNotification(
+			`${gameData.gameCode} has finished downloading!`,
+		);
 	}
 };
 
@@ -195,7 +199,7 @@ export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 const getGameData = async (game: Variants): Promise<GameData> => {
 	const gameCode = getActiveGameCode(game);
 	const gameDir = await join("games", gameCode);
-	const requestedLanguage = (await getSettingValue("voLanguage")) as string;
+	const requestedLanguage = (await getOption("voLanguage")) as string;
 
 	return {
 		gameCode,
