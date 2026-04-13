@@ -37,6 +37,9 @@ const ADAPTIVE_WINDOW_SECS: u64 = 5;
 const ADAPTIVE_INCREASE_THRESHOLD: f64 = 0.05;
 const ADAPTIVE_DECREASE_THRESHOLD: f64 = 0.10;
 const ADAPTIVE_MAX_SAMPLES: usize = 1000;
+const ADAPTIVE_MIN_SAMPLES: usize = 4;
+const ADAPTIVE_INCREMENT_STEP: usize = 4;
+const ADAPTIVE_DECREMENT_STEP: usize = 2;
 
 struct AdaptiveConcurrency {
     current: AtomicUsize,
@@ -73,12 +76,12 @@ fn record_bytes(&self, bytes: u64) {
     }
 }
 
-    fn adjust(&self) -> usize {
-        let samples = self.samples.lock().unwrap();
-        if samples.len() < 4 {
-            drop(samples);
-            return self.current.load(Ordering::Relaxed);
-        }
+fn adjust(&self) -> usize {
+    let samples = self.samples.lock().unwrap();
+    if samples.len() < ADAPTIVE_MIN_SAMPLES {
+        drop(samples);
+        return self.current.load(Ordering::Relaxed);
+    }
 
         let mid = samples.len() / 2;
         let samples_vec: Vec<_> = samples.iter().collect();
@@ -104,22 +107,22 @@ fn record_bytes(&self, bytes: u64) {
 
         drop(samples);
 
-        let current = self.current.load(Ordering::Relaxed);
-        let new_limit = if bw2 > bw1 {
-            let increase_rate = (bw2 - bw1) / bw1.max(1.0);
-            if increase_rate < ADAPTIVE_INCREASE_THRESHOLD {
-                (current + 4).min(ADAPTIVE_MAX_CONCURRENCY)
-            } else {
-                current
-            }
+    let current = self.current.load(Ordering::Relaxed);
+    let new_limit = if bw2 > bw1 {
+        let increase_rate = (bw2 - bw1) / bw1.max(1.0);
+        if increase_rate < ADAPTIVE_INCREASE_THRESHOLD {
+            (current + ADAPTIVE_INCREMENT_STEP).min(ADAPTIVE_MAX_CONCURRENCY)
         } else {
-            let decrease_rate = (bw1 - bw2) / bw1.max(1.0);
-            if decrease_rate > ADAPTIVE_DECREASE_THRESHOLD {
-                (current.saturating_sub(2)).max(ADAPTIVE_MIN_CONCURRENCY)
-            } else {
-                current
-            }
-        };
+            current
+        }
+    } else {
+        let decrease_rate = (bw1 - bw2) / bw1.max(1.0);
+        if decrease_rate > ADAPTIVE_DECREASE_THRESHOLD {
+            (current.saturating_sub(ADAPTIVE_DECREMENT_STEP)).max(ADAPTIVE_MIN_CONCURRENCY)
+        } else {
+            current
+        }
+    };
 
         self.current.store(new_limit, Ordering::Relaxed);
         new_limit
