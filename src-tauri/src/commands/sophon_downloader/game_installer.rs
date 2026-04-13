@@ -9,17 +9,15 @@ use super::proto_parse::{
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
-use lru::LruCache;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
-use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, Semaphore, mpsc};
@@ -137,21 +135,6 @@ const SOPHON_BUILD_URL_BASE: &str = concat!(
     "https://sg-public-api.hoyoverse.com",
     "/downloader/sophon_chunk/api/getBuild"
 );
-
-const VERIFICATION_CACHE_MAX_ENTRIES: usize = 50000;
-
-#[derive(Debug)]
-struct VerificationCache {
-    files: LruCache<String, VerificationEntry>,
-}
-
-impl Default for VerificationCache {
-    fn default() -> Self {
-        Self {
-            files: LruCache::new(NonZeroUsize::new(VERIFICATION_CACHE_MAX_ENTRIES).unwrap()),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VerificationEntry {
@@ -592,8 +575,8 @@ pub async fn install(
 
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let assembled_files = Arc::new(AtomicU64::new(0));
-    let verify_cache: Arc<RwLock<VerificationCache>> =
-        Arc::new(RwLock::new(load_verification_cache(game_dir)));
+    let verify_cache: Arc<DashMap<String, VerificationEntry>> =
+        Arc::new(load_verification_cache(game_dir));
 
     let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
 
@@ -800,8 +783,7 @@ pub async fn install(
                     let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
                     let cache = Arc::clone(&verify_cache);
                     !tokio::task::spawn_blocking(move || {
-                        let mut cache = cache.write().unwrap();
-                        check_file_md5_cached(&dest_check, chunk_size, &expected_md5, &mut cache)
+                        check_file_md5_cached(&dest_check, chunk_size, &expected_md5, &cache)
                             .unwrap_or(false)
                     })
                     .await
@@ -930,8 +912,7 @@ pub async fn install(
         .map_err(|e| e.to_string())?;
 
     {
-        let cache = verify_cache.read().unwrap();
-        let _ = save_verification_cache(game_dir, &cache);
+        let _ = save_verification_cache(game_dir, &verify_cache);
     }
 
     if !deleted_files.is_empty() {
@@ -1248,7 +1229,7 @@ fn assemble_file(
     chunks_dir: &Path,
     temp_dir: &Path,
     chunk_refcounts: &DashMap<String, usize>,
-    verify_cache: &Arc<RwLock<VerificationCache>>,
+    verify_cache: &DashMap<String, VerificationEntry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!(
@@ -1257,14 +1238,12 @@ fn assemble_file(
     ));
 
     if target_path.exists() {
-        let mut cache = verify_cache.write().unwrap();
         let already_valid = check_file_md5_cached(
             &target_path,
             file.asset_size,
             &file.asset_hash_md5,
-            &mut cache,
+            verify_cache,
         )?;
-        drop(cache);
 
         if already_valid {
             for chunk in &file.asset_chunks {
@@ -1421,7 +1400,7 @@ struct VerificationCacheSerializable {
     files: HashMap<String, VerificationEntry>,
 }
 
-fn load_verification_cache(game_dir: &Path) -> VerificationCache {
+fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationEntry> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
     let serializable: VerificationCacheSerializable = match File::open(&cache_path) {
         Ok(f) => serde_json::from_reader(f).unwrap_or(VerificationCacheSerializable {
@@ -1431,21 +1410,23 @@ fn load_verification_cache(game_dir: &Path) -> VerificationCache {
             files: HashMap::new(),
         },
     };
-    let mut cache = VerificationCache::default();
+    let cache = DashMap::new();
     for (k, v) in serializable.files {
-        cache.files.put(k, v);
+        cache.insert(k, v);
     }
     cache
 }
 
-fn save_verification_cache(game_dir: &Path, cache: &VerificationCache) -> std::io::Result<()> {
+fn save_verification_cache(
+    game_dir: &Path,
+    cache: &DashMap<String, VerificationEntry>,
+) -> std::io::Result<()> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
     let f = File::create(&cache_path)?;
     let serializable = VerificationCacheSerializable {
         files: cache
-            .files
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect(),
     };
     serde_json::to_writer(f, &serializable)?;
@@ -1456,7 +1437,7 @@ fn check_file_md5_cached(
     path: &Path,
     expected_size: u64,
     expected_md5: &str,
-    cache: &mut VerificationCache,
+    cache: &DashMap<String, VerificationEntry>,
 ) -> std::io::Result<bool> {
     let path_str = path.to_string_lossy().to_string();
     let metadata = path.metadata()?;
@@ -1466,7 +1447,7 @@ fn check_file_md5_cached(
         .unwrap_or_default()
         .as_secs();
 
-    if let Some(entry) = cache.files.get(&path_str) {
+    if let Some(entry) = cache.get(&path_str) {
         if entry.size == expected_size && entry.md5 == expected_md5 && entry.mtime_secs == mtime {
             return Ok(true);
         }
@@ -1480,7 +1461,7 @@ fn check_file_md5_cached(
     let matches = actual == expected_md5;
 
     if matches {
-        cache.files.put(
+        cache.insert(
             path_str,
             VerificationEntry {
                 size: expected_size,
