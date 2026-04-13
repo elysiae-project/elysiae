@@ -29,6 +29,11 @@ const ASSEMBLY_CONCURRENCY: usize = 4;
 const VERSION_FILE_NAME: &str = ".sophon_version";
 const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
+const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 256 * 1024;
+const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
+const DECOMPRESSION_BUFFER_SIZE: usize = 1024 * 1024;
+const MD5_HASH_BUFFER_SIZE: usize = 1024 * 1024;
+
 const ADAPTIVE_MIN_CONCURRENCY: usize = 4;
 const ADAPTIVE_MAX_CONCURRENCY: usize = 32;
 const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
@@ -1197,14 +1202,13 @@ async fn download_chunk(
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
-    const BUFFER_SIZE: usize = 256 * 1024;
-    let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
+    let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
 
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;
         hasher.update(&bytes);
         buffer.extend_from_slice(&bytes);
-        if buffer.len() >= BUFFER_SIZE {
+        if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
             file.write_all(&buffer).await?;
             buffer.clear();
         }
@@ -1322,7 +1326,7 @@ fn assemble_file(
         .open(&tmp_path)?;
     out_file.set_len(file.asset_size)?;
 
-    let mut buf_writer = BufWriter::with_capacity(1024 * 1024, out_file);
+    let mut buf_writer = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, out_file);
     let mut total_written: u64 = 0;
     let mut file_hasher = if file.asset_hash_md5.is_empty() {
         None
@@ -1383,7 +1387,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
     let mut total_written = 0u64;
-    let mut buf = vec![0u8; 1024 * 1024];
+    let mut buf = vec![0u8; DECOMPRESSION_BUFFER_SIZE];
 
     writer.seek(SeekFrom::Start(offset))?;
 
@@ -1439,7 +1443,7 @@ fn decrement_chunk_refcount(
 fn file_md5_hex(path: &Path) -> std::io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Md5::new();
-    let mut buf = [0u8; 1024 * 1024];
+    let mut buf = [0u8; MD5_HASH_BUFFER_SIZE];
     loop {
         let n = file.read(&mut buf)?;
         if n == 0 {
