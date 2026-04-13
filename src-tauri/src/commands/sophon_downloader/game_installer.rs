@@ -80,22 +80,22 @@ impl AdaptiveConcurrency {
     }
 
     fn can_start(&self) -> bool {
-        self.active.load(Ordering::Relaxed) < self.target.load(Ordering::Relaxed)
+        self.active.load(Ordering::Acquire) < self.target.load(Ordering::Acquire)
     }
 
     fn inc_active(&self) {
-        self.active.fetch_add(1, Ordering::Relaxed);
+        self.active.fetch_add(1, Ordering::AcqRel);
     }
 
     fn dec_active(&self) {
-        self.active.fetch_sub(1, Ordering::Relaxed);
+        self.active.fetch_sub(1, Ordering::AcqRel);
     }
 
     fn adjust(&self) -> usize {
         let mut window_start = self.window_start.lock().unwrap();
         let now = Instant::now();
         let elapsed = now.duration_since(*window_start).as_secs_f64();
-        let current = self.target.load(Ordering::Relaxed);
+        let current = self.target.load(Ordering::Acquire);
 
         if elapsed < ADAPTIVE_WINDOW_SECS as f64 {
             drop(window_start);
@@ -122,7 +122,7 @@ impl AdaptiveConcurrency {
 
         *window_start = now;
         self.window_start_bytes.store(total, Ordering::Relaxed);
-        self.target.store(new_limit, Ordering::Relaxed);
+        self.target.store(new_limit, Ordering::Release);
         new_limit
     }
 }
