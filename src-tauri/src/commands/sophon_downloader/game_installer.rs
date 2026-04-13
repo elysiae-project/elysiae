@@ -615,44 +615,20 @@ pub async fn install(
                             let last_assembly_update = Arc::clone(&last_assembly_update);
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
-                                if file_idx >= all_files.len() {
-                                    return Err(format!("file index {} out of bounds", file_idx));
-                                }
-                                if tmp_dir_idx >= all_tmp_dirs.len() {
-                                    return Err(format!(
-                                        "tmp_dir index {} out of bounds",
-                                        tmp_dir_idx
-                                    ));
-                                }
-                                let file = &all_files[file_idx];
-                                let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
-                                let verify_cache = Arc::clone(&verify_cache);
-                                assemble_file(
-                                    file,
-                                    &game_dir,
-                                    &chunks_dir,
-                                    tmp_dir,
-                                    &chunk_refcounts,
-                                    &verify_cache,
+                                run_assembly_task(
+                                    file_idx,
+                                    tmp_dir_idx,
+                                    all_files,
+                                    all_tmp_dirs,
+                                    game_dir,
+                                    chunks_dir,
+                                    chunk_refcounts,
+                                    verify_cache,
+                                    assembled_files,
+                                    last_assembly_update,
+                                    updater,
+                                    total_files,
                                 )
-                                .map_err(|e| {
-                                    format!("Failed to assemble {}: {e}", file.asset_name)
-                                })?;
-
-                                let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
-
-                                {
-                                    let mut lu = last_assembly_update.lock().unwrap();
-                                    if lu.elapsed() >= Duration::from_millis(1000) {
-                                        updater(SophonProgress::Assembling {
-                                            assembled_files: count,
-                                            total_files,
-                                        });
-                                        *lu = Instant::now();
-                                    }
-                                }
-
-                                Ok::<(), String>(())
                             }));
                         }
                         Err(mpsc::error::TryRecvError::Empty) => break,
@@ -679,44 +655,20 @@ pub async fn install(
                             let last_assembly_update = Arc::clone(&last_assembly_update);
 
                             join_set.spawn(tokio::task::spawn_blocking(move || {
-                                if file_idx >= all_files.len() {
-                                    return Err(format!("file index {} out of bounds", file_idx));
-                                }
-                                if tmp_dir_idx >= all_tmp_dirs.len() {
-                                    return Err(format!(
-                                        "tmp_dir index {} out of bounds",
-                                        tmp_dir_idx
-                                    ));
-                                }
-                                let file = &all_files[file_idx];
-                                let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
-                                let verify_cache = Arc::clone(&verify_cache);
-                                assemble_file(
-                                    file,
-                                    &game_dir,
-                                    &chunks_dir,
-                                    tmp_dir,
-                                    &chunk_refcounts,
-                                    &verify_cache,
+                                run_assembly_task(
+                                    file_idx,
+                                    tmp_dir_idx,
+                                    all_files,
+                                    all_tmp_dirs,
+                                    game_dir,
+                                    chunks_dir,
+                                    chunk_refcounts,
+                                    verify_cache,
+                                    assembled_files,
+                                    last_assembly_update,
+                                    updater,
+                                    total_files,
                                 )
-                                .map_err(|e| {
-                                    format!("Failed to assemble {}: {e}", file.asset_name)
-                                })?;
-
-                                let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
-
-                                {
-                                    let mut lu = last_assembly_update.lock().unwrap();
-                                    if lu.elapsed() >= Duration::from_millis(1000) {
-                                        updater(SophonProgress::Assembling {
-                                            assembled_files: count,
-                                            total_files,
-                                        });
-                                        *lu = Instant::now();
-                                    }
-                                }
-
-                                Ok::<(), String>(())
                             }));
                         }
                         None => {
@@ -1319,6 +1271,55 @@ fn validate_asset_name(name: &str) -> Result<(), String> {
             return Err(format!("asset_name cannot contain drive letters: {}", name));
         }
     }
+    Ok(())
+}
+
+fn run_assembly_task(
+    file_idx: usize,
+    tmp_dir_idx: usize,
+    all_files: Arc<Vec<SophonManifestAssetProperty>>,
+    all_tmp_dirs: Arc<Vec<PathBuf>>,
+    game_dir: PathBuf,
+    chunks_dir: Arc<PathBuf>,
+    chunk_refcounts: Arc<DashMap<String, usize>>,
+    verify_cache: Arc<DashMap<String, VerificationEntry>>,
+    assembled_files: Arc<AtomicU64>,
+    last_assembly_update: Arc<Mutex<Instant>>,
+    updater: impl Fn(SophonProgress) + Send + Sync + 'static,
+    total_files: u64,
+) -> Result<(), String> {
+    if file_idx >= all_files.len() {
+        return Err(format!("file index {} out of bounds", file_idx));
+    }
+    if tmp_dir_idx >= all_tmp_dirs.len() {
+        return Err(format!("tmp_dir index {} out of bounds", tmp_dir_idx));
+    }
+    let file = &all_files[file_idx];
+    let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
+    let verify_cache = Arc::clone(&verify_cache);
+    assemble_file(
+        file,
+        &game_dir,
+        &chunks_dir,
+        tmp_dir,
+        &chunk_refcounts,
+        &verify_cache,
+    )
+    .map_err(|e| format!("Failed to assemble {}: {e}", file.asset_name))?;
+
+    let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
+
+    {
+        let mut lu = last_assembly_update.lock().unwrap();
+        if lu.elapsed() >= Duration::from_millis(1000) {
+            updater(SophonProgress::Assembling {
+                assembled_files: count,
+                total_files,
+            });
+            *lu = Instant::now();
+        }
+    }
+
     Ok(())
 }
 
