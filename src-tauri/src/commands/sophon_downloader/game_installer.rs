@@ -1408,7 +1408,7 @@ fn md5_hex(data: &[u8]) -> String {
 fn file_md5_hex(path: &Path) -> std::io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Md5::new();
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = [0u8; 1024 * 1024];
     loop {
         let n = file.read(&mut buf)?;
         if n == 0 {
