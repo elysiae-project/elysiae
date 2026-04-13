@@ -734,7 +734,7 @@ pub async fn install(
                 .map_err(|e| e.to_string())?;
         }
 
-        for _file in &data.files {
+        for _ in 0..data.files.len() {
             let file = &all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
