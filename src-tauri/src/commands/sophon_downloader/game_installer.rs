@@ -1340,7 +1340,7 @@ fn assemble_file(
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
-        decompress_and_write_chunk_buffered(
+        let bytes_written = decompress_and_write_chunk_buffered(
             &chunk_path,
             &mut buf_writer,
             chunk.chunk_on_file_offset,
@@ -1348,7 +1348,7 @@ fn assemble_file(
             file_hasher.as_mut(),
         )?;
 
-        total_written += chunk.chunk_size_decompressed;
+        total_written += bytes_written;
 
         if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
             *count -= 1;
@@ -1393,7 +1393,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
     offset: u64,
     expected_size: u64,
     mut file_hasher: Option<&mut Md5>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<u64, Box<dyn std::error::Error>> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
     let mut total_written = 0u64;
@@ -1421,7 +1421,7 @@ fn decompress_and_write_chunk_buffered<W: Write + Seek>(
         .into());
     }
 
-    Ok(())
+    Ok(total_written)
 }
 
 fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
