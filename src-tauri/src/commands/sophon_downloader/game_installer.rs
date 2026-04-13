@@ -26,6 +26,7 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_RETRIES: u32 = 4;
 const ASSEMBLY_CONCURRENCY: usize = 4;
+const ASSEMBLY_CHANNEL_SIZE: usize = ASSEMBLY_CONCURRENCY * 4;
 const VERSION_FILE_NAME: &str = ".sophon_version";
 const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
@@ -582,7 +583,7 @@ pub async fn install(
 
     let last_assembly_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
 
-    let (assemble_tx, assemble_rx) = mpsc::unbounded_channel::<(usize, usize)>();
+    let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
 
     let assembly_task = {
         let chunks_dir = Arc::clone(&chunks_dir);
@@ -761,7 +762,7 @@ pub async fn install(
             let file = &all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
-                let _ = assemble_tx.send((file_idx, tmp_dir_idx));
+                let _ = assemble_tx.send((file_idx, tmp_dir_idx)).await;
                 file_idx += 1;
                 continue;
             }
@@ -939,7 +940,7 @@ pub async fn install(
                 };
 
                 for entry in ready {
-                    let _ = assemble_tx.send(entry);
+                    let _ = assemble_tx.send(entry).await;
                 }
 
                 Ok(())
