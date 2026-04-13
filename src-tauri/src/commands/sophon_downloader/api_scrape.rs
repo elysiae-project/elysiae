@@ -109,10 +109,10 @@ pub struct Stats {
 
 pub fn front_door_game_index(game_id: &str) -> Option<usize> {
     match game_id.to_lowercase().as_str() {
-        "bh3"    => Some(3),
-        "hk4e"   => Some(2),
-        "hkrpg"  => Some(1),
-        "nap"   => Some(0),
-        _        => None,
+        "bh3" => Some(3),
+        "hk4e" => Some(2),
+        "hkrpg" => Some(1),
+        "nap" => Some(0),
+        _ => None,
     }
 }
