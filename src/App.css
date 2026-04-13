@@ -119,17 +119,17 @@
 
 @font-face {
 	font-family: ys;
-	src: url("/assets/font/YS.woff2");
+	src: url("/font/YS.woff2");
 }
 
 @font-face {
 	font-family: bh3-sr;
-	src: url("/assets/font/BH-SR.woff2");
+	src: url("/font/BH-SR.woff2");
 }
 
 @font-face {
 	font-family: nap;
-	src: url("/assets/font/NAP.woff2");
+	src: url("/font/NAP.woff2");
 }
 
 * {

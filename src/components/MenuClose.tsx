@@ -27,7 +27,7 @@ export default function MenuClose({
 	clickAction: () => void;
 }) {
 	const { game } = useGame();
-	const assetPath = `/assets/icon/${getActiveGameCode(game)}`;
+	const assetPath = `/icon/${getActiveGameCode(game)}`;
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
