@@ -771,8 +771,10 @@ pub async fn install(
             let adaptive = Arc::clone(&adaptive);
             let semaphore = Arc::clone(&semaphore);
 
-            async move {
-                let _permit = semaphore.acquire().await.unwrap();
+async move {
+    let _permit = semaphore.acquire().await.map_err(|_| {
+        "semaphore closed unexpectedly".to_string()
+    })?;
                 // Pause / cancel check before each chunk.
                 {
                     let db = downloaded_bytes.load(Ordering::Relaxed);
