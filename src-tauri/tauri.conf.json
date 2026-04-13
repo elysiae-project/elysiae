@@ -44,7 +44,7 @@
 			"resources/settings.json": "settings.json"
 		},
 		"active": true,
-		"targets": ["deb"],
+		"targets": "app",
 		"linux": {
 			"deb": {
 				"files": {
