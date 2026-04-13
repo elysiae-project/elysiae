@@ -6,6 +6,7 @@ use super::api_scrape::{
 use super::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto, decode_manifest,
 };
+use bytes::BytesMut;
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
@@ -1208,11 +1209,22 @@ async fn download_chunk(
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
+    const BUFFER_SIZE: usize = 256 * 1024;
+    let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
+
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;
         hasher.update(&bytes);
-        file.write_all(&bytes).await?;
+        buffer.extend_from_slice(&bytes);
+        if buffer.len() >= BUFFER_SIZE {
+            file.write_all(&buffer).await?;
+            buffer.clear();
+        }
         total_len += bytes.len() as u64;
+    }
+
+    if !buffer.is_empty() {
+        file.write_all(&buffer).await?;
     }
 
     if total_len != chunk.chunk_size {
