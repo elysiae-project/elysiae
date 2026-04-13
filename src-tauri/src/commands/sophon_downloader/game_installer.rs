@@ -773,12 +773,11 @@ pub async fn install(
     }
 
     let adaptive = Arc::new(AdaptiveConcurrency::new());
-    let semaphore = Arc::new(Semaphore::new(ADAPTIVE_INITIAL_CONCURRENCY));
+    let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
     let cancel_token = CancellationToken::new();
 
     {
         let adaptive = Arc::clone(&adaptive);
-        let semaphore = Arc::clone(&semaphore);
         let token = cancel_token.clone();
 
         tokio::spawn(async move {
@@ -787,11 +786,7 @@ pub async fn install(
                 tokio::select! {
                     _ = token.cancelled() => break,
                     _ = interval.tick() => {
-                        let new_limit = adaptive.adjust();
-                        let current = semaphore.available_permits();
-                        if new_limit > current {
-                            semaphore.add_permits(new_limit - current);
-                        }
+                        adaptive.adjust();
                     }
                 }
             }
