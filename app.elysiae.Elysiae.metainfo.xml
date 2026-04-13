@@ -17,10 +17,6 @@
     <category>Game</category>
     <category>LauncherStore</category>
   </categories>
-  <provides>
-    <binary>Elysiae</binary>
-    <id>Elysiae.desktop</id>
-  </provides>
   <supports>
     <control>keyboard</control>
     <control>pointing</control>
