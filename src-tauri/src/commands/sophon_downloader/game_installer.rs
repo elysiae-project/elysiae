@@ -36,6 +36,7 @@ const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
 const ADAPTIVE_WINDOW_SECS: u64 = 5;
 const ADAPTIVE_INCREASE_THRESHOLD: f64 = 0.05;
 const ADAPTIVE_DECREASE_THRESHOLD: f64 = 0.10;
+const ADAPTIVE_MAX_SAMPLES: usize = 1000;
 
 struct AdaptiveConcurrency {
     current: AtomicUsize,
@@ -52,21 +53,25 @@ impl AdaptiveConcurrency {
         }
     }
 
-    fn record_bytes(&self, bytes: u64) {
-        let total = self.total_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
-        let now = Instant::now();
-        let mut samples = self.samples.lock().unwrap();
-        samples.push_back((now, total));
+fn record_bytes(&self, bytes: u64) {
+    let total = self.total_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
+    let now = Instant::now();
+    let mut samples = self.samples.lock().unwrap();
+    samples.push_back((now, total));
 
-        let cutoff = now - Duration::from_secs(ADAPTIVE_WINDOW_SECS);
-        while let Some((time, _)) = samples.front() {
-            if *time < cutoff {
-                samples.pop_front();
-            } else {
-                break;
-            }
+    let cutoff = now - Duration::from_secs(ADAPTIVE_WINDOW_SECS);
+    while let Some((time, _)) = samples.front() {
+        if *time < cutoff {
+            samples.pop_front();
+        } else {
+            break;
         }
     }
+
+    while samples.len() > ADAPTIVE_MAX_SAMPLES {
+        samples.pop_front();
+    }
+}
 
     fn adjust(&self) -> usize {
         let samples = self.samples.lock().unwrap();
