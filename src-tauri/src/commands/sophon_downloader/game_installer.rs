@@ -34,6 +34,23 @@ const ADAPTIVE_MAX_CONCURRENCY: usize = 32;
 const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
 const ADAPTIVE_WINDOW_SECS: u64 = 2;
 
+struct ActiveGuard<'a> {
+    adaptive: &'a AdaptiveConcurrency,
+}
+
+impl<'a> ActiveGuard<'a> {
+    fn new(adaptive: &'a AdaptiveConcurrency) -> Self {
+        adaptive.inc_active();
+        Self { adaptive }
+    }
+}
+
+impl<'a> Drop for ActiveGuard<'a> {
+    fn drop(&mut self) {
+        self.adaptive.dec_active();
+    }
+}
+
 struct AdaptiveConcurrency {
     target: AtomicUsize,
     active: AtomicUsize,
@@ -797,10 +814,11 @@ pub async fn install(
             let semaphore = Arc::clone(&semaphore);
 
             async move {
-                let _permit = semaphore
-                    .acquire()
-                    .await
-                    .map_err(|_| "semaphore closed unexpectedly".to_string())?;
+                while !adaptive.can_start() {
+                    tokio::task::yield_now().await;
+                }
+                let _guard = ActiveGuard::new(&adaptive);
+                let _permit = semaphore.acquire().await.map_err(|e| format!("{e}"))?;
                 // Pause / cancel check before each chunk.
                 {
                     let db = downloaded_bytes.load(Ordering::Relaxed);
