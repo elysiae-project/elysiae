@@ -50,27 +50,29 @@ impl AdaptiveConcurrency {
         Self {
             current: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
             total_bytes: AtomicU64::new(0),
-            samples: Mutex::new(VecDeque::new()),
+            samples: Mutex::new(VecDeque::with_capacity(ADAPTIVE_MAX_SAMPLES)),
         }
     }
 
     fn record_bytes(&self, bytes: u64) {
         let total = self.total_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
         let now = Instant::now();
-        let mut samples = self.samples.lock().unwrap();
-        samples.push_back((now, total));
 
-        let cutoff = now - Duration::from_secs(ADAPTIVE_WINDOW_SECS);
-        while let Some((time, _)) = samples.front() {
-            if *time < cutoff {
-                samples.pop_front();
-            } else {
-                break;
+        if let Ok(mut samples) = self.samples.try_lock() {
+            samples.push_back((now, total));
+
+            let cutoff = now - Duration::from_secs(ADAPTIVE_WINDOW_SECS);
+            while let Some((time, _)) = samples.front() {
+                if *time < cutoff {
+                    samples.pop_front();
+                } else {
+                    break;
+                }
             }
-        }
 
-        while samples.len() > ADAPTIVE_MAX_SAMPLES {
-            samples.pop_front();
+            while samples.len() > ADAPTIVE_MAX_SAMPLES {
+                samples.pop_front();
+            }
         }
     }
 
