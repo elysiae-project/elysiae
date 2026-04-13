@@ -1,7 +1,7 @@
 pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
-use game_installer::{DownloadHandle, UpdateInfo};
+use game_installer::{DownloadHandle, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::path::BaseDirectory;
@@ -89,7 +89,7 @@ pub async fn sophon_update(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    let current_tag = game_installer::read_installed_tag_pub(&game_dir)
+    let current_tag = read_installed_tag(&game_dir)
         .ok_or("No installed version found — cannot update")?;
 
     emit(&app_handle, SophonProgress::FetchingManifest);
