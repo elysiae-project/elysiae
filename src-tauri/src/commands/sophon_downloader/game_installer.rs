@@ -35,7 +35,8 @@ const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
 const ADAPTIVE_WINDOW_SECS: u64 = 2;
 
 struct AdaptiveConcurrency {
-    current: AtomicUsize,
+    target: AtomicUsize,
+    active: AtomicUsize,
     total_bytes: AtomicU64,
     window_start: Mutex<Instant>,
     window_start_bytes: AtomicU64,
@@ -44,7 +45,8 @@ struct AdaptiveConcurrency {
 impl AdaptiveConcurrency {
     fn new() -> Self {
         Self {
-            current: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
+            target: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
+            active: AtomicUsize::new(0),
             total_bytes: AtomicU64::new(0),
             window_start: Mutex::new(Instant::now()),
             window_start_bytes: AtomicU64::new(0),
@@ -55,11 +57,27 @@ impl AdaptiveConcurrency {
         self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
+    fn can_start(&self) -> bool {
+        self.active.load(Ordering::Relaxed) < self.target.load(Ordering::Relaxed)
+    }
+
+    fn inc_active(&self) {
+        self.active.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn dec_active(&self) {
+        self.active.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn target(&self) -> usize {
+        self.target.load(Ordering::Relaxed)
+    }
+
     fn adjust(&self) -> usize {
         let mut window_start = self.window_start.lock().unwrap();
         let now = Instant::now();
         let elapsed = now.duration_since(*window_start).as_secs_f64();
-        let current = self.current.load(Ordering::Relaxed);
+        let current = self.target.load(Ordering::Relaxed);
 
         if elapsed < ADAPTIVE_WINDOW_SECS as f64 {
             drop(window_start);
@@ -86,7 +104,7 @@ impl AdaptiveConcurrency {
 
         *window_start = now;
         self.window_start_bytes.store(total, Ordering::Relaxed);
-        self.current.store(new_limit, Ordering::Relaxed);
+        self.target.store(new_limit, Ordering::Relaxed);
         new_limit
     }
 }
