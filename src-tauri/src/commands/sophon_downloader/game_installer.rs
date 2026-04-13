@@ -1301,14 +1301,7 @@ fn assemble_file(
 
         if already_valid {
             for chunk in &file.asset_chunks {
-                if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
-                    *count -= 1;
-                    if *count == 0 {
-                        drop(count);
-                        chunk_refcounts.remove(&chunk.chunk_name);
-                        let _ = fs::remove_file(chunks_dir.join(chunk_filename(chunk)));
-                    }
-                }
+                decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
             }
             return Ok(());
         }
@@ -1350,14 +1343,7 @@ fn assemble_file(
 
         total_written += bytes_written;
 
-        if let Some(mut count) = chunk_refcounts.get_mut(&chunk.chunk_name) {
-            *count -= 1;
-            if *count == 0 {
-                drop(count);
-                chunk_refcounts.remove(&chunk.chunk_name);
-                let _ = fs::remove_file(&chunk_path);
-            }
-        }
+        decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
     }
 
     buf_writer.flush()?;
@@ -1433,6 +1419,21 @@ fn zstd_decompress(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + 
 
 fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
     format!("{}.zstd", chunk.chunk_name)
+}
+
+fn decrement_chunk_refcount(
+    chunk_name: &str,
+    chunk_refcounts: &DashMap<String, usize>,
+    chunks_dir: &Path,
+) {
+    if let Some(mut count) = chunk_refcounts.get_mut(chunk_name) {
+        *count -= 1;
+        if *count == 0 {
+            drop(count);
+            chunk_refcounts.remove(chunk_name);
+            let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_name)));
+        }
+    }
 }
 
 fn file_md5_hex(path: &Path) -> std::io::Result<String> {
