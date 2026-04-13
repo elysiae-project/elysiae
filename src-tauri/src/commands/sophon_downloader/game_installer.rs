@@ -13,7 +13,7 @@ use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -32,18 +32,13 @@ const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 const ADAPTIVE_MIN_CONCURRENCY: usize = 4;
 const ADAPTIVE_MAX_CONCURRENCY: usize = 32;
 const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
-const ADAPTIVE_WINDOW_SECS: u64 = 5;
-const ADAPTIVE_INCREASE_THRESHOLD: f64 = 0.05;
-const ADAPTIVE_DECREASE_THRESHOLD: f64 = 0.10;
-const ADAPTIVE_MAX_SAMPLES: usize = 1000;
-const ADAPTIVE_MIN_SAMPLES: usize = 4;
-const ADAPTIVE_INCREMENT_STEP: usize = 4;
-const ADAPTIVE_DECREMENT_STEP: usize = 2;
+const ADAPTIVE_WINDOW_SECS: u64 = 2;
 
 struct AdaptiveConcurrency {
     current: AtomicUsize,
     total_bytes: AtomicU64,
-    samples: Mutex<VecDeque<(Instant, u64)>>,
+    window_start: Mutex<Instant>,
+    window_start_bytes: AtomicU64,
 }
 
 impl AdaptiveConcurrency {
@@ -51,80 +46,46 @@ impl AdaptiveConcurrency {
         Self {
             current: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
             total_bytes: AtomicU64::new(0),
-            samples: Mutex::new(VecDeque::with_capacity(ADAPTIVE_MAX_SAMPLES)),
+            window_start: Mutex::new(Instant::now()),
+            window_start_bytes: AtomicU64::new(0),
         }
     }
 
     fn record_bytes(&self, bytes: u64) {
-        let total = self.total_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
-        let now = Instant::now();
-
-        if let Ok(mut samples) = self.samples.try_lock() {
-            samples.push_back((now, total));
-
-            let cutoff = now - Duration::from_secs(ADAPTIVE_WINDOW_SECS);
-            while let Some((time, _)) = samples.front() {
-                if *time < cutoff {
-                    samples.pop_front();
-                } else {
-                    break;
-                }
-            }
-
-            while samples.len() > ADAPTIVE_MAX_SAMPLES {
-                samples.pop_front();
-            }
-        }
+        self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
     fn adjust(&self) -> usize {
-        let samples = self.samples.lock().unwrap();
-        if samples.len() < ADAPTIVE_MIN_SAMPLES {
-            drop(samples);
-            return self.current.load(Ordering::Relaxed);
+        let mut window_start = self.window_start.lock().unwrap();
+        let now = Instant::now();
+        let elapsed = now.duration_since(*window_start).as_secs_f64();
+        let current = self.current.load(Ordering::Relaxed);
+
+        if elapsed < ADAPTIVE_WINDOW_SECS as f64 {
+            drop(window_start);
+            return current;
         }
 
-        let mid = samples.len() / 2;
-        let samples_vec: Vec<_> = samples.iter().collect();
+        let total = self.total_bytes.load(Ordering::Relaxed);
+        let start_bytes = self.window_start_bytes.load(Ordering::Relaxed);
+        let bytes_this_window = total.saturating_sub(start_bytes);
+        let throughput_bps = bytes_this_window as f64 / elapsed;
+        let throughput_mbps = throughput_bps / 1_048_576.0;
 
-        let (t1_first, b1_first) = samples_vec[0];
-        let (t1_last, b1_last) = samples_vec[mid - 1];
-        let (t2_first, b2_first) = samples_vec[mid];
-        let (t2_last, b2_last) = samples_vec[samples_vec.len() - 1];
-
-        let dt1 = t1_last.duration_since(*t1_first).as_secs_f64();
-        let dt2 = t2_last.duration_since(*t2_first).as_secs_f64();
-
-        let bw1 = if dt1 > 0.0 {
-            (b1_last - b1_first) as f64 / dt1
+        let new_limit = if throughput_mbps > 100.0 {
+            (current + 4).min(ADAPTIVE_MAX_CONCURRENCY)
+        } else if throughput_mbps > 50.0 {
+            (current + 2).min(ADAPTIVE_MAX_CONCURRENCY)
+        } else if throughput_mbps > 20.0 {
+            current
+        } else if throughput_mbps > 10.0 {
+            current.saturating_sub(1).max(ADAPTIVE_MIN_CONCURRENCY)
         } else {
-            0.0
-        };
-        let bw2 = if dt2 > 0.0 {
-            (b2_last - b2_first) as f64 / dt2
-        } else {
-            0.0
+            current.saturating_sub(2).max(ADAPTIVE_MIN_CONCURRENCY)
         };
 
-        drop(samples);
-
-        let current = self.current.load(Ordering::Relaxed);
-        let new_limit = if bw2 > bw1 {
-            let increase_rate = (bw2 - bw1) / bw1.max(1.0);
-            if increase_rate < ADAPTIVE_INCREASE_THRESHOLD {
-                (current + ADAPTIVE_INCREMENT_STEP).min(ADAPTIVE_MAX_CONCURRENCY)
-            } else {
-                current
-            }
-        } else {
-            let decrease_rate = (bw1 - bw2) / bw1.max(1.0);
-            if decrease_rate > ADAPTIVE_DECREASE_THRESHOLD {
-                (current.saturating_sub(ADAPTIVE_DECREMENT_STEP)).max(ADAPTIVE_MIN_CONCURRENCY)
-            } else {
-                current
-            }
-        };
-
+        *window_start = now;
+        self.window_start_bytes.store(total, Ordering::Relaxed);
         self.current.store(new_limit, Ordering::Relaxed);
         new_limit
     }
