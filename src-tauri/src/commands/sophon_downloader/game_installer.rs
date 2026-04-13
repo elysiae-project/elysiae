@@ -35,6 +35,8 @@ const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
 const DECOMPRESSION_BUFFER_SIZE: usize = 1024 * 1024;
 const MD5_HASH_BUFFER_SIZE: usize = 1024 * 1024;
 
+const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
+
 const ADAPTIVE_MIN_CONCURRENCY: usize = 4;
 const ADAPTIVE_MAX_CONCURRENCY: usize = 32;
 const ADAPTIVE_INITIAL_CONCURRENCY: usize = 8;
@@ -864,7 +866,7 @@ pub async fn install(
                 // Throttle progress updates to 1000ms
                 {
                     let mut lu = last_update.lock().unwrap();
-                    if lu.elapsed() >= Duration::from_millis(1000) {
+                    if lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
                         updater(SophonProgress::Downloading {
                             downloaded_bytes: db,
                             total_bytes: total_compressed,
@@ -1311,7 +1313,7 @@ fn run_assembly_task(
 
     {
         let mut lu = last_assembly_update.lock().unwrap();
-        if lu.elapsed() >= Duration::from_millis(1000) {
+        if lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
             updater(SophonProgress::Assembling {
                 assembled_files: count,
                 total_files,
