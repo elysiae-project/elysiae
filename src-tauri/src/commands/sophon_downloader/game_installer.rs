@@ -293,7 +293,9 @@ pub async fn check_update(
     ) = match pre_download_branch {
         Some(ref pre) => {
             let tag = pre.tag.clone();
-            let (cs, ds) = fetch_build_sizes(client, pre).await.unwrap_or((0, 0));
+            let (cs, ds) = fetch_build_sizes(client, pre, vo_lang)
+                .await
+                .unwrap_or((0, 0));
             (true, Some(tag), cs, ds)
         }
         None => (false, None, 0, 0),
@@ -324,11 +326,15 @@ pub async fn check_update(
 async fn fetch_build_sizes(
     client: &Client,
     branch: &super::api_scrape::PackageBranch,
+    vo_lang: &str,
 ) -> Result<(u64, u64), Box<dyn std::error::Error + Send + Sync>> {
     let build = fetch_build(client, branch, None).await?;
     let game_meta = build.manifests.first().ok_or("no manifests")?;
-    let vo_idx = 1usize; // approximate; real index depends on game/lang
-    let vo_meta = build.manifests.get(vo_idx).unwrap_or(game_meta);
+    let vo_meta = build
+        .manifests
+        .iter()
+        .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
+        .ok_or("No VO manifest matching language")?;
 
     let cs =
         parse_size(&game_meta.stats.compressed_size) + parse_size(&vo_meta.stats.compressed_size);
@@ -371,27 +377,36 @@ async fn fetch_diff_sizes(
         let new_manifest =
             fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id).await?;
 
-        let _old_files: HashMap<String, &SophonManifestAssetProperty> =
-            match old_map.get(&new_meta.matching_field) {
-                Some(old_meta) => {
-                    // We'd need to fetch and cache this too, but for size estimation
-                    // we just use the stats delta.
-                    let old_cs = parse_size(&old_meta.stats.compressed_size);
-                    let new_cs = parse_size(&new_meta.stats.compressed_size);
-                    let old_ds = parse_size(&old_meta.stats.uncompressed_size);
-                    let new_ds = parse_size(&new_meta.stats.uncompressed_size);
-                    // Delta is an approximation; real diff is smaller
-                    cs += new_cs.saturating_sub(old_cs);
-                    ds += new_ds.saturating_sub(old_ds);
-                    continue;
-                }
-                None => HashMap::new(),
-            };
-        // If matching_field is entirely new, count everything
+        // Build map of old files if this manifest existed in old build
+        let old_files: HashMap<String, String> = match old_map.get(&new_meta.matching_field) {
+            Some(old_meta) => {
+                let old_manifest =
+                    fetch_manifest(client, &old_meta.manifest_download, &old_meta.manifest.id)
+                        .await?;
+                old_manifest
+                    .assets
+                    .into_iter()
+                    .filter(|f| !f.is_directory())
+                    .map(|f| (f.asset_name, f.asset_hash_md5))
+                    .collect()
+            }
+            None => HashMap::new(),
+        };
+
+        // Calculate diff: new or changed files need all chunks
         for file in &new_manifest.assets {
-            for chunk in &file.asset_chunks {
-                cs += chunk.chunk_size;
-                ds += chunk.chunk_size_decompressed;
+            if file.is_directory() {
+                continue;
+            }
+            let needs_download = match old_files.get(&file.asset_name) {
+                Some(old_md5) => old_md5 != &file.asset_hash_md5,
+                None => true,
+            };
+            if needs_download {
+                for chunk in &file.asset_chunks {
+                    cs += chunk.chunk_size;
+                    ds += chunk.chunk_size_decompressed;
+                }
             }
         }
     }
@@ -413,7 +428,6 @@ fn parse_size(s: &str) -> u64 {
     s.parse().unwrap_or(0)
 }
 
-#[allow(unused)]
 pub struct SophonInstaller {
     client: Client,
     manifest: SophonManifestProto,
