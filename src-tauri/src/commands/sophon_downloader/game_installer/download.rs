@@ -20,14 +20,14 @@ pub async fn download_chunk(
     let url = chunk_download.url_for(&chunk.chunk_name);
     let resp = client.get(&url).send().await?.error_for_status()?;
 
-    if let Some(len) = resp.content_length() {
-        if len != chunk.chunk_size {
-            return Err(SophonError::SizeMismatch {
-                item: chunk.chunk_name.clone(),
-                expected: chunk.chunk_size,
-                actual: len,
-            });
-        }
+    if let Some(len) = resp.content_length()
+        && len != chunk.chunk_size
+    {
+        return Err(SophonError::SizeMismatch {
+            item: chunk.chunk_name.clone(),
+            expected: chunk.chunk_size,
+            actual: len,
+        });
     }
 
     let mut file = tokio::fs::File::create(dest).await?;

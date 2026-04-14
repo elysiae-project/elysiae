@@ -51,7 +51,7 @@ impl DownloadHandle {
         total_bytes: u64,
     ) -> SophonResult<()> {
         loop {
-            let state = self.state.lock().unwrap().clone();
+            let state = *self.state.lock().unwrap();
             match state {
                 ControlState::Running => return Ok(()),
                 ControlState::Cancelled => return Err(SophonError::Cancelled),

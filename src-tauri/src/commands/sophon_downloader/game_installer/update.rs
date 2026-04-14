@@ -45,10 +45,9 @@ pub async fn check_update(
 
     let (update_compressed_size, update_decompressed_size) = if update_available {
         if let Some(ref installed) = current_tag {
-            match fetch_diff_sizes(client, &branch.main, installed, &remote_tag, vo_lang).await {
-                Ok(sizes) => sizes,
-                Err(_) => (0, 0),
-            }
+            fetch_diff_sizes(client, &branch.main, installed, &remote_tag, vo_lang)
+                .await
+                .unwrap_or_default()
         } else {
             (0, 0)
         }
@@ -66,7 +65,7 @@ pub async fn check_update(
             let tag = pre.tag.clone();
             let (cs, ds) = fetch_build_sizes(client, pre, vo_lang)
                 .await
-                .unwrap_or((0, 0));
+                .unwrap_or_default();
             (true, Some(tag), cs, ds)
         }
         None => (false, None, 0, 0),

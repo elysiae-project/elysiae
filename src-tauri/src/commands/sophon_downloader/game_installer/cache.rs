@@ -69,10 +69,12 @@ pub fn check_file_md5_cached(
         .unwrap_or_default()
         .as_secs();
 
-    if let Some(entry) = cache.get(&path_str) {
-        if entry.size == expected_size && entry.md5 == expected_md5 && entry.mtime_secs == mtime {
-            return Ok(true);
-        }
+    if let Some(entry) = cache.get(&path_str)
+        && entry.size == expected_size
+        && entry.md5 == expected_md5
+        && entry.mtime_secs == mtime
+    {
+        return Ok(true);
     }
 
     if metadata.len() != expected_size {

@@ -71,10 +71,10 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
         ));
     }
     let mut chars = name.chars();
-    if let (Some(first), Some(':')) = (chars.next(), chars.next()) {
-        if first.is_ascii_alphabetic() {
-            return Err(SophonError::PathTraversal(name.into()));
-        }
+    if let (Some(first), Some(':')) = (chars.next(), chars.next())
+        && first.is_ascii_alphabetic()
+    {
+        return Err(SophonError::PathTraversal(name.into()));
     }
     Ok(())
 }
@@ -122,6 +122,7 @@ pub fn assemble_file(
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .open(&tmp_path)?;
     out_file.set_len(file.asset_size)?;
 

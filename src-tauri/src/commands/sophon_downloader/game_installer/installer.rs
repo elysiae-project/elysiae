@@ -33,6 +33,7 @@ pub struct SophonInstaller {
     pub manifest: SophonManifestProto,
     pub chunk_download: DownloadInfo,
     pub label: String,
+    #[allow(dead_code)]
     pub tag: String,
 }
 
@@ -206,12 +207,9 @@ async fn build_diff_installers(
             continue;
         }
 
-        let mut proto = SophonManifestProto::default();
-        proto.assets = diff_files;
-
         installers.push(SophonInstaller {
             client: client.clone(),
-            manifest: proto,
+            manifest: SophonManifestProto { assets: diff_files },
             chunk_download: new_meta.chunk_download.clone(),
             label: new_meta
                 .chunk_download

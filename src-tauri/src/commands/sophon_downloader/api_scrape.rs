@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct FrontDoorResponse {
     pub retcode: i32,
@@ -12,6 +13,7 @@ pub struct FrontDoorData {
     pub game_branches: Vec<GameBranch>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameBranch {
     pub game: GameId,
@@ -19,6 +21,7 @@ pub struct GameBranch {
     pub pre_download: Option<PackageBranch>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameId {
     pub id: String,
@@ -33,6 +36,7 @@ pub struct PackageBranch {
     pub tag: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonBuildResponse {
     pub retcode: i32,
@@ -40,6 +44,7 @@ pub struct SophonBuildResponse {
     pub data: SophonBuildData,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonBuildData {
     pub build_id: String,
@@ -47,6 +52,7 @@ pub struct SophonBuildData {
     pub manifests: Vec<SophonManifestMeta>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonManifestMeta {
     pub category_id: String,
@@ -58,6 +64,7 @@ pub struct SophonManifestMeta {
     pub stats: Stats,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ManifestFileInfo {
     pub id: String,
@@ -89,6 +96,7 @@ impl DownloadInfo {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Stats {
     pub compressed_size: String,
