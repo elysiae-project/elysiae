@@ -3,20 +3,36 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SophonError {
-    #[error("HTTP request failed: {0}")]
-    Http(#[from] reqwest::Error),
+    #[error("HTTP request failed")]
+    Http(
+        #[from]
+        #[source]
+        reqwest::Error,
+    ),
 
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("IO error")]
+    Io(
+        #[from]
+        #[source]
+        std::io::Error,
+    ),
 
-    #[error("Task join error: {0}")]
-    JoinError(#[from] tokio::task::JoinError),
+    #[error("Task join error")]
+    JoinError(
+        #[from]
+        #[source]
+        tokio::task::JoinError,
+    ),
 
     #[error("Semaphore error: {0}")]
     Semaphore(String),
 
-    #[error("Failed to decode manifest: {0}")]
-    ManifestDecode(#[from] prost::DecodeError),
+    #[error("Failed to decode manifest")]
+    ManifestDecode(
+        #[from]
+        #[source]
+        prost::DecodeError,
+    ),
 
     #[error("Failed to decompress data: {0}")]
     Decompression(String),
@@ -75,8 +91,12 @@ pub enum SophonError {
     #[error("Failed to assemble file {file}: {error}")]
     AssemblyFailed { file: String, error: String },
 
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
+    #[error("JSON error")]
+    Json(
+        #[from]
+        #[source]
+        serde_json::Error,
+    ),
 
     #[error("Front-door branch index out of range")]
     BranchIndexOutOfRange,
@@ -86,20 +106,11 @@ pub enum SophonError {
 
     #[error("Temp dir index {index} out of bounds")]
     TmpDirIndexOutOfBounds { index: usize },
-
-    #[error("Async task error: {0}")]
-    AsyncTaskError(String),
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {
     fn from(err: tokio::sync::AcquireError) -> Self {
         SophonError::Semaphore(err.to_string())
-    }
-}
-
-impl From<String> for SophonError {
-    fn from(err: String) -> Self {
-        SophonError::AsyncTaskError(err)
     }
 }
 

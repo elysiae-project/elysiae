@@ -9,7 +9,6 @@ pub mod game_installer;
 pub mod proto_parse;
 use game_installer::{DownloadHandle, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
 
@@ -17,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State, command};
 pub struct HttpClient(pub reqwest::Client);
 
 /// Thread-safe container for the active download handle.
-pub struct ActiveDownload(pub Mutex<Option<DownloadHandle>>);
+pub struct ActiveDownload(pub tokio::sync::Mutex<Option<DownloadHandle>>);
 
 /// Progress events emitted during download operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,7 +69,7 @@ pub async fn sophon_download(
         .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
-    *active.0.lock().unwrap() = Some(handle.clone());
+    *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
     game_installer::install(
@@ -84,7 +83,7 @@ pub async fn sophon_download(
     )
     .await?;
 
-    *active.0.lock().unwrap() = None;
+    *active.0.lock().await = None;
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
@@ -115,7 +114,7 @@ pub async fn sophon_update(
             .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
-    *active.0.lock().unwrap() = Some(handle.clone());
+    *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
     game_installer::install(
@@ -129,7 +128,7 @@ pub async fn sophon_update(
     )
     .await?;
 
-    *active.0.lock().unwrap() = None;
+    *active.0.lock().await = None;
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
@@ -157,7 +156,7 @@ pub async fn sophon_preinstall(
             .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
-    *active.0.lock().unwrap() = Some(handle.clone());
+    *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
     game_installer::install(
@@ -171,7 +170,7 @@ pub async fn sophon_preinstall(
     )
     .await?;
 
-    *active.0.lock().unwrap() = None;
+    *active.0.lock().await = None;
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
@@ -195,26 +194,29 @@ pub async fn sophon_apply_preinstall(
 
 /// Pauses the active download.
 #[command]
-pub fn sophon_pause(active: State<'_, ActiveDownload>) {
-    if let Some(h) = active.0.lock().unwrap().as_ref() {
+pub async fn sophon_pause(active: State<'_, ActiveDownload>) -> Result<(), ()> {
+    if let Some(h) = active.0.lock().await.as_ref() {
         h.pause();
     }
+    Ok(())
 }
 
 /// Resumes a paused download.
 #[command]
-pub fn sophon_resume(active: State<'_, ActiveDownload>) {
-    if let Some(h) = active.0.lock().unwrap().as_ref() {
+pub async fn sophon_resume(active: State<'_, ActiveDownload>) -> Result<(), ()> {
+    if let Some(h) = active.0.lock().await.as_ref() {
         h.resume();
     }
+    Ok(())
 }
 
 /// Cancels the active download.
 #[command]
-pub fn sophon_cancel(active: State<'_, ActiveDownload>) {
-    if let Some(h) = active.0.lock().unwrap().as_ref() {
+pub async fn sophon_cancel(active: State<'_, ActiveDownload>) -> Result<(), ()> {
+    if let Some(h) = active.0.lock().await.as_ref() {
         h.cancel();
     }
+    Ok(())
 }
 
 /// Checks if an update is available for the game.

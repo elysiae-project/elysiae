@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::Client;
 
 use crate::commands::sophon_downloader::api_scrape::{
@@ -14,7 +16,13 @@ pub async fn fetch_front_door(
     client: &Client,
     game_id: &str,
 ) -> SophonResult<(GameBranch, Option<PackageBranch>)> {
-    let resp: FrontDoorResponse = client.get(FRONT_DOOR_URL).send().await?.json().await?;
+    let resp: FrontDoorResponse = client
+        .get(FRONT_DOOR_URL)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?
+        .json()
+        .await?;
 
     let idx =
         front_door_game_index(game_id).ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
@@ -43,7 +51,13 @@ pub async fn fetch_build(
         url.push_str(&format!("&tag={t}"));
     }
 
-    let resp: SophonBuildResponse = client.get(&url).send().await?.json().await?;
+    let resp: SophonBuildResponse = client
+        .get(&url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?
+        .json()
+        .await?;
     if resp.data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
@@ -58,6 +72,7 @@ pub async fn fetch_manifest(
     let url = dl.url_for(manifest_id);
     let bytes = client
         .get(&url)
+        .timeout(Duration::from_secs(120))
         .send()
         .await?
         .error_for_status()?

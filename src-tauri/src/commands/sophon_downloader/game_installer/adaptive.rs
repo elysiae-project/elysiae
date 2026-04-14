@@ -57,7 +57,7 @@ impl AdaptiveConcurrency {
     }
 
     pub fn adjust(&self) -> usize {
-        let mut window_start = self.window_start.lock().unwrap();
+        let mut window_start = self.window_start.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         let elapsed = now.duration_since(*window_start).as_secs_f64();
         let current = self.target.load(Ordering::Acquire);
