@@ -54,7 +54,7 @@ impl DownloadHandle {
 
     pub async fn wait_if_paused(
         &self,
-        updater: &(impl Fn(SophonProgress) + Send + Sync),
+        updater: &(impl Fn(SophonProgress) + Send + Sync + ?Sized),
         downloaded_bytes: u64,
         total_bytes: u64,
     ) -> SophonResult<()> {

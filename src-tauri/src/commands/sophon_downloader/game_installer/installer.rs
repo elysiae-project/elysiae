@@ -27,6 +27,24 @@ use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto,
 };
 
+type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
+
+struct InstallContext {
+    chunks_dir: Arc<PathBuf>,
+    game_dir: PathBuf,
+    all_tmp_dirs: Arc<Vec<std::path::PathBuf>>,
+    all_files: Arc<Vec<SophonManifestAssetProperty>>,
+    downloaded_bytes: Arc<AtomicU64>,
+    assembled_files: Arc<AtomicU64>,
+    total_bytes: u64,
+    total_files: u64,
+    verify_cache: Arc<DashMap<String, VerificationEntry>>,
+    chunk_refcounts: Arc<DashMap<String, usize>>,
+    last_assembly_update: Arc<Mutex<Instant>>,
+    last_update: Arc<Mutex<Instant>>,
+    updater: ProgressUpdater,
+}
+
 struct InstallerData {
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
@@ -300,27 +318,26 @@ pub async fn install(
 
     let total_files: u64 = installer_data.iter().map(|d| d.files.len() as u64).sum();
 
-    let downloaded_bytes = Arc::new(AtomicU64::new(0));
-    let assembled_files = Arc::new(AtomicU64::new(0));
-    let verify_cache: Arc<DashMap<String, VerificationEntry>> =
-        Arc::new(cache::load_verification_cache(game_dir));
-
-    let chunk_refcounts: Arc<DashMap<String, usize>> = Arc::new(DashMap::new());
-
-    let last_assembly_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
+    let ctx = Arc::new(InstallContext {
+        chunks_dir: Arc::clone(&chunks_dir),
+        game_dir: game_dir.to_path_buf(),
+        all_tmp_dirs: Arc::clone(&all_tmp_dirs),
+        all_files: Arc::clone(&all_files),
+        downloaded_bytes: Arc::new(AtomicU64::new(0)),
+        assembled_files: Arc::new(AtomicU64::new(0)),
+        total_bytes: total_compressed,
+        total_files,
+        verify_cache: Arc::new(cache::load_verification_cache(game_dir)),
+        chunk_refcounts: Arc::new(DashMap::new()),
+        last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+        last_update: Arc::new(Mutex::new(Instant::now())),
+        updater: Arc::new(updater.clone()),
+    });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
 
     let assembly_task = {
-        let chunks_dir = Arc::clone(&chunks_dir);
-        let game_dir = game_dir.to_path_buf();
-        let chunk_refcounts = Arc::clone(&chunk_refcounts);
-        let assembled_files = Arc::clone(&assembled_files);
-        let verify_cache = Arc::clone(&verify_cache);
-        let updater = updater.clone();
-        let all_files = Arc::clone(&all_files);
-        let all_tmp_dirs = Arc::clone(&all_tmp_dirs);
-        let last_assembly_update = Arc::clone(&last_assembly_update);
+        let ctx = Arc::clone(&ctx);
 
         tokio::spawn(async move {
             let mut rx = assemble_rx;
@@ -333,18 +350,18 @@ pub async fn install(
                             let params = AssemblyTaskParams {
                                 file_idx,
                                 tmp_dir_idx,
-                                all_files: Arc::clone(&all_files),
-                                all_tmp_dirs: Arc::clone(&all_tmp_dirs),
-                                game_dir: game_dir.clone(),
-                                chunks_dir: Arc::clone(&chunks_dir),
-                                chunk_refcounts: Arc::clone(&chunk_refcounts),
-                                verify_cache: Arc::clone(&verify_cache),
-                                assembled_files: Arc::clone(&assembled_files),
-                                last_assembly_update: Arc::clone(&last_assembly_update),
-                                total_files,
+                                all_files: Arc::clone(&ctx.all_files),
+                                all_tmp_dirs: Arc::clone(&ctx.all_tmp_dirs),
+                                game_dir: ctx.game_dir.clone(),
+                                chunks_dir: Arc::clone(&ctx.chunks_dir),
+                                chunk_refcounts: Arc::clone(&ctx.chunk_refcounts),
+                                verify_cache: Arc::clone(&ctx.verify_cache),
+                                assembled_files: Arc::clone(&ctx.assembled_files),
+                                last_assembly_update: Arc::clone(&ctx.last_assembly_update),
+                                total_files: ctx.total_files,
                             };
-                            let updater = updater.clone();
-                            join_set.spawn(spawn_assembly_task(params, updater));
+                            let updater = Arc::clone(&ctx.updater);
+                            join_set.spawn(spawn_assembly_task(params, move |p| updater(p)));
                         }
                         Err(mpsc::error::TryRecvError::Empty) => break,
                         Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -362,18 +379,18 @@ pub async fn install(
                             let params = AssemblyTaskParams {
                                 file_idx,
                                 tmp_dir_idx,
-                                all_files: Arc::clone(&all_files),
-                                all_tmp_dirs: Arc::clone(&all_tmp_dirs),
-                                game_dir: game_dir.clone(),
-                                chunks_dir: Arc::clone(&chunks_dir),
-                                chunk_refcounts: Arc::clone(&chunk_refcounts),
-                                verify_cache: Arc::clone(&verify_cache),
-                                assembled_files: Arc::clone(&assembled_files),
-                                last_assembly_update: Arc::clone(&last_assembly_update),
-                                total_files,
+                                all_files: Arc::clone(&ctx.all_files),
+                                all_tmp_dirs: Arc::clone(&ctx.all_tmp_dirs),
+                                game_dir: ctx.game_dir.clone(),
+                                chunks_dir: Arc::clone(&ctx.chunks_dir),
+                                chunk_refcounts: Arc::clone(&ctx.chunk_refcounts),
+                                verify_cache: Arc::clone(&ctx.verify_cache),
+                                assembled_files: Arc::clone(&ctx.assembled_files),
+                                last_assembly_update: Arc::clone(&ctx.last_assembly_update),
+                                total_files: ctx.total_files,
                             };
-                            let updater = updater.clone();
-                            join_set.spawn(spawn_assembly_task(params, updater));
+                            let updater = Arc::clone(&ctx.updater);
+                            join_set.spawn(spawn_assembly_task(params, move |p| updater(p)));
                         }
                         None => {
                             while let Some(res) = join_set.join_next().await {
@@ -394,7 +411,7 @@ pub async fn install(
 
     let mut file_idx = 0usize;
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
-        let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
+        let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
         {
             let td = tmp_dir.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&td))
@@ -403,7 +420,7 @@ pub async fn install(
         }
 
         for _ in 0..data.files.len() {
-            let file = &all_files[file_idx];
+            let file = &ctx.all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
                 let _ = assemble_tx.send((file_idx, tmp_dir_idx)).await;
@@ -418,7 +435,7 @@ pub async fn install(
                     .or_default()
                     .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
 
-                match chunk_refcounts.entry(chunk.chunk_name.clone()) {
+                match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
                     Entry::Vacant(vacant) => {
                         vacant.insert(1);
                         download_items.push(DownloadItem {
@@ -458,18 +475,12 @@ pub async fn install(
         });
     }
 
-    let last_update: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
-
     let results: Vec<SophonResult<()>> = futures_util::stream::iter(download_items)
         .map(|item| {
-            let chunks_dir = Arc::clone(&chunks_dir);
-            let downloaded_bytes = Arc::clone(&downloaded_bytes);
+            let ctx = Arc::clone(&ctx);
             let chunk_to_files = Arc::clone(&chunk_to_files);
             let assemble_tx = assemble_tx.clone();
             let handle = handle.clone();
-            let updater = updater.clone();
-            let last_update = Arc::clone(&last_update);
-            let verify_cache = Arc::clone(&verify_cache);
             let adaptive = Arc::clone(&adaptive);
             let semaphore = Arc::clone(&semaphore);
 
@@ -481,19 +492,19 @@ pub async fn install(
                 let _permit = semaphore.acquire().await?;
 
                 {
-                    let db = downloaded_bytes.load(Ordering::Relaxed);
+                    let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
                     handle
-                        .wait_if_paused(&updater, db, total_compressed)
+                        .wait_if_paused(&*ctx.updater, db, ctx.total_bytes)
                         .await?;
                 }
 
-                let dest = chunks_dir.join(assembly::chunk_filename(&item.chunk));
+                let dest = ctx.chunks_dir.join(assembly::chunk_filename(&item.chunk));
 
                 let needs_download = if dest.exists() {
                     let dest_check = dest.clone();
                     let chunk_size = item.chunk.chunk_size;
                     let expected_md5 = item.chunk.chunk_compressed_hash_md5.clone();
-                    let cache = Arc::clone(&verify_cache);
+                    let cache = Arc::clone(&ctx.verify_cache);
                     !tokio::task::spawn_blocking(move || {
                         cache::check_file_md5_cached(&dest_check, chunk_size, &expected_md5, &cache)
                             .unwrap_or(false)
@@ -526,7 +537,7 @@ pub async fn install(
                             Err(e) => {
                                 last_err = e.to_string();
                                 if attempt < MAX_RETRIES - 1 {
-                                    updater(SophonProgress::Warning {
+                                    (ctx.updater)(SophonProgress::Warning {
                                         message: format!(
                                             "Chunk {} failed (attempt {}/{}): {last_err}",
                                             item.chunk.chunk_name,
@@ -549,18 +560,20 @@ pub async fn install(
                     }
                 }
 
-                let db = downloaded_bytes.fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
+                let db = ctx
+                    .downloaded_bytes
+                    .fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
                     + item.chunk.chunk_size;
 
                 adaptive.record_bytes(item.chunk.chunk_size);
 
                 {
-                    let mut lu = last_update.lock().unwrap();
+                    let mut lu = ctx.last_update.lock().unwrap();
                     if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
                     {
-                        updater(SophonProgress::Downloading {
+                        (ctx.updater)(SophonProgress::Downloading {
                             downloaded_bytes: db,
-                            total_bytes: total_compressed,
+                            total_bytes: ctx.total_bytes,
                         });
                         *lu = Instant::now();
                     }
@@ -601,13 +614,13 @@ pub async fn install(
         .iter()
         .any(|r| matches!(r, Err(SophonError::Cancelled)));
     if cancelled {
-        let cd = Arc::clone(&chunks_dir);
+        let cd = Arc::clone(&ctx.chunks_dir);
         let _ = tokio::task::spawn_blocking(move || {
             let _ = fs::remove_dir_all(&*cd);
         })
         .await;
         let _ = assembly_task.await;
-        updater(SophonProgress::Finished);
+        (ctx.updater)(SophonProgress::Finished);
         return Ok(());
     }
 
@@ -616,11 +629,11 @@ pub async fn install(
     assembly_task.await??;
 
     {
-        let _ = cache::save_verification_cache(game_dir, &verify_cache);
+        let _ = cache::save_verification_cache(&ctx.game_dir, &ctx.verify_cache);
     }
 
     if !deleted_files.is_empty() {
-        let gd = game_dir.to_path_buf();
+        let gd = ctx.game_dir.clone();
         let df = deleted_files.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &df {
@@ -630,7 +643,7 @@ pub async fn install(
         .await?;
     }
 
-    let gd = game_dir.to_path_buf();
+    let gd = ctx.game_dir.clone();
     let tag_str = tag.to_owned();
     let is_pre = is_preinstall;
     tokio::task::spawn_blocking(move || {
