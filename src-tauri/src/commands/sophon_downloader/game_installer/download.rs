@@ -6,7 +6,7 @@ use md5::{Digest, Md5};
 use reqwest::Client;
 use tokio::io::AsyncWriteExt;
 
-use super::constants::DOWNLOAD_STREAM_BUFFER_SIZE;
+use super::DOWNLOAD_STREAM_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;

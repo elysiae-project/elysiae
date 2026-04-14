@@ -16,10 +16,9 @@ use super::adaptive::{ActiveGuard, AdaptiveConcurrency};
 use super::api::{fetch_build, fetch_front_door, vo_lang_matches};
 use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
 use super::cache::{self, VerificationEntry};
-use super::constants::*;
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
-use super::version::write_installed_tag;
+use super::*;
 use crate::commands::sophon_downloader::SophonProgress;
 use crate::commands::sophon_downloader::api_scrape::{
     DownloadInfo, SophonBuildData, SophonManifestMeta,
@@ -27,6 +26,22 @@ use crate::commands::sophon_downloader::api_scrape::{
 use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty, SophonManifestProto,
 };
+
+struct InstallerData {
+    client: Arc<Client>,
+    chunk_download: Arc<DownloadInfo>,
+    files: Vec<SophonManifestAssetProperty>,
+    label: String,
+}
+
+struct DownloadItem {
+    chunk: SophonManifestAssetChunk,
+    client: Arc<Client>,
+    chunk_download: Arc<DownloadInfo>,
+}
+
+type PendingCount = Arc<Mutex<usize>>;
+type FileEntry = (usize, usize, PendingCount);
 
 pub struct SophonInstaller {
     pub client: Client,
@@ -247,13 +262,6 @@ pub async fn install(
             .map_err(SophonError::from)?;
     }
 
-    struct InstallerData {
-        client: Arc<Client>,
-        chunk_download: Arc<DownloadInfo>,
-        files: Vec<SophonManifestAssetProperty>,
-        label: String,
-    }
-
     let installer_data: Vec<InstallerData> = installers
         .into_iter()
         .map(|inst| InstallerData {
@@ -380,15 +388,6 @@ pub async fn install(
             }
         })
     };
-
-    type PendingCount = Arc<Mutex<usize>>;
-    type FileEntry = (usize, usize, PendingCount);
-
-    struct DownloadItem {
-        chunk: SophonManifestAssetChunk,
-        client: Arc<Client>,
-        chunk_download: Arc<DownloadInfo>,
-    }
 
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::new();

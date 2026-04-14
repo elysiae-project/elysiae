@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
-use super::constants::{MD5_HASH_BUFFER_SIZE, VERIFICATION_CACHE_FILE};
+use super::{MD5_HASH_BUFFER_SIZE, VERIFICATION_CACHE_FILE};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationEntry {

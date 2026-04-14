@@ -8,8 +8,8 @@ use crate::commands::sophon_downloader::api_scrape::{
 };
 use crate::commands::sophon_downloader::proto_parse::{SophonManifestProto, decode_manifest};
 
-use super::constants::{FRONT_DOOR_URL, SOPHON_BUILD_URL_BASE};
 use super::error::{SophonError, SophonResult};
+use super::{FRONT_DOOR_URL, SOPHON_BUILD_URL_BASE};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 
 pub async fn fetch_front_door(

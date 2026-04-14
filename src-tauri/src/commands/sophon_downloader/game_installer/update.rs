@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::api::{fetch_build, vo_lang_matches};
 use super::error::{SophonError, SophonResult};
-use super::version::read_installed_tag;
+use super::read_installed_tag;
+
 use crate::commands::sophon_downloader::api_scrape::PackageBranch;
 use crate::commands::sophon_downloader::api_scrape::SophonManifestMeta;
 

@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use super::constants::*;
+use super::*;
 
 pub struct ActiveGuard<'a> {
     adaptive: &'a AdaptiveConcurrency,

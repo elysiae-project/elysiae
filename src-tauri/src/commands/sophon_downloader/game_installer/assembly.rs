@@ -10,10 +10,8 @@ use md5::{Digest, Md5};
 use tauri_plugin_log::log;
 
 use super::cache::VerificationEntry;
-use super::constants::{
-    DECOMPRESSION_BUFFER_SIZE, FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS,
-};
 use super::error::{SophonError, SophonResult};
+use super::{DECOMPRESSION_BUFFER_SIZE, FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
 use crate::commands::sophon_downloader::SophonProgress;
 use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty,
