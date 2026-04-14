@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -164,6 +164,51 @@ async fn build_installers_from_data(
     Ok(vec![game_inst, vo_inst])
 }
 
+#[inline]
+fn collect_deleted_files(
+    old_manifest: &SophonManifestProto,
+    new_names: &HashSet<&str>,
+) -> Vec<String> {
+    old_manifest
+        .assets
+        .iter()
+        .filter(|f| !f.is_directory() && !new_names.contains(f.asset_name.as_str()))
+        .map(|f| f.asset_name.clone())
+        .collect()
+}
+
+#[inline]
+fn build_old_md5_map(
+    old_manifest: SophonManifestProto,
+) -> HashMap<String, String> {
+    old_manifest
+        .assets
+        .into_iter()
+        .filter(|f| !f.is_directory())
+        .map(|f| (f.asset_name, f.asset_hash_md5))
+        .collect()
+}
+
+#[inline]
+fn compute_diff_files(
+    new_manifest: SophonManifestProto,
+    old_md5_map: &HashMap<String, String>,
+) -> Vec<SophonManifestAssetProperty> {
+    new_manifest
+        .assets
+        .into_iter()
+        .filter(|f| {
+            if f.is_directory() {
+                return false;
+            }
+            match old_md5_map.get(&f.asset_name) {
+                Some(old_md5) => old_md5 != &f.asset_hash_md5,
+                None => true,
+            }
+        })
+        .collect()
+}
+
 async fn build_diff_installers(
     client: &Client,
     old_build: &SophonBuildData,
@@ -171,7 +216,7 @@ async fn build_diff_installers(
     vo_lang: &str,
     tag: &str,
 ) -> SophonResult<(Vec<SophonInstaller>, Vec<String>)> {
-    let old_by_field: std::collections::HashMap<&str, &SophonManifestMeta> = old_build
+    let old_by_field: HashMap<&str, &SophonManifestMeta> = old_build
         .manifests
         .iter()
         .map(|m| (m.matching_field.as_str(), m))
@@ -196,7 +241,7 @@ async fn build_diff_installers(
             .map(|f| f.asset_name.as_str())
             .collect();
 
-        let old_md5_map: std::collections::HashMap<String, String> =
+        let old_md5_map: HashMap<String, String> =
             match old_by_field.get(new_meta.matching_field.as_str()) {
                 Some(old_meta) => {
                     let old_manifest = super::api::fetch_manifest(
@@ -206,35 +251,14 @@ async fn build_diff_installers(
                     )
                     .await?;
 
-                    for f in old_manifest.assets.iter().filter(|f| !f.is_directory()) {
-                        if !new_names.contains(f.asset_name.as_str()) {
-                            deleted_files.push(f.asset_name.clone());
-                        }
-                    }
+                    deleted_files.extend(collect_deleted_files(&old_manifest, &new_names));
 
-                    old_manifest
-                        .assets
-                        .into_iter()
-                        .filter(|f| !f.is_directory())
-                        .map(|f| (f.asset_name, f.asset_hash_md5))
-                        .collect()
+                    build_old_md5_map(old_manifest)
                 }
-                None => std::collections::HashMap::new(),
+                None => HashMap::new(),
             };
 
-        let diff_files: Vec<SophonManifestAssetProperty> = new_manifest
-            .assets
-            .into_iter()
-            .filter(|f| {
-                if f.is_directory() {
-                    return false;
-                }
-                match old_md5_map.get(&f.asset_name) {
-                    Some(old_md5) => old_md5 != &f.asset_hash_md5,
-                    None => true,
-                }
-            })
-            .collect();
+        let diff_files = compute_diff_files(new_manifest, &old_md5_map);
 
         if diff_files.is_empty() {
             continue;
@@ -300,6 +324,44 @@ fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
     (total_compressed, total_files)
 }
 
+#[inline]
+fn register_chunks_for_file(
+    file: &SophonManifestAssetProperty,
+    file_idx: usize,
+    tmp_dir_idx: usize,
+    ctx: &InstallContext,
+    chunk_to_files: &DashMap<String, Vec<FileEntry>>,
+    download_items: &mut Vec<DownloadItem>,
+    data: &InstallerData,
+) {
+    let chunk_count = file.asset_chunks.len();
+    if chunk_count == 0 {
+        return;
+    }
+
+    let pending = Arc::new(Mutex::new(chunk_count));
+    for chunk in &file.asset_chunks {
+        chunk_to_files
+            .entry(chunk.chunk_name.clone())
+            .or_default()
+            .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
+
+        match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
+            Entry::Vacant(vacant) => {
+                vacant.insert(1);
+                download_items.push(DownloadItem {
+                    chunk: chunk.clone(),
+                    client: Arc::clone(&data.client),
+                    chunk_download: Arc::clone(&data.chunk_download),
+                });
+            }
+            Entry::Occupied(mut occupied) => {
+                *occupied.get_mut() += 1;
+            }
+        }
+    }
+}
+
 async fn build_download_state(
     installer_data: Vec<InstallerData>,
     ctx: &InstallContext,
@@ -327,27 +389,15 @@ async fn build_download_state(
                 continue;
             }
 
-            let pending = Arc::new(Mutex::new(chunk_count));
-            for chunk in &file.asset_chunks {
-                chunk_to_files
-                    .entry(chunk.chunk_name.clone())
-                    .or_default()
-                    .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
-
-                match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(1);
-                        download_items.push(DownloadItem {
-                            chunk: chunk.clone(),
-                            client: Arc::clone(&data.client),
-                            chunk_download: Arc::clone(&data.chunk_download),
-                        });
-                    }
-                    Entry::Occupied(mut occupied) => {
-                        *occupied.get_mut() += 1;
-                    }
-                }
-            }
+            register_chunks_for_file(
+                file,
+                file_idx,
+                tmp_dir_idx,
+                ctx,
+                &chunk_to_files,
+                &mut download_items,
+                &data,
+            );
             file_idx += 1;
         }
     }
@@ -375,6 +425,15 @@ fn make_assembly_params(
     }
 }
 
+async fn drain_join_set(
+    join_set: &mut tokio::task::JoinSet<Result<SophonResult<()>, tokio::task::JoinError>>,
+) -> SophonResult<()> {
+    while let Some(res) = join_set.join_next().await {
+        let _ = res??;
+    }
+    Ok(())
+}
+
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
     assemble_rx: mpsc::Receiver<(usize, usize)>,
@@ -395,10 +454,7 @@ fn spawn_assembly_coordinator(
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
-                        while let Some(res) = join_set.join_next().await {
-                            let _ = res??;
-                        }
-                        return Ok::<(), SophonError>(());
+                        return drain_join_set(&mut join_set).await;
                     }
                 }
             }
@@ -410,12 +466,7 @@ fn spawn_assembly_coordinator(
                         let updater = Arc::clone(&ctx.updater);
                         join_set.spawn(spawn_assembly_task(params, move |p| updater(p)));
                     }
-                    None => {
-                        while let Some(res) = join_set.join_next().await {
-                            let _ = res??;
-                        }
-                        return Ok::<(), SophonError>(());
-                    }
+                    None => return drain_join_set(&mut join_set).await,
                 }
             } else if let Some(res) = join_set.join_next().await {
                 let _ = res??;
