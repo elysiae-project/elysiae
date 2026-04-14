@@ -1,3 +1,5 @@
+//! Core game installer module for Sophon chunk-based downloads.
+
 mod adaptive;
 mod api;
 mod assembly;

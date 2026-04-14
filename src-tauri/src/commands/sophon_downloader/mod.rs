@@ -1,3 +1,9 @@
+//! Sophon game downloader module.
+//!
+//! This module implements the Sophon chunk-based download system used by HoYoverse games.
+//! It handles downloading, assembling, and updating game files using a manifest-based approach
+//! with zstd-compressed chunks.
+
 pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
@@ -7,34 +13,42 @@ use std::sync::Mutex;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
 
+/// HTTP client wrapper for dependency injection.
 pub struct HttpClient(pub reqwest::Client);
+
+/// Thread-safe container for the active download handle.
 pub struct ActiveDownload(pub Mutex<Option<DownloadHandle>>);
 
+/// Progress events emitted during download operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum SophonProgress {
+    /// Manifest is being fetched from the API.
     FetchingManifest,
+    /// Chunks are being downloaded.
     Downloading {
         downloaded_bytes: u64,
         total_bytes: u64,
     },
+    /// Download is paused.
     Paused {
         downloaded_bytes: u64,
         total_bytes: u64,
     },
+    /// Files are being assembled from downloaded chunks.
     Assembling {
         assembled_files: u64,
         total_files: u64,
     },
-    Warning {
-        message: String,
-    },
-    Error {
-        message: String,
-    },
+    /// Non-fatal warning occurred.
+    Warning { message: String },
+    /// Fatal error occurred.
+    Error { message: String },
+    /// Download completed successfully.
     Finished,
 }
 
+/// Downloads a fresh game installation.
 #[command]
 pub async fn sophon_download(
     game_id: String,
@@ -75,6 +89,7 @@ pub async fn sophon_download(
     Ok(())
 }
 
+/// Updates an existing game installation.
 #[command]
 pub async fn sophon_update(
     game_id: String,
@@ -119,6 +134,7 @@ pub async fn sophon_update(
     Ok(())
 }
 
+/// Pre-downloads an upcoming game version.
 #[command]
 pub async fn sophon_preinstall(
     game_id: String,
@@ -160,6 +176,7 @@ pub async fn sophon_preinstall(
     Ok(())
 }
 
+/// Applies a pre-downloaded game version.
 #[command]
 pub async fn sophon_apply_preinstall(
     preinstall_tag: String,
@@ -176,6 +193,7 @@ pub async fn sophon_apply_preinstall(
         .map_err(|e| e.to_string())
 }
 
+/// Pauses the active download.
 #[command]
 pub fn sophon_pause(active: State<'_, ActiveDownload>) {
     if let Some(h) = active.0.lock().unwrap().as_ref() {
@@ -183,6 +201,7 @@ pub fn sophon_pause(active: State<'_, ActiveDownload>) {
     }
 }
 
+/// Resumes a paused download.
 #[command]
 pub fn sophon_resume(active: State<'_, ActiveDownload>) {
     if let Some(h) = active.0.lock().unwrap().as_ref() {
@@ -190,6 +209,7 @@ pub fn sophon_resume(active: State<'_, ActiveDownload>) {
     }
 }
 
+/// Cancels the active download.
 #[command]
 pub fn sophon_cancel(active: State<'_, ActiveDownload>) {
     if let Some(h) = active.0.lock().unwrap().as_ref() {
@@ -197,6 +217,7 @@ pub fn sophon_cancel(active: State<'_, ActiveDownload>) {
     }
 }
 
+/// Checks if an update is available for the game.
 #[command]
 pub async fn sophon_check_update(
     game_id: String,
