@@ -120,4 +120,13 @@ impl From<SophonError> for String {
     }
 }
 
+impl From<String> for SophonError {
+    fn from(s: String) -> Self {
+        SophonError::AssemblyFailed {
+            file: String::new(),
+            error: s,
+        }
+    }
+}
+
 pub type SophonResult<T> = Result<T, SophonError>;

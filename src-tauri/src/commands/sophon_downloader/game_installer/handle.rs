@@ -4,6 +4,7 @@ use tokio::sync::Notify;
 
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::SophonProgress;
+use tauri_plugin_log::log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlState {
@@ -26,22 +27,29 @@ impl DownloadHandle {
         }
     }
 
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, ControlState> {
+        self.state.lock().unwrap_or_else(|e| {
+            log::error!("Mutex poisoned in DownloadHandle, recovering state");
+            e.into_inner()
+        })
+    }
+
     pub fn pause(&self) {
-        *self.state.lock().unwrap() = ControlState::Paused;
+        *self.lock_state() = ControlState::Paused;
     }
 
     pub fn resume(&self) {
-        *self.state.lock().unwrap() = ControlState::Running;
+        *self.lock_state() = ControlState::Running;
         self.pause_notify.notify_one();
     }
 
     pub fn cancel(&self) {
-        *self.state.lock().unwrap() = ControlState::Cancelled;
+        *self.lock_state() = ControlState::Cancelled;
         self.pause_notify.notify_one();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        *self.state.lock().unwrap() == ControlState::Cancelled
+        *self.lock_state() == ControlState::Cancelled
     }
 
     pub async fn wait_if_paused(
@@ -51,7 +59,7 @@ impl DownloadHandle {
         total_bytes: u64,
     ) -> SophonResult<()> {
         loop {
-            let state = *self.state.lock().unwrap();
+            let state = *self.lock_state();
             match state {
                 ControlState::Running => return Ok(()),
                 ControlState::Cancelled => return Err(SophonError::Cancelled),

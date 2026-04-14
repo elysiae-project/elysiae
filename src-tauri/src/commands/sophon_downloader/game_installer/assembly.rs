@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use md5::{Digest, Md5};
+use tauri_plugin_log::log;
 
 use super::cache::VerificationEntry;
 use super::constants::{
@@ -276,7 +277,10 @@ pub fn run_assembly_task(
     let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
 
     {
-        let mut lu = last_assembly_update.lock().unwrap();
+        let mut lu = last_assembly_update.lock().unwrap_or_else(|e| {
+            log::error!("last_assembly_update mutex poisoned, recovering");
+            e.into_inner()
+        });
         if lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
             updater(SophonProgress::Assembling {
                 assembled_files: count,

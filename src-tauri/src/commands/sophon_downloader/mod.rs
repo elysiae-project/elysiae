@@ -11,6 +11,7 @@ use game_installer::{DownloadHandle, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
+use tauri_plugin_log::log;
 
 /// HTTP client wrapper for dependency injection.
 pub struct HttpClient(pub reqwest::Client);
@@ -239,5 +240,7 @@ pub async fn sophon_check_update(
 }
 
 fn emit(app: &AppHandle, progress: SophonProgress) {
-    let _ = app.emit("sophon://progress", progress);
+    if let Err(e) = app.emit("sophon://progress", progress) {
+        log::error!("Failed to emit progress event: {}", e);
+    }
 }

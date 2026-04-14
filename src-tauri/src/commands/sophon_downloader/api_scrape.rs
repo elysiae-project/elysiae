@@ -80,21 +80,45 @@ pub struct ManifestFileInfo {
 pub struct DownloadInfo {
     pub encryption: i32,
     pub password: String,
-    /// 0 = uncompressed, 1 = zstd-compressed.
-    pub compression: i32,
+    pub compression: Compression,
     pub url_prefix: String,
     pub url_suffix: String,
 }
 
+/// Compression format for downloaded content.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[repr(i32)]
+#[serde(try_from = "i32", into = "i32")]
+pub enum Compression {
+    None = 0,
+    Zstd = 1,
+}
+
+impl From<Compression> for i32 {
+    fn from(value: Compression) -> Self {
+        value as i32
+    }
+}
+
+impl TryFrom<i32> for Compression {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Compression::None),
+            1 => Ok(Compression::Zstd),
+            _ => Err(format!("Invalid compression value: {value}")),
+        }
+    }
+}
+
 impl DownloadInfo {
-    #[inline]
     pub fn url_for(&self, item_name: &str) -> String {
         format!("{}{}/{}", self.url_prefix, self.url_suffix, item_name)
     }
 
-    #[inline]
     pub fn is_compressed(&self) -> bool {
-        self.compression == 1
+        matches!(self.compression, Compression::Zstd)
     }
 }
 
