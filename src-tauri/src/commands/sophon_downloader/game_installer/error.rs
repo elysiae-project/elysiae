@@ -101,11 +101,8 @@ pub enum SophonError {
     #[error("Front-door branch index out of range")]
     BranchIndexOutOfRange,
 
-    #[error("File index {index} out of bounds")]
-    FileIndexOutOfBounds { index: usize },
-
-    #[error("Temp dir index {index} out of bounds")]
-    TmpDirIndexOutOfBounds { index: usize },
+    #[error("{kind} index {index} out of bounds")]
+    IndexOutOfBounds { kind: &'static str, index: usize },
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {
@@ -117,15 +114,6 @@ impl From<tokio::sync::AcquireError> for SophonError {
 impl From<SophonError> for String {
     fn from(err: SophonError) -> Self {
         err.to_string()
-    }
-}
-
-impl From<String> for SophonError {
-    fn from(s: String) -> Self {
-        SophonError::AssemblyFailed {
-            file: String::new(),
-            error: s,
-        }
     }
 }
 

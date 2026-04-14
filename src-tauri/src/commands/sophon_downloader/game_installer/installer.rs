@@ -396,7 +396,7 @@ fn spawn_assembly_coordinator(
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
                         while let Some(res) = join_set.join_next().await {
-                            let _ = res.map_err(|e| SophonError::from(e.to_string()))?;
+                            let _ = res??;
                         }
                         return Ok::<(), SophonError>(());
                     }
@@ -412,13 +412,13 @@ fn spawn_assembly_coordinator(
                     }
                     None => {
                         while let Some(res) = join_set.join_next().await {
-                            let _ = res.map_err(|e| SophonError::from(e.to_string()))?;
+                            let _ = res??;
                         }
                         return Ok::<(), SophonError>(());
                     }
                 }
             } else if let Some(res) = join_set.join_next().await {
-                let _ = res.map_err(|e| SophonError::from(e.to_string()))?;
+                let _ = res??;
             }
         }
     })

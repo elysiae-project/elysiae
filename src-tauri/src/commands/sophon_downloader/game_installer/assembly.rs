@@ -263,10 +263,16 @@ pub fn run_assembly_task(
     } = params;
 
     if file_idx >= all_files.len() {
-        return Err(SophonError::FileIndexOutOfBounds { index: file_idx });
+        return Err(SophonError::IndexOutOfBounds {
+            kind: "file",
+            index: file_idx,
+        });
     }
     if tmp_dir_idx >= all_tmp_dirs.len() {
-        return Err(SophonError::TmpDirIndexOutOfBounds { index: tmp_dir_idx });
+        return Err(SophonError::IndexOutOfBounds {
+            kind: "temp dir",
+            index: tmp_dir_idx,
+        });
     }
 
     let file = &all_files[file_idx];
