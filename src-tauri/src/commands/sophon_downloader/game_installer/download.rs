@@ -61,7 +61,7 @@ pub async fn download_chunk(
     }
 
     if !chunk.chunk_compressed_hash_md5.is_empty() {
-        let actual = format!("{:x}", hasher.finalize());
+        let actual = hex::encode(hasher.finalize());
         if actual != chunk.chunk_compressed_hash_md5 {
             return Err(SophonError::Md5Mismatch {
                 item: chunk.chunk_name.clone(),

@@ -166,7 +166,7 @@ pub fn assemble_file(
     }
 
     if let Some(hasher) = file_hasher {
-        let actual = format!("{:x}", hasher.finalize());
+        let actual = hex::encode(hasher.finalize());
         if actual != file.asset_hash_md5 {
             return Err(SophonError::Md5Mismatch {
                 item: file.asset_name.clone(),

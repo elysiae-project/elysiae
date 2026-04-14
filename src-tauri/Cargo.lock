@@ -12,6 +12,7 @@ dependencies = [
  "futures",
  "futures-util",
  "glib 0.22.5",
+ "hex",
  "lru",
  "md-5",
  "prost",

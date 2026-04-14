@@ -14,15 +14,15 @@ tauri-build = { version = "2.5.6", features = []   }
 
 [dependencies]
 glib = "0.22.5"
-tokio = { version = "1.51.1", features = ["rt", "sync", "time", "macros"]   }
+tokio = { version = "1.51.1", features = ["rt", "sync", "time", "macros"] }
 tokio-util = "0.7.18"
 futures = "0.3.32"
 futures-util = "0.3.32"
 
-tauri = { version = "2.10.3", features = ["protocol-asset"]   }
+tauri = { version = "2.10.3", features = ["protocol-asset"] }
 tauri-plugin-opener = "2.5.3"
 
-serde = { version = "1.0.228", features = ["derive"]   }
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
 tauri-plugin-fs = "2.5.0"
@@ -32,7 +32,7 @@ tauri-plugin-os = "2.3.2"
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-store = "2.4.2"
 
-reqwest = { version = "0.13.2", features = ["stream", "blocking", "json"]   }
+reqwest = { version = "0.13.2", features = ["stream", "blocking", "json"] }
 
 zstd = "0.13.3"
 xz = "0.1.0"
@@ -41,6 +41,7 @@ zip = "8.5.1"
 tar = "0.4.45"
 md-5 = "0.11.0"
 dashmap = "6.1.0"
+hex = "0.4.3"
 bytes = "1.11.1"
 prost = "0.14.3"
 lru = "0.16.4"
