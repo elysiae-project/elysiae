@@ -18,7 +18,6 @@ pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
 pub const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 256 * 1024;
 pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
-pub const DECOMPRESSION_BUFFER_SIZE: usize = 1024 * 1024;
 pub const MD5_HASH_BUFFER_SIZE: usize = 1024 * 1024;
 
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;

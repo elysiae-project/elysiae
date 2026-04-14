@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,7 +11,7 @@ use tauri_plugin_log::log;
 
 use super::cache::VerificationEntry;
 use super::error::{SophonError, SophonResult};
-use super::{DECOMPRESSION_BUFFER_SIZE, FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
+use super::{FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
 use crate::commands::sophon_downloader::SophonProgress;
 use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty,
@@ -185,36 +185,49 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     writer: &mut W,
     offset: u64,
     expected_size: u64,
-    mut file_hasher: Option<&mut Md5>,
+    file_hasher: Option<&mut Md5>,
 ) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
-    let mut total_written = 0u64;
-    let mut buf = vec![0u8; DECOMPRESSION_BUFFER_SIZE];
 
     writer.seek(SeekFrom::Start(offset))?;
 
-    loop {
-        let n = decoder.read(&mut buf)?;
-        if n == 0 {
-            break;
+    let bytes_written = match file_hasher {
+        Some(hasher) => {
+            let mut hw = HashWriter {
+                inner: writer,
+                hasher,
+            };
+            std::io::copy(&mut decoder, &mut hw)?
         }
-        if let Some(hasher) = file_hasher.as_mut() {
-            hasher.update(&buf[..n]);
-        }
-        writer.write_all(&buf[..n])?;
-        total_written += n as u64;
-    }
+        None => std::io::copy(&mut decoder, writer)?,
+    };
 
-    if total_written != expected_size {
+    if bytes_written != expected_size {
         return Err(SophonError::SizeMismatch {
             item: chunk_path.display().to_string(),
             expected: expected_size,
-            actual: total_written,
+            actual: bytes_written,
         });
     }
 
-    Ok(total_written)
+    Ok(bytes_written)
+}
+
+struct HashWriter<'a, W: Write> {
+    inner: &'a mut W,
+    hasher: &'a mut Md5,
+}
+
+impl<W: Write> Write for HashWriter<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.hasher.update(buf);
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 pub struct AssemblyTaskParams {
