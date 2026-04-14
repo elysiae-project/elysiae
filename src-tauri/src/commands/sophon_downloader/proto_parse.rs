@@ -74,6 +74,7 @@ pub struct SophonManifestAssetChunk {
     pub chunk_compressed_hash_md5: String,
 }
 
+#[inline]
 pub fn decode_manifest(buf: &[u8]) -> Result<SophonManifestProto, prost::DecodeError> {
     SophonManifestProto::decode(buf)
 }

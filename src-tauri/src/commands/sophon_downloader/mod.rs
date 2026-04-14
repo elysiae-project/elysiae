@@ -1,40 +1,54 @@
+//! Sophon game downloader module.
+//!
+//! This module implements the Sophon chunk-based download system used by HoYoverse games.
+//! It handles downloading, assembling, and updating game files using a manifest-based approach
+//! with zstd-compressed chunks.
+
 pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
-use game_installer::{DownloadHandle, UpdateInfo};
+use game_installer::{DownloadHandle, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
+use tauri_plugin_log::log;
 
+/// HTTP client wrapper for dependency injection.
 pub struct HttpClient(pub reqwest::Client);
-pub struct ActiveDownload(pub Mutex<Option<DownloadHandle>>);
 
+/// Thread-safe container for the active download handle.
+pub struct ActiveDownload(pub tokio::sync::Mutex<Option<DownloadHandle>>);
+
+/// Progress events emitted during download operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum SophonProgress {
+    /// Manifest is being fetched from the API.
     FetchingManifest,
+    /// Chunks are being downloaded.
     Downloading {
         downloaded_bytes: u64,
         total_bytes: u64,
     },
+    /// Download is paused.
     Paused {
         downloaded_bytes: u64,
         total_bytes: u64,
     },
+    /// Files are being assembled from downloaded chunks.
     Assembling {
         assembled_files: u64,
         total_files: u64,
     },
-    Warning {
-        message: String,
-    },
-    Error {
-        message: String,
-    },
+    /// Non-fatal warning occurred.
+    Warning { message: String },
+    /// Fatal error occurred.
+    Error { message: String },
+    /// Download completed successfully.
     Finished,
 }
 
+/// Downloads a fresh game installation.
 #[command]
 pub async fn sophon_download(
     game_id: String,
@@ -56,7 +70,7 @@ pub async fn sophon_download(
         .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
-    *active.0.lock().unwrap() = Some(handle.clone());
+    *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
     game_installer::install(
@@ -70,11 +84,12 @@ pub async fn sophon_download(
     )
     .await?;
 
-    *active.0.lock().unwrap() = None;
+    *active.0.lock().await = None;
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
 
+/// Updates an existing game installation.
 #[command]
 pub async fn sophon_update(
     game_id: String,
@@ -89,8 +104,8 @@ pub async fn sophon_update(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    let current_tag = game_installer::read_installed_tag_pub(&game_dir)
-        .ok_or("No installed version found — cannot update")?;
+    let current_tag =
+        read_installed_tag(&game_dir).ok_or("No installed version found — cannot update")?;
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
@@ -100,7 +115,7 @@ pub async fn sophon_update(
             .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
-    *active.0.lock().unwrap() = Some(handle.clone());
+    *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
     game_installer::install(
@@ -114,11 +129,12 @@ pub async fn sophon_update(
     )
     .await?;
 
-    *active.0.lock().unwrap() = None;
+    *active.0.lock().await = None;
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
 
+/// Pre-downloads an upcoming game version.
 #[command]
 pub async fn sophon_preinstall(
     game_id: String,
@@ -141,7 +157,7 @@ pub async fn sophon_preinstall(
             .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
-    *active.0.lock().unwrap() = Some(handle.clone());
+    *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
     game_installer::install(
@@ -155,11 +171,12 @@ pub async fn sophon_preinstall(
     )
     .await?;
 
-    *active.0.lock().unwrap() = None;
+    *active.0.lock().await = None;
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
 
+/// Applies a pre-downloaded game version.
 #[command]
 pub async fn sophon_apply_preinstall(
     preinstall_tag: String,
@@ -171,30 +188,39 @@ pub async fn sophon_apply_preinstall(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    game_installer::apply_preinstall(&game_dir, &preinstall_tag).await
+    game_installer::apply_preinstall(&game_dir, &preinstall_tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
+/// Pauses the active download.
 #[command]
-pub fn sophon_pause(active: State<'_, ActiveDownload>) {
-    if let Some(h) = active.0.lock().unwrap().as_ref() {
+pub async fn sophon_pause(active: State<'_, ActiveDownload>) -> Result<(), ()> {
+    if let Some(h) = active.0.lock().await.as_ref() {
         h.pause();
     }
+    Ok(())
 }
 
+/// Resumes a paused download.
 #[command]
-pub fn sophon_resume(active: State<'_, ActiveDownload>) {
-    if let Some(h) = active.0.lock().unwrap().as_ref() {
+pub async fn sophon_resume(active: State<'_, ActiveDownload>) -> Result<(), ()> {
+    if let Some(h) = active.0.lock().await.as_ref() {
         h.resume();
     }
+    Ok(())
 }
 
+/// Cancels the active download.
 #[command]
-pub fn sophon_cancel(active: State<'_, ActiveDownload>) {
-    if let Some(h) = active.0.lock().unwrap().as_ref() {
+pub async fn sophon_cancel(active: State<'_, ActiveDownload>) -> Result<(), ()> {
+    if let Some(h) = active.0.lock().await.as_ref() {
         h.cancel();
     }
+    Ok(())
 }
 
+/// Checks if an update is available for the game.
 #[command]
 pub async fn sophon_check_update(
     game_id: String,
@@ -214,5 +240,7 @@ pub async fn sophon_check_update(
 }
 
 fn emit(app: &AppHandle, progress: SophonProgress) {
-    let _ = app.emit("sophon://progress", progress);
+    if let Err(e) = app.emit("sophon://progress", progress) {
+        log::error!("Failed to emit progress event: {}", e);
+    }
 }
