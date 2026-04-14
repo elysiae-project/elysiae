@@ -81,6 +81,7 @@ fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
     Ok(out)
 }
 
+#[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
     match vo_lang.to_lowercase().as_str() {
         "cn" => matching_field.contains("zh"),
@@ -91,6 +92,7 @@ pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
     }
 }
 
+#[inline]
 pub fn parse_size(s: &str) -> u64 {
     s.parse().unwrap_or(0)
 }

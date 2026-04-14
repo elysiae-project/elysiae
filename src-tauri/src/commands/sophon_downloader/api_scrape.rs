@@ -87,10 +87,12 @@ pub struct DownloadInfo {
 }
 
 impl DownloadInfo {
+    #[inline]
     pub fn url_for(&self, item_name: &str) -> String {
         format!("{}{}/{}", self.url_prefix, self.url_suffix, item_name)
     }
 
+    #[inline]
     pub fn is_compressed(&self) -> bool {
         self.compression == 1
     }
@@ -105,6 +107,7 @@ pub struct Stats {
     pub chunk_count: String,
 }
 
+#[inline]
 pub fn front_door_game_index(game_id: &str) -> Option<usize> {
     match game_id.to_lowercase().as_str() {
         "bh3" => Some(3),

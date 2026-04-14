@@ -18,10 +18,12 @@ use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestAssetChunk, SophonManifestAssetProperty,
 };
 
+#[inline]
 pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
     format!("{}.zstd", chunk.chunk_name)
 }
 
+#[inline]
 pub fn decrement_chunk_refcount(
     chunk_name: &str,
     chunk_refcounts: &DashMap<String, usize>,
