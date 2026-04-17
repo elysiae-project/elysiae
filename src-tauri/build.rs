@@ -6,7 +6,7 @@ fn main() {
 
     #[cfg(not(target_arch = "x86_64"))]
     compile_error!(
-        "Elysiae is only supported on x64 (x86_64) CPUs.\nIf you are running on an Arm CPU, you can target x64 and use FEX to run the program: https://github.com/FEX-Emu/FEX\nFEX is untested by the Elysiae Project, and issues that occur because of its use will not be fixed."
+        "Elysiae is only supported on x64 (x86_64) CPUs.\nIf you are running on an Arm CPU, you can target x64 and use FEX to run Elyisae: https://github.com/FEX-Emu/FEX\nFEX is untested not officially supported by the Elysiae Project; issues that occur because of its use will not be fixed."
     );
 
     tauri_build::build()

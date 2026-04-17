@@ -21,7 +21,9 @@ import {
 } from "./lib/GameDownloader.ts";
 import Modal from "./components/Modal.tsx";
 import { settingsDetails } from "./util/SettingsDetails.ts";
-import GameDownloadProgress from "./components/DownloadProgress.tsx";
+import DownloadProgress from "./components/app/DownloadProgress.tsx";
+import PreinstallButton from "./components/app/PreinstallButton.tsx";
+import InstallerButton from "./components/app/InstallerButton.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -34,34 +36,6 @@ const theme = cva("h-full w-full overflow-hidden", {
 		},
 	},
 });
-
-function PreinstallButton() {
-	// A lot of placeholder stuff here. Just want to get the component to render so I can implement this stuff in the future
-	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false); // Not implemented yet
-	const { game } = useGame();
-
-	useEffect(() => {
-		isPreinstallAvailable(game).then((preinstallRes) => {
-			isGameInstalled(game).then((gameRes) => {
-				setPreInstAvailable(preinstallRes && gameRes);
-			})
-		});
-	}, [game]);
-
-	if (!preInstAvailable) return <></>;
-
-	return (
-		<Button
-			intent="primary"
-			overrideMinWidth={true}
-			onClick={async () => {
-				await downloadUpdate(game, true);
-			}}
-		>
-			<Save />
-		</Button>
-	);
-}
 
 function App() {
 	const { game } = useGame();
@@ -110,40 +84,18 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
 							{/* Page content */}
-							<GameDownloadProgress/>
+							<DownloadProgress/>
 							<PreinstallButton />
 							<Button
-								intent="primary"
+								intent="secondary"
 								onClick={() => {
 									setSettingsOpen(true);
 								}}
-								overrideMinWidth
+								iconButton
 							>
-								<Settings />
+								<Settings className="leading-0 -m-1" size={"1rem"}/>
 							</Button>
-							<Button
-								intent="primary"
-								onClick={async () => {
-									if (!wineAvailable) {
-										await updateWineComponents();
-										setWineAvailable(true);
-									} else if (!gameInstalled) {
-										const activeGame = game;
-										await downloadGame(activeGame);
-										if (game === activeGame) {
-											setGameInstalled(true);
-										}
-									} else {
-										await runGame(game);
-									}
-								}}
-							>
-								{!wineAvailable
-									? "Create Environment"
-									: !gameInstalled
-										? "Download"
-										: "Launch"}
-							</Button>
+							<InstallerButton/>
 						</div>
 						<Sidebar />
 					</div>

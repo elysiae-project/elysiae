@@ -1,7 +1,7 @@
 import { join } from "@tauri-apps/api/path";
 import { GameData, SophonProgress, Variants } from "../types";
 import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
-import { exists } from "./Fs";
+import { exists, writeFile } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
@@ -64,6 +64,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		await broadcastNotification(
 			`${gameData.gameCode} has finished downloading!`,
 		);
+		await writeFile((await join(gameData.gameDir, ".download_complete")), "The download has been completed.");
 	}
 };
 
@@ -183,6 +184,7 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
  */
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
+		// TODO: Replace with a more effective and robust way to check for game installs
 		join("games", getActiveGameCode(game), getGameExeName(game)).then(
 			(path) => {
 				exists(path).then(resolve).catch(reject);

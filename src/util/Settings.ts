@@ -41,7 +41,7 @@ export const getOption = async <T = unknown>(key: AppOptions): Promise<T> => {
 	});
 };
 
-export const setOption = async (key: AppOptions, value: any): Promise<void> => {
+export const setOption = async<T = unknown>(key: AppOptions, value: T): Promise<void> => {
 	if (!store) {
 		store = await loadStore();
 	}

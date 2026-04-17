@@ -18,7 +18,7 @@ tokio = { version = "1.51.1", features = ["rt"] }
 futures = "0.3.32"
 futures-util = "0.3.32"
 
-tauri = { version = "2.10.3", features = ["protocol-asset"] }
+tauri = { version = "2.10.3", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2.5.3"
 
 serde = { version = "1.0.228", features = ["derive"] }
