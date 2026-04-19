@@ -75,6 +75,7 @@
     "fs:allow-resource-read-recursive",
     "fs:read-all",
     "fs:write-all",
-    "notification:default"
+    "notification:default",
+    "core:app:allow-default-window-icon"
   ]
 }

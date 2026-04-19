@@ -16,6 +16,8 @@ import Modal from "./components/Modal.tsx";
 import DownloadProgress from "./components/app/DownloadProgress.tsx";
 import PreinstallButton from "./components/app/PreinstallButton.tsx";
 import InstallerButton from "./components/app/InstallerButton.tsx";
+import Dropdown from "./components/Dropdown.tsx";
+import { setOption } from "./util/Settings.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -55,7 +57,14 @@ function App() {
 												<Info size={15} />
 											) : null}
 										</div>
-										<div></div>
+										<div>
+											{(() => {
+												if (setting.type === "dropdown") {
+												} else if (setting.type === "boolean") {
+												} else if (setting.type === "button") {
+												}
+											})()}
+										</div>
 									</div>
 								);
 							})}

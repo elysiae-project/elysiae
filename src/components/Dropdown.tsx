@@ -61,7 +61,7 @@ export default function Dropdown({
 }: {
 	labels: string[];
 	initialIndex: number;
-	onChangeAction: (index: number) => void;
+	onChangeAction: (label: string) => void;
 }) {
 	const { game } = useGame();
 
@@ -76,11 +76,11 @@ export default function Dropdown({
 		setLabel(labels[index]);
 		setOpen(false);
 		setCurrentIndex(index);
-		onChangeAction(index);
+		onChangeAction(label);
 	};
 
 	useEffect(() => {
-		const onClick = (e: MouseEvent) => {
+		const onClick = () => {
 			setOpen(false);
 		};
 		if (open) {
