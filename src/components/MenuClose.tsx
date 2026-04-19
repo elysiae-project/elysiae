@@ -3,8 +3,6 @@ import { Variants } from "../types";
 import { useGame } from "../hooks/useGame";
 import { getActiveGameCode } from "../util/AppFunctions";
 import { useState } from "preact/hooks";
-import { motion } from "motion/react";
-import { fadeInOut } from "../util/Animations";
 
 const menuCloseStyles = cva(
 	"h-10 w-10 flex items-center justify-center transition-all duration-75",
@@ -12,10 +10,10 @@ const menuCloseStyles = cva(
 		variants: {
 			game: {
 				// Additional Styles aren't needed for bh3 or hkrpg as they are just the icon
-				[Variants.BH3]: "",
+				[Variants.BH3]: null,
 				[Variants.HK4E]:
-					"border-3 p-0.5 border-ys-btnborder bg-[#ece5d8] hover:border-transparent hover:drop-shadow-lg hover:drop-shadow[#fdfdfe] rounded-full active:bg-ys-btn-active-bg active:border-transparent",
-				[Variants.HKRPG]: "",
+					"border-3 p-0.5 border-hk4e-btnborder bg-hk4e-item-active-bg hover:border-transparent hover:drop-shadow-lg hover:drop-shadow-hk4e-btn-hover-shadow rounded-full active:bg-hk4e-btn-active-bg active:border-transparent",
+				[Variants.HKRPG]: null,
 				[Variants.NAP]:
 					"rounded-full nap-dots-titlebar-btn border-3 border-nap-btn-border-strong active:animate-nap-pulsate active:border-transparent",
 			},
@@ -29,7 +27,7 @@ export default function MenuClose({
 	clickAction: () => void;
 }) {
 	const { game } = useGame();
-	const assetPath = `src/assets/icon/${getActiveGameCode(game)}`;
+	const assetPath = `/icon/${getActiveGameCode(game)}`;
 	let [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (

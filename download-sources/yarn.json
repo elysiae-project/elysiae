@@ -652,6 +652,13 @@
     },
     {
         "type": "file",
+        "url": "https://registry.npmjs.org/@tauri-apps/plugin-notification/-/plugin-notification-2.3.3.tgz",
+        "sha512": "670f991f5f1125be351b836b7c7808ba87c98b29aeb2a37eabc7c6508215eefc821fee6c4a7e5ca2a46ffcc581f6a113b14b3deef994d38e6aececac78257742",
+        "dest-filename": "plugin-notification-QHRhdXJpLWFwcHMvcGx1Z2luLW5vdGlmaWNhdGlvbkBucG06Mi4zLjM=-a0af7a159a.tgz",
+        "dest": "flatpak-node/yarn-berry/cache/locator"
+    },
+    {
+        "type": "file",
         "url": "https://registry.npmjs.org/@tauri-apps/plugin-opener/-/plugin-opener-2.5.3.tgz",
         "sha512": "08271496d5cc39f50402b6dfddd6f790213b1a0cb5131044065e752a8d8e0c9e860d81d1a759d2365426e6e342158e64effb9f68ae486f70eefd98abd7d21841",
         "dest-filename": "plugin-opener-QHRhdXJpLWFwcHMvcGx1Z2luLW9wZW5lckBucG06Mi41LjM=-9ef2fae01e.tgz",

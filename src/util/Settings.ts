@@ -24,7 +24,7 @@ const loadStore = async (): Promise<Store> => {
 	});
 };
 
-export const getSettingValue = async (key: AppOptions): Promise<any> => {
+export const getOption = async <T = unknown>(key: AppOptions): Promise<T> => {
 	if (!store) {
 		store = await loadStore();
 	}
@@ -33,7 +33,7 @@ export const getSettingValue = async (key: AppOptions): Promise<any> => {
 		store
 			?.get<{ value: any }>(key)
 			.then((res) => {
-				resolve(res);
+				resolve(res as T);
 			})
 			.catch((e) => {
 				reject(`getOption: ${e}`);
@@ -41,7 +41,7 @@ export const getSettingValue = async (key: AppOptions): Promise<any> => {
 	});
 };
 
-export const setOption = async (key: AppOptions, value: any): Promise<void> => {
+export const setOption = async<T = unknown>(key: AppOptions, value: T): Promise<void> => {
 	if (!store) {
 		store = await loadStore();
 	}

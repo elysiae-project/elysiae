@@ -1,4 +1,5 @@
 {
 	"selectedGame": "sr",
-	"voLanguage": "en"
+	"voLanguage": "en",
+	"blockNotifications": false
 }

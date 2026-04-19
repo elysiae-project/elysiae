@@ -3,21 +3,25 @@ import { Variants } from "../types";
 import { cva } from "class-variance-authority";
 
 const buttonStyles = cva(
-	"transition-all px-5 py-2 duration-175 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 text-[1.25em]",
+	"transition-all duration-175 px-5 py-2 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 text-[1.25em]",
 	{
 		variants: {
 			game: {
 				[Variants.BH3]: "border-2",
 				[Variants.HK4E]: "rounded-full drop-shadow-md",
 				[Variants.HKRPG]:
-					"rounded-full py-3 outline-2 hover:outline-sr-btn-outline active:outline-sr-btn-outline drop-shadow-sm",
+					"rounded-full py-3 outline-2 hover:outline-hkrpg-btn-outline active:outline-hkrpg-btn-outline drop-shadow-sm",
 				[Variants.NAP]:
 					"transition-colors duration-200 flex flex-row justify-center items-center border-3 rounded-full border-nap-btn-border active:border-transparent active:text-black active:animate-nap-pulsate",
 			},
 			variant: {
 				// These are needed so the primary/secondary variants below register properly
-				primary: "",
-				secondary: "",
+				primary: null,
+				secondary: null,
+			},
+			disabled: {
+				false: null,
+				true: "opacity-50 pointer-events-none",
 			},
 		},
 		compoundVariants: [
@@ -25,37 +29,37 @@ const buttonStyles = cva(
 				game: Variants.BH3,
 				variant: "primary",
 				class:
-					"drop-shadow-lg bh-button-primary-dots drop-shadow-bh-btn-primary-shadow border-bh-btn-border",
+					"drop-shadow-lg bh3-button-primary-dots drop-shadow-bh3-btn-primary-shadow border-bh-btn-border",
 			},
 			{
 				game: Variants.BH3,
 				variant: "secondary",
 				class:
-					"border-bh-btn-secondary-border bh-button-secondary-dots bg-gray-800",
+					"border-bh3-btn-secondary-border bh3-button-secondary-dots bg-gray-800",
 			},
 			{
 				game: Variants.HK4E,
 				variant: "primary",
 				class:
-					"bg-ys-btn-primary text-ys-btn-secondary border-2 border-transparent hover:border-white active:border-ys-btn-primary-border-active active:bg-ys-btn-primary-active active:text-white",
+					"bg-hk4e-btn-primary text-hk4e-btn-secondary border-2 border-transparent hover:border-white active:border-hk4e-btn-primary-border-active active:bg-hk4e-btn-primary-active active:text-white",
 			},
 			{
 				game: Variants.HK4E,
 				variant: "secondary",
 				class:
-					"bg-ys-btn-secondary text-ys-btn-primary border-2 border-transparent hover:border-btn-secondary-border-hover active:bg-ys-btn-secondary-active active:text-ys-btn-secondary-active-text active:border-ys-btn-secondary-border-active",
+					"bg-hk4e-btn-secondary text-hk4e-btn-primary border-2 border-transparent hover:border-btn-secondary-border-hover active:bg-hk4e-btn-secondary-active active:text-hk4e-btn-secondary-active-text active:border-hk4e-btn-secondary-border-active",
 			},
 			{
 				game: Variants.HKRPG,
 				variant: "primary",
 				class:
-					"bg-sr-btn-primary outline-sr-btn-primary-outline hover:bg-sr-btn-primary-hover active:bg-sr-btn-primary-active",
+					"bg-hkrpg-btn-primary outline-hkrpg-btn-primary-outline hover:bg-hkrpg-btn-primary-hover active:bg-hkrpg-btn-primary-active",
 			},
 			{
 				game: Variants.HKRPG,
 				variant: "secondary",
 				class:
-					"bg-sr-btn-secondary outline-transparent hover:bg-white active:bg-sr-btn-secondary-active",
+					"bg-hkrpg-btn-secondary outline-transparent hover:bg-white active:bg-hkrpg-btn-secondary-active",
 			},
 			{
 				game: Variants.NAP,
@@ -65,7 +69,7 @@ const buttonStyles = cva(
 			{
 				game: Variants.NAP,
 				variant: "secondary",
-				class: "bg-transparent",
+				class: "nap-dots-titlebar-btn",
 			},
 		],
 	},
@@ -74,20 +78,22 @@ const buttonStyles = cva(
 export default function Button({
 	onClick,
 	children,
-	overrideMinWidth = false,
-	intent,
+	intent: variant,
+	iconButton = false,
+	disabled = false,
 }: {
 	onClick: () => void;
 	children: any;
-	overrideMinWidth?: boolean;
 	intent: "primary" | "secondary";
+	iconButton?: boolean;
+	disabled?: boolean;
 }) {
 	const { game } = useGame();
 	return (
 		<button
+			disabled={disabled}
 			onClick={onClick}
-			class={`${buttonStyles({ game: game, variant: intent })} ${!overrideMinWidth ? "min-w-60" : ""}`}
-		>
+			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "min-w-10 aspect-square" : "min-w-65"}`}>
 			{children}
 		</button>
 	);

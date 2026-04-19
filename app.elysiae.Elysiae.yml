@@ -18,7 +18,6 @@ finish-args:
   - --share=network
   - --filesystem=xdg-run/path
   - --filesystem=home
-
 modules:
   - name: Elysiae
     buildsystem: simple
@@ -50,14 +49,22 @@ modules:
       - ./flatpak-node/autogen.sh
       - yarn install
       - yarn tauri build
-      - ar -x src-tauri/target/release/bundle/deb/*.deb
-      - tar -xf data.tar.gz
       - install -Dm0644 LICENSE -t ${FLATPAK_DEST}/share/licenses/$FLATPAK_ID/Elysiae
-      - install -Dm755 ./usr/bin/Elysiae /app/bin/Elysiae
-      - install -Dm644 ./usr/share/applications/Elysiae.desktop /app/share/applications/app.elysiae.Elysiae.desktop
-      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/Elysiae.png
-      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/Elysiae.png
-      - install -Dm644 src-tauri/icons/64x64.png /app/share/icons/hicolor/64x64/apps/Elysiae.png
-      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/512x512/apps/Elysiae.png
-      - install -Dm644 src-tauri/icons/icon.svg /app/share/icons/hicolor/scalable/apps/Elysiae.svg
-      - install -Dm644 ./usr/share/metainfo/app.elysiae.Elysiae.metainfo.xml /app/share/metainfo/app.elysiae.Elysiae.metainfo.xml
+      - install -Dm755 src-tauri/target/release/Elysiae /app/bin/Elysiae
+      - |
+        cat > Elysiae.desktop << EOF
+          [Desktop Entry]
+          Name=Elysiae
+          Exec=Elysiae
+          Icon=app.elysiae.Elysiae
+          Type=Application
+          Categories=Game;LauncherStore;
+          Terminal=false
+        EOF
+      - install -Dm644 Elysiae.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/32x32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/64x64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/icon.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
+      - install -Dm644 app.elysiae.Elysiae.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml

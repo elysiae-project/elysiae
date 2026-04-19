@@ -1,12 +1,17 @@
 import { join } from "@tauri-apps/api/path";
 import { GameData, SophonProgress, Variants } from "../types";
-import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
+import {
+	getActiveGameCode,
+	getGameExeName,
+	getGameName,
+} from "../util/AppFunctions";
 import { exists } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
-import { getSettingValue } from "../util/Settings";
+import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
+import { broadcastNotification } from "../util/NotificationHelper";
 
 /**
  * Downloads a fresh install of any game to `games/gameCode`
@@ -14,12 +19,12 @@ import { listen } from "@tauri-apps/api/event";
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
-
+	await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
 	const unlisten = await listen("sophon://progress", (event) => {
 		const progress = event.payload as SophonProgress;
 		switch (progress.type) {
 			case "fetchingManifest":
-				console.log("Fetching manifest...");
+				info("Fetching manifest...");
 				break;
 			case "downloading": {
 				const downloaded = progress.downloaded_bytes / 1024 ** 2;
@@ -60,6 +65,9 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		});
 	} finally {
 		unlisten();
+		await broadcastNotification(
+			`${getGameName(game)} Has Finished Downloading`,
+		);
 	}
 };
 
@@ -179,11 +187,11 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
  */
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
-		join("games", getActiveGameCode(game), getGameExeName(game)).then(
-			(path) => {
-				exists(path).then(resolve).catch(reject);
-			},
-		);
+		// TODO: Replace with a more effective and robust way to check for game installs
+		// pkg_version is one of the last files that is downloaded
+		join("games", getActiveGameCode(game), "pkg_version").then((path) => {
+			exists(path).then(resolve).catch(reject);
+		});
 	});
 };
 
@@ -195,7 +203,7 @@ export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 const getGameData = async (game: Variants): Promise<GameData> => {
 	const gameCode = getActiveGameCode(game);
 	const gameDir = await join("games", gameCode);
-	const requestedLanguage = (await getSettingValue("voLanguage")) as string;
+	const requestedLanguage = (await getOption("voLanguage")) as string;
 
 	return {
 		gameCode,

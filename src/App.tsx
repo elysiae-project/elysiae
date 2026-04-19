@@ -9,75 +9,32 @@ import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
-import { useEffect, useState } from "preact/hooks";
-import { Info, Save, Settings } from "lucide-preact";
-import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import {
-	downloadGame,
-	downloadUpdate,
-	isGameInstalled,
-	isPreinstallAvailable,
-	runGame,
-} from "./lib/GameDownloader.ts";
-import Modal from "./components/Modal.tsx";
+import { useState } from "preact/hooks";
+import { Info, Settings } from "lucide-preact";
 import { settingsDetails } from "./util/SettingsDetails.ts";
+import Modal from "./components/Modal.tsx";
+import DownloadProgress from "./components/app/DownloadProgress.tsx";
+import PreinstallButton from "./components/app/PreinstallButton.tsx";
+import InstallerButton from "./components/app/InstallerButton.tsx";
+import Dropdown from "./components/Dropdown.tsx";
+import { setOption } from "./util/Settings.ts";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
-			[Variants.BH3]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
-			[Variants.HK4E]: "bg-ys-bg font-ys text-black",
-			[Variants.HKRPG]: "bg-sr-bg font-bh-sr rounded-b-xs text-black",
+			[Variants.BH3]: "bg-bh3-bg font-bh3-hkrpg rounded-b-xl text-white",
+			[Variants.HK4E]: "bg-hk4e-bg font-hk4e text-black",
+			[Variants.HKRPG]: "bg-hkrpg-bg font-bh3-hkrpg rounded-b-xs text-black",
 			[Variants.NAP]:
 				"bg-nap-bg font-nap rounded-br-xl border-nap-border text-white",
 		},
 	},
 });
 
-function PreinstallButton() {
-	// A lot of placeholder stuff here. Just want to get the component to render so I can implement this stuff in the future
-	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false); // Not implemented yet
-	const { game } = useGame();
-
-	useEffect(() => {
-		isPreinstallAvailable(game).then((preinstallRes) => {
-			isGameInstalled(game).then((gameRes) => {
-				setPreInstAvailable(preinstallRes && gameRes);
-			})
-		});
-	}, [game]);
-
-	if (!preInstAvailable) return <></>;
-
-	return (
-		<Button
-			intent="primary"
-			overrideMinWidth={true}
-			onClick={async () => {
-				await downloadUpdate(game, true);
-			}}
-		>
-			<Save />
-		</Button>
-	);
-}
-
 function App() {
 	const { game } = useGame();
 	const { graphics } = useApi();
-
-	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
-	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
-	let [settingsOpen, setSettingsOpen] = useState<boolean>(false);
-
-	useEffect(() => {
-		wineEnvAvailable().then((res) => {
-			setWineAvailable(res);
-		});
-		isGameInstalled(game).then((res) => {
-			setGameInstalled(res);
-		});
-	}, [game]);
+	const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
@@ -90,8 +47,7 @@ function App() {
 						<Modal
 							onOpenUpdate={() => setSettingsOpen(false)}
 							title="Settings"
-							open={settingsOpen}
-						>
+							open={settingsOpen}>
 							{settingsDetails.map((setting) => {
 								return (
 									<div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
@@ -101,7 +57,14 @@ function App() {
 												<Info size={15} />
 											) : null}
 										</div>
-										<div></div>
+										<div>
+											{(() => {
+												if (setting.type === "dropdown") {
+												} else if (setting.type === "boolean") {
+												} else if (setting.type === "button") {
+												}
+											})()}
+										</div>
 									</div>
 								);
 							})}
@@ -109,39 +72,17 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
 							{/* Page content */}
+							<DownloadProgress />
 							<PreinstallButton />
 							<Button
-								intent="primary"
+								intent="secondary"
 								onClick={() => {
 									setSettingsOpen(true);
 								}}
-								overrideMinWidth
-							>
-								<Settings />
+								iconButton>
+								<Settings className="leading-0 -m-1" />
 							</Button>
-							<Button
-								intent="primary"
-								onClick={async () => {
-									if (!wineAvailable) {
-										await updateWineComponents();
-										setWineAvailable(true);
-									} else if (!gameInstalled) {
-										const activeGame = game;
-										await downloadGame(activeGame);
-										if (game === activeGame) {
-											setGameInstalled(true);
-										}
-									} else {
-										await runGame(game);
-									}
-								}}
-							>
-								{!wineAvailable
-									? "Create Environment"
-									: !gameInstalled
-										? "Download"
-										: "Launch"}
-							</Button>
+							<InstallerButton />
 						</div>
 						<Sidebar />
 					</div>

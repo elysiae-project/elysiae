@@ -41,10 +41,11 @@
 			"icons/icon.svg"
 		],
 		"resources": {
-			"resources/settings.json": "settings.json"
+			"resources/settings.json": "settings.json",
+			"icons/icon.png": "appIcon.png"
 		},
 		"active": true,
-		"targets": ["deb"],
+		"targets": "app",
 		"linux": {
 			"deb": {
 				"files": {

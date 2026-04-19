@@ -2,9 +2,8 @@ import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame.ts";
 import { Variants } from "../types";
 import { closeApp } from "../util/AppFunctions.ts";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import MenuClose from "./MenuClose.tsx";
-import { fadeInOut } from "../util/Animations.ts";
 
 const titlebarStyles = cva(
 	"h-15 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
@@ -12,9 +11,9 @@ const titlebarStyles = cva(
 		variants: {
 			game: {
 				// Declare fonts because the titlebar is declared outside the actual app content. Can be easily fixed if I wasn't lazy
-				[Variants.BH3]: "bg-bh-titlebar font-bh-sr rounded-t-xl",
-				[Variants.HK4E]: "bg-ys-titlebar font-ys",
-				[Variants.HKRPG]: "bg-sr-titlebar titlebar-sr-noise font-bh-sr",
+				[Variants.BH3]: "bg-bh3-titlebar font-bh3-hkrpg rounded-t-xl",
+				[Variants.HK4E]: "bg-hk4e-titlebar font-hk4e",
+				[Variants.HKRPG]: "bg-hkrpg-titlebar titlebar-hkrpg-noise font-bh3-hkrpg",
 				[Variants.NAP]:
 					"bg-nap-titlebar nap-dots-titlebar font-nap rounded-tl-xl",
 			},
