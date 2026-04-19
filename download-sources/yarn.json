@@ -1527,9 +1527,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/typescript/-/typescript-6.0.2.tgz",
-        "sha512": "6c674022b674c22183a3997c73ef875ad6da3425934b8513bfb45a4c7fd38552208e4bde26df379bbe1b04730992e09bb2563c8b180b05564920e8909504e37d",
-        "dest-filename": "typescript-dHlwZXNjcmlwdEBucG06Ni4wLjI=-4b860b0bf8.tgz",
+        "url": "https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz",
+        "sha512": "cb64efbb14993c3c906a490544f6472859be28a56a222b1d83dfc26709bd7edbca5cb3fc3515a3dfcfce0e335baf8dd2b285ea36e022b047f519d0b1a9671d07",
+        "dest-filename": "typescript-dHlwZXNjcmlwdEBucG06Ni4wLjM=-4a25ff5045.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
