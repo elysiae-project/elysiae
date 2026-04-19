@@ -20,9 +20,9 @@ import InstallerButton from "./components/app/InstallerButton.tsx";
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
 		intent: {
-			[Variants.BH3]: "bg-bh-bg font-bh-sr rounded-b-xl text-white",
-			[Variants.HK4E]: "bg-ys-bg font-ys text-black",
-			[Variants.HKRPG]: "bg-sr-bg font-bh-sr rounded-b-xs text-black",
+			[Variants.BH3]: "bg-bh3-bg font-bh3-hkrpg rounded-b-xl text-white",
+			[Variants.HK4E]: "bg-hk4e-bg font-hk4e text-black",
+			[Variants.HKRPG]: "bg-hkrpg-bg font-bh3-hkrpg rounded-b-xs text-black",
 			[Variants.NAP]:
 				"bg-nap-bg font-nap rounded-br-xl border-nap-border text-white",
 		},

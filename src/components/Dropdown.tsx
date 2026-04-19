@@ -10,11 +10,11 @@ const dropdownStyles = cva(
 		variants: {
 			game: {
 				[Variants.BH3]:
-					"bg-bh-dropdown text-bh-dropdown-text active:bg-bh-dropdown-active",
+					"bg-bh3-dropdown text-bh3-dropdown-text active:bg-bh3-dropdown-active",
 				[Variants.HK4E]:
-					"rounded-3xl border-2 border-transparent bg-ys-dropdown hover:border-white active:border-ys-dropdown-border-active active:bg-ys-dropdown-active text-ys-dropdown-text",
+					"rounded-3xl border-2 border-transparent bg-hk4e-dropdown hover:border-white active:border-hk4e-dropdown-border-active active:bg-hk4e-dropdown-active text-hk4e-dropdown-text",
 				[Variants.HKRPG]:
-					"rounded-full bg-sr-dropdown-bg hover:bg-white border-2 border-transparent hover:border[#eeeeee] active:border-white active:bg-sr-dropdown-active-bg",
+					"rounded-full bg-hkrpg-dropdown-bg hover:bg-white border-2 border-transparent hover:border-hkrpg-dropdown-hover-border active:border-white active:bg-hkrpg-dropdown-active-bg",
 				[Variants.NAP]:
 					"nap-dots rounded-full border-3 border-[#353535] active:animate-nap-pulsate",
 			},

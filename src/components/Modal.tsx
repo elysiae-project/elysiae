@@ -8,9 +8,9 @@ const modalStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH3]: "bg-bh-modal-bg rounded-lg",
-				[Variants.HK4E]: "bg-ys-modal-bg rounded-md text-white",
-				[Variants.HKRPG]: "bg-sr-modal-bg rounded-md",
+				[Variants.BH3]: "bg-bh3-modal-bg rounded-lg",
+				[Variants.HK4E]: "bg-hk4e-modal-bg rounded-md text-white",
+				[Variants.HKRPG]: "bg-hkrpg-modal-bg rounded-md",
 				[Variants.NAP]:
 					"nap-dots rounded-br-2xl rounded-tl-2xl border-[0.195rem] border-nap-btn-border",
 			},
@@ -25,7 +25,7 @@ const modalTitlebarStyles = cva(
 			game: {
 				[Variants.BH3]: "border-b-white",
 				[Variants.HK4E]:
-					"text-ys-modal-titlebar-text border-b-ys-modal-titlebar-border",
+					"text-hk4e-modal-titlebar-text border-b-hk4e-modal-titlebar-border",
 				[Variants.HKRPG]: "border-b-black",
 				[Variants.NAP]: "border-b-white",
 			},
@@ -55,8 +55,7 @@ export default function Modal({
 				backdropFilter: "blur(7px)",
 				backgroundColor: "rgba(13,13,13,0.6)",
 			}}
-			onClick={onOpenUpdate}
-		>
+			onClick={onOpenUpdate}>
 			<div class={modalStyles({ game })} onClick={(e) => e.stopPropagation()}>
 				<div className={modalTitlebarStyles({ game })}>
 					<h2>{title}</h2>

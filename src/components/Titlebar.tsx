@@ -11,9 +11,9 @@ const titlebarStyles = cva(
 		variants: {
 			game: {
 				// Declare fonts because the titlebar is declared outside the actual app content. Can be easily fixed if I wasn't lazy
-				[Variants.BH3]: "bg-bh-titlebar font-bh-sr rounded-t-xl",
-				[Variants.HK4E]: "bg-ys-titlebar font-ys",
-				[Variants.HKRPG]: "bg-sr-titlebar titlebar-sr-noise font-bh-sr",
+				[Variants.BH3]: "bg-bh3-titlebar font-bh3-hkrpg rounded-t-xl",
+				[Variants.HK4E]: "bg-hk4e-titlebar font-hk4e",
+				[Variants.HKRPG]: "bg-hkrpg-titlebar titlebar-hkrpg-noise font-bh3-hkrpg",
 				[Variants.NAP]:
 					"bg-nap-titlebar nap-dots-titlebar font-nap rounded-tl-xl",
 			},
