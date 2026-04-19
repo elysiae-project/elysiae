@@ -7,10 +7,8 @@ import { formatNumber } from "../../util/AppFunctions";
 export default function GameDownloadProgress() {
 	let [downloadedBytes, setDownloadedBytes] = useState<number>(0);
 	let [downloadTotal, setDownloadTotal] = useState<number>(0);
-
 	let [assembledFiles, setAssembledFiles] = useState<number>(0);
 	let [totalFiles, setTotalFiles] = useState<number>(0);
-
 	let [isDownloading, setIsDownloading] = useState<boolean>(false);
 
 	useEffect(() => {

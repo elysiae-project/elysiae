@@ -9,18 +9,10 @@ import { Variants } from "./types";
 import { useApi } from "./hooks/useApi.ts";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
-import { useEffect, useState } from "preact/hooks";
-import { Info, Save, Settings } from "lucide-preact";
-import { updateWineComponents, wineEnvAvailable } from "./lib/WineManager.ts";
-import {
-	downloadGame,
-	downloadUpdate,
-	isGameInstalled,
-	isPreinstallAvailable,
-	runGame,
-} from "./lib/GameDownloader.ts";
-import Modal from "./components/Modal.tsx";
+import { useState } from "preact/hooks";
+import { Info, Settings } from "lucide-preact";
 import { settingsDetails } from "./util/SettingsDetails.ts";
+import Modal from "./components/Modal.tsx";
 import DownloadProgress from "./components/app/DownloadProgress.tsx";
 import PreinstallButton from "./components/app/PreinstallButton.tsx";
 import InstallerButton from "./components/app/InstallerButton.tsx";
@@ -40,19 +32,7 @@ const theme = cva("h-full w-full overflow-hidden", {
 function App() {
 	const { game } = useGame();
 	const { graphics } = useApi();
-
-	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
-	let [gameInstalled, setGameInstalled] = useState<boolean>(false); // TODO: Add game installation checks after the sophon downloader is done
-	let [settingsOpen, setSettingsOpen] = useState<boolean>(false);
-
-	useEffect(() => {
-		wineEnvAvailable().then((res) => {
-			setWineAvailable(res);
-		});
-		isGameInstalled(game).then((res) => {
-			setGameInstalled(res);
-		});
-	}, [game]);
+	const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
 	return (
 		<div class="flex h-screen w-screen flex-col gap-0 text-white">
@@ -65,8 +45,7 @@ function App() {
 						<Modal
 							onOpenUpdate={() => setSettingsOpen(false)}
 							title="Settings"
-							open={settingsOpen}
-						>
+							open={settingsOpen}>
 							{settingsDetails.map((setting) => {
 								return (
 									<div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
@@ -84,18 +63,17 @@ function App() {
 
 						<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
 							{/* Page content */}
-							<DownloadProgress/>
+							<DownloadProgress />
 							<PreinstallButton />
 							<Button
 								intent="secondary"
 								onClick={() => {
 									setSettingsOpen(true);
 								}}
-								iconButton
-							>
-								<Settings className="leading-0 -m-1" size={"1rem"}/>
+								iconButton>
+								<Settings className="leading-0 -m-1" />
 							</Button>
-							<InstallerButton/>
+							<InstallerButton />
 						</div>
 						<Sidebar />
 					</div>

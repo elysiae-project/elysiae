@@ -7,7 +7,6 @@ import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
-import { broadcastNotification } from "../util/NotificationHelper";
 
 /**
  * Downloads a fresh install of any game to `games/gameCode`
@@ -15,7 +14,6 @@ import { broadcastNotification } from "../util/NotificationHelper";
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
-	await broadcastNotification("Download Started!");
 	const unlisten = await listen("sophon://progress", (event) => {
 		const progress = event.payload as SophonProgress;
 		switch (progress.type) {
@@ -61,9 +59,6 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		});
 	} finally {
 		unlisten();
-		await broadcastNotification(
-			`${gameData.gameCode} has finished downloading!`,
-		);
 		await writeFile((await join(gameData.gameDir, ".download_complete")), "The download has been completed.");
 	}
 };
@@ -185,7 +180,8 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		// TODO: Replace with a more effective and robust way to check for game installs
-		join("games", getActiveGameCode(game), getGameExeName(game)).then(
+		// pkg_version is one of the last files that is downloaded
+		join("games", getActiveGameCode(game), "pkg_version").then(
 			(path) => {
 				exists(path).then(resolve).catch(reject);
 			},

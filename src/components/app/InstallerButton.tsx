@@ -69,7 +69,7 @@ export default function InstallerButton() {
 			setGameInstalled(res);
 		});
 	}, [game]);
-
+	
 	return (
 		<div class="w-auto flex flex-row gap-x-3.5">
 			{downloadInProgress ? (
