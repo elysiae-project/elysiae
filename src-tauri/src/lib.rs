@@ -4,7 +4,6 @@ use tauri::tray::TrayIconBuilder;
 use crate::commands::{app_functions, file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
-use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,7 +18,7 @@ pub fn run() {
                 .build()
                 .unwrap(),
         )) //  Required for sophon chunk downloading
-        .manage(ActiveDownload(Mutex::new(None)))
+        .manage(ActiveDownload(tokio::sync::Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))

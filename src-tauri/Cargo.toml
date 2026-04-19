@@ -10,11 +10,12 @@ name = "elysiae_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.6", features = [] }
+tauri-build = { version = "2.5.6", features = []   }
 
 [dependencies]
-glib = "0.22.4"
-tokio = { version = "1.51.1", features = ["rt"] }
+glib = "0.22.5"
+tokio = { version = "1.51.1", features = ["rt", "sync", "time", "macros"] }
+tokio-util = "0.7.18"
 futures = "0.3.32"
 futures-util = "0.3.32"
 
@@ -38,11 +39,13 @@ xz = "0.1.0"
 flate2 = "1.1.9"
 zip = "8.5.1"
 tar = "0.4.45"
-md-5 = "0.10"
-dashmap = "6.0"
+md-5 = "0.11.0"
+dashmap = "6.1.0"
+hex = "0.4.3"
+bytes = "1.11.1"
 prost = "0.14.3"
-lru = "0.12"
-tauri-plugin-notification = "2"
+lru = "0.16.4"
+thiserror = "2.0.18"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.1"

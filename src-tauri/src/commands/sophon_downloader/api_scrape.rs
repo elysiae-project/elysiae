@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// Sophon "Front Door" response
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct FrontDoorResponse {
     pub retcode: i32,
@@ -14,7 +13,7 @@ pub struct FrontDoorData {
     pub game_branches: Vec<GameBranch>,
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameBranch {
     pub game: GameId,
@@ -22,7 +21,7 @@ pub struct GameBranch {
     pub pre_download: Option<PackageBranch>,
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameId {
     pub id: String,
@@ -37,8 +36,7 @@ pub struct PackageBranch {
     pub tag: String,
 }
 
-// Sophon Manifest endpoint structs
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonBuildResponse {
     pub retcode: i32,
@@ -46,7 +44,7 @@ pub struct SophonBuildResponse {
     pub data: SophonBuildData,
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonBuildData {
     pub build_id: String,
@@ -54,7 +52,7 @@ pub struct SophonBuildData {
     pub manifests: Vec<SophonManifestMeta>,
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonManifestMeta {
     pub category_id: String,
@@ -66,7 +64,7 @@ pub struct SophonManifestMeta {
     pub stats: Stats,
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ManifestFileInfo {
     pub id: String,
@@ -82,10 +80,36 @@ pub struct ManifestFileInfo {
 pub struct DownloadInfo {
     pub encryption: i32,
     pub password: String,
-    /// 0 = uncompressed, 1 = zstd-compressed.
-    pub compression: i32,
+    pub compression: Compression,
     pub url_prefix: String,
     pub url_suffix: String,
+}
+
+/// Compression format for downloaded content.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[repr(i32)]
+#[serde(try_from = "i32", into = "i32")]
+pub enum Compression {
+    None = 0,
+    Zstd = 1,
+}
+
+impl From<Compression> for i32 {
+    fn from(value: Compression) -> Self {
+        value as i32
+    }
+}
+
+impl TryFrom<i32> for Compression {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Compression::None),
+            1 => Ok(Compression::Zstd),
+            _ => Err(format!("Invalid compression value: {value}")),
+        }
+    }
 }
 
 impl DownloadInfo {
@@ -94,11 +118,11 @@ impl DownloadInfo {
     }
 
     pub fn is_compressed(&self) -> bool {
-        self.compression == 1
+        matches!(self.compression, Compression::Zstd)
     }
 }
 
-#[allow(unused)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Stats {
     pub compressed_size: String,
@@ -107,6 +131,7 @@ pub struct Stats {
     pub chunk_count: String,
 }
 
+#[inline]
 pub fn front_door_game_index(game_id: &str) -> Option<usize> {
     match game_id.to_lowercase().as_str() {
         "bh3" => Some(3),
