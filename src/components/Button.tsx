@@ -16,13 +16,13 @@ const buttonStyles = cva(
 			},
 			variant: {
 				// These are needed so the primary/secondary variants below register properly
-				primary: "",
-				secondary: "",
+				primary: null,
+				secondary: null,
 			},
 			disabled: {
 				false: null,
-				true: "opacity-50 cursor-not-allowed"
-			}
+				true: "opacity-50 pointer-events-none",
+			},
 		},
 		compoundVariants: [
 			{
@@ -91,9 +91,9 @@ export default function Button({
 	const { game } = useGame();
 	return (
 		<button
+			disabled={disabled}
 			onClick={onClick}
-			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "min-w-10 aspect-square" : "min-w-65"}`}
-		>
+			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "min-w-10 aspect-square" : "min-w-65"}`}>
 			{children}
 		</button>
 	);

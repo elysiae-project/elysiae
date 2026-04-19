@@ -69,7 +69,7 @@ export default function InstallerButton() {
 			setGameInstalled(res);
 		});
 	}, [game]);
-	
+
 	return (
 		<div class="w-auto flex flex-row gap-x-3.5">
 			{downloadInProgress ? (
@@ -85,7 +85,11 @@ export default function InstallerButton() {
 					}}
 					intent="secondary"
 					iconButton>
-					{!downloadPaused ? <Pause /> : <Play />}
+					{!downloadPaused ? (
+						<Pause className={"leading-0 -m-1"} />
+					) : (
+						<Play className={"leading-0 -m-1"} />
+					)}
 				</Button>
 			) : null}
 			<Button

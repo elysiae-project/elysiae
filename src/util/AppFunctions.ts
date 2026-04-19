@@ -27,6 +27,19 @@ export const getActiveGameCode = (currentGame: Variants): GameCodes => {
 	}
 };
 
+export const getGameName = (game: Variants) => {
+	switch(game) {
+		case Variants.BH3:
+			return "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64"
+		case Variants.HK4E:
+			return "\x47\x65\x6e\x73\x68\x69\x6e\x20\x49\x6d\x70\x61\x63\x74";
+		case Variants.HKRPG:
+			return "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c"
+		case Variants.NAP:
+			return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f"
+	}
+}
+
 export const getGameExeName = (currentGame: Variants): string => {
 	switch (currentGame) {
 		case Variants.BH3:

@@ -16,8 +16,8 @@ const toggleSwitchStyles = cva(
 				[Variants.NAP]: "rounded-full border-4 border-[#353535]",
 			},
 			variant: {
-				active: "",
-				inactive: "",
+				active: null,
+				inactive: null,
 			},
 		},
 		compoundVariants: [

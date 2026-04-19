@@ -174,4 +174,4 @@ export type GameData = {
 };
 
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
-export type AppOptions = "selectedGame" | "voLanguage" | "requestNotifications";
+export type AppOptions = "selectedGame" | "voLanguage" | "blockNotifications";

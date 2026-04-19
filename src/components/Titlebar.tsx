@@ -2,9 +2,8 @@ import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame.ts";
 import { Variants } from "../types";
 import { closeApp } from "../util/AppFunctions.ts";
-import { motion, AnimatePresence } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import MenuClose from "./MenuClose.tsx";
-import { fadeInOut } from "../util/Animations.ts";
 
 const titlebarStyles = cva(
 	"h-15 min-w-full p-1 transition-all duration-250 overflow-y-hidden",

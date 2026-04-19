@@ -1,12 +1,17 @@
 import { join } from "@tauri-apps/api/path";
 import { GameData, SophonProgress, Variants } from "../types";
-import { getActiveGameCode, getGameExeName } from "../util/AppFunctions";
-import { exists, writeFile } from "./Fs";
+import {
+	getActiveGameCode,
+	getGameExeName,
+	getGameName,
+} from "../util/AppFunctions";
+import { exists } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 import { error, info, warn } from "@tauri-apps/plugin-log";
 import { listen } from "@tauri-apps/api/event";
+import { broadcastNotification } from "../util/NotificationHelper";
 
 /**
  * Downloads a fresh install of any game to `games/gameCode`
@@ -14,6 +19,7 @@ import { listen } from "@tauri-apps/api/event";
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
+	await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
 	const unlisten = await listen("sophon://progress", (event) => {
 		const progress = event.payload as SophonProgress;
 		switch (progress.type) {
@@ -59,7 +65,9 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		});
 	} finally {
 		unlisten();
-		await writeFile((await join(gameData.gameDir, ".download_complete")), "The download has been completed.");
+		await broadcastNotification(
+			`${getGameName(game)} Has Finished Downloading`,
+		);
 	}
 };
 
@@ -181,11 +189,9 @@ export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		// TODO: Replace with a more effective and robust way to check for game installs
 		// pkg_version is one of the last files that is downloaded
-		join("games", getActiveGameCode(game), "pkg_version").then(
-			(path) => {
-				exists(path).then(resolve).catch(reject);
-			},
-		);
+		join("games", getActiveGameCode(game), "pkg_version").then((path) => {
+			exists(path).then(resolve).catch(reject);
+		});
 	});
 };
 
