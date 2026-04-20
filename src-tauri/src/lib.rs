@@ -31,19 +31,22 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
-            file_downloader::download_file,
-            file_manager::extract_file,
-            app_functions::in_dev_env,
-            commands::sophon_downloader::sophon_download,
-            commands::sophon_downloader::sophon_update,
-            commands::sophon_downloader::sophon_preinstall,
-            commands::sophon_downloader::sophon_apply_preinstall,
-            commands::sophon_downloader::sophon_pause,
-            commands::sophon_downloader::sophon_resume,
-            commands::sophon_downloader::sophon_cancel,
-            commands::sophon_downloader::sophon_check_update,
-        ])
+.invoke_handler(tauri::generate_handler![
+    file_downloader::download_file,
+    file_manager::extract_file,
+    app_functions::in_dev_env,
+    commands::sophon_downloader::sophon_download,
+    commands::sophon_downloader::sophon_update,
+    commands::sophon_downloader::sophon_preinstall,
+    commands::sophon_downloader::sophon_apply_preinstall,
+    commands::sophon_downloader::sophon_resume_download,
+    commands::sophon_downloader::sophon_has_resume_state,
+    commands::sophon_downloader::sophon_verify_integrity,
+    commands::sophon_downloader::sophon_pause,
+    commands::sophon_downloader::sophon_resume,
+    commands::sophon_downloader::sophon_cancel,
+    commands::sophon_downloader::sophon_check_update,
+])
         .setup(|app| {
             let quit_item = MenuItemBuilder::new("Quit Elysiae").id("quit").build(app)?;
 
