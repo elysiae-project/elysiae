@@ -70,7 +70,7 @@ pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
 
 pub use handle::DownloadHandle;
 pub use installer::{
-    apply_preinstall, build_installers, build_preinstall_installers, build_update_installers,
-    install,
+  apply_preinstall, build_installers, build_preinstall_installers, build_update_installers,
+  install, verify_integrity,
 };
 pub use update::{UpdateInfo, check_update};
