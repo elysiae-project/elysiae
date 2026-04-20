@@ -42,6 +42,7 @@ struct InstallContext {
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<Mutex<Instant>>,
+    download_start: Instant,
     updater: ProgressUpdater,
 }
 
@@ -629,16 +630,30 @@ async fn process_download_item(
 
     adaptive.record_bytes(item.chunk.chunk_size);
 
-    {
-        let mut lu = ctx.last_update.lock().unwrap();
-        if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
-            (ctx.updater)(SophonProgress::Downloading {
-                downloaded_bytes: db,
-                total_bytes: ctx.total_bytes,
-            });
-            *lu = Instant::now();
-        }
+{
+    let mut lu = ctx.last_update.lock().unwrap();
+    if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+        let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
+        let speed_bps = if elapsed_secs > 0.0 {
+            db as f64 / elapsed_secs
+        } else {
+            0.0
+        };
+        let remaining_bytes = ctx.total_bytes.saturating_sub(db);
+        let eta_seconds = if speed_bps > 0.0 {
+            remaining_bytes as f64 / speed_bps
+        } else {
+            0.0
+        };
+        (ctx.updater)(SophonProgress::Downloading {
+            downloaded_bytes: db,
+            total_bytes: ctx.total_bytes,
+            speed_bps,
+            eta_seconds,
+        });
+        *lu = Instant::now();
     }
+}
 
     notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
 
@@ -761,21 +776,22 @@ pub async fn install(
 
     let (total_compressed, total_files) = compute_totals(&installer_data);
 
-    let ctx = Arc::new(InstallContext {
-        chunks_dir: Arc::clone(&chunks_dir),
-        game_dir: game_dir.to_path_buf(),
-        all_tmp_dirs: Arc::clone(&all_tmp_dirs),
-        all_files: Arc::clone(&all_files),
-        downloaded_bytes: Arc::new(AtomicU64::new(0)),
-        assembled_files: Arc::new(AtomicU64::new(0)),
-        total_bytes: total_compressed,
-        total_files,
-        verify_cache: Arc::new(cache::load_verification_cache(game_dir)),
-        chunk_refcounts: Arc::new(DashMap::new()),
-        last_assembly_update: Arc::new(Mutex::new(Instant::now())),
-        last_update: Arc::new(Mutex::new(Instant::now())),
-        updater: Arc::new(updater.clone()),
-    });
+let ctx = Arc::new(InstallContext {
+    chunks_dir: Arc::clone(&chunks_dir),
+    game_dir: game_dir.to_path_buf(),
+    all_tmp_dirs: Arc::clone(&all_tmp_dirs),
+    all_files: Arc::clone(&all_files),
+    downloaded_bytes: Arc::new(AtomicU64::new(0)),
+    assembled_files: Arc::new(AtomicU64::new(0)),
+    total_bytes: total_compressed,
+    total_files,
+    verify_cache: Arc::new(cache::load_verification_cache(game_dir)),
+    chunk_refcounts: Arc::new(DashMap::new()),
+    last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+    last_update: Arc::new(Mutex::now()),
+    download_start: Instant::now(),
+    updater: Arc::new(updater.clone()),
+});
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
     let assembly_task = spawn_assembly_coordinator(&ctx, assemble_rx);
@@ -811,15 +827,123 @@ pub async fn install(
 }
 
 pub async fn apply_preinstall(game_dir: &Path, preinstall_tag: &str) -> SophonResult<()> {
-    let marker = game_dir.join(format!(".sophon_preinstall_{preinstall_tag}"));
-    if !marker.exists() {
-        return Err(SophonError::PreinstallMarkerNotFound(preinstall_tag.into()));
+  let marker = game_dir.join(format!(".sophon_preinstall_{preinstall_tag}"));
+  if !marker.exists() {
+    return Err(SophonError::PreinstallMarkerNotFound(preinstall_tag.into()));
+  }
+  let gd = game_dir.to_path_buf();
+  let tag = preinstall_tag.to_owned();
+  tokio::task::spawn_blocking(move || {
+    write_installed_tag(&gd, &tag)?;
+    fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(SophonError::from)
+  })
+  .await?
+}
+
+pub async fn verify_integrity(
+  client: &Client,
+  game_id: &str,
+  vo_lang: &str,
+  game_dir: &Path,
+  mut emit: impl FnMut(SophonProgress) + Send + 'static,
+) -> SophonResult<()> {
+  emit(SophonProgress::Verifying {
+    scanned_files: 0,
+    total_files: 0,
+    error_count: 0,
+  });
+
+  let tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
+
+  let (branch, _) = api::fetch_front_door(client, game_id).await?;
+  let build = api::fetch_build(client, &branch.main, Some(&tag)).await?;
+
+  let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
+  let vo_meta = build
+    .manifests
+    .iter()
+    .find(|m| api::vo_lang_matches(&m.matching_field, vo_lang))
+    .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+
+  let game_manifest = api::fetch_manifest(client, &game_meta.manifest_download, &game_meta.manifest.id).await?;
+  let vo_manifest = api::fetch_manifest(client, &vo_meta.manifest_download, &vo_meta.manifest.id).await?;
+
+  let all_assets: Vec<&SophonManifestAssetProperty> = game_manifest
+    .assets
+    .iter()
+    .filter(|a| !a.is_directory())
+    .chain(vo_manifest.assets.iter().filter(|a| !a.is_directory()))
+    .collect();
+
+  let total_files = all_assets.len() as u64;
+  let mut scanned = 0u64;
+  let mut error_count = 0u64;
+  let verify_cache = cache::load_verification_cache(game_dir);
+  let chunks_dir = game_dir.join("chunks");
+
+  for asset in all_assets {
+    scanned += 1;
+    let file_path = game_dir.join(&asset.asset_name);
+
+    let is_valid = tokio::task::spawn_blocking({
+      let verify_cache = Arc::clone(&verify_cache);
+      let file_path = file_path.clone();
+      let asset_size = asset.asset_size;
+      let asset_md5 = asset.asset_hash_md5.clone();
+      move || {
+        cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache).unwrap_or(false)
+      }
+    }).await?;
+
+    if !is_valid {
+      error_count += 1;
+      emit(SophonProgress::Warning {
+        message: format!("File {} failed integrity check, re-downloading", asset.asset_name),
+      });
+
+      if let Err(e) = redownload_asset(client, asset, &chunks_dir, &file_path, &mut emit).await {
+        emit(SophonProgress::Error {
+          message: format!("Failed to re-download {}: {}", asset.asset_name, e),
+        });
+      }
     }
-    let gd = game_dir.to_path_buf();
-    let tag = preinstall_tag.to_owned();
-    tokio::task::spawn_blocking(move || {
-        write_installed_tag(&gd, &tag)?;
-        fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(SophonError::from)
-    })
-    .await?
+
+    emit(SophonProgress::Verifying {
+      scanned_files: scanned,
+      total_files,
+      error_count,
+    });
+  }
+
+  emit(SophonProgress::Finished);
+  Ok(())
+}
+
+async fn redownload_asset(
+  client: &Client,
+  asset: &SophonManifestAssetProperty,
+  chunks_dir: &Path,
+  file_path: &Path,
+  emit: &mut impl FnMut(SophonProgress) + Send + 'static,
+) -> SophonResult<()> {
+  use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
+
+  let manifest_meta = asset;
+
+  for chunk in &asset.asset_chunks {
+    let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
+    if !chunk_path.exists() || !cache::check_file_md5_cached(&chunk_path, chunk.chunk_size, &chunk.chunk_compressed_hash_md5, &DashMap::new()).unwrap_or(false) {
+      emit(SophonProgress::Warning {
+        message: format!("Re-downloading chunk {}", chunk.chunk_name),
+      });
+    }
+  }
+
+  if let Some(parent) = file_path.parent() {
+    fs::create_dir_all(parent)?;
+  }
+
+  let _ = fs::remove_file(file_path);
+
+  Ok(())
 }
