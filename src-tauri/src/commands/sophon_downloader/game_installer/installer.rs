@@ -788,7 +788,7 @@ let ctx = Arc::new(InstallContext {
     verify_cache: Arc::new(cache::load_verification_cache(game_dir)),
     chunk_refcounts: Arc::new(DashMap::new()),
     last_assembly_update: Arc::new(Mutex::new(Instant::now())),
-    last_update: Arc::new(Mutex::now()),
+    last_update: Arc::new(Mutex::new(Instant::now())),
     download_start: Instant::now(),
     updater: Arc::new(updater.clone()),
 });
@@ -885,15 +885,15 @@ pub async fn verify_integrity(
     scanned += 1;
     let file_path = game_dir.join(&asset.asset_name);
 
-    let is_valid = tokio::task::spawn_blocking({
-      let verify_cache = Arc::clone(&verify_cache);
-      let file_path = file_path.clone();
-      let asset_size = asset.asset_size;
-      let asset_md5 = asset.asset_hash_md5.clone();
-      move || {
-        cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache).unwrap_or(false)
-      }
-    }).await?;
+let is_valid = tokio::task::spawn_blocking({
+    let verify_cache = Arc::new(verify_cache.clone());
+    let file_path = file_path.clone();
+    let asset_size = asset.asset_size;
+    let asset_md5 = asset.asset_hash_md5.clone();
+    move || {
+      cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache).unwrap_or(false)
+    }
+  }).await?;
 
     if !is_valid {
       error_count += 1;
@@ -920,15 +920,13 @@ pub async fn verify_integrity(
 }
 
 async fn redownload_asset(
-  client: &Client,
+  _client: &Client,
   asset: &SophonManifestAssetProperty,
   chunks_dir: &Path,
   file_path: &Path,
-  emit: &mut impl FnMut(SophonProgress) + Send + 'static,
+  emit: &mut (impl FnMut(SophonProgress) + Send + 'static),
 ) -> SophonResult<()> {
-  use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
-
-  let manifest_meta = asset;
+  let _manifest_meta = asset;
 
   for chunk in &asset.asset_chunks {
     let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
