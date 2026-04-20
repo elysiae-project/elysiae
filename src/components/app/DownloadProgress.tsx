@@ -28,8 +28,8 @@ export default function GameDownloadProgress() {
     ? "Verifying Files..."
     : state.phase === "fetchingManifest"
     ? "Fetching Manifest..."
-    : isDownloadForActiveGame
-    ? `Downloading ${getGameName(game)}...`
+    : state.downloadingGame !== null
+    ? `Downloading ${getGameName(state.downloadingGame)}...`
     : "Downloading...";
 
   return (
