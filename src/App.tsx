@@ -18,6 +18,7 @@ import PreinstallButton from "./components/app/PreinstallButton.tsx";
 import InstallerButton from "./components/app/InstallerButton.tsx";
 import Dropdown from "./components/Dropdown.tsx";
 import { setOption } from "./util/Settings.ts";
+import { DownloadProvider } from "./contexts/DownloadContext.tsx";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -97,11 +98,13 @@ function App() {
 }
 
 export default function AppWrapper() {
-	return (
-		<GameProvider>
-			<ApiProvider>
-				<App />
-			</ApiProvider>
-		</GameProvider>
-	);
+  return (
+    <GameProvider>
+      <ApiProvider>
+        <DownloadProvider>
+          <App />
+        </DownloadProvider>
+      </ApiProvider>
+    </GameProvider>
+  );
 }

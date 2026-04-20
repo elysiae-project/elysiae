@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import Button from "../Button";
 import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
 import {
@@ -9,57 +9,19 @@ import {
   runGame,
 } from "../../lib/GameDownloader";
 import { useGame } from "../../hooks/useGame";
-import { SophonProgress, Variants } from "../../types";
-import { listen } from "@tauri-apps/api/event";
+import { useDownload } from "../../hooks/useDownload";
 import { Pause, Play } from "lucide-preact";
 
 export default function InstallerButton() {
   const { game } = useGame();
-  const gameRef = useRef(game);
-  gameRef.current = game;
+  const { state, setDownloadingGame } = useDownload();
 
   let [wineAvailable, setWineAvailable] = useState<boolean>(false);
   let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
-  let [currentGameDownload, setCurrentGameDownload] = useState<Variants | null>(
-    null,
-  );
-
-  let [updatesAvailable, setUpdatesAvailable] = useState<boolean>(false);
-  let [downloadInProgress, setDownloadInProgress] = useState<boolean>(false);
-  let [downloadPaused, setDownloadPaused] = useState<boolean>(false);
-
-  useEffect(() => {
-    const unlisten = listen("sophon://progress", (event) => {
-      const payload = event.payload as SophonProgress;
-      switch (payload.type) {
-        case "fetchingManifest":
-        case "downloading":
-        case "assembling":
-          setDownloadInProgress(true);
-          setDownloadPaused(false);
-          break;
-        case "paused":
-          setDownloadInProgress(true);
-          setDownloadPaused(true);
-          break;
-        case "finished":
-        case "error":
-          setDownloadInProgress(false);
-          setDownloadPaused(false);
-          setCurrentGameDownload(null);
-          if (payload.type === "finished" && currentGameDownload === gameRef.current) {
-            setGameInstalled(true);
-          }
-          break;
-        case "warning":
-          break;
-      }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+  const downloadActive = state.phase !== "idle" && state.phase !== "finished" && state.phase !== "error";
+  const downloadPaused = state.phase === "paused";
+  const isDownloadForActiveGame = state.downloadingGame === game;
 
   useEffect(() => {
     let cancelled = false;
@@ -74,19 +36,21 @@ export default function InstallerButton() {
     };
   }, [game]);
 
-  const isDownloadForActiveGame = currentGameDownload === game;
+  useEffect(() => {
+    if (state.phase === "finished" && isDownloadForActiveGame) {
+      setGameInstalled(true);
+    }
+  }, [state.phase, isDownloadForActiveGame]);
 
   return (
     <div class="w-auto flex flex-row gap-x-3.5">
-      {downloadInProgress && isDownloadForActiveGame ? (
+      {downloadActive && isDownloadForActiveGame ? (
         <Button
           onClick={async () => {
             if (downloadPaused) {
               await resumeDownload();
-              setDownloadPaused(false);
             } else {
               await pauseDownload();
-              setDownloadPaused(true);
             }
           }}
           intent="secondary"
@@ -100,15 +64,14 @@ export default function InstallerButton() {
       ) : null}
       <Button
         intent="primary"
-        disabled={downloadInProgress && !gameInstalled}
+        disabled={downloadActive && !gameInstalled}
         onClick={async () => {
           if (!wineAvailable) {
             await updateWineComponents();
             setWineAvailable(true);
           } else if (!gameInstalled) {
-            const activeGame = game;
-            setCurrentGameDownload(activeGame);
-            await downloadGame(activeGame);
+            setDownloadingGame(game);
+            await downloadGame(game);
           } else {
             await runGame(game);
           }
@@ -117,7 +80,7 @@ export default function InstallerButton() {
           if (!wineAvailable) {
             return "Create Env";
           } else if (!gameInstalled) {
-            return downloadInProgress ? "Downloading..." : "Download";
+            return downloadActive && isDownloadForActiveGame ? "Downloading..." : "Download";
           } else {
             return "Play";
           }
