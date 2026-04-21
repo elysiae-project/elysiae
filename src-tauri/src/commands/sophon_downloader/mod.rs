@@ -133,11 +133,35 @@ pub enum SophonProgress {
     Finished,
 }
 
-fn make_state_saver(app: &AppHandle, state: DownloadState) -> Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync> {
+struct StateMeta {
+    game_id: String,
+    vo_lang: String,
+    output_path: String,
+    download_type: DownloadType,
+    current_tag: Option<String>,
+    manifest_hash: String,
+}
+
+fn make_state_saver(app: &AppHandle, state: &DownloadState) -> Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync> {
     let app = app.clone();
+    let meta = StateMeta {
+        game_id: state.game_id.clone(),
+        vo_lang: state.vo_lang.clone(),
+        output_path: state.output_path.clone(),
+        download_type: state.download_type.clone(),
+        current_tag: state.current_tag.clone(),
+        manifest_hash: state.manifest_hash.clone(),
+    };
     Arc::new(move |chunks: &HashMap<String, u64>| {
-        let mut s = state.clone();
-        s.downloaded_chunks = chunks.clone();
+        let s = DownloadState {
+            game_id: meta.game_id.clone(),
+            vo_lang: meta.vo_lang.clone(),
+            output_path: meta.output_path.clone(),
+            download_type: meta.download_type.clone(),
+            current_tag: meta.current_tag.clone(),
+            manifest_hash: meta.manifest_hash.clone(),
+            downloaded_chunks: chunks.clone(),
+        };
         save_download_state(&app, &s);
     })
 }
@@ -177,7 +201,7 @@ pub async fn sophon_download(
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
 
-    let saver = make_state_saver(&app_handle, state.clone());
+    let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
     game_installer::install(
         installers,
@@ -239,7 +263,7 @@ pub async fn sophon_update(
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
 
-    let saver = make_state_saver(&app_handle, state.clone());
+    let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
     game_installer::install(
         installers,
@@ -298,7 +322,7 @@ pub async fn sophon_preinstall(
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
 
-    let saver = make_state_saver(&app_handle, state.clone());
+    let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
     game_installer::install(
         installers,
@@ -378,7 +402,7 @@ pub async fn sophon_resume_download(
                 manifest_hash: new_manifest_hash,
                 downloaded_chunks: prev_chunks,
             };
-            let saver = make_state_saver(&app_handle, resumed_state.clone());
+            let saver = make_state_saver(&app_handle, &resumed_state);
 
             let app_clone = app_handle.clone();
             game_installer::install(
@@ -415,7 +439,7 @@ pub async fn sophon_resume_download(
                 manifest_hash: new_manifest_hash,
                 downloaded_chunks: prev_chunks,
             };
-            let saver = make_state_saver(&app_handle, resumed_state.clone());
+            let saver = make_state_saver(&app_handle, &resumed_state);
 
             let app_clone = app_handle.clone();
             game_installer::install(
@@ -448,7 +472,7 @@ pub async fn sophon_resume_download(
                 manifest_hash: new_manifest_hash,
                 downloaded_chunks: prev_chunks,
             };
-            let saver = make_state_saver(&app_handle, resumed_state.clone());
+            let saver = make_state_saver(&app_handle, &resumed_state);
 
             let app_clone = app_handle.clone();
             game_installer::install(
