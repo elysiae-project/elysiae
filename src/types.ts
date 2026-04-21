@@ -177,3 +177,8 @@ export type GameData = {
 
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
 export type AppOptions = "selectedGame" | "voLanguage" | "blockNotifications";
+
+export type ResumeInfo = {
+  game_id: string;
+  download_type: "fresh" | "update" | "preinstall";
+};

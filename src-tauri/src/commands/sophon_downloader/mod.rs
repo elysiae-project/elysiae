@@ -21,12 +21,32 @@ pub struct HttpClient(pub reqwest::Client);
 /// Thread-safe container for the active download handle.
 pub struct ActiveDownload(pub tokio::sync::Mutex<Option<DownloadHandle>>);
 
+/// Type of download operation, persisted for correct resumption dispatch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadType {
+    Fresh,
+    Update,
+    Preinstall,
+}
+
 /// Persisted state for download resumption after app restart.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadState {
     pub game_id: String,
     pub vo_lang: String,
     pub output_path: String,
+    pub download_type: DownloadType,
+    pub current_tag: Option<String>,
+}
+
+/// Summary of persisted download state returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumeInfo {
+    pub game_id: String,
+    pub download_type: DownloadType,
 }
 
 const DOWNLOAD_STATE_FILE: &str = ".sophon_download_state";
@@ -108,38 +128,41 @@ pub async fn sophon_download(
     .resolve(&output_path, BaseDirectory::AppData)
     .map_err(|e| e.to_string())?;
 
-  let state = DownloadState {
-    game_id: game_id.clone(),
-    vo_lang: vo_lang.clone(),
-    output_path: output_path.clone(),
-  };
-  save_download_state(&app_handle, &state);
+    let state = DownloadState {
+        game_id: game_id.clone(),
+        vo_lang: vo_lang.clone(),
+        output_path: output_path.clone(),
+        download_type: DownloadType::Fresh,
+        current_tag: None,
+    };
+    save_download_state(&app_handle, &state);
 
-  emit(&app_handle, SophonProgress::FetchingManifest);
+    emit(&app_handle, SophonProgress::FetchingManifest);
 
-  let (installers, tag) = game_installer::build_installers(&client.0, &game_id, &vo_lang)
-    .await
-    .map_err(|e| e.to_string())?;
+    let (installers, tag) = game_installer::build_installers(&client.0, &game_id, &vo_lang)
+        .await
+        .map_err(|e| e.to_string())?;
 
-  let handle = DownloadHandle::new();
-  *active.0.lock().await = Some(handle.clone());
+    let handle = DownloadHandle::new();
+    *active.0.lock().await = Some(handle.clone());
 
-  let app_clone = app_handle.clone();
-  game_installer::install(
-    installers,
-    &game_dir,
-    vec![],
-    &tag,
-    false,
-    handle,
-    move |p| emit(&app_clone, p),
-  )
-  .await?;
+    let app_clone = app_handle.clone();
+    game_installer::install(
+        installers,
+        &game_dir,
+        vec![],
+        &tag,
+        false,
+        false,
+        handle,
+        move |p| emit(&app_clone, p),
+    )
+    .await?;
 
-  *active.0.lock().await = None;
-  clear_download_state(&app_handle);
-  emit(&app_handle, SophonProgress::Finished);
-  Ok(())
+    *active.0.lock().await = None;
+    clear_download_state(&app_handle);
+    emit(&app_handle, SophonProgress::Finished);
+    Ok(())
 }
 
 /// Updates an existing game installation.
@@ -160,12 +183,21 @@ pub async fn sophon_update(
     let current_tag =
         read_installed_tag(&game_dir).ok_or("No installed version found — cannot update")?;
 
+    let state = DownloadState {
+        game_id: game_id.clone(),
+        vo_lang: vo_lang.clone(),
+        output_path: output_path.clone(),
+        download_type: DownloadType::Update,
+        current_tag: Some(current_tag.clone()),
+    };
+    save_download_state(&app_handle, &state);
+
     emit(&app_handle, SophonProgress::FetchingManifest);
 
     let (installers, deleted_files, new_tag) =
         game_installer::build_update_installers(&client.0, &game_id, &vo_lang, &current_tag)
-            .await
-            .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
@@ -177,12 +209,14 @@ pub async fn sophon_update(
         deleted_files,
         &new_tag,
         false,
+        false,
         handle,
         move |p| emit(&app_clone, p),
     )
     .await?;
 
     *active.0.lock().await = None;
+    clear_download_state(&app_handle);
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
@@ -202,12 +236,21 @@ pub async fn sophon_preinstall(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
+    let state = DownloadState {
+        game_id: game_id.clone(),
+        vo_lang: vo_lang.clone(),
+        output_path: output_path.clone(),
+        download_type: DownloadType::Preinstall,
+        current_tag: None,
+    };
+    save_download_state(&app_handle, &state);
+
     emit(&app_handle, SophonProgress::FetchingManifest);
 
     let (installers, tag) =
         game_installer::build_preinstall_installers(&client.0, &game_id, &vo_lang)
-            .await
-            .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e| e.to_string())?;
 
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
@@ -218,13 +261,15 @@ pub async fn sophon_preinstall(
         &game_dir,
         vec![],
         &tag,
-        true, // is_preinstall
+        true,
+        false,
         handle,
         move |p| emit(&app_clone, p),
     )
     .await?;
 
     *active.0.lock().await = None;
+    clear_download_state(&app_handle);
     emit(&app_handle, SophonProgress::Finished);
     Ok(())
 }
@@ -247,53 +292,110 @@ game_installer::apply_preinstall(&game_dir, &preinstall_tag)
 }
 
 /// Resumes a download that was interrupted (e.g., by app close/crash).
-/// Loads the saved download state and restarts the download,
-/// skipping already-valid chunks via manifest comparison.
+/// Loads the saved download state, dispatches to the correct builder
+/// based on download type, and skips already-completed files.
 #[command]
 pub async fn sophon_resume_download(
-  app_handle: AppHandle,
-  client: State<'_, HttpClient>,
-  active: State<'_, ActiveDownload>,
+    app_handle: AppHandle,
+    client: State<'_, HttpClient>,
+    active: State<'_, ActiveDownload>,
 ) -> Result<(), String> {
-  let state = load_download_state(&app_handle)
-    .ok_or("No download state found to resume")?;
+    let state = load_download_state(&app_handle)
+        .ok_or("No download state found to resume")?;
 
-  let game_dir = app_handle
-    .path()
-    .resolve(&state.output_path, BaseDirectory::AppData)
-    .map_err(|e| e.to_string())?;
+    let game_dir = app_handle
+        .path()
+        .resolve(&state.output_path, BaseDirectory::AppData)
+        .map_err(|e| e.to_string())?;
 
-  emit(&app_handle, SophonProgress::FetchingManifest);
+    emit(&app_handle, SophonProgress::FetchingManifest);
 
-  let (installers, tag) = game_installer::build_installers(&client.0, &state.game_id, &state.vo_lang)
-    .await
-    .map_err(|e| e.to_string())?;
+    let handle = DownloadHandle::new();
+    *active.0.lock().await = Some(handle.clone());
 
-  let handle = DownloadHandle::new();
-  *active.0.lock().await = Some(handle.clone());
+    match state.download_type {
+        DownloadType::Fresh => {
+            let (installers, tag) =
+                game_installer::build_installers(&client.0, &state.game_id, &state.vo_lang)
+                    .await
+                    .map_err(|e| e.to_string())?;
 
-  let app_clone = app_handle.clone();
-  game_installer::install(
-    installers,
-    &game_dir,
-    vec![],
-    &tag,
-    false,
-    handle,
-    move |p| emit(&app_clone, p),
-  )
-  .await?;
+            let app_clone = app_handle.clone();
+            game_installer::install(
+                installers,
+                &game_dir,
+                vec![],
+                &tag,
+                false,
+                true,
+                handle,
+                move |p| emit(&app_clone, p),
+            )
+            .await?;
+        }
+        DownloadType::Update => {
+            let current_tag = state
+                .current_tag
+                .ok_or("No current tag in resume state for update")?;
 
-  *active.0.lock().await = None;
-  clear_download_state(&app_handle);
-  emit(&app_handle, SophonProgress::Finished);
-  Ok(())
+            let (installers, deleted_files, tag) =
+                game_installer::build_update_installers(&client.0, &state.game_id, &state.vo_lang, &current_tag)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+            let app_clone = app_handle.clone();
+            game_installer::install(
+                installers,
+                &game_dir,
+                deleted_files,
+                &tag,
+                false,
+                true,
+                handle,
+                move |p| emit(&app_clone, p),
+            )
+            .await?;
+        }
+        DownloadType::Preinstall => {
+            let (installers, tag) =
+                game_installer::build_preinstall_installers(&client.0, &state.game_id, &state.vo_lang)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+            let app_clone = app_handle.clone();
+            game_installer::install(
+                installers,
+                &game_dir,
+                vec![],
+                &tag,
+                true,
+                true,
+                handle,
+                move |p| emit(&app_clone, p),
+            )
+            .await?;
+        }
+    }
+
+    *active.0.lock().await = None;
+    clear_download_state(&app_handle);
+    emit(&app_handle, SophonProgress::Finished);
+    Ok(())
 }
 
 /// Checks if there is a downloadable state to resume.
 #[command]
 pub async fn sophon_has_resume_state(app_handle: AppHandle) -> bool {
-  load_download_state(&app_handle).is_some()
+    load_download_state(&app_handle).is_some()
+}
+
+/// Returns details about the resumable download state, if any.
+#[command]
+pub async fn sophon_get_resume_info(app_handle: AppHandle) -> Option<ResumeInfo> {
+    load_download_state(&app_handle).map(|s| ResumeInfo {
+        game_id: s.game_id,
+        download_type: s.download_type,
+    })
 }
 
 /// Pauses the active download.

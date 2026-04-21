@@ -1,5 +1,5 @@
 import { join } from "@tauri-apps/api/path";
-import { GameData, SophonProgress, Variants } from "../types";
+import { GameData, ResumeInfo, SophonProgress, Variants } from "../types";
 import {
 	getActiveGameCode,
 	getGameExeName,
@@ -203,12 +203,11 @@ export const hasResumeState = async (): Promise<boolean> => {
   return invoke<boolean>("sophon_has_resume_state");
 };
 
-/**
- * Resume an interrupted download (after app crash/close).
- * Compares manifest to existing chunks and continues downloading.
- */
+export const getResumeInfo = async (): Promise<ResumeInfo | null> => {
+  return invoke<ResumeInfo | null>("sophon_get_resume_info");
+};
+
 export const resumeDownloadInterrupted = async (): Promise<void> => {
-  const gameData = await getGameData(undefined as unknown as Variants);
   await broadcastNotification("Resuming interrupted download...");
   const unlisten = await listen("sophon://progress", (event) => {
     const progress = event.payload as SophonProgress;

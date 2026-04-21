@@ -4,20 +4,23 @@ import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
 import {
   downloadGame,
   isGameInstalled,
+  resumeDownloadInterrupted,
   runGame,
 } from "../../lib/GameDownloader";
 import { useGame } from "../../hooks/useGame";
 import { useDownload } from "../../hooks/useDownload";
+import { getActiveGameCode, getVariantFromCode } from "../../util/AppFunctions";
 
 export default function InstallerButton() {
   const { game } = useGame();
-  const { state, setDownloadingGame } = useDownload();
+  const { state, setDownloadingGame, setResumable } = useDownload();
 
   let [wineAvailable, setWineAvailable] = useState<boolean>(false);
   let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
   const downloadActive = state.isDownloading || state.isAssembling || state.isVerifying || state.isFetchingManifest || state.isPaused;
   const isDownloadForActiveGame = state.downloadingGame === game;
+  const canResume = state.isResumable && state.resumeInfo !== null && getActiveGameCode(game) === state.resumeInfo.game_id;
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +41,8 @@ export default function InstallerButton() {
     }
   }, [state.isFinished, isDownloadForActiveGame]);
 
+  const resumeVariant = state.resumeInfo ? getVariantFromCode(state.resumeInfo.game_id) : null;
+
   return (
     <div class="w-auto flex flex-row gap-x-3.5">
       <Button
@@ -47,6 +52,10 @@ export default function InstallerButton() {
           if (!wineAvailable) {
             await updateWineComponents();
             setWineAvailable(true);
+          } else if (canResume && resumeVariant !== null) {
+            setResumable(null);
+            setDownloadingGame(resumeVariant);
+            await resumeDownloadInterrupted();
           } else if (!gameInstalled) {
             setDownloadingGame(game);
             await downloadGame(game);
@@ -57,6 +66,8 @@ export default function InstallerButton() {
         {(() => {
           if (!wineAvailable) {
             return "Create Env";
+          } else if (canResume && !gameInstalled) {
+            return downloadActive && isDownloadForActiveGame ? "Downloading..." : "Resume Download";
           } else if (!gameInstalled) {
             return downloadActive && isDownloadForActiveGame ? "Downloading..." : "Download";
           } else {

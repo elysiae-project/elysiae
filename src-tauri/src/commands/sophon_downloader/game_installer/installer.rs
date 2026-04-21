@@ -38,6 +38,7 @@ struct InstallContext {
     assembled_files: Arc<AtomicU64>,
     total_bytes: u64,
     total_files: u64,
+    resume_bytes_offset: u64,
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
@@ -367,14 +368,18 @@ async fn build_download_state(
     installer_data: Vec<InstallerData>,
     ctx: &InstallContext,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
+    completed_indices: Option<&HashSet<usize>>,
 ) -> SophonResult<(Vec<DownloadItem>, Arc<DashMap<String, Vec<FileEntry>>>)> {
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::new();
     let mut file_idx = 0usize;
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
-        let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
-        {
+        let needs_tmp_dir = data.files.iter().enumerate().any(|(i, _)| {
+            completed_indices.map_or(true, |set| !set.contains(&(file_idx + i)))
+        });
+        if needs_tmp_dir {
+            let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
             let td = tmp_dir.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&td))
                 .await?
@@ -382,6 +387,11 @@ async fn build_download_state(
         }
 
         for _ in 0..data.files.len() {
+            if completed_indices.map_or(false, |set| set.contains(&file_idx)) {
+                file_idx += 1;
+                continue;
+            }
+
             let file = &ctx.all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
@@ -611,7 +621,7 @@ async fn process_download_item(
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
         handle
-            .wait_if_paused(&*ctx.updater, db, ctx.total_bytes)
+            .wait_if_paused(&*ctx.updater, db + ctx.resume_bytes_offset, ctx.total_bytes)
             .await?;
     }
 
@@ -630,30 +640,30 @@ async fn process_download_item(
 
     adaptive.record_bytes(item.chunk.chunk_size);
 
-{
-    let mut lu = ctx.last_update.lock().unwrap();
-    if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
-        let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
-        let speed_bps = if elapsed_secs > 0.0 {
-            db as f64 / elapsed_secs
-        } else {
-            0.0
-        };
-        let remaining_bytes = ctx.total_bytes.saturating_sub(db);
-        let eta_seconds = if speed_bps > 0.0 {
-            remaining_bytes as f64 / speed_bps
-        } else {
-            0.0
-        };
-        (ctx.updater)(SophonProgress::Downloading {
-            downloaded_bytes: db,
-            total_bytes: ctx.total_bytes,
-            speed_bps,
-            eta_seconds,
-        });
-        *lu = Instant::now();
+    {
+        let mut lu = ctx.last_update.lock().unwrap();
+        if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+            let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
+            let speed_bps = if elapsed_secs > 0.0 {
+                db as f64 / elapsed_secs
+            } else {
+                0.0
+            };
+            let remaining_bytes = ctx.total_bytes.saturating_sub(db + ctx.resume_bytes_offset);
+            let eta_seconds = if speed_bps > 0.0 {
+                remaining_bytes as f64 / speed_bps
+            } else {
+                0.0
+            };
+            (ctx.updater)(SophonProgress::Downloading {
+                downloaded_bytes: db + ctx.resume_bytes_offset,
+                total_bytes: ctx.total_bytes,
+                speed_bps,
+                eta_seconds,
+            });
+            *lu = Instant::now();
+        }
     }
-}
 
     notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
 
@@ -754,6 +764,7 @@ pub async fn install(
     deleted_files: Vec<String>,
     tag: &str,
     is_preinstall: bool,
+    is_resume: bool,
     handle: DownloadHandle,
     updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
 ) -> SophonResult<()> {
@@ -775,29 +786,78 @@ pub async fn install(
     );
 
     let (total_compressed, total_files) = compute_totals(&installer_data);
+    let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
 
-let ctx = Arc::new(InstallContext {
-    chunks_dir: Arc::clone(&chunks_dir),
-    game_dir: game_dir.to_path_buf(),
-    all_tmp_dirs: Arc::clone(&all_tmp_dirs),
-    all_files: Arc::clone(&all_files),
-    downloaded_bytes: Arc::new(AtomicU64::new(0)),
-    assembled_files: Arc::new(AtomicU64::new(0)),
-    total_bytes: total_compressed,
-    total_files,
-    verify_cache: Arc::new(cache::load_verification_cache(game_dir)),
-    chunk_refcounts: Arc::new(DashMap::new()),
-    last_assembly_update: Arc::new(Mutex::new(Instant::now())),
-    last_update: Arc::new(Mutex::new(Instant::now())),
-    download_start: Instant::now(),
-    updater: Arc::new(updater.clone()),
-});
+    let mut resume_bytes_offset: u64 = 0;
+    let mut pre_assembled: u64 = 0;
+    let completed_indices = if is_resume {
+        let mut indices = HashSet::new();
+        for (file_idx, file) in all_files.iter().enumerate() {
+            if file.asset_chunks.is_empty() {
+                indices.insert(file_idx);
+                pre_assembled += 1;
+                continue;
+            }
+            let target_path = game_dir.join(&file.asset_name);
+            if !target_path.exists() {
+                continue;
+            }
+            let valid = {
+                let tp = target_path.clone();
+                let sz = file.asset_size;
+                let md5 = file.asset_hash_md5.clone();
+                let vc = Arc::clone(&verify_cache);
+                tokio::task::spawn_blocking(move || {
+                    cache::check_file_md5_cached(&tp, sz, &md5, &vc).unwrap_or(false)
+                })
+                .await?
+            };
+            if valid {
+                indices.insert(file_idx);
+                let file_chunk_size: u64 = file.asset_chunks.iter().map(|c| c.chunk_size).sum();
+                resume_bytes_offset += file_chunk_size;
+                pre_assembled += 1;
+            } else {
+                let tp = target_path.clone();
+                tokio::task::spawn_blocking(move || {
+                    let _ = fs::remove_file(tp);
+                })
+                .await?;
+            }
+        }
+        Some(indices)
+    } else {
+        None
+    };
+
+    let ctx = Arc::new(InstallContext {
+        chunks_dir: Arc::clone(&chunks_dir),
+        game_dir: game_dir.to_path_buf(),
+        all_tmp_dirs: Arc::clone(&all_tmp_dirs),
+        all_files: Arc::clone(&all_files),
+        downloaded_bytes: Arc::new(AtomicU64::new(0)),
+        assembled_files: Arc::new(AtomicU64::new(pre_assembled)),
+        total_bytes: total_compressed,
+        total_files,
+        resume_bytes_offset,
+        verify_cache,
+        chunk_refcounts: Arc::new(DashMap::new()),
+        last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+        last_update: Arc::new(Mutex::new(Instant::now())),
+        download_start: Instant::now(),
+        updater: Arc::new(updater.clone()),
+    });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
     let assembly_task = spawn_assembly_coordinator(&ctx, assemble_rx);
 
-    let (download_items, chunk_to_files) =
-        build_download_state(installer_data, &ctx, &assemble_tx).await?;
+    let (download_items, chunk_to_files) = build_download_state(
+        installer_data,
+        &ctx,
+        &assemble_tx,
+        completed_indices.as_ref(),
+    )
+    .await?;
 
     let adaptive = Arc::new(AdaptiveConcurrency::new());
     let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
