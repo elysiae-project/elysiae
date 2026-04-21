@@ -4,13 +4,10 @@ import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
 import {
   downloadGame,
   isGameInstalled,
-  pauseDownload,
-  resumeDownload,
   runGame,
 } from "../../lib/GameDownloader";
 import { useGame } from "../../hooks/useGame";
 import { useDownload } from "../../hooks/useDownload";
-import { Pause, Play } from "lucide-preact";
 
 export default function InstallerButton() {
   const { game } = useGame();
@@ -19,8 +16,7 @@ export default function InstallerButton() {
   let [wineAvailable, setWineAvailable] = useState<boolean>(false);
   let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
-  const downloadActive = state.phase !== "idle" && state.phase !== "finished" && state.phase !== "error";
-  const downloadPaused = state.phase === "paused";
+  const downloadActive = state.isDownloading || state.isAssembling || state.isVerifying || state.isFetchingManifest || state.isPaused;
   const isDownloadForActiveGame = state.downloadingGame === game;
 
   useEffect(() => {
@@ -37,31 +33,13 @@ export default function InstallerButton() {
   }, [game]);
 
   useEffect(() => {
-    if (state.phase === "finished" && isDownloadForActiveGame) {
+    if (state.isFinished && isDownloadForActiveGame) {
       setGameInstalled(true);
     }
-  }, [state.phase, isDownloadForActiveGame]);
+  }, [state.isFinished, isDownloadForActiveGame]);
 
   return (
     <div class="w-auto flex flex-row gap-x-3.5">
-      {downloadActive && isDownloadForActiveGame ? (
-        <Button
-          onClick={async () => {
-            if (downloadPaused) {
-              await resumeDownload();
-            } else {
-              await pauseDownload();
-            }
-          }}
-          intent="secondary"
-          iconButton>
-          {!downloadPaused ? (
-            <Pause className={"leading-0 -m-1"} />
-          ) : (
-            <Play className={"leading-0 -m-1"} />
-          )}
-        </Button>
-      ) : null}
       <Button
         intent="primary"
         disabled={downloadActive && !gameInstalled}

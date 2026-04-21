@@ -40,12 +40,12 @@ impl DownloadHandle {
 
     pub fn resume(&self) {
         *self.lock_state() = ControlState::Running;
-        self.pause_notify.notify_one();
+        self.pause_notify.notify_waiters();
     }
 
     pub fn cancel(&self) {
         *self.lock_state() = ControlState::Cancelled;
-        self.pause_notify.notify_one();
+        self.pause_notify.notify_waiters();
     }
 
     pub fn is_cancelled(&self) -> bool {

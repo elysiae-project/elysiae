@@ -10,7 +10,7 @@ export default function PreinstallButton() {
   const { game } = useGame();
   const { state, setDownloadingGame } = useDownload();
 
-  const downloadActive = state.phase !== "idle" && state.phase !== "finished" && state.phase !== "error";
+  const downloadActive = state.isDownloading || state.isAssembling || state.isVerifying || state.isFetchingManifest || state.isPaused;
 
   useEffect(() => {
     let cancelled = false;
