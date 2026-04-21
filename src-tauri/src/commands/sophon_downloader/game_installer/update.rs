@@ -141,7 +141,8 @@ pub async fn fetch_diff_sizes(
 
         let new_manifest =
             super::api::fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id)
-                .await?;
+                .await?
+                .manifest;
 
         let old_files: HashMap<String, String> = match old_map.get(&new_meta.matching_field) {
             Some(old_meta) => {
@@ -150,7 +151,8 @@ pub async fn fetch_diff_sizes(
                     &old_meta.manifest_download,
                     &old_meta.manifest.id,
                 )
-                .await?;
+                .await?
+                .manifest;
                 old_manifest
                     .assets
                     .into_iter()
