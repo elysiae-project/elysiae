@@ -67,8 +67,15 @@ fn download_state_path(app: &AppHandle) -> PathBuf {
 
 pub fn save_download_state(app: &AppHandle, state: &DownloadState) {
     let path = download_state_path(app);
-    if let Err(e) = fs::write(&path, serde_json::to_string(state).unwrap_or_default()) {
-        log::error!("Failed to save download state: {}", e);
+    match serde_json::to_string(state) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&path, json) {
+                log::error!("Failed to save download state: {}", e);
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to serialize download state: {}", e);
+        }
     }
 }
 
