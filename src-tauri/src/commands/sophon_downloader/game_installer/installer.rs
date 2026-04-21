@@ -41,7 +41,7 @@ struct InstallContext {
     assembled_files: Arc<AtomicU64>,
     total_bytes: u64,
     total_files: u64,
-    resume_bytes_offset: u64,
+    resume_bytes_offset: Arc<AtomicU64>,
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
@@ -653,31 +653,21 @@ async fn process_download_item(
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
         handle
-            .wait_if_paused(&*ctx.updater, db + ctx.resume_bytes_offset, ctx.total_bytes)
+            .wait_if_paused(&*ctx.updater, db + ctx.resume_bytes_offset.load(Ordering::Relaxed), ctx.total_bytes)
             .await?;
     }
 
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(&item.chunk));
 
-    if item.is_pre_downloaded {
-        let size_ok = tokio::task::spawn_blocking({
-            let d = dest.clone();
-            let expected = item.chunk.chunk_size;
-            move || d.metadata().map(|m| m.len() == expected).unwrap_or(false)
-        })
-        .await?;
+    let mut was_actually_downloaded = false;
+    let needs_download = check_needs_download(dest.clone(), &item.chunk, &ctx.verify_cache).await?;
+    if needs_download {
+        download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
+        was_actually_downloaded = true;
+    }
 
-        if !size_ok {
-            let needs_download = check_needs_download(dest.clone(), &item.chunk, &ctx.verify_cache).await?;
-            if needs_download {
-                download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
-            }
-        }
-    } else {
-        let needs_download = check_needs_download(dest.clone(), &item.chunk, &ctx.verify_cache).await?;
-        if needs_download {
-            download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
-        }
+    if was_actually_downloaded && item.is_pre_downloaded {
+        ctx.resume_bytes_offset.fetch_sub(item.chunk.chunk_size, Ordering::Relaxed);
     }
 
     {
@@ -702,15 +692,15 @@ async fn process_download_item(
         }).push(handle);
     }
 
-    let db = if item.is_pre_downloaded {
-        ctx.downloaded_bytes.load(Ordering::Relaxed)
-    } else {
+    let db = if was_actually_downloaded || !item.is_pre_downloaded {
         ctx.downloaded_bytes
             .fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
             + item.chunk.chunk_size
+    } else {
+        ctx.downloaded_bytes.load(Ordering::Relaxed)
     };
 
-    if !item.is_pre_downloaded {
+    if was_actually_downloaded || !item.is_pre_downloaded {
         adaptive.record_bytes(item.chunk.chunk_size);
     }
 
@@ -723,14 +713,14 @@ async fn process_download_item(
             } else {
                 0.0
             };
-            let remaining_bytes = ctx.total_bytes.saturating_sub(db + ctx.resume_bytes_offset);
+            let remaining_bytes = ctx.total_bytes.saturating_sub(db + ctx.resume_bytes_offset.load(Ordering::Relaxed));
             let eta_seconds = if speed_bps > 0.0 {
                 remaining_bytes as f64 / speed_bps
             } else {
                 0.0
             };
             (ctx.updater)(SophonProgress::Downloading {
-                downloaded_bytes: db + ctx.resume_bytes_offset,
+                downloaded_bytes: db + ctx.resume_bytes_offset.load(Ordering::Relaxed),
                 total_bytes: ctx.total_bytes,
                 speed_bps,
                 eta_seconds,
@@ -948,7 +938,7 @@ pub async fn install(
         assembled_files: Arc::new(AtomicU64::new(pre_assembled)),
         total_bytes: total_compressed,
         total_files,
-        resume_bytes_offset,
+        resume_bytes_offset: Arc::new(AtomicU64::new(resume_bytes_offset)),
         verify_cache,
         chunk_refcounts: Arc::new(DashMap::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
