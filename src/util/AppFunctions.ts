@@ -115,6 +115,10 @@ export const winToPosixPath = (path: string): string => {
 };
 
 export const formatNumber = (num: number): string => {
-	return new Intl.NumberFormat(navigator.language).format(num);
+  try {
+    return new Intl.NumberFormat(navigator.language).format(num);
+  } catch {
+    return new Intl.NumberFormat("en-US").format(num);
+  }
 }
 
