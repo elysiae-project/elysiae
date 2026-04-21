@@ -785,8 +785,7 @@ async fn finalize_install(
         })
         .await;
         let _ = assembly_task.await;
-        (ctx.updater)(SophonProgress::Finished);
-        return Ok(());
+        return Err(SophonError::Cancelled);
     }
 
     results.into_iter().find(|r| r.is_err()).transpose()?;

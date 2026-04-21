@@ -203,7 +203,7 @@ pub async fn sophon_download(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
-    game_installer::install(
+    let result = game_installer::install(
         installers,
         &game_dir,
         vec![],
@@ -216,12 +216,19 @@ pub async fn sophon_download(
         move |p| emit(&app_clone, p),
         saver,
     )
-    .await?;
+    .await;
 
-    *active.0.lock().await = None;
     clear_download_state(&app_handle);
-    emit(&app_handle, SophonProgress::Finished);
-    Ok(())
+    *active.0.lock().await = None;
+
+    match result {
+        Ok(()) => {
+            emit(&app_handle, SophonProgress::Finished);
+            Ok(())
+        }
+        Err(game_installer::SophonError::Cancelled) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Updates an existing game installation.
@@ -265,7 +272,7 @@ pub async fn sophon_update(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
-    game_installer::install(
+    let result = game_installer::install(
         installers,
         &game_dir,
         deleted_files,
@@ -278,12 +285,19 @@ pub async fn sophon_update(
         move |p| emit(&app_clone, p),
         saver,
     )
-    .await?;
+    .await;
 
-    *active.0.lock().await = None;
     clear_download_state(&app_handle);
-    emit(&app_handle, SophonProgress::Finished);
-    Ok(())
+    *active.0.lock().await = None;
+
+    match result {
+        Ok(()) => {
+            emit(&app_handle, SophonProgress::Finished);
+            Ok(())
+        }
+        Err(game_installer::SophonError::Cancelled) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Pre-downloads an upcoming game version.
@@ -324,7 +338,7 @@ pub async fn sophon_preinstall(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
-    game_installer::install(
+    let result = game_installer::install(
         installers,
         &game_dir,
         vec![],
@@ -337,12 +351,19 @@ pub async fn sophon_preinstall(
         move |p| emit(&app_clone, p),
         saver,
     )
-    .await?;
+    .await;
 
-    *active.0.lock().await = None;
     clear_download_state(&app_handle);
-    emit(&app_handle, SophonProgress::Finished);
-    Ok(())
+    *active.0.lock().await = None;
+
+    match result {
+        Ok(()) => {
+            emit(&app_handle, SophonProgress::Finished);
+            Ok(())
+        }
+        Err(game_installer::SophonError::Cancelled) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Applies a pre-downloaded game version.
@@ -380,122 +401,78 @@ pub async fn sophon_resume_download(
         .map_err(|e| e.to_string())?;
 
     let prev_chunks = state.downloaded_chunks.clone();
+    let current_tag = state.current_tag.clone();
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-    let handle = DownloadHandle::new();
-    *active.0.lock().await = Some(handle.clone());
-
-    match state.download_type {
+    let (installers, deleted_files, tag, manifest_hash, is_preinstall) = match state.download_type {
         DownloadType::Fresh => {
             let (installers, tag, new_manifest_hash) =
                 game_installer::build_installers(&client.0, &state.game_id, &state.vo_lang)
                     .await
                     .map_err(|e| e.to_string())?;
-
-            let resumed_state = DownloadState {
-                game_id: state.game_id.clone(),
-                vo_lang: state.vo_lang.clone(),
-                output_path: state.output_path.clone(),
-                download_type: DownloadType::Fresh,
-                current_tag: None,
-                manifest_hash: new_manifest_hash,
-                downloaded_chunks: prev_chunks,
-            };
-            let saver = make_state_saver(&app_handle, &resumed_state);
-
-            let app_clone = app_handle.clone();
-            game_installer::install(
-                installers,
-                &game_dir,
-                vec![],
-                &tag,
-                false,
-                true,
-                handle,
-                resumed_state.manifest_hash,
-                resumed_state.downloaded_chunks,
-                move |p| emit(&app_clone, p),
-                saver,
-            )
-            .await?;
+            (installers, vec![], tag, new_manifest_hash, false)
         }
         DownloadType::Update => {
-            let current_tag = state
-                .current_tag
+            let ct = current_tag
+                .clone()
                 .ok_or("No current tag in resume state for update")?;
-
             let (installers, deleted_files, tag, new_manifest_hash) =
-                game_installer::build_update_installers(&client.0, &state.game_id, &state.vo_lang, &current_tag)
+                game_installer::build_update_installers(&client.0, &state.game_id, &state.vo_lang, &ct)
                     .await
                     .map_err(|e| e.to_string())?;
-
-            let resumed_state = DownloadState {
-                game_id: state.game_id.clone(),
-                vo_lang: state.vo_lang.clone(),
-                output_path: state.output_path.clone(),
-                download_type: DownloadType::Update,
-                current_tag: Some(current_tag),
-                manifest_hash: new_manifest_hash,
-                downloaded_chunks: prev_chunks,
-            };
-            let saver = make_state_saver(&app_handle, &resumed_state);
-
-            let app_clone = app_handle.clone();
-            game_installer::install(
-                installers,
-                &game_dir,
-                deleted_files,
-                &tag,
-                false,
-                true,
-                handle,
-                resumed_state.manifest_hash,
-                resumed_state.downloaded_chunks,
-                move |p| emit(&app_clone, p),
-                saver,
-            )
-            .await?;
+            (installers, deleted_files, tag, new_manifest_hash, false)
         }
         DownloadType::Preinstall => {
             let (installers, tag, new_manifest_hash) =
                 game_installer::build_preinstall_installers(&client.0, &state.game_id, &state.vo_lang)
                     .await
                     .map_err(|e| e.to_string())?;
-
-            let resumed_state = DownloadState {
-                game_id: state.game_id.clone(),
-                vo_lang: state.vo_lang.clone(),
-                output_path: state.output_path.clone(),
-                download_type: DownloadType::Preinstall,
-                current_tag: None,
-                manifest_hash: new_manifest_hash,
-                downloaded_chunks: prev_chunks,
-            };
-            let saver = make_state_saver(&app_handle, &resumed_state);
-
-            let app_clone = app_handle.clone();
-            game_installer::install(
-                installers,
-                &game_dir,
-                vec![],
-                &tag,
-                true,
-                true,
-                handle,
-                resumed_state.manifest_hash,
-                resumed_state.downloaded_chunks,
-                move |p| emit(&app_clone, p),
-                saver,
-            )
-            .await?;
+            (installers, vec![], tag, new_manifest_hash, true)
         }
-    }
+    };
 
-    *active.0.lock().await = None;
+    let resumed_state = DownloadState {
+        game_id: state.game_id.clone(),
+        vo_lang: state.vo_lang.clone(),
+        output_path: state.output_path.clone(),
+        download_type: state.download_type,
+        current_tag,
+        manifest_hash,
+        downloaded_chunks: prev_chunks,
+    };
+    let saver = make_state_saver(&app_handle, &resumed_state);
+
+    let handle = DownloadHandle::new();
+    *active.0.lock().await = Some(handle.clone());
+
+    let app_clone = app_handle.clone();
+    let result = game_installer::install(
+        installers,
+        &game_dir,
+        deleted_files,
+        &tag,
+        is_preinstall,
+        true,
+        handle,
+        resumed_state.manifest_hash,
+        resumed_state.downloaded_chunks,
+        move |p| emit(&app_clone, p),
+        saver,
+    )
+    .await;
+
     clear_download_state(&app_handle);
-    emit(&app_handle, SophonProgress::Finished);
-    Ok(())
+    *active.0.lock().await = None;
+
+    match result {
+        Ok(()) => {
+            emit(&app_handle, SophonProgress::Finished);
+            Ok(())
+        }
+        Err(game_installer::SophonError::Cancelled) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Checks if there is a downloadable state to resume.
