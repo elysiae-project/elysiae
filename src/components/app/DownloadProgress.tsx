@@ -1,17 +1,13 @@
 import { useDownload } from "../../hooks/useDownload";
-import { useGame } from "../../hooks/useGame";
-import { getGameName } from "../../util/AppFunctions";
-import { formatNumber } from "../../util/AppFunctions";
+import { getGameName, formatNumber } from "../../util/AppFunctions";
 import Progressbar from "../Progressbar";
 
 export default function GameDownloadProgress() {
   const { state } = useDownload();
-  const { game } = useGame();
 
   const isActive = state.phase !== "idle" && state.phase !== "finished";
   if (!isActive) return null;
 
-  const isDownloadForActiveGame = state.downloadingGame === game;
   const downloadPct = state.downloadTotal > 0 ? (state.downloadedBytes / state.downloadTotal) * 100 : 0;
   const assemblePct = state.totalFiles > 0 ? (state.assembledFiles / state.totalFiles) * 100 : 0;
   const speedMB = state.speedBps / 1024 ** 2;
@@ -35,7 +31,7 @@ export default function GameDownloadProgress() {
   return (
     <div class="flex flex-col w-full h-auto gap-y-3 justify-start items-start align-bottom text-white bg-black/50 rounded-lg mr-10 px-4 py-5">
       <h1 class="-mt-2 mb-0.5">{titleText}</h1>
-      {(state.phase === "downloading" || state.phase === "paused") && (
+      {state.hasDownloadProgress && (
         <div class="flex flex-col min-w-full text-left gap-y-1">
           <h2 class="text-sm ml-1">
             Downloaded {(state.downloadedBytes / 1024 ** 3).toFixed(2)}GB of{" "}
@@ -46,7 +42,7 @@ export default function GameDownloadProgress() {
           <Progressbar progress={downloadPct} />
         </div>
       )}
-      {state.phase === "assembling" && (
+      {state.hasAssemblyProgress && (
         <div class="flex min-w-full flex-col text-left gap-y-1">
           <h2 class="text-sm ml-1">
             Assembled {formatNumber(state.assembledFiles)} of {formatNumber(state.totalFiles)} Files ({assemblePct.toFixed(2)}%)

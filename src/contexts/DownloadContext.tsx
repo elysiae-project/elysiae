@@ -19,6 +19,8 @@ export interface DownloadState {
   errorCount: number;
   errorMessage: string;
   warningMessage: string;
+  hasDownloadProgress: boolean;
+  hasAssemblyProgress: boolean;
 }
 
 interface DownloadContextType {
@@ -39,6 +41,8 @@ const initialState: DownloadState = {
   errorCount: 0,
   errorMessage: "",
   warningMessage: "",
+  hasDownloadProgress: false,
+  hasAssemblyProgress: false,
 };
 
 export const DownloadContext = createContext<DownloadContextType>({
@@ -78,6 +82,7 @@ export const DownloadProvider = ({ children }: { children: ComponentChildren }) 
               downloadTotal: payload.total_bytes,
               speedBps: payload.speed_bps,
               etaSeconds: payload.eta_seconds,
+              hasDownloadProgress: true,
             };
           case "paused":
             return {
@@ -92,6 +97,7 @@ export const DownloadProvider = ({ children }: { children: ComponentChildren }) 
               phase: "assembling",
               assembledFiles: payload.assembled_files,
               totalFiles: payload.total_files,
+              hasAssemblyProgress: true,
             };
           case "verifying":
             return {
