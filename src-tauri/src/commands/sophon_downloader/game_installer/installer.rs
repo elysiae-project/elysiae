@@ -333,10 +333,12 @@ fn build_installer_data(installers: Vec<SophonInstaller>) -> Vec<InstallerData> 
 }
 
 fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
+    let mut seen_chunks: HashSet<&str> = HashSet::new();
     let total_compressed: u64 = installer_data
         .iter()
         .flat_map(|d| d.files.iter())
         .flat_map(|f| f.asset_chunks.iter())
+        .filter(|c| seen_chunks.insert(c.chunk_name.as_str()))
         .map(|c| c.chunk_size)
         .sum();
 
@@ -874,10 +876,15 @@ pub async fn install(
     let (total_compressed, total_files) = compute_totals(&installer_data);
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
 
-    let pre_downloaded: HashSet<String> = prev_downloaded_chunks.keys().cloned().collect();
+    let pre_downloaded: HashSet<String> = if is_resume {
+        prev_downloaded_chunks.keys().cloned().collect()
+    } else {
+        HashSet::new()
+    };
 
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
+    let mut completed_chunk_names: HashSet<&str> = HashSet::new();
     let completed_indices = if is_resume {
         let mut indices = HashSet::new();
         for (file_idx, file) in all_files.iter().enumerate() {
@@ -904,6 +911,9 @@ pub async fn install(
                 indices.insert(file_idx);
                 let file_chunk_size: u64 = file.asset_chunks.iter().map(|c| c.chunk_size).sum();
                 resume_bytes_offset += file_chunk_size;
+                for c in &file.asset_chunks {
+                    completed_chunk_names.insert(&c.chunk_name);
+                }
                 pre_assembled += 1;
             } else {
                 let tp = target_path.clone();
@@ -919,6 +929,9 @@ pub async fn install(
     };
 
     for chunk_name in &pre_downloaded {
+        if completed_chunk_names.contains(chunk_name.as_str()) {
+            continue;
+        }
         if let Some(&size) = prev_downloaded_chunks.get(chunk_name) {
             resume_bytes_offset += size;
         }
