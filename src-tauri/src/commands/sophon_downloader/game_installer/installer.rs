@@ -907,48 +907,66 @@ pub async fn install(
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
     let mut completed_chunk_names: HashSet<&str> = HashSet::new();
-    let completed_indices = if options.is_resume {
-        let mut indices = HashSet::new();
-        for (file_idx, file) in all_files.iter().enumerate() {
-            if file.asset_chunks.is_empty() {
-                indices.insert(file_idx);
-                pre_assembled += 1;
-                continue;
-            }
-            let target_path = game_dir.join(&file.asset_name);
-            if !target_path.exists() {
-                continue;
-            }
-            let valid = {
-                let tp = target_path.clone();
-                let sz = file.asset_size;
-                let md5 = file.asset_hash_md5.clone();
-                let vc = Arc::clone(&verify_cache);
-                tokio::task::spawn_blocking(move || {
-                    cache::check_file_md5_cached(&tp, sz, &md5, &vc).unwrap_or(false)
-                })
-                .await?
-            };
-            if valid {
-                indices.insert(file_idx);
-                let file_chunk_size: u64 = file.asset_chunks.iter().map(|c| c.chunk_size).sum();
-                resume_bytes_offset += file_chunk_size;
-                for c in &file.asset_chunks {
-                    completed_chunk_names.insert(&c.chunk_name);
-                }
-                pre_assembled += 1;
-            } else {
-                let tp = target_path.clone();
-                tokio::task::spawn_blocking(move || {
-                    let _ = fs::remove_file(tp);
-                })
-                .await?;
-            }
+let completed_indices = if options.is_resume {
+    let total = all_files.len() as u64;
+    let mut last_calc_update = Instant::now();
+    (callbacks.updater)(SophonProgress::CalculatingDownloads {
+        checked_files: 0,
+        total_files: total,
+    });
+    let mut indices = HashSet::new();
+    for (file_idx, file) in all_files.iter().enumerate() {
+        if file.asset_chunks.is_empty() {
+            indices.insert(file_idx);
+            pre_assembled += 1;
+            continue;
         }
-        Some(indices)
-    } else {
-        None
-    };
+        let target_path = game_dir.join(&file.asset_name);
+        if !target_path.exists() {
+            continue;
+        }
+        let valid = {
+            let tp = target_path.clone();
+            let sz = file.asset_size;
+            let md5 = file.asset_hash_md5.clone();
+            let vc = Arc::clone(&verify_cache);
+            tokio::task::spawn_blocking(move || {
+                cache::check_file_md5_cached(&tp, sz, &md5, &vc).unwrap_or(false)
+            })
+            .await?
+        };
+        if valid {
+            indices.insert(file_idx);
+            let file_chunk_size: u64 = file.asset_chunks.iter().map(|c| c.chunk_size).sum();
+            resume_bytes_offset += file_chunk_size;
+            for c in &file.asset_chunks {
+                completed_chunk_names.insert(&c.chunk_name);
+            }
+            pre_assembled += 1;
+        } else {
+            let tp = target_path.clone();
+            tokio::task::spawn_blocking(move || {
+                let _ = fs::remove_file(tp);
+            })
+            .await?;
+        }
+        let checked = (file_idx + 1) as u64;
+        if last_calc_update.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+            (callbacks.updater)(SophonProgress::CalculatingDownloads {
+                checked_files: checked,
+                total_files: total,
+            });
+            last_calc_update = Instant::now();
+        }
+    }
+    (callbacks.updater)(SophonProgress::CalculatingDownloads {
+        checked_files: total,
+        total_files: total,
+    });
+    Some(indices)
+} else {
+    None
+};
 
     for chunk_name in &pre_downloaded {
         if completed_chunk_names.contains(chunk_name.as_str()) {
