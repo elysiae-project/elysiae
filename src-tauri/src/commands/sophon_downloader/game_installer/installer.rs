@@ -1181,7 +1181,7 @@ pub async fn verify_integrity(
                 message: format!("File {} failed integrity check, re-downloading", asset.asset_name),
             });
 
-            if let Err(e) = redownload_asset(client, asset, chunk_download, &chunks_dir, game_dir, &file_path, &mut emit).await {
+            if let Err(e) = redownload_asset(client, asset, chunk_download, &chunks_dir, game_dir, &file_path, &mut emit, &verify_cache).await {
                 emit(SophonProgress::Error {
                     message: format!("Failed to re-download {}: {}", asset.asset_name, e),
                 });
@@ -1217,6 +1217,7 @@ async fn redownload_asset(
     game_dir: &Path,
     file_path: &Path,
     emit: &mut (impl FnMut(SophonProgress) + Send + 'static),
+    verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
     fs::create_dir_all(chunks_dir)?;
 
@@ -1248,14 +1249,13 @@ async fn redownload_asset(
     let tmp_dir_name = format!("tmp-verify-{}", asset.asset_name.replace(['/', '\\', ':'], "_"));
     let tmp_dir = game_dir.join(&tmp_dir_name);
     fs::create_dir_all(&tmp_dir)?;
-    let verify_cache = DashMap::new();
     let result = assembly::assemble_file(
         asset,
         game_dir,
         chunks_dir,
         &tmp_dir,
         &DashMap::new(),
-        &verify_cache,
+        verify_cache,
     );
     let _ = fs::remove_dir_all(&tmp_dir);
     result?;
