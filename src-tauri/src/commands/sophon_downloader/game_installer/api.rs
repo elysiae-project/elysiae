@@ -11,7 +11,7 @@ use crate::commands::sophon_downloader::proto_parse::{SophonManifestProto, decod
 use super::error::{SophonError, SophonResult};
 use super::{FRONT_DOOR_URL, SOPHON_BUILD_URL_BASE};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
-use crate::commands::sophon_downloader::compute_manifest_hash;
+use crate::commands::sophon_downloader::compute_content_manifest_hash;
 
 pub struct ManifestWithHash {
     pub manifest: SophonManifestProto,
@@ -65,8 +65,8 @@ pub async fn fetch_manifest(
         bytes.to_vec()
     };
 
-    let hash = compute_manifest_hash(&raw);
     let manifest: SophonManifestProto = decode_manifest(&raw).map_err(SophonError::ManifestDecode)?;
+    let hash = compute_content_manifest_hash(&manifest);
     Ok(ManifestWithHash { manifest, hash })
 }
 
