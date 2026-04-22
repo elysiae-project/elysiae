@@ -62,7 +62,11 @@ pub fn check_file_md5_cached(
     cache: &DashMap<String, VerificationEntry>,
 ) -> io::Result<bool> {
     let path_str = path.to_string_lossy().to_string();
-    let metadata = path.metadata()?;
+    let metadata = match path.metadata() {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
     let mtime = metadata
         .modified()?
         .duration_since(UNIX_EPOCH)
