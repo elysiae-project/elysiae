@@ -863,8 +863,39 @@ pub async fn install(
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
 
-    let ResumeContext { prev_manifest_hash, prev_downloaded_chunks } = resume;
+    let ResumeContext { prev_manifest_hash, mut prev_downloaded_chunks } = resume;
     if options.is_resume {
+        // Validate that chunk files referenced in persisted state actually exist on disk.
+        // Stale entries (e.g. user deleted game files between sessions) would otherwise
+        // inflate the resume offset, causing incorrect progress and skipped downloads.
+        {
+            let chunks_dir_validate = Arc::clone(&chunks_dir);
+            prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
+                let before = prev_downloaded_chunks.len();
+                prev_downloaded_chunks.retain(|chunk_name, _| {
+                    let path = chunks_dir_validate.join(format!("{}.zstd", chunk_name));
+                    let exists = path.exists();
+                    if !exists {
+                        log::warn!(
+                            "Resume state references chunk '{}' but file not found on disk, removing from resume state",
+                            chunk_name
+                        );
+                    }
+                    exists
+                });
+                let removed = before - prev_downloaded_chunks.len();
+                if removed > 0 {
+                    log::warn!(
+                        "Removed {}/{} stale chunk entries from resume state (chunks dir: {})",
+                        removed,
+                        before,
+                        chunks_dir_validate.display()
+                    );
+                }
+                prev_downloaded_chunks
+            })
+            .await?;
+        }
         let current_manifest_hash = combine_manifest_hashes(&installers);
         if prev_manifest_hash != current_manifest_hash {
             log::warn!(
