@@ -522,6 +522,9 @@ pub async fn sophon_resume_download(
 
     let manifest_changed = old_manifest_hash != manifest_hash;
     let resumed_chunks = if manifest_changed {
+        if delete_chunks_dir(&app_handle, &state.output_path) {
+            log::info!("Deleted stale chunks directory due to manifest change");
+        }
         HashMap::new()
     } else {
         prev_chunks
