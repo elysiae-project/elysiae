@@ -1076,44 +1076,54 @@ pub async fn verify_integrity(
     let game_manifest = api::fetch_manifest(client, &game_meta.manifest_download, &game_meta.manifest.id).await?.manifest;
     let vo_manifest = api::fetch_manifest(client, &vo_meta.manifest_download, &vo_meta.manifest.id).await?.manifest;
 
-  let all_assets: Vec<&SophonManifestAssetProperty> = game_manifest
-    .assets
-    .iter()
-    .filter(|a| !a.is_directory())
-    .chain(vo_manifest.assets.iter().filter(|a| !a.is_directory()))
-    .collect();
+    let game_chunk_download = &game_meta.manifest_download;
+    let vo_chunk_download = &vo_meta.manifest_download;
+
+    let all_assets: Vec<(&SophonManifestAssetProperty, &DownloadInfo)> = game_manifest
+        .assets
+        .iter()
+        .filter(|a| !a.is_directory())
+        .map(|a| (a, game_chunk_download))
+        .chain(
+            vo_manifest
+                .assets
+                .iter()
+                .filter(|a| !a.is_directory())
+                .map(|a| (a, vo_chunk_download)),
+        )
+        .collect();
 
     let total_files = all_assets.len() as u64;
     let mut error_count = 0u64;
     let verify_cache = cache::load_verification_cache(game_dir);
     let chunks_dir = game_dir.join("chunks");
 
-    for (scanned, asset) in all_assets.into_iter().enumerate() {
+    for (scanned, (asset, chunk_download)) in all_assets.into_iter().enumerate() {
         let scanned = (scanned + 1) as u64;
         let file_path = game_dir.join(&asset.asset_name);
 
-let is_valid = tokio::task::spawn_blocking({
-    let verify_cache = Arc::new(verify_cache.clone());
-    let file_path = file_path.clone();
-    let asset_size = asset.asset_size;
-    let asset_md5 = asset.asset_hash_md5.clone();
-    move || {
-      cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache).unwrap_or(false)
-    }
-  }).await?;
+        let is_valid = tokio::task::spawn_blocking({
+            let verify_cache = Arc::new(verify_cache.clone());
+            let file_path = file_path.clone();
+            let asset_size = asset.asset_size;
+            let asset_md5 = asset.asset_hash_md5.clone();
+            move || {
+                cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache).unwrap_or(false)
+            }
+        }).await?;
 
-    if !is_valid {
-      error_count += 1;
-      emit(SophonProgress::Warning {
-        message: format!("File {} failed integrity check, re-downloading", asset.asset_name),
-      });
+        if !is_valid {
+            error_count += 1;
+            emit(SophonProgress::Warning {
+                message: format!("File {} failed integrity check, re-downloading", asset.asset_name),
+            });
 
-      if let Err(e) = redownload_asset(client, asset, &chunks_dir, &file_path, &mut emit).await {
-        emit(SophonProgress::Error {
-          message: format!("Failed to re-download {}: {}", asset.asset_name, e),
-        });
-      }
-    }
+            if let Err(e) = redownload_asset(client, asset, chunk_download, &chunks_dir, game_dir, &file_path, &mut emit).await {
+                emit(SophonProgress::Error {
+                    message: format!("Failed to re-download {}: {}", asset.asset_name, e),
+                });
+            }
+        }
 
     emit(SophonProgress::Verifying {
       scanned_files: scanned,
@@ -1126,29 +1136,57 @@ let is_valid = tokio::task::spawn_blocking({
   Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn redownload_asset(
-  _client: &Client,
-  asset: &SophonManifestAssetProperty,
-  chunks_dir: &Path,
-  file_path: &Path,
-  emit: &mut (impl FnMut(SophonProgress) + Send + 'static),
+    client: &Client,
+    asset: &SophonManifestAssetProperty,
+    chunk_download: &DownloadInfo,
+    chunks_dir: &Path,
+    game_dir: &Path,
+    file_path: &Path,
+    emit: &mut (impl FnMut(SophonProgress) + Send + 'static),
 ) -> SophonResult<()> {
-  let _manifest_meta = asset;
+    fs::create_dir_all(chunks_dir)?;
 
-  for chunk in &asset.asset_chunks {
-    let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
-    if !chunk_path.exists() || !cache::check_file_md5_cached(&chunk_path, chunk.chunk_size, &chunk.chunk_compressed_hash_md5, &DashMap::new()).unwrap_or(false) {
-      emit(SophonProgress::Warning {
-        message: format!("Re-downloading chunk {}", chunk.chunk_name),
-      });
+    for chunk in &asset.asset_chunks {
+        let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
+        let needs_download = !chunk_path.exists()
+            || !cache::check_file_md5_cached(
+                &chunk_path,
+                chunk.chunk_size,
+                &chunk.chunk_compressed_hash_md5,
+                &DashMap::new(),
+            )
+            .unwrap_or(false);
+
+        if needs_download {
+            emit(SophonProgress::Warning {
+                message: format!("Re-downloading chunk {}", chunk.chunk_name),
+            });
+            download::download_chunk(client, chunk_download, chunk, &chunk_path).await?;
+        }
     }
-  }
 
-  if let Some(parent) = file_path.parent() {
-    fs::create_dir_all(parent)?;
-  }
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
-  let _ = fs::remove_file(file_path);
+    let _ = fs::remove_file(file_path);
 
-  Ok(())
+    let tmp_dir_name = format!("tmp-verify-{}", asset.asset_name.replace(['/', '\\', ':'], "_"));
+    let tmp_dir = game_dir.join(&tmp_dir_name);
+    fs::create_dir_all(&tmp_dir)?;
+    let verify_cache = DashMap::new();
+    let result = assembly::assemble_file(
+        asset,
+        game_dir,
+        chunks_dir,
+        &tmp_dir,
+        &DashMap::new(),
+        &verify_cache,
+    );
+    let _ = fs::remove_dir_all(&tmp_dir);
+    result?;
+
+    Ok(())
 }
