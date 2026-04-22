@@ -30,7 +30,12 @@ use crate::commands::sophon_downloader::proto_parse::{
 };
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
-type StateSaver = Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>;
+pub type StateSaver = Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>;
+
+pub struct ResumeContext {
+    pub prev_manifest_hash: String,
+    pub prev_downloaded_chunks: HashMap<String, u64>,
+}
 
 struct InstallContext {
     chunks_dir: Arc<PathBuf>,
@@ -178,9 +183,11 @@ async fn build_installers_from_data(
 }
 
 fn combine_manifest_hashes(installers: &[SophonInstaller]) -> String {
+    let mut hashes: Vec<&str> = installers.iter().map(|i| i.manifest_hash.as_str()).collect();
+    hashes.sort();
     let mut hasher = Sha256::new();
-    for inst in installers {
-        hasher.update(inst.manifest_hash.as_bytes());
+    for h in hashes {
+        hasher.update(h.as_bytes());
     }
     hex::encode(&hasher.finalize()[..8])
 }
@@ -348,6 +355,7 @@ fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn register_chunks_for_file(
     file: &SophonManifestAssetProperty,
     file_idx: usize,
@@ -384,11 +392,11 @@ fn register_chunks_for_file(
             }
             Entry::Occupied(mut occupied) => {
                 *occupied.get_mut() += 1;
-                if is_pre {
-                    if let Some(item) = download_items.iter_mut().find(|i| i.chunk.chunk_name == chunk.chunk_name) {
-                        item.is_pre_downloaded = is_pre;
-                    }
-                }
+            if is_pre
+                && let Some(item) = download_items.iter_mut().find(|i| i.chunk.chunk_name == chunk.chunk_name)
+            {
+                item.is_pre_downloaded = is_pre;
+            }
             }
         }
     }
@@ -407,7 +415,7 @@ async fn build_download_state(
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
         let needs_tmp_dir = data.files.iter().enumerate().any(|(i, _)| {
-            completed_indices.map_or(true, |set| !set.contains(&(file_idx + i)))
+            completed_indices.is_none_or(|set| !set.contains(&(file_idx + i)))
         });
         if needs_tmp_dir {
             let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
@@ -418,7 +426,7 @@ async fn build_download_state(
         }
 
         for _ in 0..data.files.len() {
-            if completed_indices.map_or(false, |set| set.contains(&file_idx)) {
+            if completed_indices.is_some_and(|set| set.contains(&file_idx)) {
                 file_idx += 1;
                 continue;
             }
@@ -679,7 +687,7 @@ async fn process_download_item(
     }
 
     let count = ctx.chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
-    if count % crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL == 0 {
+    if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
         let dc = ctx.downloaded_chunks.lock().unwrap_or_else(|e| {
             log::error!("downloaded_chunks mutex poisoned during batch save, recovering");
             e.into_inner()
@@ -832,21 +840,46 @@ async fn finalize_install(
     Ok(())
 }
 
+pub struct InstallOptions {
+    pub is_preinstall: bool,
+    pub is_resume: bool,
+    pub handle: DownloadHandle,
+}
+
+pub struct InstallCallbacks {
+    pub updater: ProgressUpdater,
+    pub state_saver: StateSaver,
+}
+
 pub async fn install(
     installers: Vec<SophonInstaller>,
     game_dir: &Path,
     deleted_files: Vec<String>,
     tag: &str,
-    is_preinstall: bool,
-    is_resume: bool,
-    handle: DownloadHandle,
-    _manifest_hash: String,
-    prev_downloaded_chunks: HashMap<String, u64>,
-    updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
-    state_saver: StateSaver,
+    resume: ResumeContext,
+    options: InstallOptions,
+    callbacks: InstallCallbacks,
 ) -> SophonResult<()> {
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
+
+    let ResumeContext { prev_manifest_hash, prev_downloaded_chunks } = resume;
+    if options.is_resume {
+        let current_manifest_hash = combine_manifest_hashes(&installers);
+        if prev_manifest_hash != current_manifest_hash {
+            log::warn!(
+                "Manifest changed on resume (old={}, new={}), re-verifying all chunks",
+                prev_manifest_hash,
+                current_manifest_hash
+            );
+        } else {
+            log::info!(
+                "Manifest unchanged on resume (hash={}), preserving {} cached chunks",
+                current_manifest_hash,
+                prev_downloaded_chunks.len()
+            );
+        }
+    }
 
     let installer_data = build_installer_data(installers);
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(
@@ -865,7 +898,7 @@ pub async fn install(
     let (total_compressed, total_files) = compute_totals(&installer_data);
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
 
-    let pre_downloaded: HashSet<String> = if is_resume {
+    let pre_downloaded: HashSet<String> = if options.is_resume {
         prev_downloaded_chunks.keys().cloned().collect()
     } else {
         HashSet::new()
@@ -874,7 +907,7 @@ pub async fn install(
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
     let mut completed_chunk_names: HashSet<&str> = HashSet::new();
-    let completed_indices = if is_resume {
+    let completed_indices = if options.is_resume {
         let mut indices = HashSet::new();
         for (file_idx, file) in all_files.iter().enumerate() {
             if file.asset_chunks.is_empty() {
@@ -926,7 +959,7 @@ pub async fn install(
         }
     }
 
-    let initial_chunks = if is_resume { prev_downloaded_chunks } else { HashMap::new() };
+    let initial_chunks = if options.is_resume { prev_downloaded_chunks } else { HashMap::new() };
 
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
@@ -943,11 +976,11 @@ pub async fn install(
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
         last_update: Arc::new(Mutex::new(Instant::now())),
         download_start: Instant::now(),
-        updater: Arc::new(updater.clone()),
+        updater: Arc::clone(&callbacks.updater),
         downloaded_chunks: Arc::new(Mutex::new(initial_chunks)),
         chunks_since_save: Arc::new(AtomicU64::new(0)),
         pending_saves: Arc::new(Mutex::new(Vec::new())),
-        state_saver,
+        state_saver: callbacks.state_saver,
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
@@ -971,7 +1004,7 @@ pub async fn install(
         download_items,
         chunk_to_files,
         &assemble_tx,
-        handle,
+        options.handle,
         Arc::clone(&adaptive),
         semaphore,
     )
@@ -995,7 +1028,7 @@ pub async fn install(
         results,
         &deleted_files,
         tag,
-        is_preinstall,
+        options.is_preinstall,
         assembly_task,
     )
     .await
@@ -1050,15 +1083,14 @@ pub async fn verify_integrity(
     .chain(vo_manifest.assets.iter().filter(|a| !a.is_directory()))
     .collect();
 
-  let total_files = all_assets.len() as u64;
-  let mut scanned = 0u64;
-  let mut error_count = 0u64;
-  let verify_cache = cache::load_verification_cache(game_dir);
-  let chunks_dir = game_dir.join("chunks");
+    let total_files = all_assets.len() as u64;
+    let mut error_count = 0u64;
+    let verify_cache = cache::load_verification_cache(game_dir);
+    let chunks_dir = game_dir.join("chunks");
 
-  for asset in all_assets {
-    scanned += 1;
-    let file_path = game_dir.join(&asset.asset_name);
+    for (scanned, asset) in all_assets.into_iter().enumerate() {
+        let scanned = (scanned + 1) as u64;
+        let file_path = game_dir.join(&asset.asset_name);
 
 let is_valid = tokio::task::spawn_blocking({
     let verify_cache = Arc::new(verify_cache.clone());
