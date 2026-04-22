@@ -1,8 +1,8 @@
 //! Sophon game downloader module.
 //!
-//! This module implements the Sophon chunk-based download system used by HoYoverse games.
-//! It handles downloading, assembling, and updating game files using a manifest-based approach
-//! with zstd-compressed chunks.
+//! This module implements the Sophon chunk-based download system used by
+//! HoYoverse games. It handles downloading, assembling, and updating game files
+//! using a manifest-based approach with zstd-compressed chunks.
 
 pub mod api_scrape;
 pub mod game_installer;
@@ -59,10 +59,14 @@ pub struct ResumeInfo {
 const DOWNLOAD_STATE_FILE: &str = ".sophon_download_state";
 
 fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().map_err(|e| {
-        log::error!("app_data_dir resolution failed: {}", e);
-        e
-    }).ok().map(|p| p.join(DOWNLOAD_STATE_FILE))
+    app.path()
+        .app_data_dir()
+        .map_err(|e| {
+            log::error!("app_data_dir resolution failed: {}", e);
+            e
+        })
+        .ok()
+        .map(|p| p.join(DOWNLOAD_STATE_FILE))
 }
 
 /// Persists download state to disk atomically (write to .tmp, then rename)
@@ -104,7 +108,11 @@ pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("Failed to read download state file {}: {}", path.display(), e);
+            log::warn!(
+                "Failed to read download state file {}: {}",
+                path.display(),
+                e
+            );
             return None;
         }
     };
@@ -128,7 +136,8 @@ pub fn clear_download_state(app: &AppHandle) {
 
 /// Deletes the chunks directory under the given game output path.
 /// Returns `true` if the directory was removed, `false` if it didn't exist.
-/// Deletion errors are logged as warnings and do not propagate — this is a best-effort cleanup.
+/// Deletion errors are logged as warnings and do not propagate — this is a
+/// best-effort cleanup.
 fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     let game_dir = match app.path().resolve(output_path, BaseDirectory::AppData) {
         Ok(p) => p,
@@ -142,7 +151,11 @@ fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
         Ok(()) => true,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(e) => {
-            log::warn!("Failed to delete chunks directory {}: {}", chunks_dir.display(), e);
+            log::warn!(
+                "Failed to delete chunks directory {}: {}",
+                chunks_dir.display(),
+                e
+            );
             false
         }
     }
@@ -251,8 +264,8 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
             manifest_hash: meta.manifest_hash.clone(),
             downloaded_chunks: chunks.clone(),
         };
-    save_download_state(&app, &s).ok();
-})
+        save_download_state(&app, &s).ok();
+    })
 }
 
 /// Downloads a fresh game installation.
@@ -272,9 +285,10 @@ pub async fn sophon_download(
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-    let (installers, tag, manifest_hash) = game_installer::build_installers(&client.0, &game_id, &vo_lang)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (installers, tag, manifest_hash) =
+        game_installer::build_installers(&client.0, &game_id, &vo_lang)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let state = DownloadState {
         game_id: game_id.clone(),
@@ -290,40 +304,40 @@ pub async fn sophon_download(
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
 
-let saver = make_state_saver(&app_handle, &state);
-let app_clone = app_handle.clone();
-let result = game_installer::install(
-    installers,
-    &game_dir,
-    vec![],
-    &tag,
-    game_installer::ResumeContext {
-        prev_manifest_hash: String::new(),
-        prev_downloaded_chunks: HashMap::new(),
-    },
-    game_installer::InstallOptions {
-        is_preinstall: false,
-        is_resume: false,
-        handle,
-    },
-    game_installer::InstallCallbacks {
-        updater: Arc::new(move |p| emit(&app_clone, p)),
-        state_saver: saver,
-    },
-)
-.await;
+    let saver = make_state_saver(&app_handle, &state);
+    let app_clone = app_handle.clone();
+    let result = game_installer::install(
+        installers,
+        &game_dir,
+        vec![],
+        &tag,
+        game_installer::ResumeContext {
+            prev_manifest_hash: String::new(),
+            prev_downloaded_chunks: HashMap::new(),
+        },
+        game_installer::InstallOptions {
+            is_preinstall: false,
+            is_resume: false,
+            handle,
+        },
+        game_installer::InstallCallbacks {
+            updater: Arc::new(move |p| emit(&app_clone, p)),
+            state_saver: saver,
+        },
+    )
+    .await;
 
-clear_download_state(&app_handle);
-*active.0.lock().await = None;
+    clear_download_state(&app_handle);
+    *active.0.lock().await = None;
 
-match result {
-    Ok(()) => {
-        emit(&app_handle, SophonProgress::Finished);
-        Ok(())
+    match result {
+        Ok(()) => {
+            emit(&app_handle, SophonProgress::Finished);
+            Ok(())
+        }
+        Err(game_installer::SophonError::Cancelled) => Ok(()),
+        Err(e) => Err(e.to_string()),
     }
-    Err(game_installer::SophonError::Cancelled) => Ok(()),
-    Err(e) => Err(e.to_string()),
-}
 }
 
 /// Updates an existing game installation.
@@ -487,9 +501,9 @@ pub async fn sophon_apply_preinstall(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-game_installer::apply_preinstall(&game_dir, &preinstall_tag)
-    .await
-    .map_err(|e| e.to_string())
+    game_installer::apply_preinstall(&game_dir, &preinstall_tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Resumes a download that was interrupted (e.g., by app close/crash).
@@ -501,8 +515,7 @@ pub async fn sophon_resume_download(
     client: State<'_, HttpClient>,
     active: State<'_, ActiveDownload>,
 ) -> Result<(), String> {
-    let state = load_download_state(&app_handle)
-        .ok_or("No download state found to resume")?;
+    let state = load_download_state(&app_handle).ok_or("No download state found to resume")?;
 
     let game_dir = app_handle
         .path()
@@ -528,9 +541,14 @@ pub async fn sophon_resume_download(
                 .clone()
                 .ok_or("No current tag in resume state for update")?;
             let (installers, deleted_files, tag, new_manifest_hash) =
-                game_installer::build_update_installers(&client.0, &state.game_id, &state.vo_lang, &ct)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                game_installer::build_update_installers(
+                    &client.0,
+                    &state.game_id,
+                    &state.vo_lang,
+                    &ct,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
             (installers, deleted_files, tag, new_manifest_hash, false)
         }
         DownloadType::Preinstall => {
@@ -543,10 +561,13 @@ pub async fn sophon_resume_download(
                     return Err("Cannot resume preinstall: installed game version changed since preinstall started. Delete preinstall data and start over.".to_string());
                 }
             }
-            let (installers, tag, new_manifest_hash) =
-                game_installer::build_preinstall_installers(&client.0, &state.game_id, &state.vo_lang)
-                    .await
-                    .map_err(|e| e.to_string())?;
+            let (installers, tag, new_manifest_hash) = game_installer::build_preinstall_installers(
+                &client.0,
+                &state.game_id,
+                &state.vo_lang,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
             (installers, vec![], tag, new_manifest_hash, true)
         }
     };
@@ -666,35 +687,32 @@ pub async fn sophon_check_update(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-game_installer::check_update(&client.0, &game_id, &vo_lang, &game_dir)
-    .await
-    .map_err(|e| e.to_string())
+    game_installer::check_update(&client.0, &game_id, &vo_lang, &game_dir)
+        .await
+        .map_err(|e| e.to_string())
 }
 
-/// Verifies the integrity of installed game files and re-downloads any corrupted ones.
+/// Verifies the integrity of installed game files and re-downloads any
+/// corrupted ones.
 #[command]
 pub async fn sophon_verify_integrity(
-  game_id: String,
-  vo_lang: String,
-  output_path: String,
-  app_handle: AppHandle,
-  client: State<'_, HttpClient>,
+    game_id: String,
+    vo_lang: String,
+    output_path: String,
+    app_handle: AppHandle,
+    client: State<'_, HttpClient>,
 ) -> Result<(), String> {
-  let game_dir = app_handle
-    .path()
-    .resolve(&output_path, BaseDirectory::AppData)
-    .map_err(|e| e.to_string())?;
+    let game_dir = app_handle
+        .path()
+        .resolve(&output_path, BaseDirectory::AppData)
+        .map_err(|e| e.to_string())?;
 
-  let app_clone = app_handle.clone();
-  game_installer::verify_integrity(
-    &client.0,
-    &game_id,
-    &vo_lang,
-    &game_dir,
-    move |p| emit(&app_clone, p),
-  )
-  .await
-  .map_err(|e| e.to_string())
+    let app_clone = app_handle.clone();
+    game_installer::verify_integrity(&client.0, &game_id, &vo_lang, &game_dir, move |p| {
+        emit(&app_clone, p)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 fn emit(app: &AppHandle, progress: SophonProgress) {

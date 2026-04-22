@@ -65,7 +65,8 @@ pub async fn fetch_manifest(
         bytes.to_vec()
     };
 
-    let manifest: SophonManifestProto = decode_manifest(&raw).map_err(SophonError::ManifestDecode)?;
+    let manifest: SophonManifestProto =
+        decode_manifest(&raw).map_err(SophonError::ManifestDecode)?;
     let hash = compute_content_manifest_hash(&manifest);
     Ok(ManifestWithHash { manifest, hash })
 }
