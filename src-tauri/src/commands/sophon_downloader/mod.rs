@@ -370,12 +370,14 @@ pub async fn sophon_preinstall(
             .await
             .map_err(|e| e.to_string())?;
 
+    let current_tag = game_installer::read_installed_tag(&game_dir);
+
     let state = DownloadState {
         game_id: game_id.clone(),
         vo_lang: vo_lang.clone(),
         output_path: output_path.clone(),
         download_type: DownloadType::Preinstall,
-        current_tag: None,
+        current_tag,
         manifest_hash,
         downloaded_chunks: HashMap::new(),
     };
@@ -479,6 +481,15 @@ pub async fn sophon_resume_download(
             (installers, deleted_files, tag, new_manifest_hash, false)
         }
         DownloadType::Preinstall => {
+            // Guard against mixed-version corruption: if the installed version
+            // changed since preinstall started, resuming would write v2.0 files
+            // on top of a different base version, creating an inconsistent state.
+            if let Some(ref saved_tag) = current_tag {
+                let actual_tag = game_installer::read_installed_tag(&game_dir);
+                if actual_tag.as_deref() != Some(saved_tag) {
+                    return Err("Cannot resume preinstall: installed game version changed since preinstall started. Delete preinstall data and start over.".to_string());
+                }
+            }
             let (installers, tag, new_manifest_hash) =
                 game_installer::build_preinstall_installers(&client.0, &state.game_id, &state.vo_lang)
                     .await
