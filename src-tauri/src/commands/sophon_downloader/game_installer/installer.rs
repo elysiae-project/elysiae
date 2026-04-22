@@ -589,20 +589,20 @@ async fn download_chunk_with_retries(
                 success = true;
                 break;
             }
-            Err(e) => {
-                last_err = e.to_string();
-                if attempt < MAX_RETRIES - 1 {
-                    (ctx.updater)(SophonProgress::Warning {
-                        message: format!(
-                            "Chunk {} failed (attempt {}/{}): {last_err}",
-                            item.chunk.chunk_name,
-                            attempt + 1,
-                            MAX_RETRIES
-                        ),
-                    });
+                Err(e) => {
+                    last_err = e.to_string();
+                    if attempt < MAX_RETRIES - 1 {
+                        (ctx.updater)(SophonProgress::Warning {
+                            message: format!(
+                                "Chunk {} failed (attempt {}/{}): {last_err}",
+                                item.chunk.chunk_name,
+                                attempt + 1,
+                                MAX_RETRIES
+                            ),
+                        });
+                    }
                     let _ = fs::remove_file(dest);
                 }
-            }
         }
     }
 
