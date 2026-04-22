@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
@@ -1097,6 +1097,7 @@ pub async fn verify_integrity(
     let mut error_count = 0u64;
     let verify_cache = cache::load_verification_cache(game_dir);
     let chunks_dir = game_dir.join("chunks");
+    let mut last_emit = Instant::now();
 
     for (scanned, (asset, chunk_download)) in all_assets.into_iter().enumerate() {
         let scanned = (scanned + 1) as u64;
@@ -1125,12 +1126,21 @@ pub async fn verify_integrity(
             }
         }
 
+        if last_emit.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+            emit(SophonProgress::Verifying {
+                scanned_files: scanned,
+                total_files,
+                error_count,
+            });
+            last_emit = Instant::now();
+        }
+    }
+
     emit(SophonProgress::Verifying {
-      scanned_files: scanned,
-      total_files,
-      error_count,
+        scanned_files: total_files,
+        total_files,
+        error_count,
     });
-  }
 
   emit(SophonProgress::Finished);
   Ok(())

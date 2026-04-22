@@ -1,16 +1,15 @@
 import { join } from "@tauri-apps/api/path";
-import { GameData, ResumeInfo, SophonProgress, Variants } from "../types";
+import { GameData, ResumeInfo, Variants } from "../types";
 import {
-	getActiveGameCode,
-	getGameExeName,
-	getGameName,
+  getActiveGameCode,
+  getGameExeName,
+  getGameName,
 } from "../util/AppFunctions";
 import { exists } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
-import { error, info, warn } from "@tauri-apps/plugin-log";
-import { listen } from "@tauri-apps/api/event";
+import { info } from "@tauri-apps/plugin-log";
 import { broadcastNotification } from "../util/NotificationHelper";
 
 /**
@@ -18,80 +17,20 @@ import { broadcastNotification } from "../util/NotificationHelper";
  * @param game
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
-	const gameData = await getGameData(game);
-	await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
-const unlisten = await listen("sophon://progress", (event) => {
-    const progress = event.payload as SophonProgress;
-    switch (progress.type) {
-      case "fetchingManifest":
-        info("Fetching manifest...");
-        break;
-      case "downloading": {
-        const downloaded = progress.downloaded_bytes / 1024 ** 2;
-        const total = progress.total_bytes / 1024 ** 2;
-        const percentage = ((downloaded / total) * 100).toFixed(2);
-        const speed = progress.speed_bps / 1024 ** 2;
-        const eta = progress.eta_seconds;
-
-        const etaStr = eta > 0
-          ? eta >= 3600
-            ? `${Math.floor(eta / 3600)}h ${Math.floor((eta % 3600) / 60)}m`
-            : `${Math.floor(eta / 60)}m ${Math.floor(eta % 60)}s`
-          : "calculating...";
-
-        info(
-          `Downloaded ${downloaded.toFixed(2)}MB/${total.toFixed(2)}MB (${percentage}%) - ${speed.toFixed(2)}MB/s - ETA: ${etaStr}`,
-        );
-        break;
-      }
-      case "paused": {
-        const downloaded = progress.downloaded_bytes / 1024 ** 2;
-        const total = progress.total_bytes / 1024 ** 2;
-        info(`Download paused at ${downloaded.toFixed(2)}MB/${total.toFixed(2)}MB`);
-        break;
-      }
-      case "assembling": {
-        const assembled = progress.assembled_files;
-        const total = progress.total_files;
-        info(
-          `Assembling file ${assembled} of ${total} (${((assembled / total) * 100).toFixed(2)}% Complete)`,
-        );
-        break;
-      }
-      case "verifying": {
-        const scanned = progress.scanned_files;
-        const total = progress.total_files;
-        const errors = progress.error_count;
-        info(
-          `Verifying files: ${scanned}/${total} scanned, ${errors} errors found`,
-        );
-        break;
-      }
-      case "warning":
-        warn(progress.message);
-        break;
-      case "error":
-        error(progress.message);
-        break;
-      case "finished":
-        info(`Download of ${gameData.gameCode} completed.`);
-        unlisten(); // stop listening once complete
-        break;
-    }
-  });
-	try {
-		info("Beginning sophon download sequence");
-		await invoke("sophon_download", {
-			gameId: gameData.gameCode,
-			voLang: gameData.requestedLanguage,
-			outputPath: gameData.gameDir,
-		});
-	} finally {
-		unlisten();
-		await broadcastNotification(
-			`${getGameName(game)} Has Finished Downloading`,
-		);
-	}
+  const gameData = await getGameData(game);
+  await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
+  try {
+    info("Beginning sophon download sequence");
+    await invoke("sophon_download", {
+      gameId: gameData.gameCode,
+      voLang: gameData.requestedLanguage,
+      outputPath: gameData.gameDir,
+    });
+  } finally {
+    await broadcastNotification(
+      `${getGameName(game)} Has Finished Downloading`,
+    );
+  }
 };
 
 /**
@@ -209,67 +148,9 @@ export const getResumeInfo = async (): Promise<ResumeInfo | null> => {
 
 export const resumeDownloadInterrupted = async (): Promise<void> => {
   await broadcastNotification("Resuming interrupted download...");
-  const unlisten = await listen("sophon://progress", (event) => {
-    const progress = event.payload as SophonProgress;
-    switch (progress.type) {
-      case "fetchingManifest":
-        info("Fetching manifest for resume...");
-        break;
-      case "downloading": {
-        const downloaded = progress.downloaded_bytes / 1024 ** 2;
-        const total = progress.total_bytes / 1024 ** 2;
-        const percentage = ((downloaded / total) * 100).toFixed(2);
-        const speed = progress.speed_bps / 1024 ** 2;
-        const eta = progress.eta_seconds;
-        const etaStr = eta > 0
-          ? eta >= 3600
-            ? `${Math.floor(eta / 3600)}h ${Math.floor((eta % 3600) / 60)}m`
-            : `${Math.floor(eta / 60)}m ${Math.floor(eta % 60)}s`
-          : "calculating...";
-        info(
-          `Resuming: ${downloaded.toFixed(2)}MB/${total.toFixed(2)}MB (${percentage}%) - ${speed.toFixed(2)}MB/s - ETA: ${etaStr}`,
-        );
-        break;
-      }
-      case "paused": {
-        const downloaded = progress.downloaded_bytes / 1024 ** 2;
-        const total = progress.total_bytes / 1024 ** 2;
-        info(`Download paused at ${downloaded.toFixed(2)}MB/${total.toFixed(2)}MB`);
-        break;
-      }
-      case "assembling": {
-        const assembled = progress.assembled_files;
-        const total = progress.total_files;
-        info(
-          `Assembling file ${assembled} of ${total} (${((assembled / total) * 100).toFixed(2)}% Complete)`,
-        );
-        break;
-      }
-      case "verifying": {
-        const scanned = progress.scanned_files;
-        const total = progress.total_files;
-        const errors = progress.error_count;
-        info(
-          `Verifying files: ${scanned}/${total} scanned, ${errors} errors found`,
-        );
-        break;
-      }
-      case "warning":
-        warn(progress.message);
-        break;
-      case "error":
-        error(progress.message);
-        break;
-      case "finished":
-        info("Download completed.");
-        unlisten();
-        break;
-    }
-  });
   try {
     await invoke("sophon_resume_download");
   } finally {
-    unlisten();
     await broadcastNotification("Resume complete");
   }
 };
@@ -334,29 +215,6 @@ export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
   const gameData = await getGameData(game);
   await broadcastNotification(`Verifying ${getGameName(game)} integrity...`);
 
-  const unlisten = await listen("sophon://progress", (event) => {
-    const progress = event.payload as SophonProgress;
-    switch (progress.type) {
-      case "verifying": {
-        const scanned = progress.scanned_files;
-        const total = progress.total_files;
-        const errors = progress.error_count;
-        info(`Verifying: ${scanned}/${total} files scanned, ${errors} errors found`);
-        break;
-      }
-      case "warning":
-        warn(progress.message);
-        break;
-      case "error":
-        error(progress.message);
-        break;
-      case "finished":
-        info(`Integrity verification of ${gameData.gameCode} completed.`);
-        unlisten();
-        break;
-    }
-  });
-
   try {
     await invoke("sophon_verify_integrity", {
       gameId: gameData.gameCode,
@@ -364,7 +222,6 @@ export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
       outputPath: gameData.gameDir,
     });
   } finally {
-    unlisten();
     await broadcastNotification(`${getGameName(game)} integrity check complete`);
   }
 };
@@ -375,13 +232,8 @@ export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
  * @returns weather or not `game` is installed
  */
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
-	return new Promise((resolve, reject) => {
-		// TODO: Replace with a more effective and robust way to check for game installs
-		// pkg_version is one of the last files that is downloaded
-		join("games", getActiveGameCode(game), "pkg_version").then((path) => {
-			exists(path).then(resolve).catch(reject);
-		});
-	});
+  const path = await join("games", getActiveGameCode(game), "pkg_version");
+  return exists(path);
 };
 
 /**

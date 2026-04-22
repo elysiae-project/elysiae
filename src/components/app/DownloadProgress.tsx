@@ -1,57 +1,77 @@
 import { useDownload } from "../../hooks/useDownload";
+import { useGame } from "../../hooks/useGame";
 import { getGameName, formatNumber } from "../../util/AppFunctions";
 import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
 import Progressbar from "../Progressbar";
 import { Pause, Play } from "lucide-preact";
 import Button from "../Button";
+import { useMemo } from "preact/hooks";
 
 export default function GameDownloadProgress() {
-	const { state } = useDownload();
-	const {
-		isPaused,
-		isDownloading,
-		isAssembling,
-		isVerifying,
-		isFetchingManifest,
-		isError,
-		isFinished,
-	} = state;
+  const { state } = useDownload();
+  const { game } = useGame();
+  const {
+    isPaused,
+    isDownloading,
+    isAssembling,
+    isVerifying,
+    isFetchingManifest,
+    isError,
+    isFinished,
+  } = state;
 
-	const isActive =
-		isDownloading ||
-		isAssembling ||
-		isVerifying ||
-		isFetchingManifest ||
-		isPaused;
-	if (!isActive && !isError && !isFinished) return null;
-	if (isFinished) return null;
+  const isActive =
+    isDownloading ||
+    isAssembling ||
+    isVerifying ||
+    isFetchingManifest ||
+    isPaused;
+  if (!isActive && !isError && !isFinished) return null;
+  if (isFinished) return null;
 
-	const downloadPct =
-		state.downloadTotal > 0
-			? (state.downloadedBytes / state.downloadTotal) * 100
-			: 0;
-	const assemblePct =
-		state.totalFiles > 0 ? (state.assembledFiles / state.totalFiles) * 100 : 0;
-	const speedMB = state.speedBps / 1024 ** 2;
-	const eta = state.etaSeconds;
-	const etaStr =
-		eta > 0
-			? eta >= 3600
-				? `${Math.floor(eta / 3600)}h ${Math.floor((eta % 3600) / 60)}m`
-				: `${Math.floor(eta / 60)}m ${Math.floor(eta % 60)}s`
-			: "";
+  const derived = useMemo(() => {
+    const downloadPct =
+      state.downloadTotal > 0
+        ? (state.downloadedBytes / state.downloadTotal) * 100
+        : 0;
+    const assemblePct =
+      state.totalFiles > 0 ? (state.assembledFiles / state.totalFiles) * 100 : 0;
+    const speedMB = state.speedBps / 1024 ** 2;
+    const eta = state.etaSeconds;
+    const etaStr =
+      eta > 0
+        ? eta >= 3600
+          ? `${Math.floor(eta / 3600)}h ${Math.floor((eta % 3600) / 60)}m`
+          : `${Math.floor(eta / 60)}m ${Math.floor(eta % 60)}s`
+        : "";
+    const downloadedGB = (state.downloadedBytes / 1024 ** 3).toFixed(2);
+    const totalGB = (state.downloadTotal / 1024 ** 3).toFixed(2);
+    const verifyPct =
+      state.totalFiles > 0
+        ? (state.scannedFiles / state.totalFiles) * 100
+        : 0;
+    return { downloadPct, assemblePct, speedMB, etaStr, downloadedGB, totalGB, verifyPct };
+  }, [
+    state.downloadedBytes,
+    state.downloadTotal,
+    state.assembledFiles,
+    state.totalFiles,
+    state.speedBps,
+    state.etaSeconds,
+    state.scannedFiles,
+  ]);
 
-	const titleText = isPaused
-		? "Download Paused"
-		: isVerifying
-			? "Verifying Files..."
-			: isFetchingManifest
-				? "Fetching Manifest..."
-				: state.downloadingGame !== null
-					? `Downloading ${getGameName(state.downloadingGame)}...`
-					: "Downloading...";
+  const titleText = isPaused
+    ? "Download Paused"
+    : isVerifying
+      ? "Verifying Files..."
+      : isFetchingManifest
+        ? "Fetching Manifest..."
+        : state.downloadingGame !== null
+          ? `Downloading ${getGameName(state.downloadingGame)}...`
+          : "Downloading...";
 
-	const canPause = isDownloading || isPaused;
+  const canPause = isDownloading || isPaused;
 
 	return (
 		<div class="mr-10 flex h-auto w-full flex-col items-start justify-start gap-y-3 rounded-lg bg-black/50 px-4 py-5 align-bottom text-white">
@@ -76,43 +96,37 @@ export default function GameDownloadProgress() {
 					</Button>
 				)}
 			</div>
-			{(isDownloading || isPaused) && state.downloadTotal > 0 && (
-				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
-						Downloaded {(state.downloadedBytes / 1024 ** 3).toFixed(2)}GB of{" "}
-						{(state.downloadTotal / 1024 ** 3).toFixed(2)}GB (
-						{downloadPct.toFixed(2)}%)
-						{speedMB > 0 ? ` - ${speedMB.toFixed(2)}MB/s` : ""}
-						{etaStr ? ` - ETA: ${etaStr}` : ""}
-					</h2>
-					<Progressbar progress={downloadPct} />
-				</div>
-			)}
-			{isAssembling && state.totalFiles > 0 && (
-				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
-						Assembled {formatNumber(state.assembledFiles)} of{" "}
-						{formatNumber(state.totalFiles)} Files ({assemblePct.toFixed(2)}%)
-					</h2>
-					<Progressbar progress={assemblePct} />
-				</div>
-			)}
-			{isVerifying && (
-				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
-						Verified {formatNumber(state.scannedFiles)} of{" "}
-						{formatNumber(state.totalFiles)} files —{" "}
-						{formatNumber(state.errorCount)} errors found
-					</h2>
-					<Progressbar
-						progress={
-							state.totalFiles > 0
-								? (state.scannedFiles / state.totalFiles) * 100
-								: 0
-						}
-					/>
-				</div>
-			)}
+      {(isDownloading || isPaused) && state.downloadTotal > 0 && (
+        <div class="flex min-w-full flex-col gap-y-1 text-left">
+          <h2 class="ml-1 text-sm">
+            Downloaded {derived.downloadedGB}GB of{" "}
+            {derived.totalGB}GB (
+            {derived.downloadPct.toFixed(2)}%)
+            {derived.speedMB > 0 ? ` - ${derived.speedMB.toFixed(2)}MB/s` : ""}
+            {derived.etaStr ? ` - ETA: ${derived.etaStr}` : ""}
+          </h2>
+          <Progressbar progress={derived.downloadPct} game={game} />
+        </div>
+      )}
+      {isAssembling && state.totalFiles > 0 && (
+        <div class="flex min-w-full flex-col gap-y-1 text-left">
+          <h2 class="ml-1 text-sm">
+            Assembled {formatNumber(state.assembledFiles)} of{" "}
+            {formatNumber(state.totalFiles)} Files ({derived.assemblePct.toFixed(2)}%)
+          </h2>
+          <Progressbar progress={derived.assemblePct} game={game} />
+        </div>
+      )}
+      {isVerifying && (
+        <div class="flex min-w-full flex-col gap-y-1 text-left">
+          <h2 class="ml-1 text-sm">
+            Verified {formatNumber(state.scannedFiles)} of{" "}
+            {formatNumber(state.totalFiles)} files —{" "}
+            {formatNumber(state.errorCount)} errors found
+          </h2>
+          <Progressbar progress={derived.verifyPct} game={game} />
+        </div>
+      )}
 			{state.warningMessage && (
 				<h2 class="ml-1 text-sm text-yellow-300">{state.warningMessage}</h2>
 			)}
