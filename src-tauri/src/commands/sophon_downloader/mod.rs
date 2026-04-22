@@ -58,42 +58,78 @@ pub struct ResumeInfo {
 
 const DOWNLOAD_STATE_FILE: &str = ".sophon_download_state";
 
-fn download_state_path(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_default()
-        .join(DOWNLOAD_STATE_FILE)
+fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().map_err(|e| {
+        log::error!("app_data_dir resolution failed: {}", e);
+        e
+    }).ok().map(|p| p.join(DOWNLOAD_STATE_FILE))
 }
 
-pub fn save_download_state(app: &AppHandle, state: &DownloadState) {
-    let path = download_state_path(app);
+/// Persists download state to disk atomically (write to .tmp, then rename)
+/// to prevent corrupted state files on crash or power loss.
+pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(), String> {
+    let Some(path) = download_state_path(app) else {
+        let msg = "Failed to resolve download state path".to_string();
+        log::error!("{}", msg);
+        return Err(msg);
+    };
     match serde_json::to_string(state) {
         Ok(json) => {
-            if let Err(e) = fs::write(&path, json) {
-                log::error!("Failed to save download state: {}", e);
+            let tmp_path = path.with_extension("tmp");
+            if let Err(e) = fs::write(&tmp_path, &json) {
+                let msg = format!("Failed to write temp download state: {}", e);
+                log::error!("{}", msg);
+                return Err(msg);
             }
+            if let Err(e) = fs::rename(&tmp_path, &path) {
+                let msg = format!("Failed to rename download state file: {}", e);
+                log::error!("{}", msg);
+                if let Err(e) = fs::remove_file(&tmp_path) {
+                    log::debug!("Failed to clean up temp state file: {}", e);
+                }
+                return Err(msg);
+            }
+            Ok(())
         }
         Err(e) => {
-            log::error!("Failed to serialize download state: {}", e);
+            let msg = format!("Failed to serialize download state: {}", e);
+            log::error!("{}", msg);
+            Err(msg)
         }
     }
+}
+
+pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
+    let path = download_state_path(app)?;
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to read download state file {}: {}", path.display(), e);
+            return None;
+        }
+    };
+    match serde_json::from_str(&content) {
+        Ok(state) => Some(state),
+        Err(e) => {
+            log::warn!("Download state file corrupted, removing: {}", e);
+            let _ = fs::remove_file(&path);
+            None
+        }
+    }
+}
+
+pub fn clear_download_state(app: &AppHandle) {
+    let Some(path) = download_state_path(app) else {
+        log::warn!("Failed to resolve download state path during clear");
+        return;
+    };
+    let _ = fs::remove_file(path);
 }
 
 pub fn compute_manifest_hash(raw_bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(raw_bytes);
     hex::encode(&hasher.finalize()[..8])
-}
-
-pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
-    let path = download_state_path(app);
-    let content = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
-pub fn clear_download_state(app: &AppHandle) {
-    let path = download_state_path(app);
-    let _ = fs::remove_file(path);
 }
 
 /// Progress events emitted during download operations.
@@ -162,8 +198,8 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
             manifest_hash: meta.manifest_hash.clone(),
             downloaded_chunks: chunks.clone(),
         };
-        save_download_state(&app, &s);
-    })
+    save_download_state(&app, &s).ok();
+})
 }
 
 /// Downloads a fresh game installation.
@@ -196,7 +232,7 @@ pub async fn sophon_download(
         manifest_hash,
         downloaded_chunks: HashMap::new(),
     };
-    save_download_state(&app_handle, &state);
+    save_download_state(&app_handle, &state)?;
 
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
@@ -271,7 +307,7 @@ pub async fn sophon_update(
         manifest_hash,
         downloaded_chunks: HashMap::new(),
     };
-    save_download_state(&app_handle, &state);
+    save_download_state(&app_handle, &state)?;
 
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
@@ -343,7 +379,7 @@ pub async fn sophon_preinstall(
         manifest_hash,
         downloaded_chunks: HashMap::new(),
     };
-    save_download_state(&app_handle, &state);
+    save_download_state(&app_handle, &state)?;
 
     let handle = DownloadHandle::new();
     *active.0.lock().await = Some(handle.clone());
