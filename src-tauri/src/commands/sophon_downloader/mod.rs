@@ -126,6 +126,28 @@ pub fn clear_download_state(app: &AppHandle) {
     let _ = fs::remove_file(path);
 }
 
+/// Deletes the chunks directory under the given game output path.
+/// Returns `true` if the directory was removed, `false` if it didn't exist.
+/// Deletion errors are logged as warnings and do not propagate — this is a best-effort cleanup.
+fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
+    let game_dir = match app.path().resolve(output_path, BaseDirectory::AppData) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("Failed to resolve game dir for chunk cleanup: {}", e);
+            return false;
+        }
+    };
+    let chunks_dir = game_dir.join("chunks");
+    match fs::remove_dir_all(&chunks_dir) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => {
+            log::warn!("Failed to delete chunks directory {}: {}", chunks_dir.display(), e);
+            false
+        }
+    }
+}
+
 pub fn compute_manifest_hash(raw_bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(raw_bytes);
