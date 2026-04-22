@@ -906,15 +906,9 @@ pub async fn install(
             prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
                 let before = prev_downloaded_chunks.len();
                 prev_downloaded_chunks.retain(|chunk_name, _| {
-                    let path = chunks_dir_validate.join(format!("{}.zstd", chunk_name));
-                    let exists = path.exists();
-                    if !exists {
-                        log::warn!(
-                            "Resume state references chunk '{}' but file not found on disk, removing from resume state",
-                            chunk_name
-                        );
-                    }
-                    exists
+                    chunks_dir_validate
+                        .join(format!("{}.zstd", chunk_name))
+                        .exists()
                 });
                 let removed = before - prev_downloaded_chunks.len();
                 if removed > 0 {
