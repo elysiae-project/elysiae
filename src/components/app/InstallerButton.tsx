@@ -20,7 +20,7 @@ export default function InstallerButton() {
 
   const downloadActive = state.isDownloading || state.isAssembling || state.isVerifying || state.isFetchingManifest || state.isPaused;
   const isDownloadForActiveGame = state.downloadingGame === game;
-  const canResume = state.isResumable && state.resumeInfo !== null && getActiveGameCode(game) === state.resumeInfo.game_id;
+  const canResume = state.isResumable && state.resumeInfo !== null && getActiveGameCode(game) === state.resumeInfo.gameId;
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +41,7 @@ export default function InstallerButton() {
     }
   }, [state.isFinished, isDownloadForActiveGame]);
 
-  const resumeVariant = state.resumeInfo ? getVariantFromCode(state.resumeInfo.game_id) : null;
+  const resumeVariant = state.resumeInfo ? getVariantFromCode(state.resumeInfo.gameId) : null;
 
   return (
     <div class="w-auto flex flex-row gap-x-3.5">
