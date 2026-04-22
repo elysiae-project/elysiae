@@ -186,6 +186,11 @@ pub fn compute_content_manifest_hash(manifest: &proto_parse::SophonManifestProto
 pub enum SophonProgress {
     /// Manifest is being fetched from the API.
     FetchingManifest,
+    /// Existing files are being checked to determine what needs downloading.
+    CalculatingDownloads {
+        checked_files: u64,
+        total_files: u64,
+    },
     /// Chunks are being downloaded.
     Downloading {
         downloaded_bytes: u64,
