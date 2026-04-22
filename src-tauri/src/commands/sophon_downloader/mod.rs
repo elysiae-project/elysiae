@@ -154,6 +154,38 @@ pub fn compute_manifest_hash(raw_bytes: &[u8]) -> String {
     hex::encode(&hasher.finalize()[..8])
 }
 
+/// Computes a deterministic content-based hash of a Sophon manifest.
+///
+/// Unlike the legacy `compute_manifest_hash` which hashed raw protobuf bytes
+/// (fragile due to non-deterministic serialization), this function hashes the
+/// semantic content of the parsed manifest, making it resilient to byte-level
+/// differences in the API response.
+///
+/// Assets are sorted by `asset_name` before hashing. The
+/// `chunk_compressed_hash_xxh` field is excluded as it is undocumented and
+/// not used for verification. Uses SHA-256 truncated to 8 hex chars.
+pub fn compute_content_manifest_hash(manifest: &proto_parse::SophonManifestProto) -> String {
+    let mut assets: Vec<_> = manifest.assets.iter().collect();
+    assets.sort_by_key(|a| &a.asset_name);
+
+    let mut hasher = Sha256::new();
+    for asset in assets {
+        hasher.update(asset.asset_name.as_bytes());
+        hasher.update(asset.asset_size.to_le_bytes());
+        hasher.update(asset.asset_type.to_le_bytes());
+        hasher.update(asset.asset_hash_md5.as_bytes());
+        for chunk in &asset.asset_chunks {
+            hasher.update(chunk.chunk_name.as_bytes());
+            hasher.update(chunk.chunk_decompressed_hash_md5.as_bytes());
+            hasher.update(chunk.chunk_compressed_hash_md5.as_bytes());
+            hasher.update(chunk.chunk_on_file_offset.to_le_bytes());
+            hasher.update(chunk.chunk_size.to_le_bytes());
+            hasher.update(chunk.chunk_size_decompressed.to_le_bytes());
+        }
+    }
+    hex::encode(&hasher.finalize()[..8])
+}
+
 /// Progress events emitted during download operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
