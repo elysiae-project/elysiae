@@ -10,6 +10,7 @@ export interface DownloadState {
   isAssembling: boolean;
   isVerifying: boolean;
   isFetchingManifest: boolean;
+  isCalculatingDownloads: boolean;
   isError: boolean;
   isFinished: boolean;
   downloadingGame: Variants | null;
@@ -19,6 +20,7 @@ export interface DownloadState {
   etaSeconds: number;
   assembledFiles: number;
   totalFiles: number;
+  checkedFiles: number;
   scannedFiles: number;
   errorCount: number;
   errorMessage: string;
@@ -39,6 +41,7 @@ const initialState: DownloadState = {
   isAssembling: false,
   isVerifying: false,
   isFetchingManifest: false,
+  isCalculatingDownloads: false,
   isError: false,
   isFinished: false,
   downloadingGame: null,
@@ -48,6 +51,7 @@ const initialState: DownloadState = {
   etaSeconds: 0,
   assembledFiles: 0,
   totalFiles: 0,
+  checkedFiles: 0,
   scannedFiles: 0,
   errorCount: 0,
   errorMessage: "",
@@ -97,29 +101,47 @@ export const DownloadProvider = ({
 
       setState((prev) => {
         switch (payload.type) {
-          case "fetchingManifest":
-            return {
-              ...prev,
-              isFetchingManifest: true,
-              isPaused: false,
-              isDownloading: false,
-              isAssembling: false,
-              isVerifying: false,
-              isError: false,
-              isFinished: false,
-              isResumable: false,
-              resumeInfo: null,
-              downloadingGame:
-                prev.downloadingGame ?? downloadingGameRef.current,
-              errorMessage: "",
-              warningMessage: "",
-            };
-          case "downloading":
-            return {
-              ...prev,
-              isDownloading: true,
-              isPaused: false,
-              isFetchingManifest: false,
+case "fetchingManifest":
+          return {
+            ...prev,
+            isFetchingManifest: true,
+            isCalculatingDownloads: false,
+            isPaused: false,
+            isDownloading: false,
+            isAssembling: false,
+            isVerifying: false,
+            isError: false,
+            isFinished: false,
+            isResumable: false,
+            resumeInfo: null,
+            downloadingGame:
+              prev.downloadingGame ?? downloadingGameRef.current,
+            errorMessage: "",
+            warningMessage: "",
+          };
+        case "calculatingDownloads":
+          return {
+            ...prev,
+            isFetchingManifest: false,
+            isCalculatingDownloads: true,
+            isPaused: false,
+            isDownloading: false,
+            isAssembling: false,
+            isVerifying: false,
+            isError: false,
+            isFinished: false,
+            downloadingGame:
+              prev.downloadingGame ?? downloadingGameRef.current,
+            checkedFiles: payload.checked_files,
+            totalFiles: payload.total_files,
+          };
+case "downloading":
+          return {
+            ...prev,
+            isDownloading: true,
+            isPaused: false,
+            isFetchingManifest: false,
+            isCalculatingDownloads: false,
               downloadingGame:
                 prev.downloadingGame ?? downloadingGameRef.current,
               downloadedBytes: payload.downloaded_bytes,

@@ -161,6 +161,7 @@ export type WineModule = {
 
 export type SophonProgress =
   | { type: "fetchingManifest" }
+  | { type: "calculatingDownloads"; checked_files: number; total_files: number }
   | { type: "downloading"; downloaded_bytes: number; total_bytes: number; speed_bps: number; eta_seconds: number }
   | { type: "paused"; downloaded_bytes: number; total_bytes: number }
   | { type: "assembling"; assembled_files: number; total_files: number }
