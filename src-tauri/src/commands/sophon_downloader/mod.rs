@@ -148,12 +148,6 @@ fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     }
 }
 
-pub fn compute_manifest_hash(raw_bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(raw_bytes);
-    hex::encode(&hasher.finalize()[..8])
-}
-
 /// Computes a deterministic content-based hash of a Sophon manifest.
 ///
 /// Unlike the legacy `compute_manifest_hash` which hashed raw protobuf bytes
