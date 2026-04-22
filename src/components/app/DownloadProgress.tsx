@@ -16,6 +16,7 @@ export default function GameDownloadProgress() {
     isAssembling,
     isVerifying,
     isFetchingManifest,
+    isCalculatingDownloads,
     isError,
     isFinished,
   } = state;
@@ -25,6 +26,7 @@ export default function GameDownloadProgress() {
     isAssembling ||
     isVerifying ||
     isFetchingManifest ||
+    isCalculatingDownloads ||
     isPaused;
   if (!isActive && !isError && !isFinished) return null;
   if (isFinished) return null;
@@ -50,7 +52,11 @@ export default function GameDownloadProgress() {
       state.totalFiles > 0
         ? (state.scannedFiles / state.totalFiles) * 100
         : 0;
-    return { downloadPct, assemblePct, speedMB, etaStr, downloadedGB, totalGB, verifyPct };
+    const calcPct =
+      state.totalFiles > 0
+        ? (state.checkedFiles / state.totalFiles) * 100
+        : 0;
+    return { downloadPct, assemblePct, speedMB, etaStr, downloadedGB, totalGB, verifyPct, calcPct };
   }, [
     state.downloadedBytes,
     state.downloadTotal,
@@ -61,15 +67,17 @@ export default function GameDownloadProgress() {
     state.scannedFiles,
   ]);
 
-  const titleText = isPaused
+const titleText = isPaused
     ? "Download Paused"
     : isVerifying
-      ? "Verifying Files..."
-      : isFetchingManifest
-        ? "Fetching Manifest..."
-        : state.downloadingGame !== null
-          ? `Downloading ${getGameName(state.downloadingGame)}...`
-          : "Downloading...";
+    ? "Verifying Files..."
+    : isCalculatingDownloads
+    ? "Calculating File Downloads..."
+    : isFetchingManifest
+    ? "Fetching Manifest..."
+    : state.downloadingGame !== null
+    ? `Downloading ${getGameName(state.downloadingGame)}...`
+    : "Downloading...";
 
   const canPause = isDownloading || isPaused;
 
@@ -96,6 +104,15 @@ export default function GameDownloadProgress() {
 					</Button>
 				)}
 			</div>
+{isCalculatingDownloads && state.totalFiles > 0 && (
+        <div class="flex min-w-full flex-col gap-y-1 text-left">
+          <h2 class="ml-1 text-sm">
+            Checked {formatNumber(state.checkedFiles)} of{" "}
+            {formatNumber(state.totalFiles)} Files ({derived.calcPct.toFixed(2)}%)
+          </h2>
+          <Progressbar progress={derived.calcPct} game={game} />
+        </div>
+      )}
       {(isDownloading || isPaused) && state.downloadTotal > 0 && (
         <div class="flex min-w-full flex-col gap-y-1 text-left">
           <h2 class="ml-1 text-sm">
