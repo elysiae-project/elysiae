@@ -995,6 +995,20 @@ pub async fn install(
     )
     .await?;
 
+    {
+        let initial_offset = ctx.resume_bytes_offset.load(Ordering::Relaxed);
+        (ctx.updater)(SophonProgress::Downloading {
+            downloaded_bytes: initial_offset,
+            total_bytes: ctx.total_bytes,
+            speed_bps: 0.0,
+            eta_seconds: 0.0,
+        });
+        *ctx.last_update.lock().unwrap_or_else(|e| {
+            log::error!("last_update mutex poisoned, recovering");
+            e.into_inner()
+        }) = Instant::now();
+    }
+
     let adaptive = Arc::new(AdaptiveConcurrency::new());
     let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
     let _cancel_token = spawn_adaptive_adjuster(&adaptive);
