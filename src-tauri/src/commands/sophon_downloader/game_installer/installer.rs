@@ -3,12 +3,14 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
 use reqwest::Client;
+use sha2::{Digest, Sha256};
+use tauri_plugin_log::log;
 use tokio::sync::{Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -28,6 +30,12 @@ use crate::commands::sophon_downloader::proto_parse::{
 };
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
+pub type StateSaver = Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>;
+
+pub struct ResumeContext {
+    pub prev_manifest_hash: String,
+    pub prev_downloaded_chunks: HashMap<String, u64>,
+}
 
 struct InstallContext {
     chunks_dir: Arc<PathBuf>,
@@ -38,11 +46,17 @@ struct InstallContext {
     assembled_files: Arc<AtomicU64>,
     total_bytes: u64,
     total_files: u64,
+    resume_bytes_offset: Arc<AtomicU64>,
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<Mutex<Instant>>,
+    download_start: Instant,
     updater: ProgressUpdater,
+    downloaded_chunks: Arc<Mutex<HashMap<String, u64>>>,
+    chunks_since_save: Arc<AtomicU64>,
+    pending_saves: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    state_saver: StateSaver,
 }
 
 struct InstallerData {
@@ -56,6 +70,7 @@ struct DownloadItem {
     chunk: SophonManifestAssetChunk,
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
+    is_pre_downloaded: bool,
 }
 
 type PendingCount = Arc<Mutex<usize>>;
@@ -68,6 +83,7 @@ pub struct SophonInstaller {
     pub label: String,
     #[allow(dead_code)]
     pub tag: String,
+    pub manifest_hash: String,
 }
 
 impl SophonInstaller {
@@ -76,11 +92,11 @@ impl SophonInstaller {
         meta: &SophonManifestMeta,
         tag: &str,
     ) -> SophonResult<Self> {
-        let manifest =
+        let result =
             super::api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
         Ok(Self {
             client: client.clone(),
-            manifest,
+            manifest: result.manifest,
             chunk_download: meta.chunk_download.clone(),
             label: meta
                 .chunk_download
@@ -88,6 +104,7 @@ impl SophonInstaller {
                 .trim_matches('/')
                 .replace('/', "-"),
             tag: tag.to_owned(),
+            manifest_hash: result.hash,
         })
     }
 }
@@ -96,14 +113,15 @@ pub async fn build_installers(
     client: &Client,
     game_id: &str,
     vo_lang: &str,
-) -> SophonResult<(Vec<SophonInstaller>, String)> {
+) -> SophonResult<(Vec<SophonInstaller>, String, String)> {
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
     let build = fetch_build(client, &branch.main, None).await?;
     let tag = build.tag.clone();
 
     let installers = build_installers_from_data(client, &build, vo_lang, &tag).await?;
-    Ok((installers, tag))
+    let manifest_hash = combine_manifest_hashes(&installers);
+    Ok((installers, tag, manifest_hash))
 }
 
 pub async fn build_update_installers(
@@ -111,7 +129,7 @@ pub async fn build_update_installers(
     game_id: &str,
     vo_lang: &str,
     from_tag: &str,
-) -> SophonResult<(Vec<SophonInstaller>, Vec<String>, String)> {
+) -> SophonResult<(Vec<SophonInstaller>, Vec<String>, String, String)> {
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
     let (old_build, new_build) = tokio::try_join!(
@@ -122,15 +140,15 @@ pub async fn build_update_installers(
     let new_tag = new_build.tag.clone();
     let (installers, deleted_files) =
         build_diff_installers(client, &old_build, &new_build, vo_lang, &new_tag).await?;
-
-    Ok((installers, deleted_files, new_tag))
+    let manifest_hash = combine_manifest_hashes(&installers);
+    Ok((installers, deleted_files, new_tag, manifest_hash))
 }
 
 pub async fn build_preinstall_installers(
     client: &Client,
     game_id: &str,
     vo_lang: &str,
-) -> SophonResult<(Vec<SophonInstaller>, String)> {
+) -> SophonResult<(Vec<SophonInstaller>, String, String)> {
     let (_, pre_branch) = fetch_front_door(client, game_id).await?;
     let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
 
@@ -138,7 +156,8 @@ pub async fn build_preinstall_installers(
     let tag = build.tag.clone();
 
     let installers = build_installers_from_data(client, &build, vo_lang, &tag).await?;
-    Ok((installers, tag))
+    let manifest_hash = combine_manifest_hashes(&installers);
+    Ok((installers, tag, manifest_hash))
 }
 
 async fn build_installers_from_data(
@@ -164,6 +183,19 @@ async fn build_installers_from_data(
     Ok(vec![game_inst, vo_inst])
 }
 
+fn combine_manifest_hashes(installers: &[SophonInstaller]) -> String {
+    let mut hashes: Vec<&str> = installers
+        .iter()
+        .map(|i| i.manifest_hash.as_str())
+        .collect();
+    hashes.sort();
+    let mut hasher = Sha256::new();
+    for h in hashes {
+        hasher.update(h.as_bytes());
+    }
+    hex::encode(&hasher.finalize()[..8])
+}
+
 #[inline]
 fn collect_deleted_files(
     old_manifest: &SophonManifestProto,
@@ -178,9 +210,7 @@ fn collect_deleted_files(
 }
 
 #[inline]
-fn build_old_md5_map(
-    old_manifest: SophonManifestProto,
-) -> HashMap<String, String> {
+fn build_old_md5_map(old_manifest: SophonManifestProto) -> HashMap<String, String> {
     old_manifest
         .assets
         .into_iter()
@@ -231,11 +261,13 @@ async fn build_diff_installers(
             continue;
         }
 
-        let new_manifest =
+        let new_result =
             super::api::fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id)
                 .await?;
+        let new_manifest_hash = new_result.hash.clone();
 
-        let new_names: HashSet<&str> = new_manifest
+        let new_names: HashSet<&str> = new_result
+            .manifest
             .assets
             .iter()
             .map(|f| f.asset_name.as_str())
@@ -244,21 +276,21 @@ async fn build_diff_installers(
         let old_md5_map: HashMap<String, String> =
             match old_by_field.get(new_meta.matching_field.as_str()) {
                 Some(old_meta) => {
-                    let old_manifest = super::api::fetch_manifest(
+                    let old_result = super::api::fetch_manifest(
                         client,
                         &old_meta.manifest_download,
                         &old_meta.manifest.id,
                     )
                     .await?;
 
-                    deleted_files.extend(collect_deleted_files(&old_manifest, &new_names));
+                    deleted_files.extend(collect_deleted_files(&old_result.manifest, &new_names));
 
-                    build_old_md5_map(old_manifest)
+                    build_old_md5_map(old_result.manifest)
                 }
                 None => HashMap::new(),
             };
 
-        let diff_files = compute_diff_files(new_manifest, &old_md5_map);
+        let diff_files = compute_diff_files(new_result.manifest, &old_md5_map);
 
         if diff_files.is_empty() {
             continue;
@@ -274,6 +306,7 @@ async fn build_diff_installers(
                 .trim_matches('/')
                 .replace('/', "-"),
             tag: tag.to_owned(),
+            manifest_hash: new_manifest_hash,
         });
     }
 
@@ -312,10 +345,12 @@ fn build_installer_data(installers: Vec<SophonInstaller>) -> Vec<InstallerData> 
 }
 
 fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
+    let mut seen_chunks: HashSet<&str> = HashSet::new();
     let total_compressed: u64 = installer_data
         .iter()
         .flat_map(|d| d.files.iter())
         .flat_map(|f| f.asset_chunks.iter())
+        .filter(|c| seen_chunks.insert(c.chunk_name.as_str()))
         .map(|c| c.chunk_size)
         .sum();
 
@@ -325,6 +360,7 @@ fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn register_chunks_for_file(
     file: &SophonManifestAssetProperty,
     file_idx: usize,
@@ -333,6 +369,7 @@ fn register_chunks_for_file(
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     download_items: &mut Vec<DownloadItem>,
     data: &InstallerData,
+    pre_downloaded: &HashSet<String>,
 ) {
     let chunk_count = file.asset_chunks.len();
     if chunk_count == 0 {
@@ -346,6 +383,8 @@ fn register_chunks_for_file(
             .or_default()
             .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
 
+        let is_pre = pre_downloaded.contains(&chunk.chunk_name);
+
         match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
             Entry::Vacant(vacant) => {
                 vacant.insert(1);
@@ -353,10 +392,18 @@ fn register_chunks_for_file(
                     chunk: chunk.clone(),
                     client: Arc::clone(&data.client),
                     chunk_download: Arc::clone(&data.chunk_download),
+                    is_pre_downloaded: is_pre,
                 });
             }
             Entry::Occupied(mut occupied) => {
                 *occupied.get_mut() += 1;
+                if is_pre
+                    && let Some(item) = download_items
+                        .iter_mut()
+                        .find(|i| i.chunk.chunk_name == chunk.chunk_name)
+                {
+                    item.is_pre_downloaded = is_pre;
+                }
             }
         }
     }
@@ -366,14 +413,21 @@ async fn build_download_state(
     installer_data: Vec<InstallerData>,
     ctx: &InstallContext,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
+    completed_indices: Option<&HashSet<usize>>,
+    pre_downloaded: &HashSet<String>,
 ) -> SophonResult<(Vec<DownloadItem>, Arc<DashMap<String, Vec<FileEntry>>>)> {
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::new();
     let mut file_idx = 0usize;
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
-        let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
-        {
+        let needs_tmp_dir = data
+            .files
+            .iter()
+            .enumerate()
+            .any(|(i, _)| completed_indices.is_none_or(|set| !set.contains(&(file_idx + i))));
+        if needs_tmp_dir {
+            let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
             let td = tmp_dir.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&td))
                 .await?
@@ -381,6 +435,11 @@ async fn build_download_state(
         }
 
         for _ in 0..data.files.len() {
+            if completed_indices.is_some_and(|set| set.contains(&file_idx)) {
+                file_idx += 1;
+                continue;
+            }
+
             let file = &ctx.all_files[file_idx];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
@@ -397,6 +456,7 @@ async fn build_download_state(
                 &chunk_to_files,
                 &mut download_items,
                 &data,
+                pre_downloaded,
             );
             file_idx += 1;
         }
@@ -549,8 +609,8 @@ async fn download_chunk_with_retries(
                             MAX_RETRIES
                         ),
                     });
-                    let _ = fs::remove_file(dest);
                 }
+                let _ = fs::remove_file(dest);
             }
         }
     }
@@ -610,31 +670,91 @@ async fn process_download_item(
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
         handle
-            .wait_if_paused(&*ctx.updater, db, ctx.total_bytes)
+            .wait_if_paused(
+                &*ctx.updater,
+                db + ctx.resume_bytes_offset.load(Ordering::Relaxed),
+                ctx.total_bytes,
+            )
             .await?;
     }
 
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(&item.chunk));
 
+    let mut was_actually_downloaded = false;
     let needs_download = check_needs_download(dest.clone(), &item.chunk, &ctx.verify_cache).await?;
-
     if needs_download {
         download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
+        was_actually_downloaded = true;
     }
 
-    let db = ctx
-        .downloaded_bytes
-        .fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
-        + item.chunk.chunk_size;
+    if was_actually_downloaded && item.is_pre_downloaded {
+        ctx.resume_bytes_offset
+            .fetch_sub(item.chunk.chunk_size, Ordering::Relaxed);
+    }
 
-    adaptive.record_bytes(item.chunk.chunk_size);
+    {
+        let mut dc = ctx.downloaded_chunks.lock().unwrap_or_else(|e| {
+            log::error!("downloaded_chunks mutex poisoned, recovering");
+            e.into_inner()
+        });
+        dc.insert(item.chunk.chunk_name.clone(), item.chunk.chunk_size);
+    }
+
+    let count = ctx.chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
+    if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
+        let dc = ctx
+            .downloaded_chunks
+            .lock()
+            .unwrap_or_else(|e| {
+                log::error!("downloaded_chunks mutex poisoned during batch save, recovering");
+                e.into_inner()
+            })
+            .clone();
+        let saver = Arc::clone(&ctx.state_saver);
+        let handle = tokio::task::spawn_blocking(move || saver(&dc));
+        ctx.pending_saves
+            .lock()
+            .unwrap_or_else(|e| {
+                log::error!("pending_saves mutex poisoned, recovering");
+                e.into_inner()
+            })
+            .push(handle);
+    }
+
+    let db = if was_actually_downloaded || !item.is_pre_downloaded {
+        ctx.downloaded_bytes
+            .fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
+            + item.chunk.chunk_size
+    } else {
+        ctx.downloaded_bytes.load(Ordering::Relaxed)
+    };
+
+    if was_actually_downloaded || !item.is_pre_downloaded {
+        adaptive.record_bytes(item.chunk.chunk_size);
+    }
 
     {
         let mut lu = ctx.last_update.lock().unwrap();
         if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+            let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
+            let speed_bps = if elapsed_secs > 0.0 {
+                db as f64 / elapsed_secs
+            } else {
+                0.0
+            };
+            let remaining_bytes = ctx
+                .total_bytes
+                .saturating_sub(db + ctx.resume_bytes_offset.load(Ordering::Relaxed));
+            let eta_seconds = if speed_bps > 0.0 {
+                remaining_bytes as f64 / speed_bps
+            } else {
+                0.0
+            };
             (ctx.updater)(SophonProgress::Downloading {
-                downloaded_bytes: db,
+                downloaded_bytes: db + ctx.resume_bytes_offset.load(Ordering::Relaxed),
                 total_bytes: ctx.total_bytes,
+                speed_bps,
+                eta_seconds,
             });
             *lu = Instant::now();
         }
@@ -696,12 +816,28 @@ async fn finalize_install(
         })
         .await;
         let _ = assembly_task.await;
-        (ctx.updater)(SophonProgress::Finished);
-        return Ok(());
+        return Err(SophonError::Cancelled);
     }
 
     results.into_iter().find(|r| r.is_err()).transpose()?;
     assembly_task.await??;
+
+    {
+        let dc = ctx
+            .downloaded_chunks
+            .lock()
+            .unwrap_or_else(|e| {
+                log::error!("downloaded_chunks mutex poisoned at final save, recovering");
+                e.into_inner()
+            })
+            .clone();
+        let saver = Arc::clone(&ctx.state_saver);
+        tokio::task::spawn_blocking(move || saver(&dc))
+            .await
+            .unwrap_or_else(|e| {
+                log::error!("Final state save join error: {e}");
+            });
+    }
 
     {
         let _ = cache::save_verification_cache(&ctx.game_dir, &ctx.verify_cache);
@@ -733,17 +869,75 @@ async fn finalize_install(
     Ok(())
 }
 
+pub struct InstallOptions {
+    pub is_preinstall: bool,
+    pub is_resume: bool,
+    pub handle: DownloadHandle,
+}
+
+pub struct InstallCallbacks {
+    pub updater: ProgressUpdater,
+    pub state_saver: StateSaver,
+}
+
 pub async fn install(
     installers: Vec<SophonInstaller>,
     game_dir: &Path,
     deleted_files: Vec<String>,
     tag: &str,
-    is_preinstall: bool,
-    handle: DownloadHandle,
-    updater: impl Fn(SophonProgress) + Send + Sync + Clone + 'static,
+    resume: ResumeContext,
+    options: InstallOptions,
+    callbacks: InstallCallbacks,
 ) -> SophonResult<()> {
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
+
+    let ResumeContext {
+        prev_manifest_hash,
+        mut prev_downloaded_chunks,
+    } = resume;
+    if options.is_resume {
+        // Validate that chunk files referenced in persisted state actually exist on
+        // disk. Stale entries (e.g. user deleted game files between sessions)
+        // would otherwise inflate the resume offset, causing incorrect progress
+        // and skipped downloads.
+        {
+            let chunks_dir_validate = Arc::clone(&chunks_dir);
+            prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
+                let before = prev_downloaded_chunks.len();
+                prev_downloaded_chunks.retain(|chunk_name, _| {
+                    chunks_dir_validate
+                        .join(format!("{}.zstd", chunk_name))
+                        .exists()
+                });
+                let removed = before - prev_downloaded_chunks.len();
+                if removed > 0 {
+                    log::warn!(
+                        "Removed {}/{} stale chunk entries from resume state (chunks dir: {})",
+                        removed,
+                        before,
+                        chunks_dir_validate.display()
+                    );
+                }
+                prev_downloaded_chunks
+            })
+            .await?;
+        }
+        let current_manifest_hash = combine_manifest_hashes(&installers);
+        if prev_manifest_hash != current_manifest_hash {
+            log::warn!(
+                "Manifest changed on resume (old={}, new={}), re-verifying all chunks",
+                prev_manifest_hash,
+                current_manifest_hash
+            );
+        } else {
+            log::info!(
+                "Manifest unchanged on resume (hash={}), preserving {} cached chunks",
+                current_manifest_hash,
+                prev_downloaded_chunks.len()
+            );
+        }
+    }
 
     let installer_data = build_installer_data(installers);
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(
@@ -760,6 +954,94 @@ pub async fn install(
     );
 
     let (total_compressed, total_files) = compute_totals(&installer_data);
+    let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
+
+    let pre_downloaded: HashSet<String> = if options.is_resume {
+        prev_downloaded_chunks.keys().cloned().collect()
+    } else {
+        HashSet::new()
+    };
+
+    let mut resume_bytes_offset: u64 = 0;
+    let mut pre_assembled: u64 = 0;
+    let mut completed_chunk_names: HashSet<&str> = HashSet::new();
+    let completed_indices = if options.is_resume {
+        let total = all_files.len() as u64;
+        let mut last_calc_update = Instant::now();
+        (callbacks.updater)(SophonProgress::CalculatingDownloads {
+            checked_files: 0,
+            total_files: total,
+        });
+        let mut indices = HashSet::new();
+        for (file_idx, file) in all_files.iter().enumerate() {
+            if file.asset_chunks.is_empty() {
+                indices.insert(file_idx);
+                pre_assembled += 1;
+            } else {
+                let target_path = game_dir.join(&file.asset_name);
+                if target_path.exists() {
+                    let valid = {
+                        let tp = target_path.clone();
+                        let sz = file.asset_size;
+                        let md5 = file.asset_hash_md5.clone();
+                        let vc = Arc::clone(&verify_cache);
+                        tokio::task::spawn_blocking(move || {
+                            cache::check_file_md5_cached(&tp, sz, &md5, &vc).unwrap_or(false)
+                        })
+                        .await?
+                    };
+                    if valid {
+                        indices.insert(file_idx);
+                        let file_chunk_size: u64 =
+                            file.asset_chunks.iter().map(|c| c.chunk_size).sum();
+                        resume_bytes_offset += file_chunk_size;
+                        for c in &file.asset_chunks {
+                            completed_chunk_names.insert(&c.chunk_name);
+                        }
+                        pre_assembled += 1;
+                    } else {
+                        let tp = target_path.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let _ = fs::remove_file(tp);
+                        })
+                        .await?;
+                    }
+                }
+            }
+            let checked = (file_idx + 1) as u64;
+            if last_calc_update.elapsed()
+                >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
+            {
+                (callbacks.updater)(SophonProgress::CalculatingDownloads {
+                    checked_files: checked,
+                    total_files: total,
+                });
+                last_calc_update = Instant::now();
+            }
+        }
+        (callbacks.updater)(SophonProgress::CalculatingDownloads {
+            checked_files: total,
+            total_files: total,
+        });
+        Some(indices)
+    } else {
+        None
+    };
+
+    for chunk_name in &pre_downloaded {
+        if completed_chunk_names.contains(chunk_name.as_str()) {
+            continue;
+        }
+        if let Some(&size) = prev_downloaded_chunks.get(chunk_name) {
+            resume_bytes_offset += size;
+        }
+    }
+
+    let initial_chunks = if options.is_resume {
+        prev_downloaded_chunks
+    } else {
+        HashMap::new()
+    };
 
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
@@ -767,21 +1049,47 @@ pub async fn install(
         all_tmp_dirs: Arc::clone(&all_tmp_dirs),
         all_files: Arc::clone(&all_files),
         downloaded_bytes: Arc::new(AtomicU64::new(0)),
-        assembled_files: Arc::new(AtomicU64::new(0)),
+        assembled_files: Arc::new(AtomicU64::new(pre_assembled)),
         total_bytes: total_compressed,
         total_files,
-        verify_cache: Arc::new(cache::load_verification_cache(game_dir)),
+        resume_bytes_offset: Arc::new(AtomicU64::new(resume_bytes_offset)),
+        verify_cache,
         chunk_refcounts: Arc::new(DashMap::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
         last_update: Arc::new(Mutex::new(Instant::now())),
-        updater: Arc::new(updater.clone()),
+        download_start: Instant::now(),
+        updater: Arc::clone(&callbacks.updater),
+        downloaded_chunks: Arc::new(Mutex::new(initial_chunks)),
+        chunks_since_save: Arc::new(AtomicU64::new(0)),
+        pending_saves: Arc::new(Mutex::new(Vec::new())),
+        state_saver: callbacks.state_saver,
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
     let assembly_task = spawn_assembly_coordinator(&ctx, assemble_rx);
 
-    let (download_items, chunk_to_files) =
-        build_download_state(installer_data, &ctx, &assemble_tx).await?;
+    let (download_items, chunk_to_files) = build_download_state(
+        installer_data,
+        &ctx,
+        &assemble_tx,
+        completed_indices.as_ref(),
+        &pre_downloaded,
+    )
+    .await?;
+
+    {
+        let initial_offset = ctx.resume_bytes_offset.load(Ordering::Relaxed);
+        (ctx.updater)(SophonProgress::Downloading {
+            downloaded_bytes: initial_offset,
+            total_bytes: ctx.total_bytes,
+            speed_bps: 0.0,
+            eta_seconds: 0.0,
+        });
+        *ctx.last_update.lock().unwrap_or_else(|e| {
+            log::error!("last_update mutex poisoned, recovering");
+            e.into_inner()
+        }) = Instant::now();
+    }
 
     let adaptive = Arc::new(AdaptiveConcurrency::new());
     let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
@@ -792,11 +1100,23 @@ pub async fn install(
         download_items,
         chunk_to_files,
         &assemble_tx,
-        handle,
+        options.handle,
         Arc::clone(&adaptive),
         semaphore,
     )
     .await;
+
+    let pending_handles: Vec<tokio::task::JoinHandle<()>> = {
+        let mut pending = ctx.pending_saves.lock().unwrap_or_else(|e| {
+            log::error!("pending_saves mutex poisoned, recovering");
+            e.into_inner()
+        });
+        pending.drain(..).collect()
+    };
+
+    for handle in pending_handles {
+        let _ = handle.await;
+    }
 
     drop(assemble_tx);
     finalize_install(
@@ -804,7 +1124,7 @@ pub async fn install(
         results,
         &deleted_files,
         tag,
-        is_preinstall,
+        options.is_preinstall,
         assembly_task,
     )
     .await
@@ -822,4 +1142,181 @@ pub async fn apply_preinstall(game_dir: &Path, preinstall_tag: &str) -> SophonRe
         fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(SophonError::from)
     })
     .await?
+}
+
+pub async fn verify_integrity(
+    client: &Client,
+    game_id: &str,
+    vo_lang: &str,
+    game_dir: &Path,
+    mut emit: impl FnMut(SophonProgress) + Send + 'static,
+) -> SophonResult<()> {
+    emit(SophonProgress::Verifying {
+        scanned_files: 0,
+        total_files: 0,
+        error_count: 0,
+    });
+
+    let tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
+
+    let (branch, _) = api::fetch_front_door(client, game_id).await?;
+    let build = api::fetch_build(client, &branch.main, Some(&tag)).await?;
+
+    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
+    let vo_meta = build
+        .manifests
+        .iter()
+        .find(|m| api::vo_lang_matches(&m.matching_field, vo_lang))
+        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+
+    let game_manifest =
+        api::fetch_manifest(client, &game_meta.manifest_download, &game_meta.manifest.id)
+            .await?
+            .manifest;
+    let vo_manifest = api::fetch_manifest(client, &vo_meta.manifest_download, &vo_meta.manifest.id)
+        .await?
+        .manifest;
+
+    let game_chunk_download = &game_meta.manifest_download;
+    let vo_chunk_download = &vo_meta.manifest_download;
+
+    let all_assets: Vec<(&SophonManifestAssetProperty, &DownloadInfo)> = game_manifest
+        .assets
+        .iter()
+        .filter(|a| !a.is_directory())
+        .map(|a| (a, game_chunk_download))
+        .chain(
+            vo_manifest
+                .assets
+                .iter()
+                .filter(|a| !a.is_directory())
+                .map(|a| (a, vo_chunk_download)),
+        )
+        .collect();
+
+    let total_files = all_assets.len() as u64;
+    let mut error_count = 0u64;
+    let verify_cache = cache::load_verification_cache(game_dir);
+    let chunks_dir = game_dir.join("chunks");
+    let mut last_emit = Instant::now();
+
+    for (scanned, (asset, chunk_download)) in all_assets.into_iter().enumerate() {
+        let scanned = (scanned + 1) as u64;
+        let file_path = game_dir.join(&asset.asset_name);
+
+        let is_valid = tokio::task::spawn_blocking({
+            let verify_cache = Arc::new(verify_cache.clone());
+            let file_path = file_path.clone();
+            let asset_size = asset.asset_size;
+            let asset_md5 = asset.asset_hash_md5.clone();
+            move || {
+                cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache)
+                    .unwrap_or(false)
+            }
+        })
+        .await?;
+
+        if !is_valid {
+            error_count += 1;
+            emit(SophonProgress::Warning {
+                message: format!(
+                    "File {} failed integrity check, re-downloading",
+                    asset.asset_name
+                ),
+            });
+
+            if let Err(e) = redownload_asset(
+                client,
+                asset,
+                chunk_download,
+                &chunks_dir,
+                game_dir,
+                &file_path,
+                &mut emit,
+                &verify_cache,
+            )
+            .await
+            {
+                emit(SophonProgress::Error {
+                    message: format!("Failed to re-download {}: {}", asset.asset_name, e),
+                });
+            }
+        }
+
+        if last_emit.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+            emit(SophonProgress::Verifying {
+                scanned_files: scanned,
+                total_files,
+                error_count,
+            });
+            last_emit = Instant::now();
+        }
+    }
+
+    emit(SophonProgress::Verifying {
+        scanned_files: total_files,
+        total_files,
+        error_count,
+    });
+
+    emit(SophonProgress::Finished);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn redownload_asset(
+    client: &Client,
+    asset: &SophonManifestAssetProperty,
+    chunk_download: &DownloadInfo,
+    chunks_dir: &Path,
+    game_dir: &Path,
+    file_path: &Path,
+    emit: &mut (impl FnMut(SophonProgress) + Send + 'static),
+    verify_cache: &DashMap<String, VerificationEntry>,
+) -> SophonResult<()> {
+    fs::create_dir_all(chunks_dir)?;
+
+    for chunk in &asset.asset_chunks {
+        let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
+        let needs_download = !chunk_path.exists()
+            || !cache::check_file_md5_cached(
+                &chunk_path,
+                chunk.chunk_size,
+                &chunk.chunk_compressed_hash_md5,
+                &DashMap::new(),
+            )
+            .unwrap_or(false);
+
+        if needs_download {
+            emit(SophonProgress::Warning {
+                message: format!("Re-downloading chunk {}", chunk.chunk_name),
+            });
+            download::download_chunk(client, chunk_download, chunk, &chunk_path).await?;
+        }
+    }
+
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let _ = fs::remove_file(file_path);
+
+    let tmp_dir_name = format!(
+        "tmp-verify-{}",
+        asset.asset_name.replace(['/', '\\', ':'], "_")
+    );
+    let tmp_dir = game_dir.join(&tmp_dir_name);
+    fs::create_dir_all(&tmp_dir)?;
+    let result = assembly::assemble_file(
+        asset,
+        game_dir,
+        chunks_dir,
+        &tmp_dir,
+        &DashMap::new(),
+        verify_cache,
+    );
+    let _ = fs::remove_dir_all(&tmp_dir);
+    result?;
+
+    Ok(())
 }

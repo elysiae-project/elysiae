@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -44,14 +44,20 @@ pub fn save_verification_cache(
     cache: &DashMap<String, VerificationEntry>,
 ) -> io::Result<()> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
-    let f = File::create(&cache_path)?;
+    let tmp_path = cache_path.with_extension("tmp");
     let serializable = VerificationCacheSerializable {
         files: cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect(),
     };
-    serde_json::to_writer(f, &serializable)?;
+    {
+        let f = File::create(&tmp_path)?;
+        serde_json::to_writer(f, &serializable)?;
+    }
+    fs::rename(&tmp_path, &cache_path).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp_path);
+    })?;
     Ok(())
 }
 
@@ -62,7 +68,11 @@ pub fn check_file_md5_cached(
     cache: &DashMap<String, VerificationEntry>,
 ) -> io::Result<bool> {
     let path_str = path.to_string_lossy().to_string();
-    let metadata = path.metadata()?;
+    let metadata = match path.metadata() {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
     let mtime = metadata
         .modified()?
         .duration_since(UNIX_EPOCH)

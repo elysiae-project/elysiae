@@ -1,16 +1,15 @@
 import { join } from "@tauri-apps/api/path";
-import { GameData, SophonProgress, Variants } from "../types";
+import { GameData, ResumeInfo, Variants } from "../types";
 import {
-	getActiveGameCode,
-	getGameExeName,
-	getGameName,
+  getActiveGameCode,
+  getGameExeName,
+  getGameName,
 } from "../util/AppFunctions";
 import { exists } from "./Fs";
 import { invoke } from "@tauri-apps/api/core";
 import { getOption } from "../util/Settings";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
-import { error, info, warn } from "@tauri-apps/plugin-log";
-import { listen } from "@tauri-apps/api/event";
+import { info } from "@tauri-apps/plugin-log";
 import { broadcastNotification } from "../util/NotificationHelper";
 
 /**
@@ -18,57 +17,20 @@ import { broadcastNotification } from "../util/NotificationHelper";
  * @param game
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
-	const gameData = await getGameData(game);
-	await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
-	const unlisten = await listen("sophon://progress", (event) => {
-		const progress = event.payload as SophonProgress;
-		switch (progress.type) {
-			case "fetchingManifest":
-				info("Fetching manifest...");
-				break;
-			case "downloading": {
-				const downloaded = progress.downloaded_bytes / 1024 ** 2;
-				const total = progress.total_bytes / 1024 ** 2;
-				const percentage = ((downloaded / total) * 100).toFixed(2);
-
-				info(
-					`Downloaded ${downloaded.toFixed(2)}MB/${total.toFixed(2)}MB (${percentage}%)`,
-				);
-				break;
-			}
-			case "assembling": {
-				const assembled = progress.assembled_files;
-				const total = progress.total_files;
-				info(
-					`Assembling file ${assembled} of ${total} (${((assembled / total) * 100).toFixed(2)}% Complete)`,
-				);
-				break;
-			}
-			case "warning":
-				warn(progress.message);
-				break;
-			case "error":
-				error(progress.message);
-				break;
-			case "finished":
-				info(`Download of ${gameData.gameCode} completed.`);
-				unlisten(); // stop listening once complete
-				break;
-		}
-	});
-	try {
-		info("Beginning sophon download sequence");
-		await invoke("sophon_download", {
-			gameId: gameData.gameCode,
-			voLang: gameData.requestedLanguage,
-			outputPath: gameData.gameDir,
-		});
-	} finally {
-		unlisten();
-		await broadcastNotification(
-			`${getGameName(game)} Has Finished Downloading`,
-		);
-	}
+  const gameData = await getGameData(game);
+  await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
+  try {
+    info("Beginning sophon download sequence");
+    await invoke("sophon_download", {
+      gameId: gameData.gameCode,
+      voLang: gameData.requestedLanguage,
+      outputPath: gameData.gameDir,
+    });
+  } finally {
+    await broadcastNotification(
+      `${getGameName(game)} Has Finished Downloading`,
+    );
+  }
 };
 
 /**
@@ -113,19 +75,84 @@ export const cancelDownload = async (): Promise<void> => {
  * @returns weather or not a preinstall for the specified game is available
  */
 export const isPreinstallAvailable = async (
-	game: Variants,
+  game: Variants,
 ): Promise<boolean> => {
-	const gameData = await getGameData(game);
-	const infoData = await invoke<{
-		preinstall_available: boolean;
-		preinstall_downloaded: boolean;
-	}>("sophon_check_update", {
-		gameId: gameData.gameCode,
-		voLang: gameData.requestedLanguage,
-		outputPath: gameData.gameDir,
-	});
+  const gameData = await getGameData(game);
+  const infoData = await invoke<{
+    preinstall_available: boolean;
+    preinstall_downloaded: boolean;
+  }>("sophon_check_update", {
+    gameId: gameData.gameCode,
+    voLang: gameData.requestedLanguage,
+    outputPath: gameData.gameDir,
+  });
 
-	return infoData.preinstall_available && !infoData.preinstall_downloaded;
+  return infoData.preinstall_available && !infoData.preinstall_downloaded;
+};
+
+/**
+ * Check if a game update is available
+ * @param game The game to check
+ * @returns Object containing update availability info, or null if not installed
+ */
+export const checkGameUpdate = async (
+  game: Variants,
+): Promise<{
+  updateAvailable: boolean;
+  currentVersion: string | null;
+  newVersion: string;
+  updateSize: number;
+  preinstallAvailable: boolean;
+  preinstallDownloaded: boolean;
+} | null> => {
+  const gameData = await getGameData(game);
+
+  try {
+    const infoData = await invoke<{
+      update_available: boolean;
+      current_tag: string | null;
+      remote_tag: string;
+      update_compressed_size: number;
+      preinstall_available: boolean;
+      preinstall_downloaded: boolean;
+    }>("sophon_check_update", {
+      gameId: gameData.gameCode,
+      voLang: gameData.requestedLanguage,
+      outputPath: gameData.gameDir,
+    });
+
+    return {
+      updateAvailable: infoData.update_available,
+      currentVersion: infoData.current_tag,
+      newVersion: infoData.remote_tag,
+      updateSize: infoData.update_compressed_size,
+      preinstallAvailable: infoData.preinstall_available,
+      preinstallDownloaded: infoData.preinstall_downloaded,
+    };
+  } catch {
+    // Game not installed
+    return null;
+  }
+};
+
+/**
+ * Check if there is a download state to resume (from app crash/close)
+ */
+export const hasResumeState = async (): Promise<boolean> => {
+  return invoke<boolean>("sophon_has_resume_state");
+};
+
+export const getResumeInfo = async (): Promise<ResumeInfo | null> => {
+  return invoke<ResumeInfo | null>("sophon_get_resume_info");
+};
+
+export const resumeDownloadInterrupted = async (): Promise<void> => {
+  await broadcastNotification("Resuming interrupted download...");
+  try {
+    await invoke("sophon_resume_download");
+  } finally {
+    await broadcastNotification("Resume complete");
+  }
 };
 
 /**
@@ -174,10 +201,29 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
 		throw new Error(`No Preinstall found for ${gameData.gameCode}`);
 	}
 
-	await invoke("sophon_apply_preinstall", {
-		preinstallTag: preinstall_tag,
-		outputPath: gameData.gameDir,
-	});
+await invoke("sophon_apply_preinstall", {
+    preinstallTag: preinstall_tag,
+    outputPath: gameData.gameDir,
+  });
+};
+
+/**
+ * Verify game file integrity and re-download corrupted files
+ * @param game The game to verify
+ */
+export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
+  const gameData = await getGameData(game);
+  await broadcastNotification(`Verifying ${getGameName(game)} integrity...`);
+
+  try {
+    await invoke("sophon_verify_integrity", {
+      gameId: gameData.gameCode,
+      voLang: gameData.requestedLanguage,
+      outputPath: gameData.gameDir,
+    });
+  } finally {
+    await broadcastNotification(`${getGameName(game)} integrity check complete`);
+  }
 };
 
 /**
@@ -186,13 +232,8 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
  * @returns weather or not `game` is installed
  */
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
-	return new Promise((resolve, reject) => {
-		// TODO: Replace with a more effective and robust way to check for game installs
-		// pkg_version is one of the last files that is downloaded
-		join("games", getActiveGameCode(game), "pkg_version").then((path) => {
-			exists(path).then(resolve).catch(reject);
-		});
-	});
+  const path = await join("games", getActiveGameCode(game), "pkg_version");
+  return exists(path);
 };
 
 /**

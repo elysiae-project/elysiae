@@ -2,121 +2,79 @@ import { useEffect, useState } from "preact/hooks";
 import Button from "../Button";
 import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
 import {
-	downloadGame,
-	isGameInstalled,
-	pauseDownload,
-	resumeDownload,
-	runGame,
+  downloadGame,
+  isGameInstalled,
+  resumeDownloadInterrupted,
+  runGame,
 } from "../../lib/GameDownloader";
 import { useGame } from "../../hooks/useGame";
-import { SophonProgress, Variants } from "../../types";
-import { listen } from "@tauri-apps/api/event";
-import { Pause, Play } from "lucide-preact";
-
-const downloadMatchesActiveGame = (
-	downloadingGame: Variants | null,
-	activeGame: Variants,
-) => {
-	console.log(downloadingGame);
-	console.log(activeGame);
-	return (
-		downloadingGame !== null && (downloadingGame as Variants) === activeGame
-	);
-};
+import { useDownload } from "../../hooks/useDownload";
+import { getActiveGameCode, getVariantFromCode } from "../../util/AppFunctions";
 
 export default function InstallerButton() {
-	const { game } = useGame();
+  const { game } = useGame();
+  const { state, setDownloadingGame, setResumable } = useDownload();
 
-	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
-	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
+  let [wineAvailable, setWineAvailable] = useState<boolean>(false);
+  let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
-	let [currentGameDownload, setCurrentGameDownload] = useState<Variants | null>(
-		null,
-	);
+  const downloadActive = state.isDownloading || state.isAssembling || state.isVerifying || state.isFetchingManifest || state.isPaused;
+  const isDownloadForActiveGame = state.downloadingGame === game;
+  const canResume = state.isResumable && state.resumeInfo !== null && getActiveGameCode(game) === state.resumeInfo.gameId;
 
-	let [updatesAvailable, setUpdatesAvailable] = useState<boolean>(false);
-	let [downloadInProgress, setDownloadInProgress] = useState<boolean>(false);
-	let [downloadPaused, setDownloadPaused] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    wineEnvAvailable().then((res) => {
+      if (!cancelled) setWineAvailable(res);
+    });
+    isGameInstalled(game).then((res) => {
+      if (!cancelled) setGameInstalled(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [game]);
 
-	useEffect(() => {
-		const unlisten = listen("sophon://progress", (event) => {
-			const payload = event.payload as SophonProgress;
-			if (
-				["downloading", "assembling", "fetchingManifest", "paused"].includes(
-					payload.type,
-				)
-			) {
-				setDownloadInProgress(true);
-			} else setDownloadInProgress(false);
+  useEffect(() => {
+    if (state.isFinished && isDownloadForActiveGame) {
+      setGameInstalled(true);
+    }
+  }, [state.isFinished, isDownloadForActiveGame]);
 
-			if (payload.type === "finished") {
-				if (downloadMatchesActiveGame(currentGameDownload, game)) {
-					setGameInstalled(true);
-				}
-				setCurrentGameDownload(null);
-			}
-		});
-		return async () => {
-			(await unlisten)();
-		};
-	}, []);
+  const resumeVariant = state.resumeInfo ? getVariantFromCode(state.resumeInfo.gameId) : null;
 
-	useEffect(() => {
-		wineEnvAvailable().then((res) => {
-			setWineAvailable(res);
-		});
-		isGameInstalled(game).then((res) => {
-			setGameInstalled(res);
-		});
-	}, [game]);
-
-	return (
-		<div class="w-auto flex flex-row gap-x-3.5">
-			{downloadInProgress ? (
-				<Button
-					onClick={async () => {
-						if (downloadPaused) {
-							await resumeDownload();
-							setDownloadPaused(false);
-						} else {
-							await pauseDownload();
-							setDownloadPaused(true);
-						}
-					}}
-					intent="secondary"
-					iconButton>
-					{!downloadPaused ? (
-						<Pause className={"leading-0 -m-1"} />
-					) : (
-						<Play className={"leading-0 -m-1"} />
-					)}
-				</Button>
-			) : null}
-			<Button
-				intent="primary"
-				disabled={downloadInProgress && !gameInstalled}
-				onClick={async () => {
-					console.log("Clicked");
-					if (!wineAvailable) {
-						await updateWineComponents();
-						setWineAvailable(true);
-					} else if (!gameInstalled) {
-						const activeGame = game;
-						await downloadGame(activeGame);
-					} else {
-						await runGame(game);
-					}
-				}}>
-				{(() => {
-					if (!wineAvailable) {
-						return "Create Env"; // TODO: Maybe replace this state with a onboarding screen in a later update
-					} else if (!gameInstalled) {
-						return downloadInProgress ? "Downloading..." : "Download";
-					} else {
-						return "Play";
-					}
-				})()}
-			</Button>
-		</div>
-	);
+  return (
+    <div class="w-auto flex flex-row gap-x-3.5">
+      <Button
+        intent="primary"
+        disabled={downloadActive && !gameInstalled}
+        onClick={async () => {
+          if (!wineAvailable) {
+            await updateWineComponents();
+            setWineAvailable(true);
+          } else if (canResume && resumeVariant !== null) {
+            setResumable(null);
+            setDownloadingGame(resumeVariant);
+            await resumeDownloadInterrupted();
+          } else if (!gameInstalled) {
+            setDownloadingGame(game);
+            await downloadGame(game);
+          } else {
+            await runGame(game);
+          }
+        }}>
+        {(() => {
+          if (!wineAvailable) {
+            return "Create Env";
+          } else if (canResume && !gameInstalled) {
+            return downloadActive && isDownloadForActiveGame ? "Downloading..." : "Resume Download";
+          } else if (!gameInstalled) {
+            return downloadActive && isDownloadForActiveGame ? "Downloading..." : "Download";
+          } else {
+            return "Play";
+          }
+        })()}
+      </Button>
+    </div>
+  );
 }

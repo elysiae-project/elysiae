@@ -11,6 +11,12 @@ use crate::commands::sophon_downloader::proto_parse::{SophonManifestProto, decod
 use super::error::{SophonError, SophonResult};
 use super::{FRONT_DOOR_URL, SOPHON_BUILD_URL_BASE};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
+use crate::commands::sophon_downloader::compute_content_manifest_hash;
+
+pub struct ManifestWithHash {
+    pub manifest: SophonManifestProto,
+    pub hash: String,
+}
 
 pub async fn fetch_front_door(
     client: &Client,
@@ -38,6 +44,33 @@ pub async fn fetch_front_door(
     Ok((branch, pre))
 }
 
+pub async fn fetch_manifest(
+    client: &Client,
+    dl: &DownloadInfo,
+    manifest_id: &str,
+) -> SophonResult<ManifestWithHash> {
+    let url = dl.url_for(manifest_id);
+    let bytes = client
+        .get(&url)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+
+    let raw = if dl.is_compressed() {
+        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
+    } else {
+        bytes.to_vec()
+    };
+
+    let manifest: SophonManifestProto =
+        decode_manifest(&raw).map_err(SophonError::ManifestDecode)?;
+    let hash = compute_content_manifest_hash(&manifest);
+    Ok(ManifestWithHash { manifest, hash })
+}
+
 pub async fn fetch_build(
     client: &Client,
     branch: &PackageBranch,
@@ -62,30 +95,6 @@ pub async fn fetch_build(
         return Err(SophonError::NoManifests);
     }
     Ok(resp.data)
-}
-
-pub async fn fetch_manifest(
-    client: &Client,
-    dl: &DownloadInfo,
-    manifest_id: &str,
-) -> SophonResult<SophonManifestProto> {
-    let url = dl.url_for(manifest_id);
-    let bytes = client
-        .get(&url)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
-
-    let raw = if dl.is_compressed() {
-        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
-    } else {
-        bytes.to_vec()
-    };
-
-    decode_manifest(&raw).map_err(|e| e.into())
 }
 
 fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {

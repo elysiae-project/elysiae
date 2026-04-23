@@ -39,6 +39,10 @@ pub fn run() {
             commands::sophon_downloader::sophon_update,
             commands::sophon_downloader::sophon_preinstall,
             commands::sophon_downloader::sophon_apply_preinstall,
+            commands::sophon_downloader::sophon_resume_download,
+            commands::sophon_downloader::sophon_has_resume_state,
+            commands::sophon_downloader::sophon_get_resume_info,
+            commands::sophon_downloader::sophon_verify_integrity,
             commands::sophon_downloader::sophon_pause,
             commands::sophon_downloader::sophon_resume,
             commands::sophon_downloader::sophon_cancel,
@@ -53,9 +57,10 @@ pub fn run() {
                 .menu(&menu)
                 .icon(app.default_window_icon().unwrap().clone())
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "quit" => app.exit(0),
-                    _ => {}
+                .on_menu_event(|app, event| {
+                    if event.id().as_ref() == "quit" {
+                        app.exit(0)
+                    }
                 })
                 .build(app)?;
 
@@ -68,9 +73,9 @@ pub fn run() {
 #[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
     /*
-     * webkit2gtk/webkit isn't implementing some of the the wayland compositor protocols
-     * to the letter and NVIDIA drivers freak out because it expects implementations that do
-     * follow the standards to the letter
+     * webkit2gtk/webkit isn't implementing some of the the wayland compositor
+     * protocols to the letter and NVIDIA drivers freak out because it
+     * expects implementations that do follow the standards to the letter
      */
     if is_nvidia() && is_wayland() {
         println!("Elysiae: Applying NVIDIA Wayland Hotfix");
@@ -80,7 +85,8 @@ fn apply_nvidia_wayland_workaround() {
 
 #[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
-    // If a NVIDIA graphics card is present, one of these two files should also be available
+    // If a NVIDIA graphics card is present, one of these two files should also be
+    // available
     std::path::Path::new("/proc/driver/nvidia/version").exists()
         || std::path::Path::new("/dev/nvidia0").exists()
 }

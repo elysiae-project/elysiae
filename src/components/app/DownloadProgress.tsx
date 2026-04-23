@@ -1,71 +1,164 @@
-import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "preact/hooks";
-import { SophonProgress } from "../../types";
+import { useDownload } from "../../hooks/useDownload";
+import { useGame } from "../../hooks/useGame";
+import { getGameName, formatNumber } from "../../util/AppFunctions";
+import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
 import Progressbar from "../Progressbar";
-import { formatNumber } from "../../util/AppFunctions";
+import { Pause, Play } from "lucide-preact";
+import Button from "../Button";
+import { useMemo } from "preact/hooks";
 
 export default function GameDownloadProgress() {
-	let [downloadedBytes, setDownloadedBytes] = useState<number>(0);
-	let [downloadTotal, setDownloadTotal] = useState<number>(0);
-	let [assembledFiles, setAssembledFiles] = useState<number>(0);
-	let [totalFiles, setTotalFiles] = useState<number>(0);
-	let [isDownloading, setIsDownloading] = useState<boolean>(false);
+	const { state } = useDownload();
+	const { game } = useGame();
+	const {
+		isPaused,
+		isDownloading,
+		isAssembling,
+		isVerifying,
+		isFetchingManifest,
+		isCalculatingDownloads,
+		isError,
+		isFinished,
+	} = state;
 
-	useEffect(() => {
-		const unlisten = listen("sophon://progress", (event) => {
-			const payload = event.payload as SophonProgress;
-			switch (payload.type) {
-				case "downloading":
-					if (!isDownloading) setIsDownloading(true);
-					if (downloadTotal === 0) setDownloadTotal(payload.total_bytes);
+	const isActive =
+		isDownloading ||
+		isAssembling ||
+		isVerifying ||
+		isFetchingManifest ||
+		isCalculatingDownloads ||
+		isPaused;
+	if (!isActive && !isError && !isFinished) return null;
+	if (isFinished) return null;
 
-					setDownloadedBytes(payload.downloaded_bytes);
-					break;
-				case "assembling":
-					if (!isDownloading) setIsDownloading(true);
-					if (totalFiles === 0) setTotalFiles(payload.total_files);
-
-					setAssembledFiles(payload.assembled_files);
-					break;
-				case "finished":
-					setIsDownloading(false);
-					[
-						setDownloadedBytes,
-						setDownloadTotal,
-						setAssembledFiles,
-						setTotalFiles,
-					].forEach((set) => {
-						set(0);
-					});
-					break;
-			}
-		});
-		return async () => {
-			(await unlisten)();
+	const derived = useMemo(() => {
+		const downloadPct =
+			state.downloadTotal > 0
+				? (state.downloadedBytes / state.downloadTotal) * 100
+				: 0;
+		const assemblePct =
+			state.totalFiles > 0
+				? (state.assembledFiles / state.totalFiles) * 100
+				: 0;
+		const speedMB = state.speedBps / 1024 ** 2;
+		const eta = state.etaSeconds;
+		const etaStr =
+			eta > 0
+				? eta >= 3600
+					? `${Math.floor(eta / 3600)}h ${Math.floor((eta % 3600) / 60)}m`
+					: `${Math.floor(eta / 60)}m ${Math.floor(eta % 60)}s`
+				: "";
+		const downloadedGB = (state.downloadedBytes / 1024 ** 3).toFixed(2);
+		const totalGB = (state.downloadTotal / 1024 ** 3).toFixed(2);
+		const verifyPct =
+			state.totalFiles > 0 ? (state.scannedFiles / state.totalFiles) * 100 : 0;
+		const calcPct =
+			state.totalFiles > 0 ? (state.checkedFiles / state.totalFiles) * 100 : 0;
+		return {
+			downloadPct,
+			assemblePct,
+			speedMB,
+			etaStr,
+			downloadedGB,
+			totalGB,
+			verifyPct,
+			calcPct,
 		};
-	}, []);
+	}, [
+		state.downloadedBytes,
+		state.downloadTotal,
+		state.assembledFiles,
+		state.totalFiles,
+		state.speedBps,
+		state.etaSeconds,
+		state.scannedFiles,
+		state.checkedFiles,
+	]);
 
-	if (!isDownloading) return null;
+	const titleText = isPaused
+		? "Download Paused"
+		: isVerifying
+			? "Verifying Files..."
+			: isCalculatingDownloads
+				? "Calculating File Downloads..."
+				: isFetchingManifest
+					? "Fetching Manifest..."
+					: state.downloadingGame !== null
+						? `Downloading ${getGameName(state.downloadingGame)}...`
+						: "Downloading...";
+
+	const canPause = isDownloading || isPaused;
+
 	return (
-		<div class="flex flex-col w-full h-auto gap-y-3 justify-start items-start align-bottom text-white bg-black/50 rounded-lg mr-10 px-4 py-5">
-			<h1 class="-mt-2 mb-0.5">Downloading GAME...</h1>{" "}
-			{/** TODO: Replace with Game ID when sophon downloader gets refactored to also emit which game is being downloaded */}
-			<div class="flex flex-col min-w-full text-left gap-y-1">
-				<h2 class="text-sm ml-1">
-					Downloaded {(downloadedBytes / 1024 ** 3).toFixed(2)}GB of{" "}
-					{(downloadTotal / 1024 ** 3).toFixed(2)}GB (
-					{((downloadedBytes / downloadTotal) * 100).toFixed(2)}%)
-				</h2>
-				<Progressbar progress={(downloadedBytes / downloadTotal) * 100} />
+		<div class="mr-10 flex h-auto w-full flex-col items-start justify-start gap-y-3 rounded-lg bg-black/50 px-4 py-5 align-bottom text-white">
+			<div class="flex w-full flex-row items-center justify-between">
+				<h1 class="-mt-2 mb-0.5">{titleText}</h1>
+				{canPause && (
+					<Button
+						onClick={async () => {
+							if (isPaused) {
+								await resumeDownload();
+							} else {
+								await pauseDownload();
+							}
+						}}
+						intent="secondary"
+						iconButton>
+						{isPaused ? (
+							<Play className={"leading-0 -m-1"} />
+						) : (
+							<Pause className={"leading-0 -m-1"} />
+						)}
+					</Button>
+				)}
 			</div>
-			<div class="flex min-w-full flex-col text-left gap-y-1">
-				<h2 class="text-sm ml-1">
-					Assembled {formatNumber(assembledFiles)} of {formatNumber(totalFiles)}{" "}
-					{/** FIXME: There is an inconsistency here where only decimal places will be used for percentage rather than what the locale wants for decimals */}
-					Files ({((assembledFiles / totalFiles) * 100).toFixed(2)}%)
-				</h2>
-				<Progressbar progress={(assembledFiles / totalFiles) * 100} />
-			</div>
+			{isCalculatingDownloads && state.totalFiles > 0 && (
+				<div class="flex min-w-full flex-col gap-y-1 text-left">
+					<h2 class="ml-1 text-sm">
+						Checked {formatNumber(state.checkedFiles)} of{" "}
+						{formatNumber(state.totalFiles)} Files ({derived.calcPct.toFixed(2)}
+						%)
+					</h2>
+					<Progressbar progress={derived.calcPct} game={game} />
+				</div>
+			)}
+			{(isDownloading || isPaused) && state.downloadTotal > 0 && (
+				<div class="flex min-w-full flex-col gap-y-1 text-left">
+					<h2 class="ml-1 text-sm">
+						Downloaded {derived.downloadedGB}GB of {derived.totalGB}GB (
+						{derived.downloadPct.toFixed(2)}%)
+						{derived.speedMB > 0 ? ` - ${derived.speedMB.toFixed(2)}MB/s` : ""}
+						{derived.etaStr ? ` - ETA: ${derived.etaStr}` : ""}
+					</h2>
+					<Progressbar progress={derived.downloadPct} game={game} />
+				</div>
+			)}
+			{isAssembling && state.totalFiles > 0 && (
+				<div class="flex min-w-full flex-col gap-y-1 text-left">
+					<h2 class="ml-1 text-sm">
+						Assembled {formatNumber(state.assembledFiles)} of{" "}
+						{formatNumber(state.totalFiles)} Files (
+						{derived.assemblePct.toFixed(2)}%)
+					</h2>
+					<Progressbar progress={derived.assemblePct} game={game} />
+				</div>
+			)}
+			{isVerifying && (
+				<div class="flex min-w-full flex-col gap-y-1 text-left">
+					<h2 class="ml-1 text-sm">
+						Verified {formatNumber(state.scannedFiles)} of{" "}
+						{formatNumber(state.totalFiles)} files —{" "}
+						{formatNumber(state.errorCount)} errors found
+					</h2>
+					<Progressbar progress={derived.verifyPct} game={game} />
+				</div>
+			)}
+			{state.warningMessage && (
+				<h2 class="ml-1 text-sm text-yellow-300">{state.warningMessage}</h2>
+			)}
+			{state.errorMessage && (
+				<h2 class="ml-1 text-sm text-red-300">{state.errorMessage}</h2>
+			)}
 		</div>
 	);
 }

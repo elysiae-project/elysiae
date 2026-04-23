@@ -15,16 +15,31 @@ export const closeApp = (): void => {
  * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
  */
 export const getActiveGameCode = (currentGame: Variants): GameCodes => {
-	switch (currentGame) {
-		case Variants.BH3:
-			return "bh3";
-		case Variants.HK4E:
-			return "hk4e";
-		case Variants.HKRPG:
-			return "hkrpg";
-		case Variants.NAP:
-			return "nap";
-	}
+  switch (currentGame) {
+    case Variants.BH3:
+      return "bh3";
+    case Variants.HK4E:
+      return "hk4e";
+    case Variants.HKRPG:
+      return "hkrpg";
+    case Variants.NAP:
+      return "nap";
+  }
+};
+
+export const getVariantFromCode = (code: string): Variants | null => {
+  switch (code) {
+    case "bh3":
+      return Variants.BH3;
+    case "hk4e":
+      return Variants.HK4E;
+    case "hkrpg":
+      return Variants.HKRPG;
+    case "nap":
+      return Variants.NAP;
+    default:
+      return null;
+  }
 };
 
 export const getGameName = (game: Variants) => {
@@ -115,6 +130,10 @@ export const winToPosixPath = (path: string): string => {
 };
 
 export const formatNumber = (num: number): string => {
-	return new Intl.NumberFormat(navigator.language).format(num);
+  try {
+    return new Intl.NumberFormat(navigator.language).format(num);
+  } catch {
+    return new Intl.NumberFormat("en-US").format(num);
+  }
 }
 
