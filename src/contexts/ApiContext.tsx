@@ -64,12 +64,20 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 									id = Variants.NAP;
 									break;
 							}
-							if (typeof id === "undefined") return acc;
+							if (typeof id === "undefined" || game.backgrounds.length === 0)
+								return acc;
+
+							const bg =
+								game.backgrounds.find(
+									(b) => b.type === "BACKGROUND_TYPE_VIDEO",
+								) ?? game.backgrounds[0];
+							if (!bg) return acc;
+
 							acc[id] = {
-								backgroundImage: game.backgrounds[0].background.url,
-								backgroundVideo: game.backgrounds[0].video.url,
-								backgroundVideoOverlay: game.backgrounds[0].theme.url,
-								icon: game.backgrounds[0].icon.url,
+								backgroundImage: bg.background.url,
+								backgroundVideo: bg.video.url,
+								backgroundVideoOverlay: bg.theme.url,
+								icon: bg.icon.url,
 							};
 							return acc;
 						},
@@ -128,8 +136,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 			value={{
 				graphics: graphicsData,
 				branding: brandingData,
-			}}
-		>
+			}}>
 			{children}
 		</ApiContext.Provider>
 	);
