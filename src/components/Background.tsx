@@ -3,7 +3,7 @@ import { useApi } from "../hooks/useApi";
 import { useGame } from "../hooks/useGame";
 import { fadeInOut } from "../util/Animations";
 
-function BackgroundMedia({ src, isVideo }: { src: string; isVideo: boolean }) {
+function BackgroundMedia({ src, isVideo }: { src: string | undefined; isVideo: boolean }) {
   return isVideo ? (
     <motion.video
       class="background"

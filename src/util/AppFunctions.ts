@@ -42,6 +42,10 @@ export const getVariantFromCode = (code: string): Variants | null => {
   }
 };
 
+/**
+ * Gets the name of a specified game
+ * @param game 
+ */
 export const getGameName = (game: Variants) => {
 	switch(game) {
 		case Variants.BH3:
@@ -55,8 +59,12 @@ export const getGameName = (game: Variants) => {
 	}
 }
 
-export const getGameExeName = (currentGame: Variants): string => {
-	switch (currentGame) {
+/**
+ * Gets the executable name of a game
+ * @param game
+ */
+export const getGameExeName = (game: Variants): string => {
+	switch (game) {
 		case Variants.BH3:
 			return "\x42\x48\x33.exe";
 		case Variants.HK4E:

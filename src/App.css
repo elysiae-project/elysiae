@@ -208,5 +208,5 @@
 }
 
 .background {
-	@apply absolute inset-0 h-full w-full object-cover scale-[1.0045];
+	@apply absolute inset-0 h-full w-full object-cover;
 }

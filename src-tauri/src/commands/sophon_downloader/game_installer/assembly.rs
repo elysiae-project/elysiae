@@ -125,7 +125,19 @@ pub fn assemble_file(
         .create(true)
         .truncate(true)
         .open(&tmp_path)?;
-    out_file.set_len(file.asset_size)?;
+
+    use std::io::Write; 
+    {
+        let mut buf_writer_pre = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, &out_file);
+        let zeros = vec![0u8; FILE_WRITE_BUFFER_SIZE];
+        let mut remaining = file.asset_size;
+        while remaining > 0 {
+            let to_write = (remaining as usize).min(FILE_WRITE_BUFFER_SIZE);
+            buf_writer_pre.write_all(&zeros[..to_write])?;
+            remaining -= to_write as u64;
+        }
+        buf_writer_pre.flush()?;
+    }
 
     let mut buf_writer = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, out_file);
     let mut total_written: u64 = 0;
@@ -190,6 +202,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     let f = File::open(chunk_path)?;
     let mut decoder = zstd::Decoder::new(f)?;
 
+    writer.flush()?;
     writer.seek(SeekFrom::Start(offset))?;
 
     let bytes_written = match file_hasher {

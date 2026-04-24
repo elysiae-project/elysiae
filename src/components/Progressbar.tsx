@@ -18,7 +18,7 @@ const progressbarContainerStyles = cva("h-full transition-all duration-300", {
     game: {
       [Variants.BH3]: "bg-bh3-pbar-fill rounded-sm",
       [Variants.HK4E]: "rounded-full bg-hk4e-pbar-fill",
-      [Variants.HKRPG]: "bg-hkrpg-progress-bg",
+      [Variants.HKRPG]: "bg-hkrpg-pbar-fill",
       [Variants.NAP]:
         "bg-linear-to-r from-nap-pbar-from from-10% via-nap-pbar-via via-60% to-nap-pbar-to rounded-full",
     },

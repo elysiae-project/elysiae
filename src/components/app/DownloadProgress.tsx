@@ -90,9 +90,9 @@ export default function GameDownloadProgress() {
 	const canPause = isDownloading || isPaused;
 
 	return (
-		<div class="mr-10 flex h-auto w-full flex-col items-start justify-start gap-y-3 rounded-lg bg-black/50 px-4 py-5 align-bottom text-white">
+		<div class="mr-10 flex h-auto w-[65%] flex-col items-start justify-start gap-y-3 rounded-lg bg-black/50 px-4 py-5 align-bottom">
 			<div class="flex w-full flex-row items-center justify-between">
-				<h1 class="-mt-2 mb-0.5">{titleText}</h1>
+				<h1 class="-mt-2 mb-0.5 text-white">{titleText}</h1>
 				{canPause && (
 					<Button
 						onClick={async () => {
@@ -114,7 +114,7 @@ export default function GameDownloadProgress() {
 			</div>
 			{isCalculatingDownloads && state.totalFiles > 0 && (
 				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
+					<h2 class="ml-1 text-sm text-white">
 						Checked {formatNumber(state.checkedFiles)} of{" "}
 						{formatNumber(state.totalFiles)} Files ({derived.calcPct.toFixed(2)}
 						%)
@@ -124,7 +124,7 @@ export default function GameDownloadProgress() {
 			)}
 			{(isDownloading || isPaused) && state.downloadTotal > 0 && (
 				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
+					<h2 class="ml-1 text-sm text-white">
 						Downloaded {derived.downloadedGB}GB of {derived.totalGB}GB (
 						{derived.downloadPct.toFixed(2)}%)
 						{derived.speedMB > 0 ? ` - ${derived.speedMB.toFixed(2)}MB/s` : ""}
@@ -135,7 +135,7 @@ export default function GameDownloadProgress() {
 			)}
 			{isAssembling && state.totalFiles > 0 && (
 				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
+					<h2 class="ml-1 text-sm text-white">
 						Assembled {formatNumber(state.assembledFiles)} of{" "}
 						{formatNumber(state.totalFiles)} Files (
 						{derived.assemblePct.toFixed(2)}%)
@@ -145,7 +145,7 @@ export default function GameDownloadProgress() {
 			)}
 			{isVerifying && (
 				<div class="flex min-w-full flex-col gap-y-1 text-left">
-					<h2 class="ml-1 text-sm">
+					<h2 class="ml-1 text-sm text-white">
 						Verified {formatNumber(state.scannedFiles)} of{" "}
 						{formatNumber(state.totalFiles)} files —{" "}
 						{formatNumber(state.errorCount)} errors found
