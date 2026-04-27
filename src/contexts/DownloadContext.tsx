@@ -11,6 +11,7 @@ export interface DownloadState {
   isVerifying: boolean;
   isFetchingManifest: boolean;
   isCalculatingDownloads: boolean;
+  isInstallingPlugins: boolean;
   isError: boolean;
   isFinished: boolean;
   downloadingGame: Variants | null;
@@ -25,6 +26,8 @@ export interface DownloadState {
   errorCount: number;
   errorMessage: string;
   warningMessage: string;
+  pluginName: string;
+  pluginProgress: string;
   isResumable: boolean;
   resumeInfo: ResumeInfo | null;
 }
@@ -42,6 +45,7 @@ const initialState: DownloadState = {
   isVerifying: false,
   isFetchingManifest: false,
   isCalculatingDownloads: false,
+  isInstallingPlugins: false,
   isError: false,
   isFinished: false,
   downloadingGame: null,
@@ -56,6 +60,8 @@ const initialState: DownloadState = {
   errorCount: 0,
   errorMessage: "",
   warningMessage: "",
+  pluginName: "",
+  pluginProgress: "",
   isResumable: false,
   resumeInfo: null,
 };
@@ -185,22 +191,47 @@ case "downloading":
               ...prev,
               warningMessage: payload.message,
             };
-          case "error":
-            return {
-              ...prev,
-              isError: true,
-              isPaused: false,
-              isDownloading: false,
-              isAssembling: false,
-              isFetchingManifest: false,
-              isVerifying: false,
-              errorMessage: payload.message,
-            };
-          case "finished":
-            return {
-              ...initialState,
-              isFinished: true,
-            };
+case "error":
+  return {
+    ...prev,
+    isError: true,
+    isPaused: false,
+    isDownloading: false,
+    isAssembling: false,
+    isFetchingManifest: false,
+    isVerifying: false,
+    isInstallingPlugins: false,
+    errorMessage: payload.message,
+  };
+case "installingPlugins":
+  return {
+    ...prev,
+    isInstallingPlugins: true,
+    isDownloading: false,
+    isAssembling: false,
+    isVerifying: false,
+    isFetchingManifest: false,
+    pluginName: payload.current_plugin,
+    pluginProgress: `Installing plugins: ${payload.current_plugin} (${payload.total_plugins})`,
+  };
+case "downloadingPlugin":
+  return {
+    ...prev,
+    isInstallingPlugins: true,
+    isDownloading: true,
+    isAssembling: false,
+    isVerifying: false,
+    isFetchingManifest: false,
+    pluginName: payload.name,
+    downloadedBytes: payload.downloaded_bytes,
+    downloadTotal: payload.total_bytes,
+    pluginProgress: `Downloading plugin: ${payload.name}`,
+  };
+case "finished":
+  return {
+    ...initialState,
+    isFinished: true,
+  };
         }
       });
     });
