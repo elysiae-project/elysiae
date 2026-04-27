@@ -14,8 +14,8 @@ use zip::ZipArchive;
 
 use super::error::{SophonError, SophonResult};
 use super::plugin_api::{
-    PackageData, PluginPackageInfo, ValidationEntry, fetch_channel_sdks, fetch_plugins,
-    game_id_for_code,
+    ChannelSdkData, PackageData, PluginPackageInfo, ValidationEntry, fetch_channel_sdks,
+    fetch_plugins, game_id_for_code,
 };
 use crate::commands::sophon_downloader::SophonProgress;
 
@@ -289,14 +289,20 @@ async fn install_single_plugin(
         return Err(e);
     }
 
-    verify_validation(game_dir, &pkg.validation);
+    if !verify_validation(game_dir, &pkg.validation) {
+        let _ = fs::remove_file(&zip_path);
+        return Err(SophonError::PluginValidationFailed(
+            plugin.plugin_id.clone(),
+        ));
+    }
 
     cleanup_dxsetup(game_dir);
 
+    let safe_version = plugin.version.replace(['\n', '\r'], "");
     write_plugin_version(
         game_dir,
         &format!("plugin_{}_version", plugin.plugin_id),
-        &plugin.version,
+        &safe_version,
     )?;
 
     let _ = fs::remove_file(&zip_path);
@@ -327,8 +333,65 @@ pub async fn install_plugins(
             total_plugins: total,
         });
 
-        install_single_plugin(client, game_dir, plugin, &plugin.plugin_pkg, &updater).await?;
+        if let Err(e) =
+            install_single_plugin(client, game_dir, plugin, &plugin.plugin_pkg, &updater).await
+        {
+            log::warn!("Plugin {} installation failed: {}", plugin.plugin_id, e);
+        }
     }
+
+    Ok(())
+}
+
+async fn install_single_sdk(
+    client: &Client,
+    game_dir: &Path,
+    sdk: &ChannelSdkData,
+    updater: &ProgressFn,
+) -> SophonResult<()> {
+    let key = "plugin_sdk_version";
+    let versions = read_plugin_versions(game_dir);
+
+    if versions.get(key).map(String::as_str) == Some(sdk.version.as_str())
+        && verify_validation(game_dir, &sdk.channel_sdk_pkg.validation)
+    {
+        return Ok(());
+    }
+
+    let filename = sdk
+        .channel_sdk_pkg
+        .url
+        .rsplit('/')
+        .next()
+        .unwrap_or("sdk.zip")
+        .to_string();
+    let zip_path = game_dir.join(&filename);
+
+    download_zip(
+        client,
+        &sdk.channel_sdk_pkg.url,
+        &zip_path,
+        &sdk.channel_sdk_pkg.md5,
+        updater,
+    )
+    .await?;
+
+    if let Err(e) = extract_zip(&zip_path, game_dir) {
+        let _ = fs::remove_file(&zip_path);
+        return Err(e);
+    }
+
+    if !verify_validation(game_dir, &sdk.channel_sdk_pkg.validation) {
+        let _ = fs::remove_file(&zip_path);
+        return Err(SophonError::PluginValidationFailed(sdk.game.id.clone()));
+    }
+
+    cleanup_dxsetup(game_dir);
+
+    let safe_version = sdk.version.replace(['\n', '\r'], "");
+    write_plugin_version(game_dir, key, &safe_version)?;
+
+    let _ = fs::remove_file(&zip_path);
 
     Ok(())
 }
@@ -356,45 +419,9 @@ pub async fn install_channel_sdks(
             total_plugins: total,
         });
 
-        let key = "plugin_sdk_version";
-        let versions = read_plugin_versions(game_dir);
-
-        if versions.get(key).map(String::as_str) == Some(sdk.version.as_str())
-            && verify_validation(game_dir, &sdk.channel_sdk_pkg.validation)
-        {
-            continue;
+        if let Err(e) = install_single_sdk(client, game_dir, sdk, &updater).await {
+            log::warn!("SDK {} installation failed: {}", sdk.game.id, e);
         }
-
-        let filename = sdk
-            .channel_sdk_pkg
-            .url
-            .rsplit('/')
-            .next()
-            .unwrap_or("sdk.zip")
-            .to_string();
-        let zip_path = game_dir.join(&filename);
-
-        download_zip(
-            client,
-            &sdk.channel_sdk_pkg.url,
-            &zip_path,
-            &sdk.channel_sdk_pkg.md5,
-            &updater,
-        )
-        .await?;
-
-        if let Err(e) = extract_zip(&zip_path, game_dir) {
-            let _ = fs::remove_file(&zip_path);
-            return Err(e);
-        }
-
-        verify_validation(game_dir, &sdk.channel_sdk_pkg.validation);
-
-        cleanup_dxsetup(game_dir);
-
-        write_plugin_version(game_dir, key, &sdk.version)?;
-
-        let _ = fs::remove_file(&zip_path);
     }
 
     Ok(())

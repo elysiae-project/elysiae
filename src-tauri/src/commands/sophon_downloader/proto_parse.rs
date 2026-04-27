@@ -1,4 +1,4 @@
-// Protobuf data fetched from the collapse launcher project (Hi3Helper.Sophon) (https://github.com/CollapseLauncher/Hi3Helper.Sophon/blob/main/Protos/SophonManifestProto.proto)
+// Protobuf data structure definition for Sophon manifests
 use prost::Message;
 
 // Top level of the protobuf

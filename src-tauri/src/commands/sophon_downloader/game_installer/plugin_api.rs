@@ -199,5 +199,20 @@ pub async fn fetch_channel_sdks(
         .json()
         .await?;
 
-    Ok(resp.data.game_channel_sdks)
+    let sdks: Vec<ChannelSdkData> = resp
+        .data
+        .game_channel_sdks
+        .into_iter()
+        .filter(|sdk| {
+            let filename = sdk
+                .channel_sdk_pkg
+                .url
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_lowercase();
+            !filename.contains("dxsetup")
+        })
+        .collect();
+    Ok(sdks)
 }
