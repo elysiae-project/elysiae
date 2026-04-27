@@ -15,7 +15,7 @@ use tokio::sync::{Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use super::adaptive::{ActiveGuard, AdaptiveConcurrency};
-use super::api::{fetch_build, fetch_front_door, vo_lang_matches};
+use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
 use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
 use super::cache::{self, VerificationEntry};
 use super::error::{SophonError, SophonResult};
@@ -166,21 +166,26 @@ async fn build_installers_from_data(
     vo_lang: &str,
     tag: &str,
 ) -> SophonResult<Vec<SophonInstaller>> {
-    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
-
-    let vo_meta = build
+    let qualifying: Vec<&SophonManifestMeta> = build
         .manifests
         .iter()
-        .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
-        .or_else(|| build.manifests.get(1))
-        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+        .filter(|m| {
+            m.matching_field == "game"
+                || vo_lang_matches(&m.matching_field, vo_lang)
+                || !is_known_vo_locale(&m.matching_field)
+        })
+        .collect();
 
-    let (game_inst, vo_inst) = tokio::try_join!(
-        SophonInstaller::from_manifest_meta(client, game_meta, tag),
-        SophonInstaller::from_manifest_meta(client, vo_meta, tag),
-    )?;
+    if qualifying.is_empty() {
+        return Err(SophonError::NoGameManifest);
+    }
 
-    Ok(vec![game_inst, vo_inst])
+    let mut installers = Vec::with_capacity(qualifying.len());
+    for meta in &qualifying {
+        installers.push(SophonInstaller::from_manifest_meta(client, meta, tag).await?);
+    }
+
+    Ok(installers)
 }
 
 fn combine_manifest_hashes(installers: &[SophonInstaller]) -> String {
@@ -256,7 +261,9 @@ async fn build_diff_installers(
     let mut deleted_files: Vec<String> = Vec::new();
 
     for new_meta in &new_build.manifests {
-        if new_meta.matching_field != "game" && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+        if new_meta.matching_field != "game"
+            && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+            && is_known_vo_locale(&new_meta.matching_field)
         {
             continue;
         }
@@ -1162,36 +1169,39 @@ pub async fn verify_integrity(
     let (branch, _) = api::fetch_front_door(client, game_id).await?;
     let build = api::fetch_build(client, &branch.main, Some(&tag)).await?;
 
-    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
-    let vo_meta = build
+    let qualifying: Vec<&SophonManifestMeta> = build
         .manifests
         .iter()
-        .find(|m| api::vo_lang_matches(&m.matching_field, vo_lang))
-        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+        .filter(|m| {
+            m.matching_field == "game"
+                || api::vo_lang_matches(&m.matching_field, vo_lang)
+                || !api::is_known_vo_locale(&m.matching_field)
+        })
+        .collect();
 
-    let game_manifest =
-        api::fetch_manifest(client, &game_meta.manifest_download, &game_meta.manifest.id)
-            .await?
-            .manifest;
-    let vo_manifest = api::fetch_manifest(client, &vo_meta.manifest_download, &vo_meta.manifest.id)
-        .await?
-        .manifest;
+    if qualifying.is_empty() {
+        return Err(SophonError::NoGameManifest);
+    }
 
-    let game_chunk_download = &game_meta.manifest_download;
-    let vo_chunk_download = &vo_meta.manifest_download;
+    let mut manifest_results: Vec<SophonManifestProto> = Vec::new();
+    let mut chunk_downloads: Vec<&DownloadInfo> = Vec::new();
+    for meta in &qualifying {
+        let result =
+            api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        manifest_results.push(result.manifest);
+        chunk_downloads.push(&meta.chunk_download);
+    }
 
-    let all_assets: Vec<(&SophonManifestAssetProperty, &DownloadInfo)> = game_manifest
-        .assets
+    let all_assets: Vec<(&SophonManifestAssetProperty, &DownloadInfo)> = manifest_results
         .iter()
-        .filter(|a| !a.is_directory())
-        .map(|a| (a, game_chunk_download))
-        .chain(
-            vo_manifest
+        .zip(chunk_downloads.iter())
+        .flat_map(|(manifest, dl)| {
+            manifest
                 .assets
                 .iter()
                 .filter(|a| !a.is_directory())
-                .map(|a| (a, vo_chunk_download)),
-        )
+                .map(|a| (a, *dl))
+        })
         .collect();
 
     let total_files = all_assets.len() as u64;
