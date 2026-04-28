@@ -1000,6 +1000,14 @@ pub async fn install(
     } else if game_code == "nap" {
         super::nap_filter::filter_nap_asset_list(game_dir, &mut all_files);
     }
+    let filtered_set: HashSet<String> = all_files.iter().map(|f| f.asset_name.clone()).collect();
+    let installer_data: Vec<InstallerData> = installer_data
+        .into_iter()
+        .map(|mut d| {
+            d.files.retain(|f| filtered_set.contains(&f.asset_name));
+            d
+        })
+        .collect();
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
