@@ -879,8 +879,8 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::hsr_filter::write_audio_lang_record(&gd, &vl) {
-                log::warn!("Failed to write HSR audio language record: {}", e);
+            if let Err(e) = super::hkrpg_filter::write_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hkrpg audio language record: {}", e);
             }
         })
         .await?;
@@ -888,8 +888,8 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::genshin_filter::write_audio_lang_record(&gd, &vl) {
-                log::warn!("Failed to write Genshin audio language record: {}", e);
+            if let Err(e) = super::hk4e_filter::write_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hk4e audio language record: {}", e);
             }
         })
         .await?;
@@ -897,8 +897,17 @@ async fn finalize_install(
         let vl = vo_langs.to_vec();
         let af = (*ctx.all_files).clone();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::genshin_filter::write_pkg_version_from_manifest(&gd, &af, &vl) {
-                log::warn!("Failed to write Genshin pkg_version: {}", e);
+            if let Err(e) = super::hk4e_filter::write_pkg_version_from_manifest(&gd, &af, &vl) {
+                log::warn!("Failed to write hk4e pkg_version: {}", e);
+            }
+        })
+        .await?;
+    } else if game_code == "nap" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::nap_filter::write_nap_audio_lang_records(&gd, &vl) {
+                log::warn!("Failed to write nap audio language records: {}", e);
             }
         })
         .await?;
@@ -985,9 +994,11 @@ pub async fn install(
         .flat_map(|d| d.files.clone())
         .collect();
     if game_code == "hkrpg" {
-        super::hsr_filter::filter_hsr_asset_list(game_dir, &mut all_files);
+        super::hkrpg_filter::filter_hkrpg_asset_list(game_dir, &mut all_files);
     } else if game_code == "hk4e" {
-        super::genshin_filter::filter_genshin_asset_list(game_dir, &mut all_files, vo_langs);
+        super::hk4e_filter::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
+    } else if game_code == "nap" {
+        super::nap_filter::filter_nap_asset_list(game_dir, &mut all_files);
     }
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(

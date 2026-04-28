@@ -9,16 +9,29 @@ use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty
 
 const ALL_AUDIO_LANGUAGES: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
 
-const DATA_DIR: &str = "GenshinImpact_Data";
-
 const AUDIO_LANG_FILE: &str = "audio_lang_14";
 
-pub fn filter_genshin_asset_list(
+fn find_hk4e_persistent_dir(game_dir: &Path) -> std::path::PathBuf {
+    if let Ok(entries) = fs::read_dir(game_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if (name_str == "GenshinImpact_Data" || name_str == "YuanShen_Data")
+                && entry.path().is_dir()
+            {
+                return entry.path().join("Persistent");
+            }
+        }
+    }
+    game_dir.join("GenshinImpact_Data/Persistent")
+}
+
+pub fn filter_hk4e_asset_list(
     game_dir: &Path,
     assets: &mut Vec<SophonManifestAssetProperty>,
     vo_langs: &[String],
 ) {
-    let persistent_dir = game_dir.join(format!("{DATA_DIR}/Persistent"));
+    let persistent_dir = find_hk4e_persistent_dir(game_dir);
 
     let installed_langs = read_installed_audio_langs(&persistent_dir, vo_langs);
 
@@ -58,7 +71,7 @@ pub fn filter_genshin_asset_list(
 
     let filtered = original_len - assets.len();
     if filtered > 0 {
-        log::warn!("Genshin filter removed {} assets", filtered);
+        log::warn!("hk4e filter removed {} assets", filtered);
     }
 }
 
@@ -91,7 +104,7 @@ fn read_installed_audio_langs(persistent_dir: &Path, vo_langs: &[String]) -> Vec
 }
 
 pub fn write_audio_lang_record(game_dir: &Path, vo_langs: &[String]) -> std::io::Result<()> {
-    let persistent_dir = game_dir.join(format!("{DATA_DIR}/Persistent"));
+    let persistent_dir = find_hk4e_persistent_dir(game_dir);
     fs::create_dir_all(&persistent_dir)?;
 
     let record_path = persistent_dir.join(AUDIO_LANG_FILE);
