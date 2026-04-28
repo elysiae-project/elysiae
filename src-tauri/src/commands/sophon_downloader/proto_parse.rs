@@ -96,6 +96,18 @@ mod tests {
     }
 
     #[test]
+    fn is_directory_type_64() {
+        let prop = SophonManifestAssetProperty {
+            asset_name: String::new(),
+            asset_chunks: vec![],
+            asset_type: 64,
+            asset_size: 0,
+            asset_hash_md5: "nonempty".into(),
+        };
+        assert!(prop.is_directory());
+    }
+
+    #[test]
     fn is_directory_empty_hash() {
         let prop = SophonManifestAssetProperty {
             asset_name: String::new(),

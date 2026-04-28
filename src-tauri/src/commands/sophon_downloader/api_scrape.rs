@@ -171,6 +171,13 @@ mod tests {
     }
 
     #[test]
+    fn compression_try_from_boundary() {
+        assert!(Compression::try_from(-1).is_err());
+        assert!(Compression::try_from(2).is_err());
+        assert!(Compression::try_from(i32::MAX).is_err());
+    }
+
+    #[test]
     fn download_info_url_for() {
         let dl = DownloadInfo {
             encryption: 0,

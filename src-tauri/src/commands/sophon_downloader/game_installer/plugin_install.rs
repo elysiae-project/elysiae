@@ -683,6 +683,26 @@ mod tests {
     }
 
     #[test]
+    fn extract_zip_path_traversal_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("traversal.zip");
+        let file = File::create(&zip_path).unwrap();
+        let mut writer = ZipWriter::new(BufWriter::new(file));
+        writer
+            .start_file("../../../etc/passwd", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"malicious").unwrap();
+        writer.finish().unwrap();
+
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        extract_zip(&zip_path, &game_dir).unwrap();
+
+        assert!(!dir.path().join("etc").exists());
+        assert!(game_dir.read_dir().unwrap().next().is_none());
+    }
+
+    #[test]
     fn write_plugin_version_strips_newlines() {
         let dir = tempfile::tempdir().unwrap();
         let raw_version = "1.0\nmalicious";

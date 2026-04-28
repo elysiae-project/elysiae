@@ -1446,6 +1446,25 @@ mod tests {
     }
 
     #[test]
+    fn compute_totals_same_name_different_size() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("shared", 500)],
+            )]),
+            make_installer_data(vec![make_file(
+                "b.pak",
+                "bb",
+                vec![make_chunk("shared", 600)],
+            )]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 500);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
     fn compute_diff_files_all_new() {
         let new_manifest = SophonManifestProto {
             assets: vec![
