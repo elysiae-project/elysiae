@@ -5,6 +5,7 @@ mod assembly;
 mod cache;
 mod download;
 mod error;
+mod genshin_filter;
 mod handle;
 mod hsr_filter;
 mod installer;
