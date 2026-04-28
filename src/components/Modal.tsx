@@ -3,9 +3,9 @@ import { ModalHandle, ModalProps, Variants } from "../types";
 import { cva } from "class-variance-authority";
 import MenuClose from "./MenuClose";
 import { useImperativeHandle, useState } from "preact/hooks";
-import { forwardRef } from "react-dom/src";
+import { forwardRef } from "preact/compat";
 
-const modalStyles = cva("overflow-y-scroll w-[55%] min-w-125 h-auto min-h-75", {
+const modalStyles = cva("overflow-y-scroll w-[65%] h-auto min-h-90", {
 	variants: {
 		game: {
 			[Variants.BH3]: "bg-bh3-modal-bg rounded-lg",
@@ -48,11 +48,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 	if (!isOpen) return null;
 	return (
 		<div
-			class="absolute inset-0 z-50 flex h-full w-full items-center justify-center"
-			style={{
-				backdropFilter: "blur(10px)",
-				backgroundColor: "rgba(13,13,13,0.6)",
-			}}
+			class="absolute inset-0 z-100 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-xl"
 			onClick={() => setIsOpen(false)}>
 			<div class={modalStyles({ game })} onClick={(e) => e.stopPropagation()}>
 				<div className={modalTitlebarStyles({ game })}>

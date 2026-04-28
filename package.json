@@ -13,28 +13,28 @@
 	"dependencies": {
 		"@babel/core": "^7.29.0",
 		"@tauri-apps/api": "^2.10.1",
-		"@tauri-apps/plugin-fs": "~2.5.0",
-		"@tauri-apps/plugin-http": "~2.5.8",
-		"@tauri-apps/plugin-log": "~2.8.0",
-		"@tauri-apps/plugin-notification": "~2",
-		"@tauri-apps/plugin-opener": "~2.5.3",
-		"@tauri-apps/plugin-os": "~2.3.2",
-		"@tauri-apps/plugin-shell": "~2.3.5",
-		"@tauri-apps/plugin-store": "~2.4.2",
+		"@tauri-apps/plugin-fs": "^2.5.0",
+		"@tauri-apps/plugin-http": "^2.5.8",
+		"@tauri-apps/plugin-log": "^2.8.0",
+		"@tauri-apps/plugin-notification": "^2.3.3",
+		"@tauri-apps/plugin-opener": "^2.5.3",
+		"@tauri-apps/plugin-os": "^2.3.2",
+		"@tauri-apps/plugin-shell": "^2.3.5",
+		"@tauri-apps/plugin-store": "^2.4.2",
 		"class-variance-authority": "^0.7.1",
-		"lucide-preact": "^1.8.0",
+		"lucide-preact": "^1.11.0",
 		"motion": "^12.38.0",
 		"preact": "^10.29.1"
 	},
 	"devDependencies": {
 		"@preact/preset-vite": "^2.10.5",
-		"@tailwindcss/vite": "^4.2.2",
+		"@tailwindcss/vite": "^4.2.4",
 		"@tauri-apps/cli": "^2.10.1",
 		"@types/babel__core": "^7.20.5",
 		"@types/node": "^25.6.0",
-		"tailwindcss": "^4.2.2",
+		"tailwindcss": "^4.2.4",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.8"
+		"vite": "^8.0.10"
 	},
 	"packageManager": "yarn@4.14.1"
 }

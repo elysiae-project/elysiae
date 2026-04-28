@@ -10,17 +10,14 @@ const titlebarStyles = cva(
 	{
 		variants: {
 			game: {
-				// Declare fonts because the titlebar is declared outside the actual app content. Can be easily fixed if I wasn't lazy
-				[Variants.BH3]: "bg-bh3-titlebar font-bh3-hkrpg rounded-t-xl",
-				[Variants.HK4E]: "bg-hk4e-titlebar font-hk4e",
-				[Variants.HKRPG]: "bg-hkrpg-titlebar titlebar-hkrpg-noise font-bh3-hkrpg",
-				[Variants.NAP]:
-					"bg-nap-titlebar nap-dots-titlebar font-nap rounded-tl-xl",
+				[Variants.BH3]: "bg-bh3-titlebar rounded-t-xl",
+				[Variants.HK4E]: "bg-hk4e-titlebar",
+				[Variants.HKRPG]: "bg-hkrpg-titlebar titlebar-hkrpg-noise",
+				[Variants.NAP]: "bg-nap-titlebar nap-dots-titlebar rounded-tl-xl",
 			},
 		},
 	},
 );
-
 
 export default function Titlebar() {
 	const { game } = useGame();
@@ -29,8 +26,7 @@ export default function Titlebar() {
 			<div
 				style={{ zIndex: 1001, color: "white" }}
 				class="flex flex-row justify-between items-center px-5 py-1.5"
-				data-tauri-drag-region
-			>
+				data-tauri-drag-region>
 				<h1 class="text-center text-[1.35rem]">Elysiae</h1>
 				<AnimatePresence mode="wait" initial={false}>
 					<MenuClose clickAction={closeApp} />
