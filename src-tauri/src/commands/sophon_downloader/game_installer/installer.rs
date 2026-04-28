@@ -879,7 +879,7 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::hkrpg_filter::write_audio_lang_record(&gd, &vl) {
+            if let Err(e) = super::game_filters::write_hkrpg_audio_lang_record(&gd, &vl) {
                 log::warn!("Failed to write hkrpg audio language record: {}", e);
             }
         })
@@ -888,7 +888,7 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::hk4e_filter::write_audio_lang_record(&gd, &vl) {
+            if let Err(e) = super::game_filters::write_hk4e_audio_lang_record(&gd, &vl) {
                 log::warn!("Failed to write hk4e audio language record: {}", e);
             }
         })
@@ -897,7 +897,7 @@ async fn finalize_install(
         let vl = vo_langs.to_vec();
         let af = (*ctx.all_files).clone();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::hk4e_filter::write_pkg_version_from_manifest(&gd, &af, &vl) {
+            if let Err(e) = super::game_filters::write_pkg_version_from_manifest(&gd, &af, &vl) {
                 log::warn!("Failed to write hk4e pkg_version: {}", e);
             }
         })
@@ -906,7 +906,7 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::nap_filter::write_nap_audio_lang_records(&gd, &vl) {
+            if let Err(e) = super::game_filters::write_nap_audio_lang_records(&gd, &vl) {
                 log::warn!("Failed to write nap audio language records: {}", e);
             }
         })
@@ -994,11 +994,11 @@ pub async fn install(
         .flat_map(|d| d.files.clone())
         .collect();
     if game_code == "hkrpg" {
-        super::hkrpg_filter::filter_hkrpg_asset_list(game_dir, &mut all_files);
+        super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
     } else if game_code == "hk4e" {
-        super::hk4e_filter::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
+        super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
     } else if game_code == "nap" {
-        super::nap_filter::filter_nap_asset_list(game_dir, &mut all_files);
+        super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
     }
     let filtered_set: HashSet<String> = all_files.iter().map(|f| f.asset_name.clone()).collect();
     let installer_data: Vec<InstallerData> = installer_data

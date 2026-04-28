@@ -1,9 +1,9 @@
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 
 use tauri_plugin_log::log;
 
+use super::write_lang_file;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
 const DATA_DIR: &str = "ZenlessZoneZero_Data";
@@ -30,7 +30,7 @@ pub fn filter_nap_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAss
         }
     }
 
-    let _ = assets;
+    let _ = (game_dir, assets);
 }
 
 pub fn write_nap_audio_lang_records(game_dir: &Path, vo_langs: &[String]) -> std::io::Result<()> {
@@ -52,44 +52,7 @@ pub fn write_nap_audio_lang_records(game_dir: &Path, vo_langs: &[String]) -> std
     Ok(())
 }
 
-fn write_lang_file(
-    path: &Path,
-    vo_langs: &[String],
-    mapper: fn(&str) -> Option<&'static str>,
-) -> std::io::Result<()> {
-    let mut existing: Vec<String> = Vec::new();
-    if path.exists() {
-        if let Ok(content) = fs::read_to_string(path) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    existing.push(trimmed.to_string());
-                }
-            }
-        }
-    }
-
-    for lang in vo_langs {
-        if let Some(name) = mapper(lang) {
-            if !existing.iter().any(|e| e == name) {
-                existing.push(name.to_string());
-            }
-        }
-    }
-
-    let mut content = String::new();
-    for name in &existing {
-        content.push_str(name);
-        content.push('\n');
-    }
-
-    let mut file = File::create(path)?;
-    file.write_all(content.as_bytes())?;
-
-    Ok(())
-}
-
-pub fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
+fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
     match locale {
         "zh-cn" | "cn" => Some("Chinese"),
         "en-us" | "en" => Some("English(US)"),
@@ -99,7 +62,7 @@ pub fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
     }
 }
 
-pub fn locale_code_to_abbrev_lang_name(locale: &str) -> Option<&'static str> {
+fn locale_code_to_abbrev_lang_name(locale: &str) -> Option<&'static str> {
     match locale {
         "zh-cn" | "cn" => Some("Cn"),
         "en-us" | "en" => Some("En"),
