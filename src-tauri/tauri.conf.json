@@ -45,13 +45,6 @@
 			"icons/icon.png": "appIcon.png"
 		},
 		"active": true,
-		"targets": "app",
-		"linux": {
-			"deb": {
-				"files": {
-					"/usr/share/metainfo/app.elysiae.Elysiae.metainfo.xml": "../app.elysiae.Elysiae.metainfo.xml"
-				}
-			}
-		}
+		"targets": "app"
 	}
 }
