@@ -1,9 +1,6 @@
-import { remove } from "../lib/Fs";
-import { Variants } from "../types";
-import { getActiveGameCode } from "./AppFunctions";
 import { setOption } from "./Settings";
 
-export const settingsDetails = [
+export const settingsDetails: any[] = [
 	{
 		name: "Preferred Voice-Over Language",
 		boundTo: "voLanguage",
@@ -18,20 +15,9 @@ export const settingsDetails = [
 	{
 		name: "Allow Notifications",
 		boundTo: "blockNotifications",
-		type: "dropdown",
-		values: ["Allow", "Disabled"],
-		onChange: async () => {},
-	},
-	{
-		name: "Verify Game Files",
-		type: "button",
-		onClick: async (game: Variants) => {},
-	},
-	{
-		name: "Uninstall Game",
-		type: "button",
-		onClick: async (game: Variants) => {
-			await remove(getActiveGameCode(game));
+		type: "boolean",
+		onChange: async (permissionUpdate: boolean) => {
+			await setOption("blockNotifications", permissionUpdate);
 		},
 	},
 ];
