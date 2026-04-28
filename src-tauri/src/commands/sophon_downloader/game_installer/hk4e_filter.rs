@@ -151,16 +151,6 @@ pub fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
     }
 }
 
-pub fn locale_code_to_pkg_version_lang(locale: &str) -> Option<&'static str> {
-    match locale {
-        "zh-cn" | "cn" => Some("Chinese"),
-        "en-us" | "en" => Some("English(US)"),
-        "ja-jp" | "jp" => Some("Japanese"),
-        "ko-kr" | "kr" => Some("Korean"),
-        _ => None,
-    }
-}
-
 #[derive(Serialize)]
 #[allow(non_snake_case)]
 struct PkgVersionEntry {
@@ -178,7 +168,7 @@ pub fn write_pkg_version_from_manifest(
     write_single_pkg_version(game_dir, "pkg_version", assets)?;
 
     for lang in vo_langs {
-        if let Some(lang_name) = locale_code_to_pkg_version_lang(lang) {
+        if let Some(lang_name) = locale_code_to_audio_lang_name(lang) {
             let filename = format!("Audio_{lang_name}_pkg_version");
             let filtered: Vec<SophonManifestAssetProperty> = assets
                 .iter()
