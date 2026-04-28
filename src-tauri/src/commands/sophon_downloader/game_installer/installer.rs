@@ -967,7 +967,7 @@ pub async fn install(
         .flat_map(|d| d.files.clone())
         .collect();
     if game_code == "hkrpg" {
-        super::hsr_filter::filter_hsr_asset_list(game_dir, &mut all_files, vo_langs);
+        super::hsr_filter::filter_hsr_asset_list(game_dir, &mut all_files);
     }
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(

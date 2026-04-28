@@ -6,11 +6,7 @@ use tauri_plugin_log::log;
 
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
-pub fn filter_hsr_asset_list(
-    game_dir: &Path,
-    assets: &mut Vec<SophonManifestAssetProperty>,
-    _vo_langs: &[String],
-) {
+pub fn filter_hsr_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAssetProperty>) {
     let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
     if !blacklist_path.exists() {
         return;
