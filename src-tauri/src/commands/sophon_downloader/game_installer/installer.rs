@@ -812,6 +812,8 @@ async fn finalize_install(
     tag: &str,
     is_preinstall: bool,
     assembly_task: tokio::task::JoinHandle<SophonResult<()>>,
+    game_code: &str,
+    vo_langs: &[String],
 ) -> SophonResult<()> {
     let cancelled = results
         .iter()
@@ -873,6 +875,17 @@ async fn finalize_install(
     })
     .await??;
 
+    if game_code == "hkrpg" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::hsr_filter::write_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write HSR audio language record: {}", e);
+            }
+        })
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -895,6 +908,8 @@ pub async fn install(
     resume: ResumeContext,
     options: InstallOptions,
     callbacks: InstallCallbacks,
+    game_code: &str,
+    vo_langs: &[String],
 ) -> SophonResult<()> {
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
@@ -947,12 +962,14 @@ pub async fn install(
     }
 
     let installer_data = build_installer_data(installers);
-    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(
-        installer_data
-            .iter()
-            .flat_map(|d| d.files.clone())
-            .collect(),
-    );
+    let mut all_files: Vec<SophonManifestAssetProperty> = installer_data
+        .iter()
+        .flat_map(|d| d.files.clone())
+        .collect();
+    if game_code == "hkrpg" {
+        super::hsr_filter::filter_hsr_asset_list(game_dir, &mut all_files, vo_langs);
+    }
+    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
             .iter()
@@ -1133,6 +1150,8 @@ pub async fn install(
         tag,
         options.is_preinstall,
         assembly_task,
+        game_code,
+        vo_langs,
     )
     .await
 }
