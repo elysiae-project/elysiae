@@ -317,6 +317,7 @@ pub async fn sophon_download(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -335,6 +336,8 @@ pub async fn sophon_download(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -411,6 +414,7 @@ pub async fn sophon_update(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -429,6 +433,8 @@ pub async fn sophon_update(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -504,6 +510,7 @@ pub async fn sophon_preinstall(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -522,6 +529,8 @@ pub async fn sophon_preinstall(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -647,6 +656,7 @@ pub async fn sophon_resume_download(
     *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![state.vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -665,6 +675,8 @@ pub async fn sophon_resume_download(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
