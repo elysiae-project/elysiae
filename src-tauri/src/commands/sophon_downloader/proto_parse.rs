@@ -78,3 +78,76 @@ pub struct SophonManifestAssetChunk {
 pub fn decode_manifest(buf: &[u8]) -> Result<SophonManifestProto, prost::DecodeError> {
     SophonManifestProto::decode(buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_directory_type_nonzero() {
+        let prop = SophonManifestAssetProperty {
+            asset_name: String::new(),
+            asset_chunks: vec![],
+            asset_type: 1,
+            asset_size: 0,
+            asset_hash_md5: "abc".into(),
+        };
+        assert!(prop.is_directory());
+    }
+
+    #[test]
+    fn is_directory_empty_hash() {
+        let prop = SophonManifestAssetProperty {
+            asset_name: String::new(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: 0,
+            asset_hash_md5: String::new(),
+        };
+        assert!(prop.is_directory());
+    }
+
+    #[test]
+    fn is_directory_is_file() {
+        let prop = SophonManifestAssetProperty {
+            asset_name: String::new(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: 0,
+            asset_hash_md5: "d41d8cd98f00b204e9800998ecf8427e".into(),
+        };
+        assert!(!prop.is_directory());
+    }
+
+    #[test]
+    fn decode_manifest_empty_buf() {
+        let result = decode_manifest(&[0xFF, 0xFF, 0xFF, 0xFF]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn roundtrip_encode_decode() {
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "chunk_001".into(),
+            chunk_decompressed_hash_md5: "aabbccdd".into(),
+            chunk_on_file_offset: 0,
+            chunk_size: 1024,
+            chunk_size_decompressed: 2048,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: "eeff0011".into(),
+        };
+        let original = SophonManifestProto {
+            assets: vec![SophonManifestAssetProperty {
+                asset_name: "GameData/Data.pak".into(),
+                asset_chunks: vec![chunk],
+                asset_type: 0,
+                asset_size: 2048,
+                asset_hash_md5: "11223344".into(),
+            }],
+        };
+
+        let buf = original.encode_to_vec();
+        let decoded: SophonManifestProto = decode_manifest(&buf).unwrap();
+        assert_eq!(original, decoded);
+    }
+}
