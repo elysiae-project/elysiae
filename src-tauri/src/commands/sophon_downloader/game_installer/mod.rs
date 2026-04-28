@@ -6,6 +6,7 @@ mod cache;
 mod download;
 mod error;
 mod handle;
+mod hsr_filter;
 mod installer;
 mod plugin_api;
 mod plugin_install;
