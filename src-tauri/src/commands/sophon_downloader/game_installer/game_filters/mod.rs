@@ -9,7 +9,7 @@ pub use hk4e::{
 pub use hkrpg::{
     filter_hkrpg_asset_list, write_audio_lang_record as write_hkrpg_audio_lang_record,
 };
-pub use nap::{filter_nap_asset_list, write_nap_audio_lang_records};
+pub use nap::{filter_nap_asset_list, filter_nap_installers, write_nap_audio_lang_records};
 
 use std::fs::{self, File};
 use std::io::Write;

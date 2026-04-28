@@ -59,11 +59,12 @@ struct InstallContext {
     state_saver: StateSaver,
 }
 
-struct InstallerData {
+pub(crate) struct InstallerData {
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
     files: Vec<SophonManifestAssetProperty>,
     label: String,
+    pub matching_field: String,
 }
 
 struct DownloadItem {
@@ -81,6 +82,7 @@ pub struct SophonInstaller {
     pub manifest: SophonManifestProto,
     pub chunk_download: DownloadInfo,
     pub label: String,
+    pub matching_field: String,
     #[allow(dead_code)]
     pub tag: String,
     pub manifest_hash: String,
@@ -103,6 +105,7 @@ impl SophonInstaller {
                 .url_suffix
                 .trim_matches('/')
                 .replace('/', "-"),
+            matching_field: meta.matching_field.clone(),
             tag: tag.to_owned(),
             manifest_hash: result.hash,
         })
@@ -312,6 +315,7 @@ async fn build_diff_installers(
                 .url_suffix
                 .trim_matches('/')
                 .replace('/', "-"),
+            matching_field: new_meta.matching_field.clone(),
             tag: tag.to_owned(),
             manifest_hash: new_manifest_hash,
         });
@@ -339,6 +343,7 @@ fn build_installer_data(installers: Vec<SophonInstaller>) -> Vec<InstallerData> 
         .into_iter()
         .map(|inst| InstallerData {
             label: inst.label,
+            matching_field: inst.matching_field,
             client: Arc::new(inst.client),
             chunk_download: Arc::new(inst.chunk_download),
             files: inst
@@ -988,7 +993,10 @@ pub async fn install(
         }
     }
 
-    let installer_data = build_installer_data(installers);
+    let mut installer_data = build_installer_data(installers);
+    if game_code == "nap" {
+        super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
+    }
     let mut all_files: Vec<SophonManifestAssetProperty> = installer_data
         .iter()
         .flat_map(|d| d.files.clone())
