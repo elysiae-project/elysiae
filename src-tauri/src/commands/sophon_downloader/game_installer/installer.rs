@@ -884,6 +884,24 @@ async fn finalize_install(
             }
         })
         .await?;
+    } else if game_code == "hk4e" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::genshin_filter::write_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write Genshin audio language record: {}", e);
+            }
+        })
+        .await?;
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        let af = (*ctx.all_files).clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::genshin_filter::write_pkg_version_from_manifest(&gd, &af, &vl) {
+                log::warn!("Failed to write Genshin pkg_version: {}", e);
+            }
+        })
+        .await?;
     }
 
     Ok(())
@@ -968,6 +986,8 @@ pub async fn install(
         .collect();
     if game_code == "hkrpg" {
         super::hsr_filter::filter_hsr_asset_list(game_dir, &mut all_files);
+    } else if game_code == "hk4e" {
+        super::genshin_filter::filter_genshin_asset_list(game_dir, &mut all_files, vo_langs);
     }
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
