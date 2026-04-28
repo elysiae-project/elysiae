@@ -179,4 +179,14 @@ mod tests {
         assert!(!is_known_vo_locale("game"));
         assert!(!is_known_vo_locale("cutscenes"));
     }
+
+    #[test]
+    fn parse_size_valid() {
+        assert_eq!(parse_size("1024"), 1024);
+    }
+
+    #[test]
+    fn parse_size_invalid() {
+        assert_eq!(parse_size("abc"), 0);
+    }
 }
