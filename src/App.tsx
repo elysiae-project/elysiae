@@ -45,7 +45,8 @@ function App() {
 	const settingsModal = useRef<ModalHandle>(null);
 
 	return (
-		<div class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}>
+		<div
+			class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}>
 			<Titlebar />
 			<Sidebar />
 			<SettingsModal ref={settingsModal} />
@@ -63,7 +64,8 @@ function App() {
 							onClick={() => {
 								settingsModal.current?.open();
 							}}
-							iconButton>
+							width={65}
+							height={65}>
 							<Settings className="leading-0 -m-1" />
 						</Button>
 						<InstallerButton />

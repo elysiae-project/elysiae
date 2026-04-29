@@ -12,7 +12,7 @@ const modalStyles = cva("overflow-y-scroll w-[65%] h-auto min-h-90", {
 			[Variants.HK4E]: "bg-hk4e-modal-bg rounded-md text-white",
 			[Variants.HKRPG]: "bg-hkrpg-modal-bg rounded-md",
 			[Variants.NAP]:
-				"nap-dots rounded-br-2xl rounded-tl-2xl border-[0.195rem] border-nap-btn-border",
+				"nap-dots-titlebar bg-nap-titlebar rounded-br-2xl rounded-tl-2xl border-[0.195rem] border-nap-btn-border",
 		},
 	},
 });
