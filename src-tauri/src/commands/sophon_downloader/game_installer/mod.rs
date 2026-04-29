@@ -7,6 +7,8 @@ mod download;
 mod error;
 mod handle;
 mod installer;
+mod plugin_api;
+mod plugin_install;
 mod update;
 
 /// Maximum retry attempts for failed chunk downloads.
@@ -75,4 +77,5 @@ pub use installer::{
     build_installers, build_preinstall_installers, build_update_installers, install,
     verify_integrity,
 };
+pub use plugin_install::{install_channel_sdks, install_plugins};
 pub use update::{UpdateInfo, check_update};

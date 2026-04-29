@@ -103,6 +103,9 @@ pub enum SophonError {
 
     #[error("{kind} index {index} out of bounds")]
     IndexOutOfBounds { kind: &'static str, index: usize },
+
+    #[error("Plugin validation failed: {0}")]
+    PluginValidationFailed(String),
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {

@@ -231,6 +231,17 @@ pub enum SophonProgress {
     Warning { message: String },
     /// Fatal error occurred.
     Error { message: String },
+    /// Installing plugins/SDKs into the game directory.
+    InstallingPlugins {
+        current_plugin: String,
+        total_plugins: usize,
+    },
+    /// Downloading a plugin/SDK ZIP package.
+    DownloadingPlugin {
+        name: String,
+        downloaded_bytes: u64,
+        total_bytes: u64,
+    },
     /// Download completed successfully.
     Finished,
 }
@@ -332,6 +343,25 @@ pub async fn sophon_download(
 
     match result {
         Ok(()) => {
+            let plugin_emit = app_handle.clone();
+            let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                Arc::new(move |p| emit(&plugin_emit, p));
+            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Plugin installation failed: {}", e);
+            }
+            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Channel SDK installation failed: {}", e);
+            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -407,6 +437,25 @@ pub async fn sophon_update(
 
     match result {
         Ok(()) => {
+            let plugin_emit = app_handle.clone();
+            let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                Arc::new(move |p| emit(&plugin_emit, p));
+            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Plugin installation failed: {}", e);
+            }
+            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Channel SDK installation failed: {}", e);
+            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -522,6 +571,7 @@ pub async fn sophon_resume_download(
         .resolve(&state.output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
+    let game_id = state.game_id.clone();
     let prev_chunks = state.downloaded_chunks.clone();
     let current_tag = state.current_tag.clone();
     let old_manifest_hash = state.manifest_hash.clone();
@@ -623,6 +673,28 @@ pub async fn sophon_resume_download(
 
     match result {
         Ok(()) => {
+            if !is_preinstall {
+                let plugin_emit = app_handle.clone();
+                let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                    Arc::new(move |p| emit(&plugin_emit, p));
+                if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                    let u = plugin_updater.clone();
+                    move |p| u(p)
+                })
+                .await
+                {
+                    log::warn!("Plugin installation failed: {}", e);
+                }
+                if let Err(e) =
+                    game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                        let u = plugin_updater.clone();
+                        move |p| u(p)
+                    })
+                    .await
+                {
+                    log::warn!("Channel SDK installation failed: {}", e);
+                }
+            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }

@@ -126,7 +126,7 @@ pub fn assemble_file(
         .truncate(true)
         .open(&tmp_path)?;
 
-    use std::io::Write; 
+    use std::io::Write;
     {
         let mut buf_writer_pre = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, &out_file);
         let zeros = vec![0u8; FILE_WRITE_BUFFER_SIZE];

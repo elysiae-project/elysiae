@@ -168,6 +168,8 @@ export type SophonProgress =
   | { type: "verifying"; scanned_files: number; total_files: number; error_count: number }
   | { type: "warning"; message: string }
   | { type: "error"; message: string }
+  | { type: "installingPlugins"; current_plugin: string; total_plugins: number }
+  | { type: "downloadingPlugin"; name: string; downloaded_bytes: number; total_bytes: number }
   | { type: "finished" };
 
 export type GameData = {

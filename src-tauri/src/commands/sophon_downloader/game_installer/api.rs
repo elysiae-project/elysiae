@@ -117,6 +117,16 @@ pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
 }
 
 #[inline]
+pub fn is_known_vo_locale(matching_field: &str) -> bool {
+    let lower = matching_field.to_lowercase();
+    lower.contains("en-us")
+        || lower.contains("zh-cn")
+        || lower.contains("zh-tw")
+        || lower.contains("ko-kr")
+        || lower.contains("ja-jp")
+}
+
+#[inline]
 pub fn parse_size(s: &str) -> u64 {
     s.parse().unwrap_or(0)
 }
