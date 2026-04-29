@@ -104,11 +104,21 @@ pub fn assemble_file(
         )?;
 
         if already_valid {
+            log::debug!(
+                "assemble_file: skipping already-valid file '{}' ({} bytes, md5={})",
+                file.asset_name,
+                file.asset_size,
+                file.asset_hash_md5
+            );
             for chunk in &file.asset_chunks {
                 decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
             }
             return Ok(());
         }
+        log::warn!(
+            "assemble_file: file '{}' exists but MD5 mismatch, re-assembling",
+            file.asset_name
+        );
     }
 
     if tmp_path.exists() {

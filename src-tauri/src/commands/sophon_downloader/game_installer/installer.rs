@@ -474,6 +474,12 @@ async fn build_download_state(
         }
     }
 
+    log::info!(
+        "build_download_state: {} download items, {} chunk->file mappings, file_idx={}",
+        download_items.len(),
+        chunk_to_files.len(),
+        file_idx,
+    );
     Ok((download_items, chunk_to_files))
 }
 
@@ -656,7 +662,13 @@ fn notify_assembly_ready(
                 }
             })
             .collect(),
-        None => Vec::new(),
+        None => {
+            log::warn!(
+                "notify_assembly_ready: chunk '{}' not found in chunk_to_files (already removed or never registered)",
+                chunk_name
+            );
+            Vec::new()
+        }
     };
 
     for entry in ready {
@@ -837,6 +849,21 @@ async fn finalize_install(
     assembly_task.await??;
 
     {
+        let assembled = ctx.assembled_files.load(Ordering::Relaxed);
+        let total = ctx.total_files;
+        if assembled != total {
+            log::warn!(
+                "Sophon install completed but assembled_files ({}) != total_files ({}). {} files may be missing!",
+                assembled,
+                total,
+                total - assembled,
+            );
+        } else {
+            log::info!("Sophon install: all {} files assembled successfully", total);
+        }
+    }
+
+    {
         let dc = ctx
             .downloaded_chunks
             .lock()
@@ -897,6 +924,9 @@ async fn finalize_install(
             }
             if let Err(e) = super::game_filters::write_hkrpg_app_info(&gd) {
                 log::warn!("Failed to write hkrpg app.info: {}", e);
+            }
+            if let Err(e) = super::game_filters::write_hkrpg_binary_version_files(&gd) {
+                log::warn!("Failed to write hkrpg binary version files: {}", e);
             }
         })
         .await?;
@@ -1036,6 +1066,21 @@ pub async fn install(
     );
 
     let (total_compressed, total_files) = compute_totals(&installer_data);
+    log::info!(
+        "Sophon install: {} total files across {} installers, {} compressed bytes",
+        total_files,
+        installer_data.len(),
+        total_compressed,
+    );
+    for (i, d) in installer_data.iter().enumerate() {
+        log::info!(
+            "  installer[{}]: label={}, matching_field={}, files={}",
+            i,
+            d.label,
+            d.matching_field,
+            d.files.len(),
+        );
+    }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
 
     let pre_downloaded: HashSet<String> = if options.is_resume {
