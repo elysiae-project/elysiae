@@ -1265,7 +1265,7 @@ __metadata:
     "@types/babel__core": "npm:^7.20.5"
     "@types/node": "npm:^25.6.0"
     class-variance-authority: "npm:^0.7.1"
-    lucide-preact: "npm:^1.11.0"
+    lucide-preact: "npm:^1.14.0"
     motion: "npm:^12.38.0"
     preact: "npm:^10.29.1"
     tailwindcss: "npm:^4.2.4"
@@ -1649,12 +1649,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lucide-preact@npm:^1.11.0":
-  version: 1.11.0
-  resolution: "lucide-preact@npm:1.11.0"
+"lucide-preact@npm:^1.14.0":
+  version: 1.14.0
+  resolution: "lucide-preact@npm:1.14.0"
   peerDependencies:
     preact: ^10.27.2
-  checksum: 10c0/6bb407b3dee4b323dac7040e5513e89f061e4f744d5df7d16977031cd257e4adab1d84c5ccf01ff9f7a33aaead0cafa245a8cb8ea5caf781a2aca33923c19afe
+  checksum: 10c0/1db9d28525b1c2815997bc2d505dbed4b1591f57b5e2e5ce6f8d27d073e64f92a4942a9da20a9d7f2e1c162ff15e0dd545b4febdcf14d3728b57fdbe22b4b789
   languageName: node
   linkType: hard
 

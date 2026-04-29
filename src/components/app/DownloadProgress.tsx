@@ -103,7 +103,8 @@ export default function GameDownloadProgress() {
 							}
 						}}
 						intent="secondary"
-						iconButton>
+						width={15}
+						height={15}>
 						{isPaused ? (
 							<Play className={"leading-0 -m-1"} />
 						) : (
