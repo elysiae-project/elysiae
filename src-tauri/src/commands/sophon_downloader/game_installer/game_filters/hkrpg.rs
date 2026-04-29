@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
 use tauri_plugin_log::log;
@@ -8,6 +8,8 @@ use super::write_lang_file;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
 const AUDIO_LANG_FILE: &str = "AudioLaucherRecord.txt";
+const CONFIG_INI: &str = "config.ini";
+const APP_INFO_FILE: &str = "StarRail_Data/app.info";
 
 pub fn filter_hkrpg_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAssetProperty>) {
     let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
@@ -106,4 +108,96 @@ fn add_both_persistent_or_streaming_assets(path: &str, blacklist: &mut Vec<Strin
     } else if let Some(rest) = path.strip_prefix(persistent_prefix) {
         blacklist.push(format!("{}{}", streaming_prefix, rest));
     }
+}
+
+pub fn write_config_ini(game_dir: &Path, game_version: &str) -> std::io::Result<()> {
+    let config_path = game_dir.join(CONFIG_INI);
+    let general_section = "[General]";
+    let base_keys = &[
+        ("channel", "1"),
+        ("sub_channel", "6"),
+        ("cps", "mihoyohkrpg_oversea"),
+        ("game_version", game_version),
+        ("sdk_version", ""),
+    ];
+
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path)?;
+        let mut lines: Vec<String> = content.lines().map(String::from).collect();
+        let mut in_general = false;
+        let mut found_keys: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        for line in &mut lines {
+            let trimmed = line.trim();
+            if trimmed == general_section {
+                in_general = true;
+                continue;
+            }
+            if in_general && trimmed.starts_with('[') {
+                in_general = false;
+            }
+            if in_general && let Some(eq_pos) = trimmed.find('=') {
+                let key = trimmed[..eq_pos].trim().to_string();
+                for &(k, v) in base_keys {
+                    if key == k {
+                        *line = format!("{k}={v}");
+                        found_keys.insert(k);
+                    }
+                }
+            }
+        }
+
+        let mut insert_idx = 0;
+        let mut in_general_section = false;
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim() == general_section {
+                in_general_section = true;
+                insert_idx = i + 1;
+            } else if in_general_section && line.trim().starts_with('[') {
+                insert_idx = i;
+                break;
+            } else if in_general_section {
+                insert_idx = i + 1;
+            }
+        }
+
+        if in_general_section {
+            let mut to_insert: Vec<String> = Vec::new();
+            for &(k, v) in base_keys {
+                if !found_keys.contains(k) {
+                    to_insert.push(format!("{k}={v}"));
+                }
+            }
+            for (offset, line) in to_insert.into_iter().enumerate() {
+                lines.insert(insert_idx + offset, line);
+            }
+        } else {
+            lines.push(String::new());
+            lines.push(general_section.to_string());
+            for &(k, v) in base_keys {
+                lines.push(format!("{k}={v}"));
+            }
+        }
+
+        let mut out = lines.join("\n");
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        fs::write(&config_path, out)
+    } else {
+        let mut f = File::create(&config_path)?;
+        writeln!(f, "{}", general_section)?;
+        for &(k, v) in base_keys {
+            writeln!(f, "{k}={v}")?;
+        }
+        Ok(())
+    }
+}
+
+pub fn write_app_info(game_dir: &Path) -> std::io::Result<()> {
+    let app_info_path = game_dir.join(APP_INFO_FILE);
+    if let Some(parent) = app_info_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&app_info_path, "Cognosphere\nhkrpg_global\n")
 }
