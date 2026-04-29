@@ -121,3 +121,41 @@ impl From<SophonError> for String {
 }
 
 pub type SophonResult<T> = Result<T, SophonError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_display_md5_mismatch() {
+        let err = SophonError::Md5Mismatch {
+            item: "file.pkg".to_string(),
+            expected: "abc123".to_string(),
+            actual: "def456".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("file.pkg"));
+        assert!(msg.contains("abc123"));
+        assert!(msg.contains("def456"));
+    }
+
+    #[test]
+    fn error_display_size_mismatch() {
+        let err = SophonError::SizeMismatch {
+            item: "data.bin".to_string(),
+            expected: 1024,
+            actual: 512,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("data.bin"));
+        assert!(msg.contains("1024"));
+        assert!(msg.contains("512"));
+    }
+
+    #[test]
+    fn error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let sophon_err: SophonError = io_err.into();
+        assert!(matches!(sophon_err, SophonError::Io(_)));
+    }
+}

@@ -121,3 +121,193 @@ fn file_md5_hex(path: &Path) -> io::Result<String> {
     }
     Ok(hex::encode(hasher.finalize()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::UNIX_EPOCH;
+
+    #[test]
+    fn load_verification_cache_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = load_verification_cache(dir.path());
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn load_verification_cache_corrupted_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join(VERIFICATION_CACHE_FILE);
+        fs::write(&cache_path, "this is not json!!!").unwrap();
+        let cache = load_verification_cache(dir.path());
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DashMap::new();
+        cache.insert(
+            "/path/to/file1".to_string(),
+            VerificationEntry {
+                size: 100,
+                md5: "abc123".to_string(),
+                mtime_secs: 1000,
+            },
+        );
+        cache.insert(
+            "/path/to/file2".to_string(),
+            VerificationEntry {
+                size: 200,
+                md5: "def456".to_string(),
+                mtime_secs: 2000,
+            },
+        );
+        cache.insert(
+            "/path/to/file3".to_string(),
+            VerificationEntry {
+                size: 300,
+                md5: "ghi789".to_string(),
+                mtime_secs: 3000,
+            },
+        );
+        save_verification_cache(dir.path(), &cache).unwrap();
+        let loaded = load_verification_cache(dir.path());
+        assert_eq!(loaded.len(), 3);
+        let e1 = loaded.get("/path/to/file1").unwrap();
+        assert_eq!(e1.size, 100);
+        assert_eq!(e1.md5, "abc123");
+        assert_eq!(e1.mtime_secs, 1000);
+        let e2 = loaded.get("/path/to/file2").unwrap();
+        assert_eq!(e2.size, 200);
+        assert_eq!(e2.md5, "def456");
+        let e3 = loaded.get("/path/to/file3").unwrap();
+        assert_eq!(e3.size, 300);
+        assert_eq!(e3.md5, "ghi789");
+    }
+
+    #[test]
+    fn check_file_md5_cached_miss_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DashMap::new();
+        let missing = dir.path().join("nonexistent.dat");
+        let result = check_file_md5_cached(&missing, 10, "abc", &cache).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn check_file_md5_cached_hit() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.dat");
+        fs::write(&file_path, b"hello world").unwrap();
+        let metadata = fs::metadata(&file_path).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let cache = DashMap::new();
+        let md5 = {
+            let mut hasher = Md5::new();
+            hasher.update(b"hello world");
+            hex::encode(hasher.finalize())
+        };
+        cache.insert(
+            file_path.to_string_lossy().to_string(),
+            VerificationEntry {
+                size: 11,
+                md5: md5.clone(),
+                mtime_secs: mtime,
+            },
+        );
+        let result = check_file_md5_cached(&file_path, 11, &md5, &cache).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn check_file_md5_cached_miss_size_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.dat");
+        fs::write(&file_path, b"hello world").unwrap();
+        let metadata = fs::metadata(&file_path).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let cache = DashMap::new();
+        cache.insert(
+            file_path.to_string_lossy().to_string(),
+            VerificationEntry {
+                size: 11,
+                md5: "old_md5".to_string(),
+                mtime_secs: mtime,
+            },
+        );
+        let result = check_file_md5_cached(&file_path, 20, "old_md5", &cache).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn check_file_md5_cached_miss_md5_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.dat");
+        fs::write(&file_path, b"hello world").unwrap();
+        let metadata = fs::metadata(&file_path).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let cache = DashMap::new();
+        let actual_md5 = {
+            let mut hasher = Md5::new();
+            hasher.update(b"hello world");
+            hex::encode(hasher.finalize())
+        };
+        cache.insert(
+            file_path.to_string_lossy().to_string(),
+            VerificationEntry {
+                size: 11,
+                md5: "stale_cached_md5".to_string(),
+                mtime_secs: mtime,
+            },
+        );
+        let wrong_expected = "wrong_expected_md5";
+        assert_ne!(wrong_expected, &actual_md5);
+        let result = check_file_md5_cached(&file_path, 11, wrong_expected, &cache).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn check_file_md5_cached_populates_on_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.dat");
+        fs::write(&file_path, b"hello world").unwrap();
+        let metadata = fs::metadata(&file_path).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let cache = DashMap::new();
+        let md5 = {
+            let mut hasher = Md5::new();
+            hasher.update(b"hello world");
+            hex::encode(hasher.finalize())
+        };
+        assert!(cache.is_empty());
+        let result = check_file_md5_cached(&file_path, 11, &md5, &cache).unwrap();
+        assert!(result);
+        assert_eq!(cache.len(), 1);
+        let entry = cache.get(&file_path.to_string_lossy().to_string()).unwrap();
+        assert_eq!(entry.size, 11);
+        assert_eq!(entry.md5, md5);
+        assert_eq!(entry.mtime_secs, mtime);
+    }
+}

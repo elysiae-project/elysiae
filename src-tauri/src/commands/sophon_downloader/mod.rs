@@ -792,3 +792,120 @@ fn emit(app: &AppHandle, progress: SophonProgress) {
         log::error!("Failed to emit progress event: {}", e);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::proto_parse::{SophonManifestAssetChunk, SophonManifestAssetProperty};
+    use super::*;
+
+    fn make_asset(name: &str, md5: &str, size: u64) -> SophonManifestAssetProperty {
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: size,
+            asset_hash_md5: md5.into(),
+        }
+    }
+
+    fn make_asset_with_chunks(
+        name: &str,
+        md5: &str,
+        size: u64,
+        xxh: u64,
+    ) -> SophonManifestAssetProperty {
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: vec![SophonManifestAssetChunk {
+                chunk_name: "chunk_0".into(),
+                chunk_decompressed_hash_md5: "decomp_md5".into(),
+                chunk_on_file_offset: 0,
+                chunk_size: size,
+                chunk_size_decompressed: size,
+                chunk_compressed_hash_xxh: xxh,
+                chunk_compressed_hash_md5: "comp_md5".into(),
+            }],
+            asset_type: 0,
+            asset_size: size,
+            asset_hash_md5: md5.into(),
+        }
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_deterministic() {
+        let manifest = proto_parse::SophonManifestProto {
+            assets: vec![
+                make_asset("a.pak", "md5_a", 100),
+                make_asset("b.pak", "md5_b", 200),
+            ],
+        };
+        let h1 = compute_content_manifest_hash(&manifest);
+        let h2 = compute_content_manifest_hash(&manifest);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_order_independent() {
+        let manifest_ab = proto_parse::SophonManifestProto {
+            assets: vec![
+                make_asset("a.pak", "md5_a", 100),
+                make_asset("b.pak", "md5_b", 200),
+            ],
+        };
+        let manifest_ba = proto_parse::SophonManifestProto {
+            assets: vec![
+                make_asset("b.pak", "md5_b", 200),
+                make_asset("a.pak", "md5_a", 100),
+            ],
+        };
+        assert_eq!(
+            compute_content_manifest_hash(&manifest_ab),
+            compute_content_manifest_hash(&manifest_ba),
+        );
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_different() {
+        let manifest1 = proto_parse::SophonManifestProto {
+            assets: vec![make_asset("a.pak", "md5_a", 100)],
+        };
+        let manifest2 = proto_parse::SophonManifestProto {
+            assets: vec![make_asset("a.pak", "md5_different", 100)],
+        };
+        assert_ne!(
+            compute_content_manifest_hash(&manifest1),
+            compute_content_manifest_hash(&manifest2),
+        );
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_empty() {
+        let manifest = proto_parse::SophonManifestProto { assets: vec![] };
+        let hash = compute_content_manifest_hash(&manifest);
+        assert_eq!(hash.len(), 16);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_excludes_xxh() {
+        let manifest_a = proto_parse::SophonManifestProto {
+            assets: vec![make_asset_with_chunks("a.pak", "md5_a", 100, 111)],
+        };
+        let manifest_b = proto_parse::SophonManifestProto {
+            assets: vec![make_asset_with_chunks("a.pak", "md5_a", 100, 999)],
+        };
+        assert_eq!(
+            compute_content_manifest_hash(&manifest_a),
+            compute_content_manifest_hash(&manifest_b),
+        );
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_truncated() {
+        let manifest = proto_parse::SophonManifestProto {
+            assets: vec![make_asset("x.pak", "abc", 50)],
+        };
+        let hash = compute_content_manifest_hash(&manifest);
+        assert_eq!(hash.len(), 16);
+    }
+}

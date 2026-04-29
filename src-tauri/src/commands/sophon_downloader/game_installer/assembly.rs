@@ -339,3 +339,80 @@ pub fn spawn_assembly_task(
 ) -> tokio::task::JoinHandle<SophonResult<()>> {
     tokio::task::spawn_blocking(move || run_assembly_task(params, updater))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_asset_name_empty() {
+        let result = validate_asset_name("");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::InvalidAssetName(_)
+        ));
+    }
+
+    #[test]
+    fn validate_asset_name_slash_prefix() {
+        let result = validate_asset_name("/etc/passwd");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_name_backslash_prefix() {
+        let result = validate_asset_name("\\Windows\\system32");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_name_dotdot() {
+        let result = validate_asset_name("foo/../../../etc/passwd");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_name_null_byte() {
+        let result = validate_asset_name("foo\0bar");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::InvalidAssetName(_)
+        ));
+    }
+
+    #[test]
+    fn validate_asset_name_drive_letter() {
+        let result = validate_asset_name("C:evil");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_name_valid_relative() {
+        assert!(validate_asset_name("GameData/Data.pak").is_ok());
+    }
+
+    #[test]
+    fn validate_asset_name_valid_nested() {
+        assert!(validate_asset_name("a/b/c/file.dat").is_ok());
+    }
+
+    #[test]
+    fn chunk_filename_format() {
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "abc123".into(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_size: 0,
+            chunk_size_decompressed: 0,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        };
+        assert_eq!(chunk_filename(&chunk), "abc123.zstd");
+    }
+}

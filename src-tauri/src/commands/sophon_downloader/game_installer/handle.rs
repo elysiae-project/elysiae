@@ -80,3 +80,33 @@ impl Default for DownloadHandle {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handle_new_is_running() {
+        let handle = DownloadHandle::new();
+        assert!(!handle.is_cancelled());
+    }
+
+    #[test]
+    fn handle_cancel() {
+        let handle = DownloadHandle::new();
+        handle.cancel();
+        assert!(handle.is_cancelled());
+    }
+
+    #[test]
+    fn handle_pause_resume() {
+        let handle = DownloadHandle::new();
+        assert_eq!(*handle.lock_state(), ControlState::Running);
+
+        handle.pause();
+        assert_eq!(*handle.lock_state(), ControlState::Paused);
+
+        handle.resume();
+        assert_eq!(*handle.lock_state(), ControlState::Running);
+    }
+}

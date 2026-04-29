@@ -130,3 +130,63 @@ pub fn is_known_vo_locale(matching_field: &str) -> bool {
 pub fn parse_size(s: &str) -> u64 {
     s.parse().unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vo_lang_matches_cn() {
+        assert!(vo_lang_matches("zh-cn", "cn"));
+    }
+
+    #[test]
+    fn vo_lang_matches_en() {
+        assert!(vo_lang_matches("en-us", "en"));
+    }
+
+    #[test]
+    fn vo_lang_matches_jp() {
+        assert!(vo_lang_matches("ja-jp", "jp"));
+    }
+
+    #[test]
+    fn vo_lang_matches_kr() {
+        assert!(vo_lang_matches("ko-kr", "kr"));
+    }
+
+    #[test]
+    fn vo_lang_matches_wrong() {
+        assert!(!vo_lang_matches("en-us", "jp"));
+    }
+
+    #[test]
+    fn vo_lang_matches_game_field() {
+        assert!(!vo_lang_matches("game", "en"));
+    }
+
+    #[test]
+    fn is_known_vo_locale_all() {
+        assert!(is_known_vo_locale("en-us"));
+        assert!(is_known_vo_locale("zh-cn"));
+        assert!(is_known_vo_locale("zh-tw"));
+        assert!(is_known_vo_locale("ko-kr"));
+        assert!(is_known_vo_locale("ja-jp"));
+    }
+
+    #[test]
+    fn is_known_vo_locale_not_vo() {
+        assert!(!is_known_vo_locale("game"));
+        assert!(!is_known_vo_locale("cutscenes"));
+    }
+
+    #[test]
+    fn parse_size_valid() {
+        assert_eq!(parse_size("1024"), 1024);
+    }
+
+    #[test]
+    fn parse_size_invalid() {
+        assert_eq!(parse_size("abc"), 0);
+    }
+}
