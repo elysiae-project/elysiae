@@ -205,5 +205,7 @@ export type ModalHandle = {
 
 export type ModalProps = {
 	title: string;
+	width?: number;
+	height?: number;
 	children: React.ReactNode;
 };

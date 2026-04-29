@@ -82,9 +82,13 @@ const toggleSwitchKnobStyles = cva(
 export default function ToggleSwitch({
 	onClick,
 	startActive = false,
+	width = 120,
+	height = 20,
 }: {
 	onClick: (enabled: boolean) => void;
 	startActive?: boolean;
+	width?: number;
+	height?: number;
 }) {
 	const { game } = useGame();
 	let [enabled, setEanbled] = useState<boolean>(startActive);

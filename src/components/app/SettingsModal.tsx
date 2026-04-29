@@ -13,22 +13,21 @@ export const SettingsModal = forwardRef<ModalHandle>(
 
 		return (
 			<Modal ref={ref} title="Elysiae Settings">
-				<h1 class="text-lg">Game Details</h1>
-				<div class="flex flex-row gap-x-3">
-					<img width={70} height={50} alt="" src={branding?.[game].icon}></img>
-					<div class="flex flex-col">
-						<h1>{getGameName(game)}</h1>
-						<h2>Installed in </h2>
-						<h2>Version </h2>
+				<div class="flex flex-row w-full min-h-full h-auto overflow-y-scroll">
+					<div class="min-w-[35%] px-2 py-1.5 h-60 border-r-2 border-gray-500">
+						<div class="flex flex-row gap-x-2.5">
+							<div class="border-2 rounded-sm">
+								<img width={60} height={60} alt="" src={branding?.[game].icon} />
+							</div>
+							<div class="flex flex-col justify-center">
+								<h1 class="text-sm">{getGameName(game)}</h1>
+								<h2 class="text-sm">Size On Disk: xxGB</h2>
+							</div>
+						</div>
 					</div>
-				</div>
-				<div class="flex flex-row mt-2.5 gap-x-3.5">
-					<Button intent="primary" onClick={() => {}}>
-						Uninstall
-					</Button>
-					<Button intent="primary" onClick={() => {}}>
-						Check For Updates
-					</Button>
+					<div class="min-w-[65%] px-2 py-1.5">
+						
+					</div>
 				</div>
 			</Modal>
 		);

@@ -22,7 +22,7 @@ const dropdownStyles = cva(
 	},
 );
 
-const dropdownListStyles = cva(
+const dropdownList = cva(
 	"min-h-auto mt-10.5 absolute flex w-full flex-col transition-opacity duration-150",
 	{
 		variants: {
@@ -37,7 +37,7 @@ const dropdownListStyles = cva(
 	},
 );
 
-const dropdownItemStyles = cva(
+const dropdownItem = cva(
 	"w-full h-8 py-1 px-2 flex flex-row bg-transparent justify-between items-center text-center transition-all duration-175",
 	{
 		variants: {
@@ -58,10 +58,14 @@ export default function Dropdown({
 	labels,
 	initialIndex = 0,
 	onChangeAction,
+	width = 120,
+	height = 20,
 }: {
 	labels: string[];
 	initialIndex: number;
 	onChangeAction: (label: string) => void;
+	width?: number;
+	height?: number;
 }) {
 	const { game } = useGame();
 
@@ -92,28 +96,28 @@ export default function Dropdown({
 	}, [open]);
 
 	return (
-		<div class="relative w-60" ref={dropdownDiv} style={{ zIndex: 500 }}>
+		<div
+			class="relative"
+			ref={dropdownDiv}
+			style={{ zIndex: 80, minWidth: `${width}px`, minHeight: `${height}px` }}>
 			<div class="flex h-full flex-col overflow-y-auto">
 				<div
 					class={dropdownStyles({ game: game })}
 					onClick={(e) => {
 						e.stopPropagation();
 						setOpen(!open);
-					}}
-				>
+					}}>
 					<h1>{label}</h1>
 					<ArrowDown />
 				</div>
 				<div
-					class={dropdownListStyles({ game: game })}
-					style={open ? "opacity: 100" : "opacity: 0;"}
-				>
+					class={dropdownList({ game: game })}
+					style={open ? "opacity: 100" : "opacity: 0;"}>
 					{labels.map((listLabel, index) => {
 						return (
 							<div
 								onClick={() => onChange(index)}
-								class={dropdownItemStyles({ game: game })}
-							>
+								class={dropdownItem({ game: game })}>
 								<p class="pt-0.5">{listLabel}</p>
 								{index === currentIndex ? <Check /> : null}
 							</div>

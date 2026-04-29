@@ -5,7 +5,7 @@ import MenuClose from "./MenuClose";
 import { useImperativeHandle, useState } from "preact/hooks";
 import { forwardRef } from "preact/compat";
 
-const modalStyles = cva("overflow-y-scroll w-[65%] h-auto min-h-90", {
+const modalStyles = cva("overflow-y-scroll", {
 	variants: {
 		game: {
 			[Variants.BH3]: "bg-bh3-modal-bg rounded-lg",
@@ -33,7 +33,17 @@ const modalTitlebarStyles = cva(
 );
 
 export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
-	{ title, children }: { title: string; children: React.ReactNode },
+	{
+		title,
+		children,
+		width = 750,
+		height = 250,
+	}: {
+		title: string;
+		children: React.ReactNode;
+		width?: number;
+		height?: number;
+	},
 	ref,
 ) {
 	const { game } = useGame();
@@ -50,7 +60,10 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 		<div
 			class="absolute inset-0 z-60 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-xl"
 			onClick={() => setIsOpen(false)}>
-			<div class={modalStyles({ game })} onClick={(e) => e.stopPropagation()}>
+			<div
+				class={modalStyles({ game })}
+				style={{ minWidth: `${width}px`, minHeight: `${height}px` }}
+				onClick={(e) => e.stopPropagation()}>
 				<div className={modalTitlebarStyles({ game })}>
 					<h1 class="text-xl text-center">{title}</h1>
 					<MenuClose clickAction={() => setIsOpen(false)} />
