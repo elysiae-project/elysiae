@@ -80,12 +80,12 @@ pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(),
         log::error!("{}", msg);
         return Err(msg);
     };
-    if let Some(parent) = path.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            let msg = format!("Failed to create download state directory: {}", e);
-            log::error!("{}", msg);
-            return Err(msg);
-        }
+    if let Some(parent) = path.parent()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        let msg = format!("Failed to create download state directory: {}", e);
+        log::error!("{}", msg);
+        return Err(msg);
     }
     match serde_json::to_string(state) {
         Ok(json) => {

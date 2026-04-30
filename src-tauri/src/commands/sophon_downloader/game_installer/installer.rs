@@ -816,6 +816,7 @@ async fn run_downloads(
         .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize_install(
     ctx: &InstallContext,
     results: Vec<SophonResult<()>>,
@@ -963,6 +964,7 @@ pub struct InstallCallbacks {
     pub state_saver: StateSaver,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn install(
     installers: Vec<SophonInstaller>,
     game_dir: &Path,

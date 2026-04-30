@@ -113,12 +113,9 @@ mod tests {
 
     #[test]
     fn adjust_critical_ram() {
-        let aa = AdaptiveAssembly::new();
-        // We can't easily mock /proc/meminfo, but we can test the logic
-        // by verifying the thresholds produce correct values
-        assert_eq!(1, 1); // Critical → 1
-        assert_eq!((ASSEMBLY_CONCURRENCY / 4).max(1), ASSEMBLY_CONCURRENCY / 4); // Low → quarter
-        assert_eq!((ASSEMBLY_CONCURRENCY / 2).max(2), ASSEMBLY_CONCURRENCY / 2); // Medium → half
+        assert_eq!(1, 1);
+        assert_eq!((ASSEMBLY_CONCURRENCY / 4).max(1), ASSEMBLY_CONCURRENCY / 4);
+        assert_eq!((ASSEMBLY_CONCURRENCY / 2).max(2), ASSEMBLY_CONCURRENCY / 2);
     }
 
     #[test]
