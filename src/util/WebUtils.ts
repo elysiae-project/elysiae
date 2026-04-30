@@ -50,11 +50,34 @@ export const downloadFile = async (url: string, destination: string) => {
 	const unlisten = await listen<{ progress: number; total: number }>(
 		`download://progress/${downloadID}`,
 		({ payload }) => {
-			// TODO: Create some sort of function that can automatically determine the best size unit
-			// For now, just using MB
 			const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
 			const total = (payload.total / 1024 ** 2).toFixed(2);
 			info(`Downloaded ${downloaded}MB of ${total}MB`);
+		},
+	);
+
+	try {
+		await invoke("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} finally {
+		unlisten();
+	}
+};
+
+export const downloadFileWithProgress = async (
+	url: string,
+	destination: string,
+	onProgress: (progress: number, total: number) => void,
+) => {
+	const downloadID = crypto.randomUUID();
+
+	const unlisten = await listen<{ progress: number; total: number }>(
+		`download://progress/${downloadID}`,
+		({ payload }) => {
+			onProgress(payload.progress, payload.total);
 		},
 	);
 

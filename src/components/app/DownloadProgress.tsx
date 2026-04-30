@@ -19,6 +19,7 @@ export default function GameDownloadProgress() {
 		isCalculatingDownloads,
 		isError,
 		isFinished,
+		isSettingUpWine,
 	} = state;
 
 	const isActive =
@@ -27,9 +28,41 @@ export default function GameDownloadProgress() {
 		isVerifying ||
 		isFetchingManifest ||
 		isCalculatingDownloads ||
-		isPaused;
+		isPaused ||
+		isSettingUpWine;
 	if (!isActive && !isError && !isFinished) return null;
 	if (isFinished) return null;
+
+	const wineSetupPct = useMemo(() => {
+		if (!isSettingUpWine || state.wineSetupDownloadTotal <= 0) return 0;
+		if (state.wineSetupPhase !== "downloading") return 100;
+		return (
+			(state.wineSetupDownloadedBytes / state.wineSetupDownloadTotal) * 100
+		);
+	}, [
+		isSettingUpWine,
+		state.wineSetupPhase,
+		state.wineSetupDownloadedBytes,
+		state.wineSetupDownloadTotal,
+	]);
+
+	const winePhaseLabel = useMemo(() => {
+		switch (state.wineSetupPhase) {
+			case "downloading":
+				return "Downloading";
+			case "extracting":
+				return "Extracting";
+			case "installing":
+				return "Installing";
+			default:
+				return "";
+		}
+	}, [state.wineSetupPhase]);
+
+	const wineDownloadedMB = (state.wineSetupDownloadedBytes / 1024 ** 2).toFixed(
+		1,
+	);
+	const wineTotalMB = (state.wineSetupDownloadTotal / 1024 ** 2).toFixed(1);
 
 	const derived = useMemo(() => {
 		const downloadPct =
@@ -41,10 +74,11 @@ export default function GameDownloadProgress() {
 				? (state.assembledFiles / state.totalFiles) * 100
 				: 0;
 		const speedMB = state.speedBps / 1024 ** 2;
-    const eta = state.etaSeconds;
-    const etaStr = eta > 0
-      ? `${String(Math.floor(eta / 3600)).padStart(2, "0")}:${String(Math.floor((eta % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(eta % 60)).padStart(2, "0")}`
-      : "";
+		const eta = state.etaSeconds;
+		const etaStr =
+			eta > 0
+				? `${String(Math.floor(eta / 3600)).padStart(2, "0")}:${String(Math.floor((eta % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(eta % 60)).padStart(2, "0")}`
+				: "";
 		const downloadedGB = (state.downloadedBytes / 1024 ** 3).toFixed(2);
 		const totalGB = (state.downloadTotal / 1024 ** 3).toFixed(2);
 		const verifyPct =
@@ -74,15 +108,17 @@ export default function GameDownloadProgress() {
 
 	const titleText = isPaused
 		? "Download Paused"
-		: isVerifying
-			? "Verifying Files..."
-			: isCalculatingDownloads
-				? "Calculating File Downloads..."
-				: isFetchingManifest
-					? "Fetching Manifest..."
-					: state.downloadingGame !== null
-						? `Downloading ${getGameName(state.downloadingGame)}...`
-						: "Downloading...";
+		: isSettingUpWine
+			? "Setting Up Environment..."
+			: isVerifying
+				? "Verifying Files..."
+				: isCalculatingDownloads
+					? "Calculating File Downloads..."
+					: isFetchingManifest
+						? "Fetching Manifest..."
+						: state.downloadingGame !== null
+							? `Downloading ${getGameName(state.downloadingGame)}...`
+							: "Downloading...";
 
 	const canPause = isDownloading || isPaused;
 
@@ -109,6 +145,20 @@ export default function GameDownloadProgress() {
 					</Button>
 				)}
 			</div>
+			{isSettingUpWine && (
+				<div class="flex min-w-full flex-col gap-y-1 text-left">
+					<h2 class="ml-1 text-sm text-white">
+						{winePhaseLabel} {state.wineSetupComponent}
+						{state.wineSetupPhase === "downloading" &&
+						state.wineSetupDownloadTotal > 0
+							? ` (${wineDownloadedMB}MB / ${wineTotalMB}MB - ${wineSetupPct.toFixed(1)}%)`
+							: state.wineSetupPhase !== "downloading"
+								? "..."
+								: ""}
+					</h2>
+					<Progressbar progress={wineSetupPct} game={game} />
+				</div>
+			)}
 			{isCalculatingDownloads && state.totalFiles > 0 && (
 				<div class="flex min-w-full flex-col gap-y-1 text-left">
 					<h2 class="ml-1 text-sm text-white">

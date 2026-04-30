@@ -160,17 +160,44 @@ export type WineModule = {
 };
 
 export type SophonProgress =
-  | { type: "fetchingManifest" }
-  | { type: "calculatingDownloads"; checked_files: number; total_files: number }
-  | { type: "downloading"; downloaded_bytes: number; total_bytes: number; speed_bps: number; eta_seconds: number }
-  | { type: "paused"; downloaded_bytes: number; total_bytes: number }
-  | { type: "assembling"; assembled_files: number; total_files: number }
-  | { type: "verifying"; scanned_files: number; total_files: number; error_count: number }
-  | { type: "warning"; message: string }
-  | { type: "error"; message: string }
-  | { type: "installingPlugins"; current_plugin: string; total_plugins: number }
-  | { type: "downloadingPlugin"; name: string; downloaded_bytes: number; total_bytes: number }
-  | { type: "finished" };
+	| { type: "fetchingManifest" }
+	| { type: "calculatingDownloads"; checked_files: number; total_files: number }
+	| {
+			type: "downloading";
+			downloaded_bytes: number;
+			total_bytes: number;
+			speed_bps: number;
+			eta_seconds: number;
+	  }
+	| { type: "paused"; downloaded_bytes: number; total_bytes: number }
+	| { type: "assembling"; assembled_files: number; total_files: number }
+	| {
+			type: "verifying";
+			scanned_files: number;
+			total_files: number;
+			error_count: number;
+	  }
+	| { type: "warning"; message: string }
+	| { type: "error"; message: string }
+	| { type: "installingPlugins"; current_plugin: string; total_plugins: number }
+	| {
+			type: "downloadingPlugin";
+			name: string;
+			downloaded_bytes: number;
+			total_bytes: number;
+	  }
+	| { type: "finished" };
+
+export type WineSetupProgress =
+	| {
+			type: "wineSetupDownloading";
+			component: string;
+			downloaded_bytes: number;
+			total_bytes: number;
+	  }
+	| { type: "wineSetupExtracting"; component: string }
+	| { type: "wineSetupInstalling"; component: string }
+	| { type: "wineSetupFinished" };
 
 export type GameData = {
 	gameCode: string;
@@ -182,6 +209,6 @@ export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
 export type AppOptions = "selectedGame" | "voLanguage" | "blockNotifications";
 
 export type ResumeInfo = {
-  gameId: string;
-  downloadType: "fresh" | "update" | "preinstall";
+	gameId: string;
+	downloadType: "fresh" | "update" | "preinstall";
 };
