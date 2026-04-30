@@ -23,22 +23,22 @@ pub(crate) fn write_lang_file(
     mapper: fn(&str) -> Option<&'static str>,
 ) -> std::io::Result<()> {
     let mut existing: Vec<String> = Vec::new();
-    if path.exists() {
-        if let Ok(content) = fs::read_to_string(path) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    existing.push(trimmed.to_string());
-                }
+    if path.exists()
+        && let Ok(content) = fs::read_to_string(path)
+    {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                existing.push(trimmed.to_string());
             }
         }
     }
 
     for lang in vo_langs {
-        if let Some(name) = mapper(lang) {
-            if !existing.iter().any(|e| e == name) {
-                existing.push(name.to_string());
-            }
+        if let Some(name) = mapper(lang)
+            && !existing.iter().any(|e| e == name)
+        {
+            existing.push(name.to_string());
         }
     }
 

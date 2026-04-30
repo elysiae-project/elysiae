@@ -11,10 +11,11 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tauri_plugin_log::log;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::adaptive::{ActiveGuard, AdaptiveConcurrency};
+use super::adaptive_assembly::AdaptiveAssembly;
+use super::adaptive_download::AdaptiveSemaphore;
 use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
 use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
 use super::cache::{self, VerificationEntry};
@@ -57,6 +58,7 @@ struct InstallContext {
     chunks_since_save: Arc<AtomicU64>,
     pending_saves: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
+    adaptive_assembly: Arc<AdaptiveAssembly>,
 }
 
 pub(crate) struct InstallerData {
@@ -515,15 +517,20 @@ async fn drain_join_set(
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
     assemble_rx: mpsc::Receiver<(usize, usize)>,
-) -> tokio::task::JoinHandle<SophonResult<()>> {
+) -> (
+    tokio::task::JoinHandle<SophonResult<()>>,
+    tokio_util::sync::CancellationToken,
+) {
     let ctx = Arc::clone(ctx);
+    let assembly_cancel = ctx.adaptive_assembly.spawn_adjuster();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let mut rx = assemble_rx;
         let mut join_set = tokio::task::JoinSet::new();
 
         loop {
-            while join_set.len() < ASSEMBLY_CONCURRENCY {
+            let max_concurrency = ctx.adaptive_assembly.current_target();
+            while join_set.len() < max_concurrency {
                 match rx.try_recv() {
                     Ok((file_idx, tmp_dir_idx)) => {
                         let params = make_assembly_params(&ctx, file_idx, tmp_dir_idx);
@@ -550,10 +557,12 @@ fn spawn_assembly_coordinator(
                 let _ = res??;
             }
         }
-    })
+    });
+
+    (handle, assembly_cancel)
 }
 
-fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveConcurrency>) -> CancellationToken {
+fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveSemaphore>) -> CancellationToken {
     let cancel_token = CancellationToken::new();
     let adaptive = Arc::clone(adaptive);
     let token = cancel_token.clone();
@@ -682,14 +691,9 @@ async fn process_download_item(
     chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>>,
     assemble_tx: mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
-    adaptive: Arc<AdaptiveConcurrency>,
-    semaphore: Arc<Semaphore>,
+    adaptive: Arc<AdaptiveSemaphore>,
 ) -> SophonResult<()> {
-    while !adaptive.can_start() {
-        tokio::task::yield_now().await;
-    }
-    let _guard = ActiveGuard::new(&adaptive);
-    let _permit = semaphore.acquire().await?;
+    let _permit = adaptive.acquire().await;
 
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
@@ -795,8 +799,7 @@ async fn run_downloads(
     chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
-    adaptive: Arc<AdaptiveConcurrency>,
-    semaphore: Arc<Semaphore>,
+    adaptive: Arc<AdaptiveSemaphore>,
 ) -> Vec<SophonResult<()>> {
     futures_util::stream::iter(download_items)
         .map(|item| {
@@ -805,23 +808,15 @@ async fn run_downloads(
             let assemble_tx = assemble_tx.clone();
             let handle = handle.clone();
             let adaptive = Arc::clone(&adaptive);
-            let semaphore = Arc::clone(&semaphore);
 
-            process_download_item(
-                item,
-                ctx,
-                chunk_to_files,
-                assemble_tx,
-                handle,
-                adaptive,
-                semaphore,
-            )
+            process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
         })
         .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
         .collect()
         .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize_install(
     ctx: &InstallContext,
     results: Vec<SophonResult<()>>,
@@ -969,6 +964,7 @@ pub struct InstallCallbacks {
     pub state_saver: StateSaver,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn install(
     installers: Vec<SophonInstaller>,
     game_dir: &Path,
@@ -1166,6 +1162,7 @@ pub async fn install(
         HashMap::new()
     };
 
+    let adaptive_assembly = Arc::new(AdaptiveAssembly::new());
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
         game_dir: game_dir.to_path_buf(),
@@ -1186,10 +1183,11 @@ pub async fn install(
         chunks_since_save: Arc::new(AtomicU64::new(0)),
         pending_saves: Arc::new(Mutex::new(Vec::new())),
         state_saver: callbacks.state_saver,
+        adaptive_assembly: Arc::clone(&adaptive_assembly),
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
-    let assembly_task = spawn_assembly_coordinator(&ctx, assemble_rx);
+    let (assembly_task, _assembly_cancel_token) = spawn_assembly_coordinator(&ctx, assemble_rx);
 
     let (download_items, chunk_to_files) = build_download_state(
         installer_data,
@@ -1214,8 +1212,7 @@ pub async fn install(
         }) = Instant::now();
     }
 
-    let adaptive = Arc::new(AdaptiveConcurrency::new());
-    let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
+    let adaptive = Arc::new(AdaptiveSemaphore::new());
     let _cancel_token = spawn_adaptive_adjuster(&adaptive);
 
     let results = run_downloads(
@@ -1225,7 +1222,6 @@ pub async fn install(
         &assemble_tx,
         options.handle,
         Arc::clone(&adaptive),
-        semaphore,
     )
     .await;
 
@@ -1507,6 +1503,7 @@ mod tests {
             chunk_download: Arc::new(make_download_info()),
             files,
             label: "test".into(),
+            matching_field: "game".into(),
         }
     }
 
@@ -1516,6 +1513,7 @@ mod tests {
             manifest: SophonManifestProto { assets: vec![] },
             chunk_download: make_download_info(),
             label: "test".into(),
+            matching_field: "game".into(),
             tag: "1.0".into(),
             manifest_hash: hash.into(),
         }

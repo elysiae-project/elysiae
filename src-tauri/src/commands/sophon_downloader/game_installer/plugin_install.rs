@@ -415,12 +415,12 @@ mod tests {
     #[test]
     fn read_plugin_versions_with_entries() {
         let dir = tempfile::tempdir().unwrap();
-        let config = dir.path().join(CONFIG_INI);
-        fs::write(
-            &config,
-            "[General]\nplugin_abc_version=1.0\nplugin_def_version=2.0\n",
-        )
-        .unwrap();
+        let json_path = dir.path().join(PLUGIN_VERSIONS_FILE);
+        let json = serde_json::json!({
+            "plugin_abc_version": "1.0",
+            "plugin_def_version": "2.0"
+        });
+        fs::write(&json_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
         let versions = read_plugin_versions(dir.path());
         assert_eq!(versions.len(), 2);
         assert_eq!(versions.get("plugin_abc_version"), Some(&"1.0".to_string()));
@@ -428,27 +428,22 @@ mod tests {
     }
 
     #[test]
-    fn read_plugin_versions_stops_at_next_section() {
+    fn read_plugin_versions_corrupted_json() {
         let dir = tempfile::tempdir().unwrap();
-        let config = dir.path().join(CONFIG_INI);
-        fs::write(
-            &config,
-            "[General]\nplugin_abc_version=1.0\n[Other]\nplugin_def_version=2.0\n",
-        )
-        .unwrap();
+        let json_path = dir.path().join(PLUGIN_VERSIONS_FILE);
+        fs::write(&json_path, "not valid json!!!").unwrap();
         let versions = read_plugin_versions(dir.path());
-        assert_eq!(versions.len(), 1);
-        assert_eq!(versions.get("plugin_abc_version"), Some(&"1.0".to_string()));
-        assert!(versions.get("plugin_def_version").is_none());
+        assert!(versions.is_empty());
     }
 
     #[test]
     fn write_plugin_version_new_file() {
         let dir = tempfile::tempdir().unwrap();
         write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
-        let content = fs::read_to_string(dir.path().join(CONFIG_INI)).unwrap();
-        assert!(content.contains("[General]"));
-        assert!(content.contains("plugin_abc_version=1.0"));
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(versions.get("plugin_abc_version"), Some(&"1.0".to_string()));
+        let json_path = dir.path().join(PLUGIN_VERSIONS_FILE);
+        assert!(json_path.exists());
     }
 
     #[test]
@@ -636,13 +631,6 @@ mod tests {
         let safe_version = raw_version.replace(['\n', '\r'], "");
         assert_eq!(safe_version, "1.0malicious");
         write_plugin_version(dir.path(), "plugin_abc_version", &safe_version).unwrap();
-        let content = fs::read_to_string(dir.path().join(CONFIG_INI)).unwrap();
-        assert!(content.contains("plugin_abc_version=1.0malicious\n"));
-        for line in content.lines() {
-            if line.starts_with("plugin_abc_version=") {
-                assert_eq!(line, "plugin_abc_version=1.0malicious");
-            }
-        }
         let versions = read_plugin_versions(dir.path());
         assert_eq!(
             versions.get("plugin_abc_version"),
