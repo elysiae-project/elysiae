@@ -109,4 +109,52 @@ mod tests {
         handle.resume();
         assert_eq!(*handle.lock_state(), ControlState::Running);
     }
+
+    #[test]
+    fn handle_is_cancelled_after_cancel() {
+        let handle = DownloadHandle::new();
+        assert!(!handle.is_cancelled());
+        handle.cancel();
+        assert!(handle.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn handle_resume_notifies_waiters() {
+        let handle = DownloadHandle::new();
+        handle.pause();
+        let updater = |_progress: crate::commands::sophon_downloader::SophonProgress| {};
+        let h = handle.clone();
+        let result = tokio::spawn(async move { h.wait_if_paused(&updater, 0, 100).await });
+        tokio::task::yield_now().await;
+        handle.resume();
+        let state = result.await.unwrap();
+        assert!(state.is_ok());
+    }
+
+    #[tokio::test]
+    async fn handle_wait_if_paused_returns_cancelled() {
+        let handle = DownloadHandle::new();
+        handle.pause();
+        let updater = |_progress: crate::commands::sophon_downloader::SophonProgress| {};
+        let h = handle.clone();
+        let result = tokio::spawn(async move { h.wait_if_paused(&updater, 0, 100).await });
+        tokio::task::yield_now().await;
+        handle.cancel();
+        let state = result.await.unwrap();
+        assert!(state.is_err());
+        assert!(matches!(state.unwrap_err(), super::SophonError::Cancelled));
+    }
+
+    #[test]
+    fn handle_multiple_pause_calls() {
+        let handle = DownloadHandle::new();
+        handle.pause();
+        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        handle.pause();
+        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        handle.pause();
+        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        handle.resume();
+        assert_eq!(*handle.lock_state(), ControlState::Running);
+    }
 }
