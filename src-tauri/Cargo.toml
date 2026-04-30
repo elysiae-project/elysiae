@@ -54,6 +54,7 @@ tauri-plugin-single-instance = "2.4.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+wiremock = "0.6"
 
 [profile.release]
 opt-level = 3

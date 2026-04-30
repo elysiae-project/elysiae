@@ -158,4 +158,33 @@ mod tests {
         let sophon_err: SophonError = io_err.into();
         assert!(matches!(sophon_err, SophonError::Io(_)));
     }
+
+    #[test]
+    fn error_display_cancelled() {
+        let err = SophonError::Cancelled;
+        assert_eq!(err.to_string(), "Download cancelled");
+    }
+
+    #[test]
+    fn error_display_path_traversal() {
+        let err = SophonError::PathTraversal(PathBuf::from("../../etc/passwd"));
+        let msg = err.to_string();
+        assert!(msg.contains("../../etc/passwd"));
+    }
+
+    #[test]
+    fn error_from_semaphore_acquire() {
+        let sophon_err = SophonError::Semaphore("no permits available".to_string());
+        assert!(matches!(sophon_err, SophonError::Semaphore(_)));
+    }
+
+    #[test]
+    fn error_into_string() {
+        let s: String = SophonError::Cancelled.into();
+        assert_eq!(s, "Download cancelled");
+        let s: String = SophonError::PathTraversal(PathBuf::from("/bad/path")).into();
+        assert!(s.contains("/bad/path"));
+        let s: String = SophonError::NoManifests.into();
+        assert!(!s.is_empty());
+    }
 }

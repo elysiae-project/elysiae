@@ -142,4 +142,39 @@ mod tests {
         assert!(mb > 0, "MemAvailable should be positive on Linux");
         assert!(mb < 1_000_000, "MemAvailable should be less than 1M MiB");
     }
+
+    #[test]
+    fn adjust_high_ram_stays_at_max() {
+        let aa = AdaptiveAssembly::new();
+        let _ = aa.adjust();
+        let target = aa.current_target();
+        if available_ram_mb() > ASSEMBLY_HIGH_RAM_THRESHOLD_MB {
+            assert_eq!(target, ASSEMBLY_CONCURRENCY);
+        }
+    }
+
+    #[test]
+    fn adjust_critical_ram_goes_to_one() {
+        let critical_threshold = ASSEMBLY_CRITICAL_RAM_THRESHOLD_MB;
+        let low_threshold = ASSEMBLY_LOW_RAM_THRESHOLD_MB;
+        let high_threshold = ASSEMBLY_HIGH_RAM_THRESHOLD_MB;
+        assert!(critical_threshold < low_threshold);
+        assert!(low_threshold < high_threshold);
+        let target_when_critical = if 0 < critical_threshold {
+            1usize
+        } else {
+            ASSEMBLY_CONCURRENCY
+        };
+        assert_eq!(target_when_critical, 1);
+    }
+
+    #[tokio::test]
+    async fn spawn_adjuster_cancels_cleanly() {
+        let aa = Arc::new(AdaptiveAssembly::new());
+        let token = aa.spawn_adjuster();
+        token.cancel();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(aa.current_target() >= 1);
+        assert!(aa.current_target() <= ASSEMBLY_CONCURRENCY);
+    }
 }

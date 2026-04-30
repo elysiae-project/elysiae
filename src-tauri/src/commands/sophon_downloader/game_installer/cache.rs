@@ -126,6 +126,7 @@ fn file_md5_hex(path: &Path) -> io::Result<String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Arc;
     use std::time::UNIX_EPOCH;
 
     #[test]
@@ -309,5 +310,72 @@ mod tests {
         assert_eq!(entry.size, 11);
         assert_eq!(entry.md5, md5);
         assert_eq!(entry.mtime_secs, mtime);
+    }
+
+    #[test]
+    fn save_verification_cache_atomic_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DashMap::new();
+        cache.insert(
+            "/path/to/file".to_string(),
+            VerificationEntry {
+                size: 42,
+                md5: "deadbeef".to_string(),
+                mtime_secs: 999,
+            },
+        );
+        let tmp_path = dir.path().join(format!("{}.tmp", VERIFICATION_CACHE_FILE));
+        assert!(!tmp_path.exists());
+        save_verification_cache(dir.path(), &cache).unwrap();
+        assert!(!tmp_path.exists());
+        let cache_path = dir.path().join(VERIFICATION_CACHE_FILE);
+        assert!(cache_path.exists());
+        let loaded = load_verification_cache(dir.path());
+        assert_eq!(loaded.len(), 1);
+    }
+
+    #[test]
+    fn concurrent_cache_access() {
+        let cache: Arc<DashMap<String, VerificationEntry>> = Arc::new(DashMap::new());
+        let mut handles = Vec::new();
+        for i in 0..8 {
+            let c = Arc::clone(&cache);
+            handles.push(std::thread::spawn(move || {
+                for j in 0..100 {
+                    let key = format!("key-{}-{}", i, j);
+                    c.insert(
+                        key.clone(),
+                        VerificationEntry {
+                            size: i as u64 + j as u64,
+                            md5: format!("md5-{}-{}", i, j),
+                            mtime_secs: i as u64 * 100 + j as u64,
+                        },
+                    );
+                    if let Some(entry) = c.get(&key) {
+                        assert_eq!(entry.size, i as u64 + j as u64);
+                        assert_eq!(entry.md5, format!("md5-{}-{}", i, j));
+                    }
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(cache.len(), 800);
+    }
+
+    #[test]
+    fn check_file_md5_cached_with_zero_size_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("empty.dat");
+        fs::write(&file_path, b"").unwrap();
+        let cache = DashMap::new();
+        let md5 = {
+            let mut hasher = Md5::new();
+            hasher.update(b"");
+            hex::encode(hasher.finalize())
+        };
+        let result = check_file_md5_cached(&file_path, 0, &md5, &cache).unwrap();
+        assert!(result);
     }
 }

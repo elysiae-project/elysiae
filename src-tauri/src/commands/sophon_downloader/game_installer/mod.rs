@@ -13,6 +13,9 @@ mod plugin_api;
 mod plugin_install;
 mod update;
 
+#[cfg(test)]
+mod integration_tests;
+
 /// Maximum retry attempts for failed chunk downloads.
 pub const MAX_RETRIES: u32 = 4;
 /// Maximum concurrent file assembly tasks.
