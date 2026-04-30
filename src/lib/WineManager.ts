@@ -69,7 +69,7 @@ const components: ((
 				WINEPREFIX: await winePrefix(),
 			});
 
-			await removeDir("vkd3d");
+			await removeDir("vkd3d-temp");
 		},
 	}),
 ];
