@@ -1727,4 +1727,216 @@ mod tests {
             combine_manifest_hashes(&installers_ba),
         );
     }
+
+    #[tokio::test]
+    async fn notify_assembly_ready_single_file_ready() {
+        let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
+        let (tx, mut rx) = mpsc::channel::<(usize, usize)>(16);
+
+        let pending: PendingCount = Arc::new(Mutex::new(1usize));
+        chunk_to_files.insert(
+            "chunk_a".to_string(),
+            vec![(0usize, 0usize, Arc::clone(&pending))],
+        );
+
+        notify_assembly_ready("chunk_a", &chunk_to_files, &tx).await;
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "file should be sent to assembly channel");
+        assert_eq!(received.unwrap(), (0, 0));
+        assert_eq!(*pending.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn notify_assembly_ready_chunk_not_in_map() {
+        let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
+        let (tx, rx) = mpsc::channel::<(usize, usize)>(16);
+        drop(rx);
+
+        notify_assembly_ready("nonexistent_chunk", &chunk_to_files, &tx).await;
+    }
+
+    #[tokio::test]
+    async fn check_needs_download_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("does_not_exist.bin");
+        let chunk = make_chunk("c1", 100);
+        let cache = Arc::new(DashMap::new());
+
+        let needs = check_needs_download(dest, &chunk, &cache).await.unwrap();
+        assert!(needs);
+    }
+
+    #[tokio::test]
+    async fn check_needs_download_valid_cached_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("cached.bin");
+        let data = b"hello cache";
+        std::fs::write(&file_path, data).unwrap();
+
+        let md5_hex = {
+            let mut hasher = md5::Md5::new();
+            hasher.update(data);
+            hex::encode(hasher.finalize())
+        };
+
+        let metadata = std::fs::metadata(&file_path).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let cache: Arc<DashMap<String, VerificationEntry>> = Arc::new(DashMap::new());
+        cache.insert(
+            file_path.to_string_lossy().to_string(),
+            VerificationEntry {
+                size: data.len() as u64,
+                md5: md5_hex.clone(),
+                mtime_secs: mtime,
+            },
+        );
+
+        let mut chunk = make_chunk("c1", data.len() as u64);
+        chunk.chunk_compressed_hash_md5 = md5_hex;
+
+        let needs = check_needs_download(file_path, &chunk, &cache)
+            .await
+            .unwrap();
+        assert!(!needs);
+    }
+
+    #[tokio::test]
+    async fn download_chunk_with_retries_success_on_first() {
+        use crate::commands::sophon_downloader::api_scrape::Compression;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let data = b"chunk payload".to_vec();
+        let expected_md5 = hex::encode(md5::Md5::digest(&data));
+
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "test_retry_chunk".to_string(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_size: data.len() as u64,
+            chunk_size_decompressed: data.len() as u64,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: expected_md5,
+        };
+
+        let dl_info = Arc::new(DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: format!("{}/", server.uri()),
+            url_suffix: "chunks".to_string(),
+        });
+
+        Mock::given(method("GET"))
+            .and(path("chunks/test_retry_chunk"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let item = DownloadItem {
+            chunk,
+            client: Arc::new(Client::new()),
+            chunk_download: dl_info,
+            is_pre_downloaded: false,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("test_retry_chunk.zstd");
+
+        let ctx = Arc::new(InstallContext {
+            chunks_dir: Arc::new(dir.path().to_path_buf()),
+            game_dir: dir.path().to_path_buf(),
+            all_tmp_dirs: Arc::new(vec![]),
+            all_files: Arc::new(vec![]),
+            downloaded_bytes: Arc::new(AtomicU64::new(0)),
+            assembled_files: Arc::new(AtomicU64::new(0)),
+            total_bytes: 0,
+            total_files: 0,
+            resume_bytes_offset: Arc::new(AtomicU64::new(0)),
+            verify_cache: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(DashMap::new()),
+            last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+            last_update: Arc::new(Mutex::new(Instant::now())),
+            download_start: Instant::now(),
+            updater: Arc::new(|_| {}),
+            downloaded_chunks: Arc::new(Mutex::new(HashMap::new())),
+            chunks_since_save: Arc::new(AtomicU64::new(0)),
+            pending_saves: Arc::new(Mutex::new(Vec::new())),
+            state_saver: Arc::new(|_| {}),
+            adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
+        });
+
+        let handle = DownloadHandle::new();
+
+        let result = download_chunk_with_retries(&item, &dest, &ctx, &handle).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn compute_totals_filters_directories() {
+        let file1 = make_file("a.pak", "aa", vec![make_chunk("c1", 100)]);
+        let dir1 = make_dir("GameData");
+        let data = vec![make_installer_data(vec![dir1, file1])];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 100);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn build_installer_data_filters_directories() {
+        let installer = SophonInstaller {
+            client: Client::new(),
+            manifest: SophonManifestProto {
+                assets: vec![
+                    make_dir("GameData"),
+                    make_file("a.pak", "aa", vec![make_chunk("c1", 100)]),
+                ],
+            },
+            chunk_download: make_download_info(),
+            label: "test".into(),
+            matching_field: "game".into(),
+            tag: "1.0".into(),
+            manifest_hash: "abc".into(),
+        };
+
+        let result = build_installer_data(vec![installer]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].files.len(), 1);
+        assert_eq!(result[0].files[0].asset_name, "a.pak");
+    }
+
+    #[test]
+    fn combine_manifest_hashes_empty() {
+        let installers: Vec<SophonInstaller> = vec![];
+        let hash = combine_manifest_hashes(&installers);
+        assert!(!hash.is_empty());
+        assert_eq!(hash.len(), 16);
+    }
+
+    #[test]
+    fn compute_diff_files_all_unchanged() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![
+                make_file("a.pak", "aa", vec![]),
+                make_file("b.pak", "bb", vec![]),
+            ],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("a.pak".to_string(), "aa".to_string());
+        old_md5_map.insert("b.pak".to_string(), "bb".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert!(diff.is_empty());
+    }
 }
