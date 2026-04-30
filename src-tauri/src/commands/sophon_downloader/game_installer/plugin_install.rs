@@ -353,3 +353,300 @@ pub async fn install_channel_sdks(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufWriter, Write};
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    fn make_validation_entry(path: &str, size: Option<u64>) -> ValidationEntry {
+        ValidationEntry {
+            path: path.to_string(),
+            md5: None,
+            size,
+        }
+    }
+
+    fn create_test_zip(zip_path: &Path, files: &[(&str, &[u8])]) {
+        let file = File::create(zip_path).unwrap();
+        let mut writer = ZipWriter::new(BufWriter::new(file));
+        for (name, content) in files {
+            writer
+                .start_file(*name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(content).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    fn create_test_zip_with_dirs(zip_path: &Path, entries: &[(&str, bool, &[u8])]) {
+        let file = File::create(zip_path).unwrap();
+        let mut writer = ZipWriter::new(BufWriter::new(file));
+        for (name, is_dir, content) in entries {
+            if *is_dir {
+                writer
+                    .add_directory(*name, SimpleFileOptions::default())
+                    .unwrap();
+            } else {
+                writer
+                    .start_file(*name, SimpleFileOptions::default())
+                    .unwrap();
+                writer.write_all(content).unwrap();
+            }
+        }
+        writer.finish().unwrap();
+    }
+
+    fn create_empty_zip(zip_path: &Path) {
+        let file = File::create(zip_path).unwrap();
+        let writer = ZipWriter::new(BufWriter::new(file));
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn read_plugin_versions_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let versions = read_plugin_versions(dir.path());
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn read_plugin_versions_with_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join(CONFIG_INI);
+        fs::write(
+            &config,
+            "[General]\nplugin_abc_version=1.0\nplugin_def_version=2.0\n",
+        )
+        .unwrap();
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions.get("plugin_abc_version"), Some(&"1.0".to_string()));
+        assert_eq!(versions.get("plugin_def_version"), Some(&"2.0".to_string()));
+    }
+
+    #[test]
+    fn read_plugin_versions_stops_at_next_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join(CONFIG_INI);
+        fs::write(
+            &config,
+            "[General]\nplugin_abc_version=1.0\n[Other]\nplugin_def_version=2.0\n",
+        )
+        .unwrap();
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions.get("plugin_abc_version"), Some(&"1.0".to_string()));
+        assert!(versions.get("plugin_def_version").is_none());
+    }
+
+    #[test]
+    fn write_plugin_version_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
+        let content = fs::read_to_string(dir.path().join(CONFIG_INI)).unwrap();
+        assert!(content.contains("[General]"));
+        assert!(content.contains("plugin_abc_version=1.0"));
+    }
+
+    #[test]
+    fn write_plugin_version_update_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "2.0").unwrap();
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(versions.get("plugin_abc_version"), Some(&"2.0".to_string()));
+    }
+
+    #[test]
+    fn write_plugin_version_add_new_key() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
+        write_plugin_version(dir.path(), "plugin_def_version", "2.0").unwrap();
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions.get("plugin_abc_version"), Some(&"1.0".to_string()));
+        assert_eq!(versions.get("plugin_def_version"), Some(&"2.0".to_string()));
+    }
+
+    #[test]
+    fn write_read_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "3.0").unwrap();
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(versions.get("plugin_abc_version"), Some(&"3.0".to_string()));
+    }
+
+    #[test]
+    fn plugin_needs_update_version_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
+        let result = plugin_needs_update(dir.path(), "abc", "2.0", &[]);
+        assert!(result);
+    }
+
+    #[test]
+    fn plugin_needs_update_version_match_files_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
+        let file_path = dir.path().join("gme.dll");
+        fs::write(&file_path, b"test content").unwrap();
+        let validation = vec![make_validation_entry("gme.dll", Some(12))];
+        let result = plugin_needs_update(dir.path(), "abc", "1.0", &validation);
+        assert!(!result);
+    }
+
+    #[test]
+    fn plugin_needs_update_version_match_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_version(dir.path(), "plugin_abc_version", "1.0").unwrap();
+        let validation = vec![make_validation_entry("missing.dll", Some(10))];
+        let result = plugin_needs_update(dir.path(), "abc", "1.0", &validation);
+        assert!(result);
+    }
+
+    #[test]
+    fn plugin_needs_update_no_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = plugin_needs_update(dir.path(), "abc", "1.0", &[]);
+        assert!(result);
+    }
+
+    #[test]
+    fn verify_validation_all_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("gme.dll");
+        fs::write(&file_path, b"hello world").unwrap();
+        let validation = vec![make_validation_entry("gme.dll", Some(11))];
+        assert!(verify_validation(dir.path(), &validation));
+    }
+
+    #[test]
+    fn verify_validation_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let validation = vec![make_validation_entry("absent.dll", Some(10))];
+        assert!(!verify_validation(dir.path(), &validation));
+    }
+
+    #[test]
+    fn verify_validation_file_wrong_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("gme.dll");
+        fs::write(&file_path, b"hello").unwrap();
+        let validation = vec![make_validation_entry("gme.dll", Some(999))];
+        assert!(!verify_validation(dir.path(), &validation));
+    }
+
+    #[test]
+    fn verify_validation_no_size_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("gme.dll");
+        fs::write(&file_path, b"any content").unwrap();
+        let validation = vec![make_validation_entry("gme.dll", None)];
+        assert!(verify_validation(dir.path(), &validation));
+    }
+
+    #[test]
+    fn cleanup_dxsetup_removes_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let dxsetup = dir.path().join("DXSETUP");
+        fs::create_dir_all(&dxsetup).unwrap();
+        fs::write(dxsetup.join("dsetup.exe"), b"fake").unwrap();
+        cleanup_dxsetup(dir.path());
+        assert!(!dxsetup.exists());
+    }
+
+    #[test]
+    fn cleanup_dxsetup_no_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        cleanup_dxsetup(dir.path());
+    }
+
+    #[test]
+    fn extract_zip_simple() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("test.zip");
+        create_test_zip(&zip_path, &[("hello.txt", b"hello world")]);
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        extract_zip(&zip_path, &game_dir).unwrap();
+        let extracted = game_dir.join("hello.txt");
+        assert!(extracted.exists());
+        let content = fs::read_to_string(&extracted).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn extract_zip_with_subdirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("test.zip");
+        create_test_zip_with_dirs(
+            &zip_path,
+            &[
+                ("subdir/", true, &[] as &[u8]),
+                ("subdir/nested.txt", false, b"nested content"),
+            ],
+        );
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        extract_zip(&zip_path, &game_dir).unwrap();
+        let extracted = game_dir.join("subdir/nested.txt");
+        assert!(extracted.exists());
+        let content = fs::read_to_string(&extracted).unwrap();
+        assert_eq!(content, "nested content");
+    }
+
+    #[test]
+    fn extract_zip_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("empty.zip");
+        create_empty_zip(&zip_path);
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let result = extract_zip(&zip_path, &game_dir);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn extract_zip_path_traversal_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("traversal.zip");
+        let file = File::create(&zip_path).unwrap();
+        let mut writer = ZipWriter::new(BufWriter::new(file));
+        writer
+            .start_file("../../../etc/passwd", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"malicious").unwrap();
+        writer.finish().unwrap();
+
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        extract_zip(&zip_path, &game_dir).unwrap();
+
+        assert!(!dir.path().join("etc").exists());
+        assert!(game_dir.read_dir().unwrap().next().is_none());
+    }
+
+    #[test]
+    fn write_plugin_version_strips_newlines() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw_version = "1.0\nmalicious";
+        let safe_version = raw_version.replace(['\n', '\r'], "");
+        assert_eq!(safe_version, "1.0malicious");
+        write_plugin_version(dir.path(), "plugin_abc_version", &safe_version).unwrap();
+        let content = fs::read_to_string(dir.path().join(CONFIG_INI)).unwrap();
+        assert!(content.contains("plugin_abc_version=1.0malicious\n"));
+        for line in content.lines() {
+            if line.starts_with("plugin_abc_version=") {
+                assert_eq!(line, "plugin_abc_version=1.0malicious");
+            }
+        }
+        let versions = read_plugin_versions(dir.path());
+        assert_eq!(
+            versions.get("plugin_abc_version"),
+            Some(&"1.0malicious".to_string())
+        );
+    }
+}

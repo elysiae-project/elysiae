@@ -80,3 +80,29 @@ pub use installer::{
 };
 pub use plugin_install::{install_channel_sdks, install_plugins};
 pub use update::{UpdateInfo, check_update};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn read_installed_tag_present() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(VERSION_FILE_NAME), "1.2.3").unwrap();
+        assert_eq!(read_installed_tag(dir.path()), Some("1.2.3".to_string()));
+    }
+
+    #[test]
+    fn read_installed_tag_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_installed_tag(dir.path()), None);
+    }
+
+    #[test]
+    fn write_read_installed_tag_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        write_installed_tag(dir.path(), "2.0.0").unwrap();
+        assert_eq!(read_installed_tag(dir.path()), Some("2.0.0".to_string()));
+    }
+}

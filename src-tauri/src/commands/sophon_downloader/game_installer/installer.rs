@@ -1448,3 +1448,285 @@ async fn redownload_asset(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::sophon_downloader::api_scrape::Compression;
+
+    fn make_chunk(name: &str, size: u64) -> SophonManifestAssetChunk {
+        SophonManifestAssetChunk {
+            chunk_name: name.into(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_size: size,
+            chunk_size_decompressed: size,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        }
+    }
+
+    fn make_file(
+        name: &str,
+        md5: &str,
+        chunks: Vec<SophonManifestAssetChunk>,
+    ) -> SophonManifestAssetProperty {
+        let size: u64 = chunks.iter().map(|c| c.chunk_size_decompressed).sum();
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: chunks,
+            asset_type: 0,
+            asset_size: size,
+            asset_hash_md5: md5.into(),
+        }
+    }
+
+    fn make_dir(name: &str) -> SophonManifestAssetProperty {
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: vec![],
+            asset_type: 64,
+            asset_size: 0,
+            asset_hash_md5: String::new(),
+        }
+    }
+
+    fn make_download_info() -> DownloadInfo {
+        DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com".into(),
+            url_suffix: "chunks".into(),
+        }
+    }
+
+    fn make_installer_data(files: Vec<SophonManifestAssetProperty>) -> InstallerData {
+        InstallerData {
+            client: Arc::new(Client::new()),
+            chunk_download: Arc::new(make_download_info()),
+            files,
+            label: "test".into(),
+        }
+    }
+
+    fn make_sophon_installer(hash: &str) -> SophonInstaller {
+        SophonInstaller {
+            client: Client::new(),
+            manifest: SophonManifestProto { assets: vec![] },
+            chunk_download: make_download_info(),
+            label: "test".into(),
+            tag: "1.0".into(),
+            manifest_hash: hash.into(),
+        }
+    }
+
+    #[test]
+    fn compute_totals_no_dupes() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("c1", 100), make_chunk("c2", 200)],
+            )]),
+            make_installer_data(vec![make_file("b.pak", "bb", vec![make_chunk("c3", 300)])]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 600);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn compute_totals_with_dedup() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("shared", 500)],
+            )]),
+            make_installer_data(vec![make_file(
+                "b.pak",
+                "bb",
+                vec![make_chunk("shared", 500)],
+            )]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 500);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn compute_totals_empty() {
+        let data: Vec<InstallerData> = vec![];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 0);
+        assert_eq!(files, 0);
+    }
+
+    #[test]
+    fn compute_totals_same_name_different_size() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("shared", 500)],
+            )]),
+            make_installer_data(vec![make_file(
+                "b.pak",
+                "bb",
+                vec![make_chunk("shared", 600)],
+            )]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 500);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn compute_diff_files_all_new() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![
+                make_file("a.pak", "aa", vec![]),
+                make_file("b.pak", "bb", vec![]),
+                make_file("c.pak", "cc", vec![]),
+            ],
+        };
+        let old_md5_map = HashMap::new();
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert_eq!(diff.len(), 3);
+    }
+
+    #[test]
+    fn compute_diff_files_unchanged_excluded() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![make_file("a.pak", "aa", vec![])],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("a.pak".to_string(), "aa".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert!(diff.is_empty());
+    }
+
+    #[test]
+    fn compute_diff_files_changed_included() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![make_file("a.pak", "new_md5", vec![])],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("a.pak".to_string(), "old_md5".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert_eq!(diff.len(), 1);
+    }
+
+    #[test]
+    fn compute_diff_files_dirs_filtered() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![make_dir("GameData"), make_file("a.pak", "aa", vec![])],
+        };
+        let diff = compute_diff_files(new_manifest, &HashMap::new());
+        assert_eq!(diff.len(), 1);
+        assert_eq!(diff[0].asset_name, "a.pak");
+    }
+
+    #[test]
+    fn compute_diff_files_mixed() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![
+                make_file("new.pak", "nn", vec![]),
+                make_file("changed.pak", "new_md5", vec![]),
+                make_file("unchanged.pak", "same", vec![]),
+                make_dir("somedir"),
+            ],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("changed.pak".to_string(), "old_md5".to_string());
+        old_md5_map.insert("unchanged.pak".to_string(), "same".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert_eq!(diff.len(), 2);
+        let names: Vec<&str> = diff.iter().map(|f| f.asset_name.as_str()).collect();
+        assert!(names.contains(&"new.pak"));
+        assert!(names.contains(&"changed.pak"));
+    }
+
+    #[test]
+    fn collect_deleted_files_basic() {
+        let old = SophonManifestProto {
+            assets: vec![
+                make_file("A", "a1", vec![]),
+                make_file("B", "b1", vec![]),
+                make_file("C", "c1", vec![]),
+            ],
+        };
+        let mut new_names = HashSet::new();
+        new_names.insert("A");
+        new_names.insert("D");
+        let deleted = collect_deleted_files(&old, &new_names);
+        assert_eq!(deleted.len(), 2);
+        assert!(deleted.contains(&"B".to_string()));
+        assert!(deleted.contains(&"C".to_string()));
+    }
+
+    #[test]
+    fn collect_deleted_files_none() {
+        let old = SophonManifestProto {
+            assets: vec![make_file("A", "a1", vec![]), make_file("B", "b1", vec![])],
+        };
+        let mut new_names = HashSet::new();
+        new_names.insert("A");
+        new_names.insert("B");
+        let deleted = collect_deleted_files(&old, &new_names);
+        assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn collect_deleted_files_dirs_excluded() {
+        let old = SophonManifestProto {
+            assets: vec![make_dir("old_dir"), make_file("A", "a1", vec![])],
+        };
+        let new_names: HashSet<&str> = HashSet::from(["A"]);
+        let deleted = collect_deleted_files(&old, &new_names);
+        assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn build_old_md5_map_basic() {
+        let manifest = SophonManifestProto {
+            assets: vec![
+                make_file("a.pak", "md5_a", vec![]),
+                make_file("b.pak", "md5_b", vec![]),
+                make_dir("dir"),
+            ],
+        };
+        let map = build_old_md5_map(manifest);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("a.pak"), Some(&"md5_a".to_string()));
+        assert_eq!(map.get("b.pak"), Some(&"md5_b".to_string()));
+    }
+
+    #[test]
+    fn combine_manifest_hashes_deterministic() {
+        let installers = vec![
+            make_sophon_installer("hash_a"),
+            make_sophon_installer("hash_b"),
+        ];
+        let h1 = combine_manifest_hashes(&installers);
+        let h2 = combine_manifest_hashes(&installers);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn combine_manifest_hashes_order_independent() {
+        let installers_ab = vec![
+            make_sophon_installer("hash_a"),
+            make_sophon_installer("hash_b"),
+        ];
+        let installers_ba = vec![
+            make_sophon_installer("hash_b"),
+            make_sophon_installer("hash_a"),
+        ];
+        assert_eq!(
+            combine_manifest_hashes(&installers_ab),
+            combine_manifest_hashes(&installers_ba),
+        );
+    }
+}

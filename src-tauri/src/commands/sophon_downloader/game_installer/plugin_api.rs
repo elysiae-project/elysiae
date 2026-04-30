@@ -216,3 +216,146 @@ pub async fn fetch_channel_sdks(
         .collect();
     Ok(sdks)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_id_for_code_known() {
+        assert_eq!(game_id_for_code("hk4e"), Some("gopR6Cufr3"));
+    }
+
+    #[test]
+    fn game_id_for_code_unknown() {
+        assert_eq!(game_id_for_code("unknown"), None);
+    }
+
+    #[test]
+    fn parse_plugin_api_response() {
+        let json = r#"{
+            "retcode": 0,
+            "message": "OK",
+            "data": {
+                "plugin_releases": [{
+                    "game": {"id": "gopR6Cufr3", "biz": "hk4e_global"},
+                    "plugins": [
+                        {
+                            "plugin_id": "p1",
+                            "release_id": "r1",
+                            "version": "1.0",
+                            "plugin_pkg": {
+                                "url": "https://example.com/gme.zip",
+                                "md5": "abc123",
+                                "size": "1024",
+                                "decompressed_size": "2048",
+                                "command": null,
+                                "validation": "[{\"path\":\"gme.dll\",\"md5\":\"d41d8cd98f00b204e9800998ecf8427e\",\"size\":\"100\"}]",
+                                "pkg_version_file_name": null
+                            }
+                        },
+                        {
+                            "plugin_id": "p2",
+                            "release_id": "r2",
+                            "version": "2.0",
+                            "plugin_pkg": {
+                                "url": "https://example.com/other.zip",
+                                "md5": "def456",
+                                "size": "512",
+                                "decompressed_size": "1024",
+                                "command": null,
+                                "validation": "[]",
+                                "pkg_version_file_name": null
+                            }
+                        }
+                    ]
+                }]
+            }
+        }"#;
+        let resp: PluginApiResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.data.plugin_releases.len(), 1);
+        let plugins = &resp.data.plugin_releases[0].plugins;
+        assert_eq!(plugins.len(), 2);
+        assert_eq!(plugins[0].plugin_id, "p1");
+        assert_eq!(plugins[0].plugin_pkg.size, 1024);
+        assert_eq!(plugins[0].plugin_pkg.validation.len(), 1);
+        assert_eq!(plugins[0].plugin_pkg.validation[0].path, "gme.dll");
+        assert_eq!(plugins[1].plugin_pkg.validation.len(), 0);
+    }
+
+    #[test]
+    fn parse_validation_json_string() {
+        let json = r#"{
+            "url": "https://example.com/pkg.zip",
+            "md5": "abc",
+            "size": "100",
+            "decompressed_size": "200",
+            "command": null,
+            "validation": "[{\"path\":\"file.dll\",\"md5\":\"d41d8cd98f00b204e9800998ecf8427e\",\"size\":\"50\"}]",
+            "pkg_version_file_name": null
+        }"#;
+        let pkg: PackageData = serde_json::from_str(json).unwrap();
+        assert_eq!(pkg.validation.len(), 1);
+        assert_eq!(pkg.validation[0].path, "file.dll");
+        assert_eq!(pkg.validation[0].size, Some(50));
+    }
+
+    #[test]
+    fn parse_validation_empty_string() {
+        let json = r#"{
+            "url": "https://example.com/pkg.zip",
+            "md5": "abc",
+            "size": "100",
+            "decompressed_size": "200",
+            "command": null,
+            "validation": "",
+            "pkg_version_file_name": null
+        }"#;
+        let pkg: PackageData = serde_json::from_str(json).unwrap();
+        assert!(pkg.validation.is_empty());
+    }
+
+    #[test]
+    fn parse_validation_empty_array_string() {
+        let json = r#"{
+            "url": "https://example.com/pkg.zip",
+            "md5": "abc",
+            "size": "100",
+            "decompressed_size": "200",
+            "command": null,
+            "validation": "[]",
+            "pkg_version_file_name": null
+        }"#;
+        let pkg: PackageData = serde_json::from_str(json).unwrap();
+        assert!(pkg.validation.is_empty());
+    }
+
+    #[test]
+    fn parse_str_to_u64_valid() {
+        let json = r#"{
+            "url": "https://example.com/pkg.zip",
+            "md5": "abc",
+            "size": "12345",
+            "decompressed_size": "200",
+            "command": null,
+            "validation": "[]",
+            "pkg_version_file_name": null
+        }"#;
+        let pkg: PackageData = serde_json::from_str(json).unwrap();
+        assert_eq!(pkg.size, 12345);
+    }
+
+    #[test]
+    fn parse_optional_str_to_u64_some() {
+        let json = r#"{"path":"f.dll","md5":"x","size":"999"}"#;
+        let entry: ValidationEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.size, Some(999));
+    }
+
+    #[test]
+    fn parse_optional_str_to_u64_empty() {
+        let json = r#"{"path":"f.dll","md5":"x","size":""}"#;
+        let entry: ValidationEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.size, None);
+    }
+}
