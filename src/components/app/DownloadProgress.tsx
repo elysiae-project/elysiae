@@ -41,13 +41,10 @@ export default function GameDownloadProgress() {
 				? (state.assembledFiles / state.totalFiles) * 100
 				: 0;
 		const speedMB = state.speedBps / 1024 ** 2;
-		const eta = state.etaSeconds;
-		const etaStr =
-			eta > 0
-				? eta >= 3600
-					? `${Math.floor(eta / 3600)}h ${Math.floor((eta % 3600) / 60)}m`
-					: `${Math.floor(eta / 60)}m ${Math.floor(eta % 60)}s`
-				: "";
+    const eta = state.etaSeconds;
+    const etaStr = eta > 0
+      ? `${String(Math.floor(eta / 3600)).padStart(2, "0")}:${String(Math.floor((eta % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(eta % 60)).padStart(2, "0")}`
+      : "";
 		const downloadedGB = (state.downloadedBytes / 1024 ** 3).toFixed(2);
 		const totalGB = (state.downloadTotal / 1024 ** 3).toFixed(2);
 		const verifyPct =
