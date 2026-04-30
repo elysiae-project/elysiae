@@ -77,10 +77,11 @@ export default function Dropdown({
 
 	const onChange = (index: number) => {
 		if (!open) return;
-		setLabel(labels[index]);
+		const newLabel = labels[index];
+		setLabel(newLabel);
 		setOpen(false);
 		setCurrentIndex(index);
-		onChangeAction(label);
+		onChangeAction(newLabel);
 	};
 
 	useEffect(() => {
