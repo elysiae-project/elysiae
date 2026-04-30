@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
 use tauri_plugin_log::log;
@@ -69,17 +70,28 @@ fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
         .map(|p| p.join(DOWNLOAD_STATE_FILE))
 }
 
-/// Persists download state to disk atomically (write to .tmp, then rename)
-/// to prevent corrupted state files on crash or power loss.
+/// Persists download state to disk atomically (write to unique .tmp, then
+/// rename) to prevent corrupted state files on crash or power loss.
+/// Each call uses a unique temporary file to avoid races between concurrent
+/// `spawn_blocking` saves that could otherwise collide on a shared `.tmp` path.
 pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(), String> {
     let Some(path) = download_state_path(app) else {
         let msg = "Failed to resolve download state path".to_string();
         log::error!("{}", msg);
         return Err(msg);
     };
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            let msg = format!("Failed to create download state directory: {}", e);
+            log::error!("{}", msg);
+            return Err(msg);
+        }
+    }
     match serde_json::to_string(state) {
         Ok(json) => {
-            let tmp_path = path.with_extension("tmp");
+            static SAVE_COUNTER: AtomicU64 = AtomicU64::new(0);
+            let seq = SAVE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+            let tmp_path = path.with_extension(format!("save-{seq}.tmp"));
             if let Err(e) = fs::write(&tmp_path, &json) {
                 let msg = format!("Failed to write temp download state: {}", e);
                 log::error!("{}", msg);
@@ -317,6 +329,7 @@ pub async fn sophon_download(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -335,6 +348,8 @@ pub async fn sophon_download(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -411,6 +426,7 @@ pub async fn sophon_update(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -429,6 +445,8 @@ pub async fn sophon_update(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -504,6 +522,7 @@ pub async fn sophon_preinstall(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -522,6 +541,8 @@ pub async fn sophon_preinstall(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -647,6 +668,7 @@ pub async fn sophon_resume_download(
     *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![state.vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -665,6 +687,8 @@ pub async fn sophon_resume_download(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 

@@ -5,6 +5,7 @@ mod assembly;
 mod cache;
 mod download;
 mod error;
+mod game_filters;
 mod handle;
 mod installer;
 mod plugin_api;

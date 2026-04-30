@@ -59,11 +59,12 @@ struct InstallContext {
     state_saver: StateSaver,
 }
 
-struct InstallerData {
+pub(crate) struct InstallerData {
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
     files: Vec<SophonManifestAssetProperty>,
     label: String,
+    pub matching_field: String,
 }
 
 struct DownloadItem {
@@ -81,6 +82,7 @@ pub struct SophonInstaller {
     pub manifest: SophonManifestProto,
     pub chunk_download: DownloadInfo,
     pub label: String,
+    pub matching_field: String,
     #[allow(dead_code)]
     pub tag: String,
     pub manifest_hash: String,
@@ -103,6 +105,7 @@ impl SophonInstaller {
                 .url_suffix
                 .trim_matches('/')
                 .replace('/', "-"),
+            matching_field: meta.matching_field.clone(),
             tag: tag.to_owned(),
             manifest_hash: result.hash,
         })
@@ -312,6 +315,7 @@ async fn build_diff_installers(
                 .url_suffix
                 .trim_matches('/')
                 .replace('/', "-"),
+            matching_field: new_meta.matching_field.clone(),
             tag: tag.to_owned(),
             manifest_hash: new_manifest_hash,
         });
@@ -339,6 +343,7 @@ fn build_installer_data(installers: Vec<SophonInstaller>) -> Vec<InstallerData> 
         .into_iter()
         .map(|inst| InstallerData {
             label: inst.label,
+            matching_field: inst.matching_field,
             client: Arc::new(inst.client),
             chunk_download: Arc::new(inst.chunk_download),
             files: inst
@@ -469,6 +474,12 @@ async fn build_download_state(
         }
     }
 
+    log::info!(
+        "build_download_state: {} download items, {} chunk->file mappings, file_idx={}",
+        download_items.len(),
+        chunk_to_files.len(),
+        file_idx,
+    );
     Ok((download_items, chunk_to_files))
 }
 
@@ -633,7 +644,7 @@ async fn download_chunk_with_retries(
     Ok(())
 }
 
-fn notify_assembly_ready(
+async fn notify_assembly_ready(
     chunk_name: &str,
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
@@ -651,11 +662,17 @@ fn notify_assembly_ready(
                 }
             })
             .collect(),
-        None => Vec::new(),
+        None => {
+            log::warn!(
+                "notify_assembly_ready: chunk '{}' not found in chunk_to_files (already removed or never registered)",
+                chunk_name
+            );
+            Vec::new()
+        }
     };
 
     for entry in ready {
-        let _ = assemble_tx.try_send(entry);
+        let _ = assemble_tx.send(entry).await;
     }
 }
 
@@ -767,7 +784,7 @@ async fn process_download_item(
         }
     }
 
-    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
+    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx).await;
 
     Ok(())
 }
@@ -812,6 +829,8 @@ async fn finalize_install(
     tag: &str,
     is_preinstall: bool,
     assembly_task: tokio::task::JoinHandle<SophonResult<()>>,
+    game_code: &str,
+    vo_langs: &[String],
 ) -> SophonResult<()> {
     let cancelled = results
         .iter()
@@ -828,6 +847,21 @@ async fn finalize_install(
 
     results.into_iter().find(|r| r.is_err()).transpose()?;
     assembly_task.await??;
+
+    {
+        let assembled = ctx.assembled_files.load(Ordering::Relaxed);
+        let total = ctx.total_files;
+        if assembled != total {
+            log::warn!(
+                "Sophon install completed but assembled_files ({}) != total_files ({}). {} files may be missing!",
+                assembled,
+                total,
+                total - assembled,
+            );
+        } else {
+            log::info!("Sophon install: all {} files assembled successfully", total);
+        }
+    }
 
     {
         let dc = ctx
@@ -873,6 +907,54 @@ async fn finalize_install(
     })
     .await??;
 
+    if game_code == "hkrpg" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_hkrpg_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hkrpg audio language record: {}", e);
+            }
+        })
+        .await?;
+        let gd = ctx.game_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_hkrpg_app_info(&gd) {
+                log::warn!("Failed to write hkrpg app.info: {}", e);
+            }
+            if let Err(e) = super::game_filters::write_hkrpg_binary_version_files(&gd) {
+                log::warn!("Failed to write hkrpg binary version files: {}", e);
+            }
+        })
+        .await?;
+    } else if game_code == "hk4e" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_hk4e_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hk4e audio language record: {}", e);
+            }
+        })
+        .await?;
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        let af = (*ctx.all_files).clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_pkg_version_from_manifest(&gd, &af, &vl) {
+                log::warn!("Failed to write hk4e pkg_version: {}", e);
+            }
+        })
+        .await?;
+    } else if game_code == "nap" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_nap_audio_lang_records(&gd, &vl) {
+                log::warn!("Failed to write nap audio language records: {}", e);
+            }
+        })
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -895,6 +977,8 @@ pub async fn install(
     resume: ResumeContext,
     options: InstallOptions,
     callbacks: InstallCallbacks,
+    game_code: &str,
+    vo_langs: &[String],
 ) -> SophonResult<()> {
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
@@ -946,13 +1030,30 @@ pub async fn install(
         }
     }
 
-    let installer_data = build_installer_data(installers);
-    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(
-        installer_data
-            .iter()
-            .flat_map(|d| d.files.clone())
-            .collect(),
-    );
+    let mut installer_data = build_installer_data(installers);
+    if game_code == "nap" {
+        super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
+    }
+    let mut all_files: Vec<SophonManifestAssetProperty> = installer_data
+        .iter()
+        .flat_map(|d| d.files.clone())
+        .collect();
+    if game_code == "hkrpg" {
+        super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
+    } else if game_code == "hk4e" {
+        super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
+    } else if game_code == "nap" {
+        super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
+    }
+    let filtered_set: HashSet<String> = all_files.iter().map(|f| f.asset_name.clone()).collect();
+    let installer_data: Vec<InstallerData> = installer_data
+        .into_iter()
+        .map(|mut d| {
+            d.files.retain(|f| filtered_set.contains(&f.asset_name));
+            d
+        })
+        .collect();
+    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
             .iter()
@@ -961,6 +1062,21 @@ pub async fn install(
     );
 
     let (total_compressed, total_files) = compute_totals(&installer_data);
+    log::info!(
+        "Sophon install: {} total files across {} installers, {} compressed bytes",
+        total_files,
+        installer_data.len(),
+        total_compressed,
+    );
+    for (i, d) in installer_data.iter().enumerate() {
+        log::info!(
+            "  installer[{}]: label={}, matching_field={}, files={}",
+            i,
+            d.label,
+            d.matching_field,
+            d.files.len(),
+        );
+    }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
 
     let pre_downloaded: HashSet<String> = if options.is_resume {
@@ -1133,6 +1249,8 @@ pub async fn install(
         tag,
         options.is_preinstall,
         assembly_task,
+        game_code,
+        vo_langs,
     )
     .await
 }
