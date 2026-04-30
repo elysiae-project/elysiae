@@ -1,35 +1,38 @@
 import { appDataDir, join } from "@tauri-apps/api/path";
-import { ComponentData, WineComponent, WineModule } from "../types";
+import {
+	ComponentData,
+	WineComponent,
+	WineModule,
+	WineSetupProgress,
+} from "../types";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
-import { downloadFile } from "../util/WebUtils";
+import { downloadFileWithProgress } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
 
-// Components that get regular updates (i.e. wine, dxvk)
-const components: WineComponent[] = [
-	{
+const components: ((
+	onProgress: (event: WineSetupProgress) => void,
+) => WineComponent)[] = [
+	(onProgress) => ({
 		componentName: "wine",
 		extractTo: "wine",
 		saveTo: "wine.tar.xz",
 		postInstall: async () => {
-			// Set up the wineprefix for use and install all additional wine modules
 			if (!(await exists(await join("wine", "drive_c")))) {
-				// Initial wineserver startup
 				await wineCommand("-i", "wineboot");
 				await wineCommand("--wait", "wineserver");
 				await wineCommand("-k", "wineserver");
 
-				await installWineModules();
+				await installWineModules(onProgress);
 			}
 		},
-	},
-	{
+	}),
+	() => ({
 		componentName: "dxvk",
 		extractTo: "dxvk",
 		saveTo: "dxvk.tar.gz",
 		postInstall: async () => {
-			// Move contents into Wine's drive_c directory and add registry keys to associate the new DLL files with wine
 			const appData = await appDataDir();
 
 			await executeShellCommand(
@@ -46,36 +49,31 @@ const components: WineComponent[] = [
 				}),
 			);
 
-			// Remove Temporary Directory
 			await removeDir("dxvk");
 		},
-	},
-	{
+	}),
+	() => ({
 		componentName: "jadeite",
 		extractTo: "jadeite",
 		saveTo: "jadeite.zip",
 		postInstall: async () => {
-			// Run the telemetry blocker script. Will ask for user admin permission if the telemetry blocking hasn't been applied before
 			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
-	},
-	{
-		// While not used right now, it will for certain be used in future games or game updates as DX12 becomes the industry standard. Best to install and stay ahead of updated
+	}),
+	() => ({
 		componentName: "vkd3d",
 		extractTo: "vkd3d-temp",
 		saveTo: "vkd3d.tar.zst",
 		postInstall: async () => {
-			// Run setup_vkd3d_proton.sh to automate the installation process
 			await executeLocalBinary("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
 				WINEPREFIX: await winePrefix(),
 			});
 
-			await removeDir("vkd3d");
+			await removeDir("vkd3d-temp");
 		},
-	},
-] as const;
+	}),
+];
 
-// Components that do not need to be updated (i.e. Visual C++ Redistributable)
 const wineModules: WineModule[] = [
 	{
 		name: "vcrun2026-x64",
@@ -101,12 +99,12 @@ const wineModules: WineModule[] = [
 	},
 ] as const;
 
-/**
- * Update All Components in the wine install
- */
-export const updateWineComponents = async (): Promise<void> => {
+export const updateWineComponents = async (
+	onProgress: (event: WineSetupProgress) => void,
+): Promise<void> => {
 	info(`${await appDataDir()}`);
-	for (const component of components) {
+	for (const componentFactory of components) {
+		const component = componentFactory(onProgress);
 		try {
 			info(`Installing ${component.componentName}`);
 
@@ -114,12 +112,39 @@ export const updateWineComponents = async (): Promise<void> => {
 			const response = await fetch(assetURL);
 			if (response.status === 200) {
 				const json: ComponentData[] = await response.json();
-				await downloadFile(json[0].download_url, component.saveTo);
 
-				// Extract file
+				onProgress({
+					type: "wineSetupDownloading",
+					component: component.componentName,
+					downloaded_bytes: 0,
+					total_bytes: 0,
+				});
+
+				await downloadFileWithProgress(
+					json[0].download_url,
+					component.saveTo,
+					(progress, total) => {
+						onProgress({
+							type: "wineSetupDownloading",
+							component: component.componentName,
+							downloaded_bytes: progress,
+							total_bytes: total,
+						});
+					},
+				);
+
+				onProgress({
+					type: "wineSetupExtracting",
+					component: component.componentName,
+				});
+
 				await extractFile(component.saveTo, component.extractTo);
 
 				if (typeof component.postInstall !== "undefined") {
+					onProgress({
+						type: "wineSetupInstalling",
+						component: component.componentName,
+					});
 					await component.postInstall();
 				}
 			} else {
@@ -130,18 +155,37 @@ export const updateWineComponents = async (): Promise<void> => {
 		}
 	}
 	info("Wine Component Download Complete");
+	onProgress({ type: "wineSetupFinished" });
 };
 
-/**
- * Install additional Windows programs/libraries required for the programs that Elysiae runs
- */
-const installWineModules = async (): Promise<void> => {
+const installWineModules = async (
+	onProgress: (event: WineSetupProgress) => void,
+): Promise<void> => {
 	await Promise.all(
 		wineModules.map(async (module) => {
 			info(`Installing ${module.name}`);
 
 			const filename = module.downloadLink.split("/").pop() as string;
-			await downloadFile(module.downloadLink, filename);
+
+			onProgress({
+				type: "wineSetupDownloading",
+				component: module.name,
+				downloaded_bytes: 0,
+				total_bytes: 0,
+			});
+
+			await downloadFileWithProgress(
+				module.downloadLink,
+				filename,
+				(progress, total) => {
+					onProgress({
+						type: "wineSetupDownloading",
+						component: module.name,
+						downloaded_bytes: progress,
+						total_bytes: total,
+					});
+				},
+			);
 
 			if (module.moduleType === "exe") {
 				await runExeWithWine(filename, "/install /quiet /norestart");
@@ -151,7 +195,6 @@ const installWineModules = async (): Promise<void> => {
 					const sys32 = await join("wine", "drive_c", "windows", "system32");
 					await rename(filename, `${sys32}/${filename}`);
 				} else {
-					// moduleType === "dll32"
 					const syswow = await join("wine", "drive_c", "windows", "syswow64");
 					await rename(filename, `${syswow}/${filename}`);
 				}
@@ -162,11 +205,6 @@ const installWineModules = async (): Promise<void> => {
 	info("Wine Module Download Complete");
 };
 
-/**
- * Run a command in the wine package or in the scope of a wine environment
- * @param args Command arguments
- * @param binary Which wine binary you want to run
- */
 export const wineCommand = async (
 	args: string,
 	binary: "wine" | "wineboot" | "wineserver" = "wine",
@@ -184,11 +222,6 @@ export const wineCommand = async (
 	});
 };
 
-/**
- * Execute a Windows executable (.exe) with Wine
- * @param path path to the executable
- * @param args Any additional arguments the executable may have
- */
 export const runExeWithWine = async (
 	path: string,
 	args?: string,
@@ -206,19 +239,12 @@ export const runExeWithJadeite = async (path: string): Promise<void> => {
 	await wineCommand(`${fullJadeitePath} ${fullExePath}`);
 };
 
-/**
- * Adds a DLL to the wine registry
- * @param dllName name of the DLL. No path needed, just the name
- */
 const registerNewDLL = async (dllName: string): Promise<void> => {
 	await wineCommand(
 		`reg add 'HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides' /v ${dllName} /t REG_SZ /d native /f`,
 	);
 };
 
-/**
- * @returns weather or not a wine environment exists (checks if the drive_c folder exists, which indicates that a wine environment is present)
- */
 export const wineEnvAvailable = async (): Promise<boolean> => {
 	const winePath = await winePrefix();
 	const driveC = await join(winePath, "drive_c");
@@ -229,9 +255,6 @@ export const wineEnvAvailable = async (): Promise<boolean> => {
 	return false;
 };
 
-/**
- * @returns Path to the wine prefix directory
- */
 export const winePrefix = async (): Promise<string> => {
 	return new Promise((resolve) => {
 		appDataDir().then((appData) => {
