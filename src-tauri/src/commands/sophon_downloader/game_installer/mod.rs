@@ -1,6 +1,6 @@
 //! Core game installer module for Sophon chunk-based downloads.
-mod adaptive;
 mod adaptive_assembly;
+mod adaptive_download;
 mod api;
 mod assembly;
 mod cache;

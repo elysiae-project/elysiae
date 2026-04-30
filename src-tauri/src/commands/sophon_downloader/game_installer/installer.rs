@@ -14,8 +14,8 @@ use tauri_plugin_log::log;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::adaptive::AdaptiveSemaphore;
 use super::adaptive_assembly::AdaptiveAssembly;
+use super::adaptive_download::AdaptiveSemaphore;
 use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
 use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
 use super::cache::{self, VerificationEntry};
