@@ -10,7 +10,6 @@ pub use hkrpg::{
     filter_hkrpg_asset_list, write_app_info as write_hkrpg_app_info,
     write_audio_lang_record as write_hkrpg_audio_lang_record,
     write_binary_version_files as write_hkrpg_binary_version_files,
-    write_config_ini as write_hkrpg_config_ini,
 };
 pub use nap::{filter_nap_asset_list, filter_nap_installers, write_nap_audio_lang_records};
 

@@ -917,11 +917,7 @@ async fn finalize_install(
         })
         .await?;
         let gd = ctx.game_dir.clone();
-        let tag_owned = tag.to_owned();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::game_filters::write_hkrpg_config_ini(&gd, &tag_owned) {
-                log::warn!("Failed to write hkrpg config.ini: {}", e);
-            }
             if let Err(e) = super::game_filters::write_hkrpg_app_info(&gd) {
                 log::warn!("Failed to write hkrpg app.info: {}", e);
             }

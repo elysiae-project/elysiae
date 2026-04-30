@@ -21,95 +21,22 @@ use crate::commands::sophon_downloader::SophonProgress;
 
 type ProgressFn = Arc<dyn Fn(SophonProgress) + Send + Sync>;
 
-const CONFIG_INI: &str = "config.ini";
-const GENERAL_SECTION: &str = "[General]";
+const PLUGIN_VERSIONS_FILE: &str = "plugin_versions.json";
 
 fn read_plugin_versions(game_dir: &Path) -> HashMap<String, String> {
-    let config_path = game_dir.join(CONFIG_INI);
-    let Ok(content) = fs::read_to_string(&config_path) else {
+    let path = game_dir.join(PLUGIN_VERSIONS_FILE);
+    let Ok(content) = fs::read_to_string(&path) else {
         return HashMap::new();
     };
-
-    let mut versions = HashMap::new();
-    let mut in_general = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == GENERAL_SECTION {
-            in_general = true;
-            continue;
-        }
-        if in_general && trimmed.starts_with('[') {
-            break;
-        }
-        if in_general && let Some((key, value)) = trimmed.split_once('=') {
-            versions.insert(key.trim().to_string(), value.trim().to_string());
-        }
-    }
-
-    versions
+    serde_json::from_str(&content).unwrap_or_default()
 }
 
 fn write_plugin_version(game_dir: &Path, key: &str, value: &str) -> std::io::Result<()> {
-    let config_path = game_dir.join(CONFIG_INI);
-
-    if config_path.exists() {
-        let content = fs::read_to_string(&config_path)?;
-        let mut lines: Vec<String> = content.lines().map(String::from).collect();
-        let mut in_general = false;
-        let mut found = false;
-
-        for line in &mut lines {
-            let trimmed = line.trim();
-            if trimmed == GENERAL_SECTION {
-                in_general = true;
-                continue;
-            }
-            if in_general && trimmed.starts_with('[') {
-                in_general = false;
-            }
-            if in_general
-                && trimmed.starts_with(key)
-                && let Some(eq_pos) = trimmed.find('=')
-                && trimmed[..eq_pos].trim() == key
-            {
-                *line = format!("{key}={value}");
-                found = true;
-            }
-        }
-
-        if !found {
-            let mut insert_idx = 0;
-            let mut in_general_section = false;
-            for (i, line) in lines.iter().enumerate() {
-                if line.trim() == GENERAL_SECTION {
-                    in_general_section = true;
-                    insert_idx = i + 1;
-                } else if in_general_section && line.trim().starts_with('[') {
-                    insert_idx = i;
-                    break;
-                } else if in_general_section {
-                    insert_idx = i + 1;
-                }
-            }
-            if in_general_section {
-                lines.insert(insert_idx, format!("{key}={value}"));
-            } else {
-                lines.push(String::new());
-                lines.push(GENERAL_SECTION.to_string());
-                lines.push(format!("{key}={value}"));
-            }
-        }
-
-        let mut out = lines.join("\n");
-        if !out.ends_with('\n') {
-            out.push('\n');
-        }
-        fs::write(&config_path, out)
-    } else {
-        let content = format!("{GENERAL_SECTION}\n{key}={value}\n");
-        fs::write(&config_path, content)
-    }
+    let path = game_dir.join(PLUGIN_VERSIONS_FILE);
+    let mut versions = read_plugin_versions(game_dir);
+    versions.insert(key.to_string(), value.to_string());
+    let content = serde_json::to_string_pretty(&versions)?;
+    fs::write(&path, content)
 }
 
 fn plugin_needs_update(
