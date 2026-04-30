@@ -644,7 +644,7 @@ async fn download_chunk_with_retries(
     Ok(())
 }
 
-fn notify_assembly_ready(
+async fn notify_assembly_ready(
     chunk_name: &str,
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
@@ -672,7 +672,7 @@ fn notify_assembly_ready(
     };
 
     for entry in ready {
-        let _ = assemble_tx.try_send(entry);
+        let _ = assemble_tx.send(entry).await;
     }
 }
 
@@ -784,7 +784,7 @@ async fn process_download_item(
         }
     }
 
-    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
+    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx).await;
 
     Ok(())
 }
