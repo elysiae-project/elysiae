@@ -425,4 +425,342 @@ mod tests {
         };
         assert_eq!(chunk_filename(&chunk), "abc123.zstd");
     }
+
+    fn make_chunk_file(chunks_dir: &Path, chunk_name: &str, data: &[u8]) {
+        let compressed = zstd::encode_all(data, 0).unwrap();
+        fs::write(chunks_dir.join(format!("{}.zstd", chunk_name)), &compressed).unwrap();
+    }
+
+    fn compute_md5_hex(data: &[u8]) -> String {
+        let mut hasher = Md5::new();
+        hasher.update(data);
+        hex::encode(hasher.finalize())
+    }
+
+    fn make_chunk(name: &str, offset: u64, decompressed_size: u64) -> SophonManifestAssetChunk {
+        SophonManifestAssetChunk {
+            chunk_name: name.to_string(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: offset,
+            chunk_size: 0,
+            chunk_size_decompressed: decompressed_size,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        }
+    }
+
+    #[test]
+    fn assemble_file_from_single_chunk() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_data = b"hello assembly world!";
+        make_chunk_file(&chunks_dir, "chunk0", original_data);
+        let md5 = compute_md5_hex(original_data);
+
+        let file = SophonManifestAssetProperty {
+            asset_name: "output.bin".to_string(),
+            asset_chunks: vec![make_chunk("chunk0", 0, original_data.len() as u64)],
+            asset_type: 0,
+            asset_size: original_data.len() as u64,
+            asset_hash_md5: md5,
+        };
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("chunk0".to_string(), 1);
+        let verify_cache = DashMap::new();
+
+        assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        )
+        .unwrap();
+
+        let result = fs::read(game_dir.join("output.bin")).unwrap();
+        assert_eq!(result, original_data);
+    }
+
+    #[test]
+    fn assemble_file_from_multiple_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let data_a = b"AAAA";
+        let data_b = b"BBBB";
+        let total_size = (data_a.len() + data_b.len()) as u64;
+        let mut full_data = Vec::new();
+        full_data.extend_from_slice(data_a);
+        full_data.extend_from_slice(data_b);
+
+        make_chunk_file(&chunks_dir, "chunkA", data_a);
+        make_chunk_file(&chunks_dir, "chunkB", data_b);
+
+        let md5 = compute_md5_hex(&full_data);
+
+        let file = SophonManifestAssetProperty {
+            asset_name: "multi.bin".to_string(),
+            asset_chunks: vec![
+                make_chunk("chunkA", 0, data_a.len() as u64),
+                make_chunk("chunkB", data_a.len() as u64, data_b.len() as u64),
+            ],
+            asset_type: 0,
+            asset_size: total_size,
+            asset_hash_md5: md5,
+        };
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("chunkA".to_string(), 1);
+        chunk_refcounts.insert("chunkB".to_string(), 1);
+        let verify_cache = DashMap::new();
+
+        assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        )
+        .unwrap();
+
+        let result = fs::read(game_dir.join("multi.bin")).unwrap();
+        assert_eq!(&result[..4], data_a);
+        assert_eq!(&result[4..8], data_b);
+        assert_eq!(result.len(), total_size as usize);
+    }
+
+    #[test]
+    fn assemble_file_skips_valid_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_data = b"already here";
+        let md5 = compute_md5_hex(original_data);
+        let target = game_dir.join("existing.bin");
+        fs::write(&target, original_data).unwrap();
+
+        make_chunk_file(&chunks_dir, "chunk_skip", original_data);
+
+        let file = SophonManifestAssetProperty {
+            asset_name: "existing.bin".to_string(),
+            asset_chunks: vec![make_chunk("chunk_skip", 0, original_data.len() as u64)],
+            asset_type: 0,
+            asset_size: original_data.len() as u64,
+            asset_hash_md5: md5,
+        };
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("chunk_skip".to_string(), 1);
+        let verify_cache = DashMap::new();
+
+        assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        )
+        .unwrap();
+
+        assert!(!chunk_refcounts.contains_key("chunk_skip"));
+        assert!(!chunks_dir.join("chunk_skip.zstd").exists());
+
+        let result = fs::read(&target).unwrap();
+        assert_eq!(result, original_data);
+    }
+
+    #[test]
+    fn assemble_file_reassembles_md5_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let wrong_data = b"wrong content!";
+        let correct_data = b"correct data!!";
+        let md5 = compute_md5_hex(correct_data);
+
+        let target = game_dir.join("mismatch.bin");
+        fs::write(&target, wrong_data).unwrap();
+
+        make_chunk_file(&chunks_dir, "chunk_fix", correct_data);
+
+        let file = SophonManifestAssetProperty {
+            asset_name: "mismatch.bin".to_string(),
+            asset_chunks: vec![make_chunk("chunk_fix", 0, correct_data.len() as u64)],
+            asset_type: 0,
+            asset_size: correct_data.len() as u64,
+            asset_hash_md5: md5,
+        };
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("chunk_fix".to_string(), 1);
+        let verify_cache = DashMap::new();
+
+        assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        )
+        .unwrap();
+
+        let result = fs::read(&target).unwrap();
+        assert_eq!(result, correct_data);
+    }
+
+    #[test]
+    fn decrement_chunk_refcount_to_zero_deletes() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("chunks");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let chunk_file = chunks_dir.join("vanish.zstd");
+        fs::write(&chunk_file, b"dummy").unwrap();
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("vanish".to_string(), 1);
+
+        decrement_chunk_refcount("vanish", &chunk_refcounts, &chunks_dir);
+
+        assert!(!chunk_refcounts.contains_key("vanish"));
+        assert!(!chunk_file.exists());
+    }
+
+    #[test]
+    fn decrement_chunk_refcount_nonzero_keeps() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("chunks");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let chunk_file = chunks_dir.join("keep.zstd");
+        fs::write(&chunk_file, b"dummy").unwrap();
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("keep".to_string(), 2);
+
+        decrement_chunk_refcount("keep", &chunk_refcounts, &chunks_dir);
+
+        let count = *chunk_refcounts.get("keep").unwrap();
+        assert_eq!(count, 1);
+        assert!(chunk_file.exists());
+    }
+
+    #[test]
+    fn cleanup_tmp_files_removes_tmp() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.tmp");
+        let b = dir.path().join("b.tmp");
+        let sub = dir.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let c = sub.join("c.tmp");
+        fs::write(&a, b"x").unwrap();
+        fs::write(&b, b"x").unwrap();
+        fs::write(&c, b"x").unwrap();
+
+        cleanup_tmp_files(dir.path()).unwrap();
+
+        assert!(!a.exists());
+        assert!(!b.exists());
+        assert!(!c.exists());
+    }
+
+    #[test]
+    fn cleanup_tmp_files_skips_non_tmp() {
+        let dir = tempfile::tempdir().unwrap();
+        let keep = dir.path().join("keep.dat");
+        let keep2 = dir.path().join("important.txt");
+        fs::write(&keep, b"data").unwrap();
+        fs::write(&keep2, b"data").unwrap();
+
+        cleanup_tmp_files(dir.path()).unwrap();
+
+        assert!(keep.exists());
+        assert!(keep2.exists());
+    }
+
+    #[test]
+    fn run_assembly_task_out_of_bounds_file_idx() {
+        let dir = tempfile::tempdir().unwrap();
+        let params = AssemblyTaskParams {
+            file_idx: 5,
+            tmp_dir_idx: 0,
+            all_files: Arc::new(vec![]),
+            all_tmp_dirs: Arc::new(vec![dir.path().to_path_buf()]),
+            game_dir: dir.path().to_path_buf(),
+            chunks_dir: Arc::new(dir.path().to_path_buf()),
+            chunk_refcounts: Arc::new(DashMap::new()),
+            verify_cache: Arc::new(DashMap::new()),
+            assembled_files: Arc::new(AtomicU64::new(0)),
+            last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+            total_files: 0,
+        };
+
+        let result = run_assembly_task(params, |_| {});
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::IndexOutOfBounds { kind: "file", .. }
+        ));
+    }
+
+    #[test]
+    fn run_assembly_task_out_of_bounds_tmp_dir_idx() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = SophonManifestAssetProperty {
+            asset_name: "dummy".to_string(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: 0,
+            asset_hash_md5: String::new(),
+        };
+        let params = AssemblyTaskParams {
+            file_idx: 0,
+            tmp_dir_idx: 99,
+            all_files: Arc::new(vec![file]),
+            all_tmp_dirs: Arc::new(vec![]),
+            game_dir: dir.path().to_path_buf(),
+            chunks_dir: Arc::new(dir.path().to_path_buf()),
+            chunk_refcounts: Arc::new(DashMap::new()),
+            verify_cache: Arc::new(DashMap::new()),
+            assembled_files: Arc::new(AtomicU64::new(0)),
+            last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+            total_files: 1,
+        };
+
+        let result = run_assembly_task(params, |_| {});
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::IndexOutOfBounds {
+                kind: "temp dir",
+                ..
+            }
+        ));
+    }
 }
