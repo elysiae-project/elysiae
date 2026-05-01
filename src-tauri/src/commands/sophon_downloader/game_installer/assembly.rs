@@ -100,6 +100,7 @@ pub fn assemble_file(
             &target_path,
             file.asset_size,
             &file.asset_hash_md5,
+            game_dir,
             verify_cache,
         )?;
 
