@@ -31,7 +31,7 @@ use crate::commands::sophon_downloader::proto_parse::{
 };
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
-pub type StateSaver = Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>;
+pub type StateSaver = Arc<dyn Fn(&DashMap<String, u64>) + Send + Sync>;
 
 pub struct ResumeContext {
     pub prev_manifest_hash: String,
@@ -54,7 +54,7 @@ struct InstallContext {
     last_update: Arc<Mutex<Instant>>,
     download_start: Instant,
     updater: ProgressUpdater,
-    downloaded_chunks: Arc<Mutex<HashMap<String, u64>>>,
+    downloaded_chunks: Arc<DashMap<String, u64>>,
     chunks_since_save: Arc<AtomicU64>,
     pending_saves: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
@@ -720,24 +720,12 @@ async fn process_download_item(
             .fetch_sub(item.chunk.chunk_size, Ordering::Relaxed);
     }
 
-    {
-        let mut dc = ctx.downloaded_chunks.lock().unwrap_or_else(|e| {
-            log::error!("downloaded_chunks mutex poisoned, recovering");
-            e.into_inner()
-        });
-        dc.insert(item.chunk.chunk_name.clone(), item.chunk.chunk_size);
-    }
+    ctx.downloaded_chunks
+        .insert(item.chunk.chunk_name.clone(), item.chunk.chunk_size);
 
     let count = ctx.chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
     if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
-        let dc = ctx
-            .downloaded_chunks
-            .lock()
-            .unwrap_or_else(|e| {
-                log::error!("downloaded_chunks mutex poisoned during batch save, recovering");
-                e.into_inner()
-            })
-            .clone();
+        let dc = Arc::clone(&ctx.downloaded_chunks);
         let saver = Arc::clone(&ctx.state_saver);
         let handle = tokio::task::spawn_blocking(move || saver(&dc));
         ctx.pending_saves
@@ -859,14 +847,7 @@ async fn finalize_install(
     }
 
     {
-        let dc = ctx
-            .downloaded_chunks
-            .lock()
-            .unwrap_or_else(|e| {
-                log::error!("downloaded_chunks mutex poisoned at final save, recovering");
-                e.into_inner()
-            })
-            .clone();
+        let dc = Arc::clone(&ctx.downloaded_chunks);
         let saver = Arc::clone(&ctx.state_saver);
         tokio::task::spawn_blocking(move || saver(&dc))
             .await
@@ -1163,6 +1144,10 @@ pub async fn install(
     };
 
     let adaptive_assembly = Arc::new(AdaptiveAssembly::new());
+    let initial_dashmap: DashMap<String, u64> = DashMap::new();
+    for (k, v) in initial_chunks {
+        initial_dashmap.insert(k, v);
+    }
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
         game_dir: game_dir.to_path_buf(),
@@ -1179,7 +1164,7 @@ pub async fn install(
         last_update: Arc::new(Mutex::new(Instant::now())),
         download_start: Instant::now(),
         updater: Arc::clone(&callbacks.updater),
-        downloaded_chunks: Arc::new(Mutex::new(initial_chunks)),
+        downloaded_chunks: Arc::new(initial_dashmap),
         chunks_since_save: Arc::new(AtomicU64::new(0)),
         pending_saves: Arc::new(Mutex::new(Vec::new())),
         state_saver: callbacks.state_saver,
@@ -1871,7 +1856,7 @@ mod tests {
             last_update: Arc::new(Mutex::new(Instant::now())),
             download_start: Instant::now(),
             updater: Arc::new(|_| {}),
-            downloaded_chunks: Arc::new(Mutex::new(HashMap::new())),
+            downloaded_chunks: Arc::new(DashMap::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
             pending_saves: Arc::new(Mutex::new(Vec::new())),
             state_saver: Arc::new(|_| {}),

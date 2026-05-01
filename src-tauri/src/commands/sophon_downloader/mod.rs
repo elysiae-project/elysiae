@@ -7,6 +7,7 @@
 pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
+use dashmap::DashMap;
 use game_installer::{DownloadHandle, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -277,7 +278,11 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
         current_tag: state.current_tag.clone(),
         manifest_hash: state.manifest_hash.clone(),
     };
-    Arc::new(move |chunks: &HashMap<String, u64>| {
+    Arc::new(move |chunks: &DashMap<String, u64>| {
+        let chunks_map: HashMap<String, u64> = chunks
+            .iter()
+            .map(|entry| (entry.key().clone(), *entry.value()))
+            .collect();
         let s = DownloadState {
             game_id: meta.game_id.clone(),
             vo_lang: meta.vo_lang.clone(),
@@ -285,7 +290,7 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
             download_type: meta.download_type.clone(),
             current_tag: meta.current_tag.clone(),
             manifest_hash: meta.manifest_hash.clone(),
-            downloaded_chunks: chunks.clone(),
+            downloaded_chunks: chunks_map,
         };
         save_download_state(&app, &s).ok();
     })
