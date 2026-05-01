@@ -728,13 +728,12 @@ async fn process_download_item(
         let dc = Arc::clone(&ctx.downloaded_chunks);
         let saver = Arc::clone(&ctx.state_saver);
         let handle = tokio::task::spawn_blocking(move || saver(&dc));
-        ctx.pending_saves
-            .lock()
-            .unwrap_or_else(|e| {
-                log::error!("pending_saves mutex poisoned, recovering");
-                e.into_inner()
-            })
-            .push(handle);
+        let mut pending = ctx.pending_saves.lock().unwrap_or_else(|e| {
+            log::error!("pending_saves mutex poisoned, recovering");
+            e.into_inner()
+        });
+        pending.retain(|h| !h.is_finished());
+        pending.push(handle);
     }
 
     let db = if was_actually_downloaded || !item.is_pre_downloaded {
