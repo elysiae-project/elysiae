@@ -586,6 +586,7 @@ fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveSemaphore>) -> CancellationTok
 async fn check_needs_download(
     dest: PathBuf,
     chunk: &SophonManifestAssetChunk,
+    game_dir: &Path,
     verify_cache: &Arc<DashMap<String, VerificationEntry>>,
 ) -> SophonResult<bool> {
     if !dest.exists() {
@@ -595,9 +596,10 @@ async fn check_needs_download(
     let chunk_size = chunk.chunk_size;
     let expected_md5 = chunk.chunk_compressed_hash_md5.clone();
     let cache = Arc::clone(verify_cache);
+    let gd = game_dir.to_path_buf();
 
     let valid = tokio::task::spawn_blocking(move || {
-        cache::check_file_md5_cached(&dest, chunk_size, &expected_md5, &cache).unwrap_or(false)
+        cache::check_file_md5_cached(&dest, chunk_size, &expected_md5, &gd, &cache).unwrap_or(false)
     })
     .await?;
 
@@ -709,7 +711,8 @@ async fn process_download_item(
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(&item.chunk));
 
     let mut was_actually_downloaded = false;
-    let needs_download = check_needs_download(dest.clone(), &item.chunk, &ctx.verify_cache).await?;
+    let needs_download =
+        check_needs_download(dest.clone(), &item.chunk, &ctx.game_dir, &ctx.verify_cache).await?;
     if needs_download {
         download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
         was_actually_downloaded = true;
@@ -1084,8 +1087,9 @@ pub async fn install(
                         let sz = file.asset_size;
                         let md5 = file.asset_hash_md5.clone();
                         let vc = Arc::clone(&verify_cache);
+                        let gd = game_dir.to_path_buf();
                         tokio::task::spawn_blocking(move || {
-                            cache::check_file_md5_cached(&tp, sz, &md5, &vc).unwrap_or(false)
+                            cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc).unwrap_or(false)
                         })
                         .await?
                     };
@@ -1317,8 +1321,9 @@ pub async fn verify_integrity(
             let file_path = file_path.clone();
             let asset_size = asset.asset_size;
             let asset_md5 = asset.asset_hash_md5.clone();
+            let gd = game_dir.to_path_buf();
             move || {
-                cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &verify_cache)
+                cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &gd, &verify_cache)
                     .unwrap_or(false)
             }
         })
@@ -1391,6 +1396,7 @@ async fn redownload_asset(
                 &chunk_path,
                 chunk.chunk_size,
                 &chunk.chunk_compressed_hash_md5,
+                game_dir,
                 &DashMap::new(),
             )
             .unwrap_or(false);
@@ -1747,7 +1753,9 @@ mod tests {
         let chunk = make_chunk("c1", 100);
         let cache = Arc::new(DashMap::new());
 
-        let needs = check_needs_download(dest, &chunk, &cache).await.unwrap();
+        let needs = check_needs_download(dest, &chunk, dir.path(), &cache)
+            .await
+            .unwrap();
         assert!(needs);
     }
 
@@ -1773,8 +1781,13 @@ mod tests {
             .as_secs();
 
         let cache: Arc<DashMap<String, VerificationEntry>> = Arc::new(DashMap::new());
+        let rel_path = file_path
+            .strip_prefix(dir.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         cache.insert(
-            file_path.to_string_lossy().to_string(),
+            rel_path,
             VerificationEntry {
                 size: data.len() as u64,
                 md5: md5_hex.clone(),
@@ -1785,7 +1798,7 @@ mod tests {
         let mut chunk = make_chunk("c1", data.len() as u64);
         chunk.chunk_compressed_hash_md5 = md5_hex;
 
-        let needs = check_needs_download(file_path, &chunk, &cache)
+        let needs = check_needs_download(file_path, &chunk, dir.path(), &cache)
             .await
             .unwrap();
         assert!(!needs);
