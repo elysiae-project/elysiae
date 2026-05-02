@@ -1,6 +1,6 @@
 import Modal from "../Modal";
-import { ModalHandle, Variants } from "../../types";
-import { forwardRef } from "preact/compat";
+import { ModalHandle, Option, Variants } from "../../types";
+import { forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import { getActiveGameCode, getGameName } from "../../util/AppFunctions";
@@ -16,6 +16,7 @@ import { join } from "@tauri-apps/api/path";
 import { remove } from "../../lib/Fs";
 import Dropdown from "../Dropdown";
 import { getOption, setOption } from "../../util/Settings";
+import ToggleSwitch from "../ToggleSwitch";
 
 const gameOptions = [
 	{
@@ -51,38 +52,72 @@ const gameOptions = [
 	},
 ];
 
-const regularOptions = [
+const regularOptions: Option[] = [
 	{
 		name: "Preferred VO Language",
 		type: "dropdown",
-		values: ["English", "Chinese", "Japanese", "Korean"],
-		getValue: async (): Promise<number> => {
-			const unparsed: "en" | "cn" | "jp" | "kr" = await getOption("voLanguage");
-			switch (unparsed) {
-				case "en":
-					return 0;
-				case "cn":
-					return 1;
-				case "jp":
-					return 2;
-				case "kr":
-					return 3;
-			}
+		labels: ["English", "Chinese", "Japanese", "Korean"],
+		values: ["en", "cn", "jp", "kr"],
+		getValue: async (): Promise<string> => {
+			return await getOption<string>("voLanguage");
 		},
 		setValue: async (newLang: string): Promise<void> => {
-			await setOption(
-				"voLanguage",
-				newLang === "English"
-					? "en"
-					: newLang === "Chinese"
-						? "cn"
-						: newLang === "Japanese"
-							? "jp"
-							: "kr",
-			);
+			await setOption("voLanguage", newLang);
+		},
+	},
+	{
+		// TODO: Rename blockNotifications to allowNotifications for clarity
+		name: "Allow Notifications",
+		type: "boolean",
+		getValue: async (): Promise<boolean> => {
+			return !(await getOption("blockNotifications"));
+		},
+		setValue: async (newValue: boolean): Promise<void> => {
+			await setOption("blockNotifications", !newValue);
 		},
 	},
 ];
+
+const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
+	const [value, setValue] = useState<any>(null);
+
+	useEffect(() => {
+		option.getValue().then((res) => setValue(res));
+	}, []);
+
+	return (
+		<div class="flex flex-row justify-between items-center">
+			<h1>{option.name}</h1>
+			{option.type === "dropdown" ? (
+				value !== null ? (
+					<Dropdown
+						width={250}
+						labels={option.labels}
+						values={option.values}
+						initialValue={value}
+						onChangeAction={async (newValue: string) => {
+							await option.setValue(newValue);
+						}}
+					/>
+				) : (
+					<div style={{ width: 250 }} />
+				)
+			) : null}
+			{option.type === "boolean" ? (
+				value !== null ? (
+					<ToggleSwitch
+						startActive={value}
+						onClick={async (newValue) => {
+							await option.setValue(newValue)
+						}}
+					/>
+				) : (
+					<div style={{ width: 120 }} />
+				)
+			) : null}
+		</div>
+	);
+};
 
 export const SettingsModal = forwardRef<ModalHandle>(
 	function SettingsModal(_, ref) {
@@ -124,17 +159,9 @@ export const SettingsModal = forwardRef<ModalHandle>(
 						</div>
 					</div>
 					<div class="min-w-[65%] px-2 py-1.5">
-						<div class="flex flex-row justify-between items-center">
-							<h1>Preferred VO Language</h1>
-							<Dropdown
-								width={250}
-								labels={["English", "Japanese", "Chinese", "Korean"]}
-								initialIndex={0}
-								onChangeAction={async (newLanguage: string) => {
-									await setOption("voLanguage", newLanguage);
-								}}
-							/>
-						</div>
+						{regularOptions.map((option, index) => {
+							return <OptionRow key={index} option={option} />;
+						})}
 					</div>
 				</div>
 			</Modal>

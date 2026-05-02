@@ -31,7 +31,7 @@ const dropdownList = cva(
 				[Variants.HK4E]:
 					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
 				[Variants.HKRPG]: "bg-sr-list-bg mt-12 rounded-xs",
-				[Variants.NAP]: "bg-[#353535] rounded-2xl",
+				[Variants.NAP]: "bg-[#353535] rounded-2xl ",
 			},
 		},
 	},
@@ -54,24 +54,33 @@ const dropdownItem = cva(
 	},
 );
 
+const getInitialValue = (value: number | string, values: string[]): number => {
+	if (typeof value === "number") return value;
+	const valueIndex = values.indexOf(value);
+	return valueIndex !== -1 ? valueIndex : 0;
+};
+
 export default function Dropdown({
 	labels,
-	initialIndex = 0,
+	values = labels,
+	initialValue = 0,
 	onChangeAction,
 	width = 120,
 	height = 20,
 }: {
 	labels: string[];
-	initialIndex: number;
+	values?: string[];
+	initialValue: number | string;
 	onChangeAction: (label: string) => void;
 	width?: number;
 	height?: number;
 }) {
 	const { game } = useGame();
+	const initialValueIndex = getInitialValue(initialValue, values);
 
 	let [open, setOpen] = useState<boolean>(false);
-	let [label, setLabel] = useState<string>(labels[initialIndex]);
-	let [currentIndex, setCurrentIndex] = useState<number>(initialIndex);
+	let [label, setLabel] = useState<string>(labels[initialValueIndex]);
+	let [currentIndex, setCurrentIndex] = useState<number>(initialValueIndex);
 
 	const dropdownDiv: MutableRef<HTMLDivElement | null> = useRef(null);
 
@@ -81,7 +90,7 @@ export default function Dropdown({
 		setLabel(newLabel);
 		setOpen(false);
 		setCurrentIndex(index);
-		onChangeAction(newLabel);
+		onChangeAction(values[index]);
 	};
 
 	useEffect(() => {

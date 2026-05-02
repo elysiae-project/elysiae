@@ -20,15 +20,15 @@
 				"maxHeight": 700,
 				"maxWidth": 1200,
 				"decorations": false,
-				"shadow": true,
-				"transparent": true
+				"shadow": false,
+				"transparent": false
 			}
 		],
 		"security": {
 			"csp": null,
 			"assetProtocol": {
 				"enable": true,
-				"scope": ["$HOME/**"]
+				"scope": ["$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**"]
 			}
 		}
 	},

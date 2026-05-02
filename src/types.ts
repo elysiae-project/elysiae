@@ -209,3 +209,19 @@ export type ModalProps = {
 	height?: number;
 	children: React.ReactNode;
 };
+
+type BaseOption<T, V> = {
+	name: string;
+	type: T;
+	getValue: () => Promise<V>;
+	setValue: (value: V) => Promise<void>;
+};
+
+type DropdownOption = BaseOption<"dropdown", string> & {
+	labels: string[];
+	values: string[];
+};
+
+type BooleanOption = BaseOption<"boolean", boolean>;
+
+export type Option = DropdownOption | BooleanOption;

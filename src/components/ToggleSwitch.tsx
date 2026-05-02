@@ -97,7 +97,7 @@ export default function ToggleSwitch({
 		<div
 			onClick={() => {
 				setEanbled(!enabled);
-				onClick(enabled);
+				onClick(!enabled);
 			}}
 			class={toggleSwitchStyles({
 				game: game,

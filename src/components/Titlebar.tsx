@@ -24,7 +24,7 @@ export default function Titlebar() {
 	return (
 		<div class={titlebarStyles({ game: game })}>
 			<div
-				style={{ zIndex: 1001, color: "white" }}
+				style={{ zIndex: 1005, color: "white" }}
 				class="flex flex-row justify-between items-center px-5 py-1.5"
 				data-tauri-drag-region>
 				<h1 class="text-center text-[1.35rem]">Elysiae</h1>
