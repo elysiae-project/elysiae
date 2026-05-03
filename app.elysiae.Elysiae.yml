@@ -12,7 +12,6 @@ writable-sdk: true
 
 finish-args:
   - --socket=wayland
-  - --socket=fallback-x11
   - --device=dri
   - --share=ipc
   - --share=network

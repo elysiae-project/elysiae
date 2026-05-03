@@ -6,9 +6,6 @@
 
 <h2 align="center">Universal "Anime Game" Launcher for Linux</h2>
 
-> [!WARNING]  
-> This project is in Alpha! Some features are missing and others may have issues.
-
 > [!IMPORTANT]
 > This project will only be available as source code until a 1.0 release is complete. Afterwards, it will be submitted to Flathub for distribution there.
 
@@ -22,24 +19,19 @@ The launchers created by an-anime-team have many issues, namely:
 
 2. Maintainers have to swoop in every other month to save the project from breaking
 
-3. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal, now trying to be some sort of "anime steam" platform.
+3. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal, now trying to be some sort of "anime steam" platform. As of 31/03/2026, this launcher has "Released" without support for any of the games they were meant to support.
 
-After multiple bad update cycles that I've experienced using their launchers, I have decided to create Elysiae, which has the philosophy of having everything a user could want while also working as the user expected, as much of the time as possible, and being as accessible as possible
+We believe that an-anime-team shouldn't be in charge of maintaining the primary method Linux users use to play these games, and we have decided to develop a replacement to their launchers
 
 ## Software Requirements
 
-Minimum:
+To use Elysiae, You must have the following:
 
 - A 64-Bit CPU
-- Linux Kernel >= 6.1 with support for futex2 (Most distros will have this)
-- systemd (Most Linux installs. If you don't know what this means, you have this)
-- A Desktop Environment running on the Wayland compositor (You most likely have this)
-- About 300Mb of storage (base install + wine environment)
-- Enough additional storage to install any of the games you'd like to play (~70-110GB per game)
-
-Recommended:
-
-- Linux Kernel >= 6.14. Support for futex2 is optional if you have at least 6.14 installed
+- Linux Kernel >= 6.14
+- Systemd
+- DE running with Wayland
+- About 300Mb of storage for Elysiae and the Wine Environment it provides
 
 ## Building From Source / Contributing to Elysiae
 
