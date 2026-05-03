@@ -108,7 +108,7 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 					<ToggleSwitch
 						startActive={value}
 						onClick={async (newValue) => {
-							await option.setValue(newValue)
+							await option.setValue(newValue);
 						}}
 					/>
 				) : (

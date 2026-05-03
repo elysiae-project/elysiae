@@ -17,15 +17,20 @@
     <category>Game</category>
     <category>LauncherStore</category>
   </categories>
-  <supports>
+  <requires>
+    <kernel version="6.14" compare="ge">Linux</kernel>
+    <internet>always</internet>
+  </requires>
+  <recommends>
     <control>keyboard</control>
     <control>pointing</control>
+    <memory>2048</memory>
+    <display_length compare="ge">1279</display_length>
+  </recommends>
+  <supports>
     <control>gamepad</control>    <!--No clue if this works, I don't own a controller to be able to test it with-->
     <control>touch</control>
   </supports>
-  <requires>
-    <display_length compare="ge">1279</display_length>
-  </requires>
   <url type="homepage">https://elysiae.app</url>
   <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
   <branding>

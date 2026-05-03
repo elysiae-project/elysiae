@@ -179,7 +179,7 @@ export const wineCommand = async (
 	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
 		WINEARCH: "win64",
-		WINEFSYNC: "1",
+		// WINEFSYNC: "1", <- NTSync was added in kernel 6.14 and became the default in Wine 11. Elysiae started development after Wine 11 released, so there's no need for FSync anymore.
 		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
 	});
 };

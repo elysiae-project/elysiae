@@ -190,7 +190,11 @@ export type GameData = {
 };
 
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
-export type AppOptions = "selectedGame" | "voLanguage" | "blockNotifications";
+export type AppOptions =
+	| "selectedGame"
+	| "voLanguage"
+	| "blockNotifications"
+	| "syncMethod";
 
 export type ResumeInfo = {
 	gameId: string;

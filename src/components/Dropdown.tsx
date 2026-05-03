@@ -23,7 +23,7 @@ const dropdownStyles = cva(
 );
 
 const dropdownList = cva(
-	"min-h-auto mt-10.5 absolute flex w-full flex-col transition-opacity duration-150",
+	"min-h-auto mt-10.5 absolute flex w-full flex-col transition-opacity duration-150 z-100",
 	{
 		variants: {
 			game: {
@@ -109,20 +109,21 @@ export default function Dropdown({
 		<div
 			class="relative"
 			ref={dropdownDiv}
-			style={{ zIndex: 80, minWidth: `${width}px`, minHeight: `${height}px` }}>
+			style={{ minWidth: `${width}px`, minHeight: `${height}px` }}>
 			<div class="flex h-full flex-col overflow-y-auto">
 				<div
 					class={dropdownStyles({ game: game })}
 					onClick={(e) => {
 						e.stopPropagation();
 						setOpen(!open);
-					}}>
+					}}
+					>
 					<h1>{label}</h1>
 					<ArrowDown />
 				</div>
 				<div
 					class={dropdownList({ game: game })}
-					style={open ? "opacity: 100" : "opacity: 0;"}>
+					style={open ? "opacity: 100" : "opacity: 0; scale: 0"}>
 					{labels.map((listLabel, index) => {
 						return (
 							<div
