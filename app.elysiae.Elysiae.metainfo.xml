@@ -20,6 +20,7 @@
   <requires>
     <kernel version="6.14" compare="ge">Linux</kernel>
     <internet>always</internet>
+    <memory compare="ge">1024</memory>
   </requires>
   <recommends>
     <control>keyboard</control>
