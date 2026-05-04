@@ -20,7 +20,7 @@
   - [ ] Rust Feature
 - [ ] Configuration Change
 - [ ] Package Updates
-- [ ] Other change
+- [ ] Other Change
 
 ## Breaking Changes
 - [ ] This pull request contains breaking changes
