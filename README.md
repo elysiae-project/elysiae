@@ -25,9 +25,10 @@ We believe that an-anime-team shouldn't be in charge of maintaining the primary 
 
 ## Software Requirements
 
-To use Elysiae, You must have the following:
+To use Elysiae, Your system must meet the following requirements:
 
 - A 64-Bit CPU
+- At least 1024MB of memory
 - Linux Kernel >= 6.14
 - Systemd
 - DE running with Wayland
