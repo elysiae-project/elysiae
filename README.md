@@ -40,10 +40,10 @@ Please see [Contributing](https://github.com/elysiae-project/elysiae/blob/main/C
 
 ## For the lawyers of the "anime game" company
 
-Elysiae does **NOT** use any cheats/game plug-ins in order to get your games running. I am **NOT** hosting any game content myself, and am fetching it directly from your servers, like HoYoPlay does, and do not modify any files downloaded in this manner. Finally, I also do not condone any user action that would result in a violation of your Terms of Service. I am merely providing a method for Linux users to play your games
+Elysiae does **NOT** use any cheats/game plug-ins in order to get your games running. The Elyisae Project does **NOT** host any game content and is fetching it directly from your servers, just like your own services, and do not modify any files downloaded in this manner. Finally, The Elysiae Project also does not condone any user action that would result in a violation of your Terms of Service. The Elysiae Project only provides a method for Linux users to play your games.
 
 Please look at the source code to verify my claims.
 
 ## Disclaimer
 
-Elysiae should be completely safe to use. However, please note that I am not responsible for any consequences that may come from using Elysiae. Use this program at your own risk
+Elysiae should be completely safe to use. However, please note that we are not responsible for any consequences that may come from using the launcher. Use Elysiae at your own risk
