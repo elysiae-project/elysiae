@@ -10,7 +10,7 @@ The Elysiae Project will only support the latest version of the launcher at any 
 ## Reporting a Vulnerability
 If you discover a vulnerability, you have two choices on how you want to disclose it to us:
 
-1. Open an issue and label it as a bug or open a pull request with the fix. Use for less-critical vulnerabilities.
-2. Send an email to [@Shob3r](mailto:andrewpinter23@gmail.com). Use for more critical vulnerabilities
+1. Open an issue and label it as a bug or open a pull request with the fix. Use for less critical vulnerabilities.
+3. Privately disclose the vulnerability on GitHub (Security and Quality tab). Use for more severe and sensitie vulnerabilities
 
 When disclosing a vulnerability, please be descriptive, provide steps to reproduce, and (optionally) a demo in the form of a screen capture
