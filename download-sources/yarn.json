@@ -1380,9 +1380,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.8.tgz",
-        "sha512": "396feb5fc3bf8d79e6f36132d64e38a4e6cfb5d6e57e2b969eb77c5fb189ede9889823acb6e9c66d7529a7b1dd06b1505faac9ce7dec3d3dfded6a79682c021e",
-        "dest-filename": "postcss-cG9zdGNzc0BucG06OC41Ljg=-dd918f7127.tgz",
+        "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.13.tgz",
+        "sha512": "aa27f4fa31866682d67477b2dd41471d63f41fb19b9ac93c4f9544ab26056d6a8faf55eabcb1816e4fec97c5797b11a67182649493a1390ab5a55f4872c8856a",
+        "dest-filename": "postcss-cG9zdGNzc0BucG06OC41LjEz-3aa7c8cbdf.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
