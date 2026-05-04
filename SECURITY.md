@@ -1,5 +1,5 @@
 # Security Policy
-The Elysiae Project wants to keep the launcher as secure as possible. However, as developers, we can all make mistakes and let some issues slip through the cracks and may not discover them when delivering builds to the public. If anyone discovers a vulnerability, we would like to know as soon as possible and address the issue as quickly as possible
+The Elysiae Project aims to keep the launcher as secure as possible. However, we can make mistakes and may not discover them before delivering builds to the public. If you discover a vulnerability, we would like to be notified as soon as possible so the issue can be addressed. 
 
 ## Supported Versions
 The Elysiae Project will only support the latest version of the launcher at any given time. We are a team of just two people, and do not have the ability to manage multiple versions of Elysiae. Please verify that you are on the latest version of Elysiae before disclosing a vulnerability.
