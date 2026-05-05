@@ -9,6 +9,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "flate2",
+ "fs_extra",
  "futures",
  "futures-util",
  "glib 0.22.7",

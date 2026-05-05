@@ -1275,6 +1275,7 @@ __metadata:
     lucide-preact: "npm:^1.14.0"
     motion: "npm:^12.38.0"
     preact: "npm:^10.29.1"
+    react-fitty: "npm:^1.0.1"
     tailwindcss: "npm:^4.2.4"
     typescript: "npm:^6.0.3"
     vite: "npm:^8.0.10"
@@ -1335,6 +1336,13 @@ __metadata:
     picomatch:
       optional: true
   checksum: 10c0/e345083c4306b3aed6cb8ec551e26c36bab5c511e99ea4576a16750ddc8d3240e63826cc624f5ae17ad4dc82e68a253213b60d556c11bfad064b7607847ed07f
+  languageName: node
+  linkType: hard
+
+"fitty@npm:2":
+  version: 2.4.2
+  resolution: "fitty@npm:2.4.2"
+  checksum: 10c0/6134364601849b50e8c60018e6310ac8022aee18462b90b1f798ad2fec3c1dca331e142f77f162a81c32d72f27b706b77cb6425504bd58a834a78d6e4aff5c4b
   languageName: node
   linkType: hard
 
@@ -1962,6 +1970,17 @@ __metadata:
   version: 6.1.0
   resolution: "proc-log@npm:6.1.0"
   checksum: 10c0/4f178d4062733ead9d71a9b1ab24ebcecdfe2250916a5b1555f04fe2eda972a0ec76fbaa8df1ad9c02707add6749219d118a4fc46dc56bdfe4dde4b47d80bb82
+  languageName: node
+  linkType: hard
+
+"react-fitty@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "react-fitty@npm:1.0.1"
+  dependencies:
+    fitty: "npm:2"
+  peerDependencies:
+    react: ">=16.8"
+  checksum: 10c0/152f3281686ff60ba57a6af1ef95bd3801e7338fc730a4901ac00c670088279fda65cbb3772687b6b928607021d5fdac42ef27c3d17f160af9e63f79381ea80d
   languageName: node
   linkType: hard
 

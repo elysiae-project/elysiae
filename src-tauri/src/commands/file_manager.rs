@@ -1,4 +1,5 @@
 use flate2::read::GzDecoder as Gz;
+use fs_extra::dir::get_size;
 use std::path::Path;
 use tar::Archive as Tar;
 use tauri::{AppHandle, Manager, command, path::BaseDirectory};
@@ -51,6 +52,17 @@ pub async fn extract_file(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[command]
+pub fn get_dir_size(path: String, app_handle: AppHandle) -> Result<u64, String> {
+    let full_path = app_handle
+        .path()
+        .resolve(&path, BaseDirectory::AppData)
+        .unwrap();
+    let dir_size = get_size(full_path).map_err(|e| e.to_string())?;
+
+    Ok(dir_size)
 }
 
 fn flatten(dest: &Path) -> Result<(), String> {
