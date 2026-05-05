@@ -1,5 +1,5 @@
 import Modal from "../Modal";
-import { ModalHandle, Option, Variants } from "../../types";
+import { AppModules, ModalHandle, Option, Variants } from "../../types";
 import { forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
@@ -86,7 +86,7 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 	}, []);
 
 	return (
-		<div class="flex flex-row justify-between items-center">
+		<div class="flex flex-row w-full justify-between items-center">
 			<h1>{option.name}</h1>
 			{option.type === "dropdown" ? (
 				value !== null ? (
@@ -152,16 +152,35 @@ export const SettingsModal = forwardRef<ModalHandle>(
 										onClick={async () => {
 											await item.action(game);
 										}}>
-										s{" "}
+										s
 									</Button>
 								);
 							})}
 						</div>
 					</div>
-					<div class="min-w-[65%] px-2 py-1.5">
-						{regularOptions.map((option, index) => {
-							return <OptionRow key={index} option={option} />;
-						})}
+					<div class="flex flex-col px-2 py-1.5 w-full">
+						<div class="flex flex-col h-3/5">
+							<h1 class="text-xl text-center">Wine Modules</h1>
+							<div class="flex flex-col justify-between gap-y-2">
+								{["wine", "dxvk", "vkd3d", "jadeite"].map((wineComponent) => {
+									return (
+										<div class="flex flex-row justify-between">
+											<div>
+												<h1>{wineComponent}</h1>
+												<h2 class="text-sm text-gray-400">Version </h2>
+											</div>
+											<Button intent="primary" height={10} width={160} onClick={() => {}}><p class="text-xs">Update</p></Button>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+						<div class="h-2/5 flex flex-col gap-y-2.5 ">
+						<h1 class="text-xl text-center">Settings</h1>
+							{regularOptions.map((option, index) => {
+								return <OptionRow key={index} option={option} />;
+							})}
+						</div>
 					</div>
 				</div>
 			</Modal>

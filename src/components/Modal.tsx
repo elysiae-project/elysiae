@@ -58,7 +58,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 	if (!isOpen) return null;
 	return (
 		<div
-			class="absolute inset-0 z-60 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-xl"
+			class="absolute inset-0 z-60 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
 			onClick={() => setIsOpen(false)}>
 			<div
 				class={modalStyles({ game })}
