@@ -194,7 +194,16 @@ export type AppOptions =
 	| "selectedGame"
 	| "voLanguage"
 	| "blockNotifications"
-	| "syncMethod";
+	| "installedComponents";
+
+export type AppModules = "wine" | "dxvk" | "jadeite" | "vkd3d";
+
+export type WineComponentData = {
+	wine: string | null;
+	dxvk: string | null;
+	jadeite: string | null;
+	vkd3d: string | null;
+};
 
 export type ResumeInfo = {
 	gameId: string;

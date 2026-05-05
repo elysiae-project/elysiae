@@ -1,10 +1,17 @@
 import { appDataDir, join } from "@tauri-apps/api/path";
-import { ComponentData, WineComponent, WineModule } from "../types";
+import {
+	WineComponentData,
+	AppModules,
+	ComponentData,
+	WineComponent,
+	WineModule,
+} from "../types";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
+import { getOption } from "../util/Settings";
 
 // Components that get regular updates (i.e. wine, dxvk)
 const components: WineComponent[] = [
@@ -78,12 +85,12 @@ const components: WineComponent[] = [
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)
 const wineModules: WineModule[] = [
 	{
-		name: "vcrun2026-x64",
+		name: "vcrun-x64",
 		downloadLink: "https://aka.ms/vc14/vc_redist.x64.exe",
 		moduleType: "exe",
 	},
 	{
-		name: "vcrun2026-x86",
+		name: "vcrun-x86",
 		downloadLink: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
 		moduleType: "exe",
 	},
@@ -105,7 +112,6 @@ const wineModules: WineModule[] = [
  * Update All Components in the wine install
  */
 export const updateWineComponents = async (): Promise<void> => {
-	info(`${await appDataDir()}`);
 	for (const component of components) {
 		try {
 			info(`Installing ${component.componentName}`);
@@ -122,6 +128,9 @@ export const updateWineComponents = async (): Promise<void> => {
 				if (typeof component.postInstall !== "undefined") {
 					await component.postInstall();
 				}
+
+				// Save installed component version to settings
+				await updateModuleTracker(component.componentName as AppModules, json[0].tag);
 			} else {
 				throw new Error("Endpoint returned non-OK response code");
 			}
@@ -130,6 +139,14 @@ export const updateWineComponents = async (): Promise<void> => {
 		}
 	}
 	info("Wine Component Download Complete");
+};
+
+/**
+ * Updates a specified wine component
+ * @param component Any wine component
+ */
+export const installWineComponent = async(component: AppModules): Promise<void> => {
+
 };
 
 /**
@@ -239,5 +256,28 @@ export const winePrefix = async (): Promise<string> => {
 				resolve(res as string);
 			});
 		});
+	});
+};
+
+export const updateModuleTracker = async (
+	module: AppModules,
+	newVersion: string,
+) => {
+	const current = await getOption<WineComponentData>("installedComponents");
+	current[module] = newVersion;
+};
+
+export const getModuleVersion = async (
+	module: AppModules | undefined = undefined,
+): Promise<WineComponentData | string | null> => {
+	return new Promise((resolve, reject) => {
+		getOption<WineComponentData>("installedComponents")
+			.then((data) => {
+				if (typeof module === undefined) {
+					resolve(data);
+				}
+				resolve(data[module as AppModules]);
+			})
+			.catch(reject);
 	});
 };

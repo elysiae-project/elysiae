@@ -1,5 +1,11 @@
 {
 	"selectedGame": "sr",
 	"voLanguage": "en",
-	"blockNotifications": false
+	"blockNotifications": false,
+	"installedComponents": {
+		"wine": null,
+		"dxvk": null,
+		"jadeite": null,
+		"vkd3d": null
+	}
 }
