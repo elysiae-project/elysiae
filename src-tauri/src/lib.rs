@@ -34,6 +34,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
+            file_manager::get_dir_size,
             app_functions::in_dev_env,
             commands::sophon_downloader::sophon_download,
             commands::sophon_downloader::sophon_update,

@@ -1,6 +1,6 @@
 import Modal from "../Modal";
 import { AppModules, ModalHandle, Option, Variants } from "../../types";
-import { forwardRef, useEffect, useState } from "preact/compat";
+import { forwardRef, useEffect, useRef, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import { getActiveGameCode, getGameName } from "../../util/AppFunctions";
@@ -17,6 +17,7 @@ import { remove } from "../../lib/Fs";
 import Dropdown from "../Dropdown";
 import { getOption, setOption } from "../../util/Settings";
 import ToggleSwitch from "../ToggleSwitch";
+import { invoke } from "@tauri-apps/api/core";
 
 const gameOptions = [
 	{
@@ -124,6 +125,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 		const { branding } = useApi();
 		const { game } = useGame();
 
+
 		return (
 			<Modal ref={ref} title="Elysiae Settings" width={900} height={450}>
 				<div class="flex flex-row w-full min-h-112.5">
@@ -139,10 +141,12 @@ export const SettingsModal = forwardRef<ModalHandle>(
 							</div>
 							<div class="flex flex-col justify-center">
 								<h1 class="text-sm">{getGameName(game)}</h1>
-								<h2 class="text-sm">Size On Disk: xxGB</h2>
+								<h2 class="text-sm">
+									Size On Disk: Calcuating...
+								</h2>
 							</div>
 						</div>
-						<div class="flex flex-row justify-center h-auto mt-2.5 gap-x-2.5">
+						<div class="flex flex-col justify-center h-auto mt-2.5 gap-y-2.5">
 							{gameOptions.map((item) => {
 								return (
 									<Button
@@ -152,7 +156,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 										onClick={async () => {
 											await item.action(game);
 										}}>
-										s
+										{item.text}
 									</Button>
 								);
 							})}
@@ -164,19 +168,25 @@ export const SettingsModal = forwardRef<ModalHandle>(
 							<div class="flex flex-col justify-between gap-y-2">
 								{["wine", "dxvk", "vkd3d", "jadeite"].map((wineComponent) => {
 									return (
-										<div class="flex flex-row justify-between">
+										<div class="flex flex-row justify-between h-full">
 											<div>
 												<h1>{wineComponent}</h1>
 												<h2 class="text-sm text-gray-400">Version </h2>
 											</div>
-											<Button intent="primary" height={10} width={160} onClick={() => {}}><p class="text-xs">Update</p></Button>
+											<Button
+												intent="primary"
+												height={25}
+												width={120}
+												onClick={() => {}}>
+												<p class="text-sm">Update</p>
+											</Button>
 										</div>
 									);
 								})}
 							</div>
 						</div>
 						<div class="h-2/5 flex flex-col gap-y-2.5 ">
-						<h1 class="text-xl text-center">Settings</h1>
+							<h1 class="text-xl text-center">Settings</h1>
 							{regularOptions.map((option, index) => {
 								return <OptionRow key={index} option={option} />;
 							})}
