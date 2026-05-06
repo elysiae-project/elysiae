@@ -11,6 +11,7 @@
     "bradlc.vscode-tailwindcss",
     "tauri-apps.tauri-vscode",
     "redhat.vscode-xml",
-    "redhat.vscode-yaml"
+    "redhat.vscode-yaml",
+    "swiftlydaniel.oklch-color-visualiser"
   ],
 }
