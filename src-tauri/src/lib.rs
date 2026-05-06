@@ -72,7 +72,7 @@ pub fn run() {
 
 #[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
-    // Webkit2Gtk has a longstanding bug that nukes nvidia systems, preventing them from running tauri apps on wayland. This env var is the least destructive way to solve until it is fixed
+    // Webkit2Gtk has a longstanding bug that prevents NVIDIA systems using wayland from running tauri apps. This env var is the least destructive way to solve until it is fixed
     if is_nvidia() && is_wayland() {
         println!("Elysiae: Applying NVIDIA Wayland Workaround");
         unsafe { std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1") };
