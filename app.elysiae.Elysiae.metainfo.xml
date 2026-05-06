@@ -10,7 +10,8 @@
   <project_license>BSD-3-Clause</project_license>
   <description>
     <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
-    <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and other Linux-based launchers/</p>
+    <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling,
+      and serve as a replacement for the aag launchers and other Linux-based launchers/</p>
   </description>
   <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
   <categories>
@@ -20,7 +21,8 @@
   <supports>
     <control>keyboard</control>
     <control>pointing</control>
-    <control>gamepad</control>    <!--No clue if this works, I don't own a controller to be able to test it with-->
+    <control>gamepad</control>    <!--No
+    clue if this works, I don't own a controller to be able to test it with-->
     <control>touch</control>
   </supports>
   <requires>
@@ -46,7 +48,7 @@
         </release> 
     </releases>
     -->
-   <content_rating type="oars-1.1">
+  <content_rating type="oars-1.1">
     <content_attribute id="violence-fantasy">moderate</content_attribute>
     <content_attribute id="violence-bloodshed">mild</content_attribute>
     <content_attribute id="drugs-alcohol">mild</content_attribute>

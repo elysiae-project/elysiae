@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-import { BaseDirectory } from "@tauri-apps/plugin-fs";
 import {
 	exists as tauriExists,
 	writeTextFile as tauriWriteTextFile,
@@ -10,12 +8,15 @@ import {
 	mkdir as tauriMkdir,
 	rename as tauriRename,
 } from "@tauri-apps/plugin-fs";
+import { BaseDirectory } from "@tauri-apps/plugin-fs";
 import { error, info } from "@tauri-apps/plugin-log";
+import { invoke } from "@tauri-apps/api/core";
 
 /**
  * Checks if a folder exists, relative to the app data directory
- * @param path path to file/folder
- * @returns weather or not a path  exists
+ *
+ * @param path Path to file/folder
+ * @returns Weather or not a path exists
  */
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
@@ -29,7 +30,8 @@ export const exists = async (path: string): Promise<boolean> => {
 
 /**
  * Write to a file within the app data directory
- * @param path path to write to (relative to app data dir)
+ *
+ * @param path Path to write to (relative to app data dir)
  * @param contents Contents to write to the file, Can be binary or text
  */
 export const writeFile = async (
@@ -117,9 +119,11 @@ export const rename = async (
 };
 
 /**
- * Extracts a compressed archive to a specified location. Supports any archive format that ``7za`` supports
+ * Extracts a compressed archive to a specified location. Supports any archive
+ * format that `7za` supports
+ *
  * @param archivePath Path to archive
- * @param dest destination to extract to
+ * @param dest Destination to extract to
  */
 export const extractFile = async (
 	archivePath: string,

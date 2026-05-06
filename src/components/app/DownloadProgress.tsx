@@ -1,11 +1,11 @@
+import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
+import { getGameName, formatNumber } from "../../util/AppFunctions";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
-import { getGameName, formatNumber } from "../../util/AppFunctions";
-import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
-import Progressbar from "../Progressbar";
 import { Pause, Play } from "lucide-preact";
-import Button from "../Button";
+import Progressbar from "../Progressbar";
 import { useMemo } from "preact/hooks";
+import Button from "../Button";
 
 export default function GameDownloadProgress() {
 	const { state } = useDownload();
@@ -138,9 +138,9 @@ export default function GameDownloadProgress() {
 						intent="secondary"
 						iconButton>
 						{isPaused ? (
-							<Play className={"leading-0 -m-1"} />
+							<Play className={"-m-1 leading-0"} />
 						) : (
-							<Pause className={"leading-0 -m-1"} />
+							<Pause className={"-m-1 leading-0"} />
 						)}
 					</Button>
 				)}

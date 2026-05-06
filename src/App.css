@@ -118,24 +118,24 @@
 }
 
 @font-face {
-	font-family: hk4e;
 	src: url("/font/HK4E.woff2");
+	font-family: hk4e;
 }
 
 @font-face {
-	font-family: bh3-hkrpg;
 	src: url("/font/BH3-HKRPG.woff2");
+	font-family: bh3-hkrpg;
 }
 
 @font-face {
-	font-family: nap;
 	src: url("/font/NAP.woff2");
+	font-family: nap;
 }
 
 * {
+	scrollbar-color: transparent;
 	user-select: none;
 	-webkit-user-select: none;
-	scrollbar-color: transparent;
 	-webkit-user-drag: none;
 }
 

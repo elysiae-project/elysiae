@@ -1,8 +1,8 @@
-import { cva } from "class-variance-authority";
-import { Variants } from "../types";
-import { useGame } from "../hooks/useGame";
 import { getActiveGameCode } from "../util/AppFunctions";
+import { cva } from "class-variance-authority";
+import { useGame } from "../hooks/useGame";
 import { useState } from "preact/hooks";
+import { Variants } from "../types";
 
 const menuCloseStyles = cva(
 	"h-10 w-10 flex items-center justify-center transition-all duration-75",
@@ -47,8 +47,7 @@ export default function MenuClose({
 				if (e.currentTarget.hasPointerCapture(e.pointerId)) {
 					e.currentTarget.releasePointerCapture(e.pointerId);
 				}
-			}}
-		>
+			}}>
 			<img
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}

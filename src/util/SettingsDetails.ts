@@ -1,7 +1,7 @@
-import { remove } from "../lib/Fs";
-import { Variants } from "../types";
 import { getActiveGameCode } from "./AppFunctions";
 import { setOption } from "./Settings";
+import { Variants } from "../types";
+import { remove } from "../lib/Fs";
 
 export const settingsDetails = [
 	{

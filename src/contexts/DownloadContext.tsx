@@ -1,13 +1,13 @@
-import { createContext, ComponentChildren } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { listen } from "@tauri-apps/api/event";
 import {
 	ResumeInfo,
 	SophonProgress,
 	Variants,
 	WineSetupProgress,
 } from "../types";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { createContext, ComponentChildren } from "preact";
 import { getResumeInfo } from "../lib/GameDownloader";
+import { listen } from "@tauri-apps/api/event";
 
 export interface DownloadState {
 	isPaused: boolean;

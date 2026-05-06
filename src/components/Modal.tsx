@@ -1,7 +1,7 @@
-import { useGame } from "../hooks/useGame";
-import { Variants } from "../types";
 import { cva } from "class-variance-authority";
+import { useGame } from "../hooks/useGame";
 import MenuClose from "./MenuClose";
+import { Variants } from "../types";
 
 const modalStyles = cva(
 	"px-5 py-3 overflow-y-scroll w-[55%] min-w-125 h-auto min-h-75 ",
@@ -61,7 +61,7 @@ export default function Modal({
 					<h2>{title}</h2>
 					<MenuClose clickAction={onOpenUpdate} />
 				</div>
-				<div class="w-full h-full">{children}</div>
+				<div class="h-full w-full">{children}</div>
 			</div>
 		</div>
 	);

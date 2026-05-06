@@ -1,5 +1,5 @@
-import { useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
+import { useState } from "preact/hooks";
 import { Variants } from "../types";
 
 import { cva } from "class-variance-authority";
@@ -98,14 +98,12 @@ export default function ToggleSwitch({
 			class={toggleSwitchStyles({
 				game: game,
 				variant: `${enabled ? "active" : "inactive"}`,
-			})}
-		>
+			})}>
 			<div
 				style={{
 					transform: `${enabled ? "translateX(155%)" : ""} translateZ(1px)`,
 				}}
-				class={toggleSwitchKnobStyles({ game: game })}
-			>
+				class={toggleSwitchKnobStyles({ game: game })}>
 				{enabled ? <Check size={18} /> : <X size={18} />}
 			</div>
 		</div>

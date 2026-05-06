@@ -1,15 +1,15 @@
-import { useEffect, useState } from "preact/hooks";
-import Button from "../Button";
-import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
 import {
 	downloadGame,
 	isGameInstalled,
 	resumeDownloadInterrupted,
 	runGame,
 } from "../../lib/GameDownloader";
-import { useGame } from "../../hooks/useGame";
-import { useDownload } from "../../hooks/useDownload";
 import { getActiveGameCode, getVariantFromCode } from "../../util/AppFunctions";
+import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
+import { useDownload } from "../../hooks/useDownload";
+import { useEffect, useState } from "preact/hooks";
+import { useGame } from "../../hooks/useGame";
+import Button from "../Button";
 
 export default function InstallerButton() {
 	const { game } = useGame();
