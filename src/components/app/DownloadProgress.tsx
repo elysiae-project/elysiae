@@ -138,9 +138,9 @@ export default function GameDownloadProgress() {
 						intent="secondary"
 						iconButton>
 						{isPaused ? (
-							<Play className={"-m-1 leading-0"} />
+							<Play className={"leading-0 -m-1"} />
 						) : (
-							<Pause className={"-m-1 leading-0"} />
+							<Pause className={"leading-0 -m-1"} />
 						)}
 					</Button>
 				)}

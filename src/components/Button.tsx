@@ -93,7 +93,7 @@ export default function Button({
 		<button
 			disabled={disabled}
 			onClick={onClick}
-			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "aspect-square min-w-10" : "min-w-65"}`}>
+			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "min-w-10 aspect-square" : "min-w-65"}`}>
 			{children}
 		</button>
 	);
