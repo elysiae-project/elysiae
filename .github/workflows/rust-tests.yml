@@ -35,4 +35,4 @@ jobs:
 
       - name: Run tests
         working-directory: src-tauri
-        run: cargo test --workspace
+        run: cargo test --workspace -- --include-ignored
