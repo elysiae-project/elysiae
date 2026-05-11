@@ -68,7 +68,7 @@ function App() {
 						})}
 					</Modal>
 
-					<div class="px-15 absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 py-10">
+					<div class="absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 px-15 py-10">
 						{/* Page content */}
 						<DownloadProgress />
 						<PreinstallButton />
@@ -78,7 +78,7 @@ function App() {
 								setSettingsOpen(true);
 							}}
 							iconButton>
-							<Settings className="leading-0 -m-1" />
+							<Settings className="-m-1 leading-0" />
 						</Button>
 						<InstallerButton />
 					</div>

@@ -46,7 +46,7 @@ export default function PreinstallButton() {
 				setDownloadingGame(game);
 				await downloadUpdate(game, true);
 			}}>
-			<Save className="leading-0 -m-1" />
+			<Save className="-m-1 leading-0" />
 		</Button>
 	);
 }

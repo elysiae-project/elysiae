@@ -9,7 +9,7 @@ export default function Sidebar() {
 	return (
 		<motion.div
 			style={{ translateX: "-20%" }}
-			class="max-h-100 absolute bottom-0 right-0 top-0 z-20 flex h-auto flex-col items-center justify-center gap-y-4 self-center overflow-y-scroll rounded-xl bg-black/80 p-4">
+			class="absolute top-0 right-0 bottom-0 z-20 flex h-auto max-h-100 flex-col items-center justify-center gap-y-4 self-center overflow-y-scroll rounded-xl bg-black/80 p-4">
 			{branding &&
 				Object.entries(branding).map(([key, data]) => (
 					<button
