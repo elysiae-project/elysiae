@@ -196,7 +196,7 @@ export type AppOptions =
 	| "blockNotifications"
 	| "installedComponents";
 
-export type AppModules = "wine" | "dxvk" | "jadeite" | "vkd3d";
+export type AppModules = "wine" | "dxvk" | "jadeite";
 
 export type WineComponentData = {
 	wine: string | null;

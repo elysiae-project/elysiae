@@ -5,7 +5,6 @@
 	"installedComponents": {
 		"wine": null,
 		"dxvk": null,
-		"jadeite": null,
-		"vkd3d": null
+		"jadeite": null
 	}
 }
