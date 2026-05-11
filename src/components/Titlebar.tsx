@@ -1,9 +1,9 @@
 import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame.ts";
 import { Variants } from "../types";
-import { closeApp } from "../util/AppFunctions.ts";
 import { AnimatePresence } from "motion/react";
 import MenuClose from "./MenuClose.tsx";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const titlebarStyles = cva(
 	"h-15 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
@@ -29,7 +29,11 @@ export default function Titlebar() {
 				data-tauri-drag-region>
 				<h1 class="text-center text-[1.35rem]">Elysiae</h1>
 				<AnimatePresence mode="wait" initial={false}>
-					<MenuClose clickAction={closeApp} />
+					<MenuClose
+						clickAction={() => {
+							getCurrentWindow().close();
+						}}
+					/>
 				</AnimatePresence>
 			</div>
 		</div>
