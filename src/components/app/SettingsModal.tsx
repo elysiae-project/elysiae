@@ -21,7 +21,7 @@ import { remove } from "../../lib/Fs";
 import Dropdown from "../Dropdown";
 import { getOption, setOption } from "../../util/Settings";
 import ToggleSwitch from "../ToggleSwitch";
-import { invoke } from "@tauri-apps/api/core";
+import { getModuleVersion, updateWineComponent } from "../../lib/WineManager";
 
 const gameOptions = [
 	{
@@ -124,6 +124,34 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 	);
 };
 
+const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
+	const [version, setVersion] = useState<string>("");
+	useEffect(() => {
+		getModuleVersion(componentName).then((res) => {
+			if(res === null) {
+				setVersion("Not Installed");
+			}
+			else setVersion(`Version ${res}`);
+		});
+	}, []);
+
+	return (
+		<div class="flex flex-row w-full">
+			<div class="flex flex-col w-full justify-between">
+				<h1>{componentName}</h1>
+				<p>{version}</p>
+			</div>
+			<Button
+			height={10}
+			width={120}
+				intent="primary"
+				onClick={async () => updateWineComponent(componentName)}>
+				Update
+			</Button>
+		</div>
+	);
+};
+
 const DiskSize = () => {
 	const { game } = useGame();
 	const [size, setSize] = useState<string>("Calculating...");
@@ -157,7 +185,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 							</div>
 							<div class="flex flex-col justify-center">
 								<h1 class="text-sm">{getGameName(game)}</h1>
-								<DiskSize/>
+								<DiskSize />
 							</div>
 						</div>
 						<div class="flex flex-col justify-center h-auto mt-2.5 gap-y-2.5">
@@ -181,21 +209,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 							<h1 class="text-xl text-center">Wine Modules</h1>
 							<div class="flex flex-col justify-between gap-y-2">
 								{["wine", "dxvk", "jadeite"].map((wineComponent) => {
-									return (
-										<div class="flex flex-row justify-between h-full">
-											<div>
-												<h1>{wineComponent}</h1>
-												<h2 class="text-sm text-gray-400">Version </h2>
-											</div>
-											<Button
-												intent="primary"
-												height={25}
-												width={120}
-												onClick={() => {}}>
-												<p class="text-sm">Update</p>
-											</Button>
-										</div>
-									);
+									return <ComponentInfo componentName={wineComponent as AppModules}/>
 								})}
 							</div>
 						</div>
