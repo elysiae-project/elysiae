@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -8,14 +8,14 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # NodeJS/Frontend Project generated files/folders
-node_modules
-dist
-dist-ssr
+node_modules/
+dist/
+dist-ssr/
 *.local
 
 # Editor directories and files
-.yarn
-.idea
+.yarn/
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -25,6 +25,12 @@ dist-ssr
 
 # flatpak-builder generated files/folders 
 .flatpak-builder
-repo
+repo/
 *.flatpak
 build/
+
+# Tauri
+# Compiled files and executables
+src-tauri/target/
+# Schema files for capabilities auto-completion
+src-tauri/gen/schemas/
