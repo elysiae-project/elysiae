@@ -36,10 +36,11 @@ const components: WineComponent[] = [
 		extractTo: "dxvk",
 		saveTo: "dxvk.tar.gz",
 		postInstall: async () => {
-			// Move contents into Wine's drive_c directory
-			const startPaths = ["x64", "x32"];
-			const destPaths = ["system32", "syswow64"];
-			[startPaths, destPaths].map(async ([start, dest]) => {
+			// Move the dxvk DLLs into the wine prefix and register them in the registry
+			[
+				["x64", "x32"],
+				["system32", "syswow64"],
+			].map(async ([start, dest]) => {
 				const destPath = await join("wine", "drive_c", "windows", dest);
 				const sourceFiles = (await readDir(await join("dxvk", start))).filter(
 					(file) => file.isFile && file.name.endsWith(".dll"),
