@@ -83,6 +83,7 @@ const components: WineComponent[] = [
 ] as const;
 
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)
+// TODO: Review which of these modules are actually needed
 const wineModules: WineModule[] = [
 	{
 		name: "vcrun-x64",
@@ -111,43 +112,63 @@ const wineModules: WineModule[] = [
 /**
  * Update All Components in the wine install
  */
-export const updateWineComponents = async (): Promise<void> => {
-	for (const component of components) {
+export const updateAllWineComponents = async (): Promise<void> => {
+	// A bit of a compromise to allow for individual component updates. 
+	// The json is only referenced in updateWineComponent(), and even then the 
+	// function only gets the respective module index by searching for the name of the module
+
+	["wine", "dxvk", "jadite"].map(async (component) => {
 		try {
-			info(`Installing ${component.componentName}`);
-
-			const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${component.componentName}.json`;
-			const response = await fetch(assetURL);
-			if (response.status === 200) {
-				const json: ComponentData[] = await response.json();
-				await downloadFile(json[0].download_url, component.saveTo);
-
-				// Extract file
-				await extractFile(component.saveTo, component.extractTo);
-
-				if (typeof component.postInstall !== "undefined") {
-					await component.postInstall();
-				}
-
-				// Save installed component version to settings
-				await updateModuleTracker(component.componentName, json[0].tag);
-			} else {
-				throw new Error("Endpoint returned non-OK response code");
-			}
+			await updateWineComponent(component as AppModules);
 		} catch (e) {
-			error(`updateWineComponents ${e}`);
+			error(`updateAllWineComponents: ${e}`);
+			return;
 		}
-	}
+	});
 	info("Wine Component Download Complete");
 };
 
 /**
  * Updates a specified wine component
- * @param component Any wine component
+ * @param componentName A valid wine component name
  */
-export const installWineComponent = async (
-	component: AppModules,
-): Promise<void> => {};
+export const updateWineComponent = async (
+	componentName: AppModules,
+): Promise<void> => {
+	const index = components.findIndex(
+		(data) => data.componentName === componentName,
+	);
+	const data = components[index];
+	try {
+		info(`Installing/Updating ${data.componentName}`);
+		const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${data.componentName}.json`;
+		const assetResponse = await fetch(assetURL);
+		if (assetResponse.status === 200) {
+			// Download file to download location
+			const json: ComponentData = (await assetResponse.json())[0];
+			await downloadFile(json.download_url, data.saveTo);
+
+			// Extract downloaded file to folder location
+			await extractFile(data.saveTo, data.extractTo);
+
+			// Perform postinstall actions, if any exist
+			if (typeof data.postInstall !== "undefined") {
+				await data.postInstall();
+			}
+
+			// Update the wine module tracker
+			await updateModuleTracker(data.componentName, json.tag);
+		} else {
+			throw new Error(
+				`installWineComponent: Endpoint "${assetURL}" returned non-zero access code (${assetResponse.status})`,
+			);
+		}
+	} catch (e) {
+		error(`installWineComponent: ${e}`);
+		return;
+	}
+	info(`Installation/Update of ${data.componentName} succeeded.`);
+};
 
 /**
  * Install additional Windows programs/libraries required for the programs that Elysiae runs
