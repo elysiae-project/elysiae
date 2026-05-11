@@ -6,7 +6,7 @@ import {
 	WineComponent,
 	WineModule,
 } from "../types";
-import { exists, extractFile, remove, removeDir, rename } from "./Fs";
+import { exists, extractFile, readDir, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
@@ -36,22 +36,21 @@ const components: WineComponent[] = [
 		extractTo: "dxvk",
 		saveTo: "dxvk.tar.gz",
 		postInstall: async () => {
-			// Move contents into Wine's drive_c directory and add registry keys to associate the new DLL files with wine
-			const appData = await appDataDir();
-
-			await executeShellCommand(
-				`mv -v ${appData}/dxvk/x64/*.dll ${appData}/wine/drive_c/windows/system32`,
-			);
-			await executeShellCommand(
-				`mv -v ${appData}/dxvk/x32/*.dll ${appData}/wine/drive_c/windows/syswow64`,
-			);
-
-			const dllNames = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
-			await Promise.all(
-				dllNames.map(async (dll) => {
-					await registerNewDLL(dll);
-				}),
-			);
+			// Move contents into Wine's drive_c directory
+			const startPaths = ["x64", "x32"];
+			const destPaths = ["system32", "syswow64"];
+			[startPaths, destPaths].map(async ([start, dest]) => {
+				const destPath = await join("wine", "drive_c", "windows", dest);
+				const sourceFiles = (await readDir(await join("dxvk", start))).filter(
+					(file) => file.isFile && file.name.endsWith(".dll"),
+				);
+				sourceFiles.map(async (file) => {
+					const fileOriginPath = await join(start, file.name);
+					const fileDestinationPath = await join(destPath, file.name);
+					await rename(fileOriginPath, fileDestinationPath);
+					await registerNewDLL(file.name.split(".")[0]); // Excludes the .dll file extension, which is not needed when registering a new dll
+				});
+			});
 
 			// Remove Temporary Directory
 			await removeDir("dxvk");
@@ -67,7 +66,7 @@ const components: WineComponent[] = [
 		},
 	},
 	/*{
-		// While not used right now, it will for certain be used in future games or game updates as DX12 becomes the industry standard. Best to install and stay ahead of updated
+		// While not used right now, it will for certain be used in future games or game updates as DX12 gets adopted by these games
 		componentName: "vkd3d",
 		extractTo: "vkd3d",
 		saveTo: "vkd3d.tar.zst",
@@ -145,9 +144,9 @@ export const updateWineComponents = async (): Promise<void> => {
  * Updates a specified wine component
  * @param component Any wine component
  */
-export const installWineComponent = async(component: AppModules): Promise<void> => {
-
-};
+export const installWineComponent = async (
+	component: AppModules,
+): Promise<void> => {};
 
 /**
  * Install additional Windows programs/libraries required for the programs that Elysiae runs
@@ -196,7 +195,6 @@ export const wineCommand = async (
 	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
 		WINEARCH: "win64",
-		// WINEFSYNC: "1", <- NTSync was added in kernel 6.14 and became the default in Wine 11. Elysiae started development after Wine 11 released, so there's no need for FSync anymore.
 		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
 	});
 };

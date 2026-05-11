@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { BaseDirectory } from "@tauri-apps/plugin-fs";
+import { BaseDirectory, DirEntry } from "@tauri-apps/plugin-fs";
 import {
 	exists as tauriExists,
 	writeTextFile as tauriWriteTextFile,
@@ -9,6 +9,7 @@ import {
 	remove as tauriRemove,
 	mkdir as tauriMkdir,
 	rename as tauriRename,
+	readDir as tauriReadDir,
 } from "@tauri-apps/plugin-fs";
 import { error, info } from "@tauri-apps/plugin-log";
 
@@ -112,6 +113,18 @@ export const rename = async (
 			oldPathBaseDir: BaseDirectory.AppData,
 		})
 			.then(resolve)
+			.catch(reject);
+	});
+};
+
+export const readDir = async (path: string): Promise<DirEntry[]> => {
+	return new Promise((resolve, reject) => {
+		tauriReadDir(path, {
+			baseDir: BaseDirectory.AppData,
+		})
+			.then((res) => {
+				resolve(res);
+			})
 			.catch(reject);
 	});
 };
