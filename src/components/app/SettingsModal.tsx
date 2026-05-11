@@ -3,7 +3,11 @@ import { AppModules, ModalHandle, Option, Variants } from "../../types";
 import { forwardRef, useEffect, useRef, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
-import { getActiveGameCode, getGameName } from "../../util/AppFunctions";
+import {
+	getActiveGameCode,
+	getGameName,
+	getGameSize,
+} from "../../util/AppFunctions";
 import Button from "../Button";
 import { FileCheck, RefreshCw, Trash } from "lucide-preact";
 import {
@@ -120,11 +124,23 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 	);
 };
 
+const DiskSize = () => {
+	const { game } = useGame();
+	const [size, setSize] = useState<string>("Calculating...");
+
+	useEffect(() => {
+		getGameSize(game).then((res) => {
+			setSize(`${res.toString()}GB`);
+		});
+	}, [game]);
+
+	return <p>Size On Disk: {size}</p>;
+};
+
 export const SettingsModal = forwardRef<ModalHandle>(
 	function SettingsModal(_, ref) {
 		const { branding } = useApi();
 		const { game } = useGame();
-
 
 		return (
 			<Modal ref={ref} title="Elysiae Settings" width={900} height={450}>
@@ -141,9 +157,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 							</div>
 							<div class="flex flex-col justify-center">
 								<h1 class="text-sm">{getGameName(game)}</h1>
-								<h2 class="text-sm">
-									Size On Disk: Calcuating...
-								</h2>
+								<DiskSize/>
 							</div>
 						</div>
 						<div class="flex flex-col justify-center h-auto mt-2.5 gap-y-2.5">
@@ -163,10 +177,10 @@ export const SettingsModal = forwardRef<ModalHandle>(
 						</div>
 					</div>
 					<div class="flex flex-col px-2 py-1.5 w-full">
-						<div class="flex flex-col h-3/5">
+						<div class="flex flex-col h-1/2">
 							<h1 class="text-xl text-center">Wine Modules</h1>
 							<div class="flex flex-col justify-between gap-y-2">
-								{["wine", "dxvk", "vkd3d", "jadeite"].map((wineComponent) => {
+								{["wine", "dxvk", "jadeite"].map((wineComponent) => {
 									return (
 										<div class="flex flex-row justify-between h-full">
 											<div>
@@ -185,7 +199,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 								})}
 							</div>
 						</div>
-						<div class="h-2/5 flex flex-col gap-y-2.5 ">
+						<div class="h-1/2 flex flex-col gap-y-2.5 ">
 							<h1 class="text-xl text-center">Settings</h1>
 							{regularOptions.map((option, index) => {
 								return <OptionRow key={index} option={option} />;
