@@ -37,16 +37,33 @@ const components: WineComponent[] = [
 		saveTo: "dxvk.tar.gz",
 		postInstall: async () => {
 			// Move the dxvk DLLs into the wine prefix and register them in the registry
-			[
-				["x64", "x32"],
-				["system32", "syswow64"],
-			].map(async ([start, dest]) => {
-				const destPath = await join("wine", "drive_c", "windows", dest);
-				const sourceFiles = (await readDir(await join("dxvk", start))).filter(
-					(file) => file.isFile && file.name.endsWith(".dll"),
+			const dirs = [
+				{
+					initialDirName: "x64",
+					finalDirName: "system32",
+				},
+				{
+					initialDirName: "x32",
+					finalDirName: "syswow64",
+				},
+			];
+
+			dirs.map(async (dirInfo) => {
+				const destPath = await join(
+					"wine",
+					"drive_c",
+					"windows",
+					dirInfo.finalDirName,
 				);
+				const sourceFiles = (
+					await readDir(await join("dxvk", dirInfo.initialDirName))
+				).filter((file) => file.isFile && file.name.endsWith(".dll"));
 				sourceFiles.map(async (file) => {
-					const fileOriginPath = await join(start, file.name);
+					const fileOriginPath = await join(
+						"dxvk",
+						dirInfo.initialDirName,
+						file.name,
+					);
 					const fileDestinationPath = await join(destPath, file.name);
 					await rename(fileOriginPath, fileDestinationPath);
 					await registerNewDLL(file.name.split(".")[0]); // Excludes the .dll file extension, which is not needed when registering a new dll
@@ -113,8 +130,8 @@ const wineModules: WineModule[] = [
  * Update All Components in the wine install
  */
 export const updateAllWineComponents = async (): Promise<void> => {
-	// A bit of a compromise to allow for individual component updates. 
-	// The json is only referenced in updateWineComponent(), and even then the 
+	// A bit of a compromise to allow for individual component updates.
+	// The json is only referenced in updateWineComponent(), and even then the
 	// function only gets the respective module index by searching for the name of the module
 
 	["wine", "dxvk", "jadite"].map(async (component) => {
