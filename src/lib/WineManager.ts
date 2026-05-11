@@ -46,7 +46,7 @@ const components: WineComponent[] = [
 					initialDirName: "x32",
 					finalDirName: "syswow64",
 				},
-			];
+			] as const;
 
 			dirs.map(async (dirInfo) => {
 				const destPath = await join(
@@ -55,22 +55,9 @@ const components: WineComponent[] = [
 					"windows",
 					dirInfo.finalDirName,
 				);
-				const sourceFiles = (
-					await readDir(await join("dxvk", dirInfo.initialDirName))
-				).filter((file) => file.isFile && file.name.endsWith(".dll"));
-				sourceFiles.map(async (file) => {
-					const fileOriginPath = await join(
-						"dxvk",
-						dirInfo.initialDirName,
-						file.name,
-					);
-					const fileDestinationPath = await join(destPath, file.name);
-					await rename(fileOriginPath, fileDestinationPath);
-					await registerNewDLL(file.name.split(".")[0]); // Excludes the .dll file extension, which is not needed when registering a new dll
-				});
+				const sourceFolder = await join("dxvk", dirInfo.initialDirName);
+				rename(sourceFolder, destPath);
 			});
-
-			// Remove Temporary Directory
 			await removeDir("dxvk");
 		},
 	},
@@ -133,15 +120,15 @@ export const updateAllWineComponents = async (): Promise<void> => {
 	// A bit of a compromise to allow for individual component updates.
 	// The json is only referenced in updateWineComponent(), and even then the
 	// function only gets the respective module index by searching for the name of the module
-
-	["wine", "dxvk", "jadite"].map(async (component) => {
+	const modules: AppModules[] = ["wine", "dxvk", "jadeite"];
+	for (let i = 0; i < modules.length; i++) {
 		try {
-			await updateWineComponent(component as AppModules);
+			await updateWineComponent(modules[i]);
 		} catch (e) {
 			error(`updateAllWineComponents: ${e}`);
 			return;
 		}
-	});
+	}
 	info("Wine Component Download Complete");
 };
 
@@ -274,13 +261,14 @@ const registerNewDLL = async (dllName: string): Promise<void> => {
  * @returns weather or not a wine environment exists (checks if the drive_c folder exists, which indicates that a wine environment is present)
  */
 export const wineEnvAvailable = async (): Promise<boolean> => {
-	const winePath = await winePrefix();
-	const driveC = await join(winePath, "drive_c");
+	const winePrefixPath = await winePrefix();
+	const driveC = await join(winePrefixPath, "drive_c");
 
-	if ((await exists(winePath)) && (await exists(driveC))) {
-		return true;
-	}
-	return false;
+	return (
+		(await exists(winePrefixPath)) &&
+		(await exists(driveC)) &&
+		(await exists("jadeite"))
+	);
 };
 
 /**
