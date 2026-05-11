@@ -1,6 +1,3 @@
-import { fetch } from "@tauri-apps/plugin-http";
-import { createContext, ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
 import {
 	LauncherBrandingData,
 	LauncherBrandingRawData,
@@ -10,6 +7,9 @@ import {
 	LauncherGraphicsRawGameData,
 	Variants,
 } from "../types";
+import { createContext, ComponentChildren } from "preact";
+import { useEffect, useState } from "preact/hooks";
+import { fetch } from "@tauri-apps/plugin-http";
 
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";

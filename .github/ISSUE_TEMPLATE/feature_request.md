@@ -2,10 +2,9 @@
 name: Feature request
 about: Tell us your great ideas on what to add to Elysiae!
 title: "[FEATURE REQUEST]"
-labels: ''
+labels: ""
 assignees: Shob3r
 type: Feature
-
 ---
 
 **Feature Description**

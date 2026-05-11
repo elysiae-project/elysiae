@@ -1,15 +1,15 @@
-import { appDataDir, join } from "@tauri-apps/api/path";
 import {
 	ComponentData,
 	WineComponent,
 	WineModule,
 	WineSetupProgress,
 } from "../types";
-import { exists, extractFile, remove, removeDir, rename } from "./Fs";
-import { fetch } from "@tauri-apps/plugin-http";
-import { downloadFileWithProgress } from "../util/WebUtils";
-import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
+import { exists, extractFile, remove, removeDir, rename } from "./Fs";
+import { downloadFileWithProgress } from "../util/WebUtils";
+import { appDataDir, join } from "@tauri-apps/api/path";
+import { error, info } from "@tauri-apps/plugin-log";
+import { fetch } from "@tauri-apps/plugin-http";
 
 const components: ((
 	onProgress: (event: WineSetupProgress) => void,

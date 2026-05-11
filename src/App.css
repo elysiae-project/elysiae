@@ -118,24 +118,24 @@
 }
 
 @font-face {
-	font-family: hk4e;
 	src: url("/font/HK4E.woff2");
+	font-family: hk4e;
 }
 
 @font-face {
-	font-family: bh3-hkrpg;
 	src: url("/font/BH3-HKRPG.woff2");
+	font-family: bh3-hkrpg;
 }
 
 @font-face {
-	font-family: nap;
 	src: url("/font/NAP.woff2");
+	font-family: nap;
 }
 
 * {
+	scrollbar-color: transparent;
 	user-select: none;
 	-webkit-user-select: none;
-	scrollbar-color: transparent;
 	-webkit-user-drag: none;
 }
 
@@ -152,7 +152,10 @@
 }
 
 .nap-dots {
-	background-image: repeating-conic-gradient(oklch(0 0 0) 0% 25%, oklch(0.2046 0 0) 0% 50%);
+	background-image: repeating-conic-gradient(
+		oklch(0 0 0) 0% 25%,
+		oklch(0.2046 0 0) 0% 50%
+	);
 	background-size: 10px 10px;
 }
 
@@ -165,7 +168,10 @@
 }
 
 .nap-dots-titlebar-btn {
-	background-image: repeating-conic-gradient(oklch(0 0 0) 0% 25%, oklch(0.2046 0 0) 0% 50%);
+	background-image: repeating-conic-gradient(
+		oklch(0 0 0) 0% 25%,
+		oklch(0.2046 0 0) 0% 50%
+	);
 	background-size: 10px 10px;
 }
 
@@ -175,22 +181,34 @@
 }
 
 .bh3-button-primary-dots {
-	background-image: repeating-conic-gradient(oklch(0.7481 0.1539 63.43) 0% 25%, oklch(0.8176 0.1397 79.48) 0% 50%);
+	background-image: repeating-conic-gradient(
+		oklch(0.7481 0.1539 63.43) 0% 25%,
+		oklch(0.8176 0.1397 79.48) 0% 50%
+	);
 	background-size: 8px 8px;
 }
 
 .bh3-button-primary-dots:active {
-	background-image: repeating-conic-gradient(oklch(0.878 0.1315 91.9) 0% 25%, oklch(0.9493 0.1324 105.89) 0% 50%);
+	background-image: repeating-conic-gradient(
+		oklch(0.878 0.1315 91.9) 0% 25%,
+		oklch(0.9493 0.1324 105.89) 0% 50%
+	);
 	background-size: 8px 8px;
 }
 
 .bh3-button-secondary-dots {
-	background-image: repeating-conic-gradient(oklch(0.6713 0.0343 255.64) 0% 25%, oklch(0.7193 0.0343 254.06) 0% 50%);
+	background-image: repeating-conic-gradient(
+		oklch(0.6713 0.0343 255.64) 0% 25%,
+		oklch(0.7193 0.0343 254.06) 0% 50%
+	);
 	background-size: 8px 8px;
 }
 
 .bh3-button-secondary-dots:active {
-	background-image: repeating-conic-gradient(oklch(0.7341 0.0281 257.05) 0% 25%, oklch(0.8031 0.028 255.11) 0% 50%);
+	background-image: repeating-conic-gradient(
+		oklch(0.7341 0.0281 257.05) 0% 25%,
+		oklch(0.8031 0.028 255.11) 0% 50%
+	);
 	background-size: 8px 8px;
 }
 

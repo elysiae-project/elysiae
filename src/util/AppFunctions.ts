@@ -1,66 +1,64 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { GameCodes, Variants } from "../types";
-import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
+import { GameCodes, Variants } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 
-/**
- * Closes the app
- */
+/** Closes the app */
 export const closeApp = (): void => {
 	getCurrentWindow().close();
 };
 
-/**
- * @returns Game codes (in type ``Variants``) as string (``bh/ys/sr/nap``)
- */
+/** @returns Game codes (in type `Variants`) as string (`bh/ys/sr/nap`) */
 export const getActiveGameCode = (currentGame: Variants): GameCodes => {
-  switch (currentGame) {
-    case Variants.BH3:
-      return "bh3";
-    case Variants.HK4E:
-      return "hk4e";
-    case Variants.HKRPG:
-      return "hkrpg";
-    case Variants.NAP:
-      return "nap";
-  }
+	switch (currentGame) {
+		case Variants.BH3:
+			return "bh3";
+		case Variants.HK4E:
+			return "hk4e";
+		case Variants.HKRPG:
+			return "hkrpg";
+		case Variants.NAP:
+			return "nap";
+	}
 };
 
 export const getVariantFromCode = (code: string): Variants | null => {
-  switch (code) {
-    case "bh3":
-      return Variants.BH3;
-    case "hk4e":
-      return Variants.HK4E;
-    case "hkrpg":
-      return Variants.HKRPG;
-    case "nap":
-      return Variants.NAP;
-    default:
-      return null;
-  }
+	switch (code) {
+		case "bh3":
+			return Variants.BH3;
+		case "hk4e":
+			return Variants.HK4E;
+		case "hkrpg":
+			return Variants.HKRPG;
+		case "nap":
+			return Variants.NAP;
+		default:
+			return null;
+	}
 };
 
 /**
  * Gets the name of a specified game
- * @param game 
+ *
+ * @param game
  */
 export const getGameName = (game: Variants) => {
-	switch(game) {
+	switch (game) {
 		case Variants.BH3:
-			return "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64"
+			return "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64";
 		case Variants.HK4E:
 			return "\x47\x65\x6e\x73\x68\x69\x6e\x20\x49\x6d\x70\x61\x63\x74";
 		case Variants.HKRPG:
-			return "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c"
+			return "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c";
 		case Variants.NAP:
-			return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f"
+			return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f";
 	}
-}
+};
 
 /**
  * Gets the executable name of a game
+ *
  * @param game
  */
 export const getGameExeName = (game: Variants): string => {
@@ -77,7 +75,8 @@ export const getGameExeName = (game: Variants): string => {
 };
 
 /**
- * @returns ``boolean`` value based on weather or not the app is running in a development environment
+ * @returns `boolean` value based on weather or not the app is running in a
+ *   development environment
  */
 export const inDevEnv = async (): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
@@ -87,7 +86,8 @@ export const inDevEnv = async (): Promise<boolean> => {
 
 /**
  * Executes a command on the shell
- * @param command any command
+ *
+ * @param command Any command
  * @param env (optional) environment variables
  */
 export const executeShellCommand = async (
@@ -101,8 +101,9 @@ export const executeShellCommand = async (
 
 /**
  * Executes a command of a binary found in the Elysiae's app data directory
- * @param binaryPath path to binary, relative to the app data directory
- * @param args arguments to pass into command
+ *
+ * @param binaryPath Path to binary, relative to the app data directory
+ * @param args Arguments to pass into command
  * @param env (optional) environment variables
  */
 export const executeLocalBinary = async (
@@ -121,6 +122,7 @@ export const executeLocalBinary = async (
 
 /**
  * Convert a POSIX path to a Windows path used by Wine
+ *
  * @param path POSIX Path
  * @returns Wine Windows path converted froma POSIX path
  */
@@ -130,6 +132,7 @@ export const posixToWinPath = (path: string): string => {
 
 /**
  * Convert a Windows path used by Wine to POSIX
+ *
  * @param path Wine Windows Path
  * @returns POSIX path converted from a Wine Windows Path
  */
@@ -138,10 +141,9 @@ export const winToPosixPath = (path: string): string => {
 };
 
 export const formatNumber = (num: number): string => {
-  try {
-    return new Intl.NumberFormat(navigator.language).format(num);
-  } catch {
-    return new Intl.NumberFormat("en-US").format(num);
-  }
-}
-
+	try {
+		return new Intl.NumberFormat(navigator.language).format(num);
+	} catch {
+		return new Intl.NumberFormat("en-US").format(num);
+	}
+};

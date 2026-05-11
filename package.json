@@ -8,7 +8,8 @@
 		"dev": "vite",
 		"build": "tsc && vite build",
 		"preview": "vite preview",
-		"tauri": "tauri"
+		"tauri": "tauri",
+		"format": "prettier -w ."
 	},
 	"dependencies": {
 		"@babel/core": "^7.29.0",
@@ -32,6 +33,13 @@
 		"@tauri-apps/cli": "^2.10.1",
 		"@types/babel__core": "^7.20.5",
 		"@types/node": "^25.6.0",
+		"prettier": "^3.8.3",
+		"prettier-plugin-css-order": "^2.2.0",
+		"prettier-plugin-jsdoc": "^1.8.0",
+		"prettier-plugin-multiline-arrays": "^4.1.8",
+		"prettier-plugin-organize-attributes": "^1.0.0",
+		"prettier-plugin-sort-imports": "^1.8.11",
+		"prettier-plugin-tailwindcss": "^0.8.0",
 		"tailwindcss": "^4.2.2",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.8"

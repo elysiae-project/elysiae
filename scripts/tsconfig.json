@@ -6,5 +6,5 @@
 		"strict": true,
 		"moduleResolution": "nodenext",
 		"types": ["node"]
-	},
+	}
 }

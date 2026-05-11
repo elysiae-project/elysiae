@@ -2,13 +2,13 @@
 name: Bug Report
 about: Found an issue in Elysiae? Let us know!
 title: "[BUG]"
-labels: 'bug'
+labels: "bug"
 assignees:
 type: Bug
-
 ---
 
 **Checklist**
+
 - [ ] I am on the latest Version of Elysiae
 - [ ] My system meets Elysiae's hardware/software requirements (see the [README](https://github.com/elysiae-project/elysiae/README.md))
 - [ ] All of the components used by Elysiae are up-to-date (latest version in the [components repository](https://github.com/elysiae-project/components)
@@ -16,9 +16,10 @@ type: Bug
 
 **Software**
 The software you are using on your computer. Include your:
- - Linux Distribution
- - Linux Kernel Version
- - Elysiae Version
+
+- Linux Distribution
+- Linux Kernel Version
+- Elysiae Version
 
 **Describe the bug**
 
@@ -35,7 +36,6 @@ A clear and concise description of what you expected to happen.
 **Additional Evidence**
 
 If possible, attach screenshots or screen recordings that showcase the bug you are reporting
-
 
 **Additional context**
 

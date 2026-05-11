@@ -1,11 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
+import { fetch } from "@tauri-apps/plugin-http";
 import { listen } from "@tauri-apps/api/event";
 import { info } from "@tauri-apps/plugin-log";
-import { fetch } from "@tauri-apps/plugin-http";
+import { invoke } from "@tauri-apps/api/core";
 
 /**
- * @param verifyingString the string you want to verify
- * @returns boolean value based on weather verifyingString is a valid http URL or not
+ * @param verifyingString The string you want to verify
+ * @returns Boolean value based on weather verifyingString is a valid http URL
+ *   or not
  */
 export const isURLValid = (verifyingString: string): boolean => {
 	try {
@@ -17,7 +18,7 @@ export const isURLValid = (verifyingString: string): boolean => {
 };
 
 /**
- * @param url link to an API
+ * @param url Link to an API
  * @returns JavaScipt Object from API URL
  */
 export const getApiJson = async (url: string): Promise<any> => {

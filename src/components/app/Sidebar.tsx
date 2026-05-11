@@ -1,5 +1,5 @@
-import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
+import { useApi } from "../../hooks/useApi";
 import { motion } from "motion/react";
 
 export default function Sidebar() {
@@ -9,7 +9,7 @@ export default function Sidebar() {
 	return (
 		<motion.div
 			style={{ translateX: "-20%" }}
-			class="absolute h-auto max-h-100 overflow-y-scroll rounded-xl self-center bg-black/80 bottom-0 right-0 top-0 z-20 flex flex-col justify-center items-center gap-y-4 p-4">
+			class="absolute top-0 right-0 bottom-0 z-20 flex h-auto max-h-100 flex-col items-center justify-center gap-y-4 self-center overflow-y-scroll rounded-xl bg-black/80 p-4">
 			{branding &&
 				Object.entries(branding).map(([key, data]) => (
 					<button

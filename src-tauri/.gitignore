@@ -1,5 +1,0 @@
-# Compiled files and executables
-/target/
-
-# Schema files for capabilities auto-completion
-/gen/schemas

@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const packageJson = JSON.parse(readFileSync("package.json", "utf-8"));
 if (

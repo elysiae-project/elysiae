@@ -1,5 +1,5 @@
-import { useContext } from "preact/hooks";
 import { GameContext } from "../contexts/GameContext";
+import { useContext } from "preact/hooks";
 
 export const useGame = () => {
 	const context = useContext(GameContext);

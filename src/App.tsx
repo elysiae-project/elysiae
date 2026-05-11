@@ -1,22 +1,22 @@
-import "./App.css";
-import Button from "./components/Button.tsx";
+import PreinstallButton from "./components/app/PreinstallButton.tsx";
+import DownloadProgress from "./components/app/DownloadProgress.tsx";
+import InstallerButton from "./components/app/InstallerButton.tsx";
+import { DownloadProvider } from "./contexts/DownloadContext.tsx";
+import { settingsDetails } from "./util/SettingsDetails.ts";
+import { GameProvider } from "./contexts/GameContext.tsx";
+import { ApiProvider } from "./contexts/ApiContext.tsx";
 import Background from "./components/Background.tsx";
 import Sidebar from "./components/app/Sidebar.tsx";
 import Titlebar from "./components/Titlebar.tsx";
-import { useGame } from "./hooks/useGame.ts";
 import { cva } from "class-variance-authority";
-import { Variants } from "./types";
-import { useApi } from "./hooks/useApi.ts";
-import { ApiProvider } from "./contexts/ApiContext.tsx";
-import { GameProvider } from "./contexts/GameContext.tsx";
-import { useState } from "preact/hooks";
 import { Info, Settings } from "lucide-preact";
-import { settingsDetails } from "./util/SettingsDetails.ts";
+import Button from "./components/Button.tsx";
+import { useGame } from "./hooks/useGame.ts";
 import Modal from "./components/Modal.tsx";
-import DownloadProgress from "./components/app/DownloadProgress.tsx";
-import PreinstallButton from "./components/app/PreinstallButton.tsx";
-import InstallerButton from "./components/app/InstallerButton.tsx";
-import { DownloadProvider } from "./contexts/DownloadContext.tsx";
+import { useApi } from "./hooks/useApi.ts";
+import { useState } from "preact/hooks";
+import { Variants } from "./types";
+import "./App.css";
 
 const theme = cva("h-full w-full overflow-hidden", {
 	variants: {
@@ -48,8 +48,8 @@ function App() {
 						open={settingsOpen}>
 						{settingsDetails.map((setting) => {
 							return (
-								<div class="flex flex-col justify-apart w-full h-full gap-y-2.5">
-									<div class="flex flex-row items-center justify-left gap-x-1">
+								<div class="justify-apart flex h-full w-full flex-col gap-y-2.5">
+									<div class="justify-left flex flex-row items-center gap-x-1">
 										<p>{setting.name}</p>
 										{typeof setting.description !== "undefined" ? (
 											<Info size={15} />
@@ -68,7 +68,7 @@ function App() {
 						})}
 					</Modal>
 
-					<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
+					<div class="absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 px-15 py-10">
 						{/* Page content */}
 						<DownloadProgress />
 						<PreinstallButton />
@@ -78,7 +78,7 @@ function App() {
 								setSettingsOpen(true);
 							}}
 							iconButton>
-							<Settings className="leading-0 -m-1" />
+							<Settings className="-m-1 leading-0" />
 						</Button>
 						<InstallerButton />
 					</div>

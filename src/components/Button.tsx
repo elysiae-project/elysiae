@@ -1,6 +1,6 @@
+import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
-import { cva } from "class-variance-authority";
 
 const buttonStyles = cva(
 	"transition-all duration-175 px-5 py-2 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 text-[1.25em]",
@@ -93,7 +93,7 @@ export default function Button({
 		<button
 			disabled={disabled}
 			onClick={onClick}
-			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "min-w-10 aspect-square" : "min-w-65"}`}>
+			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "aspect-square min-w-10" : "min-w-65"}`}>
 			{children}
 		</button>
 	);
