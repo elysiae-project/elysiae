@@ -11,7 +11,7 @@ import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
-import { getOption } from "../util/Settings";
+import { getOption, setOption } from "../util/Settings";
 
 // Components that get regular updates (i.e. wine, dxvk)
 const components: WineComponent[] = [
@@ -66,20 +66,20 @@ const components: WineComponent[] = [
 			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
 	},
-	{
+	/*{
 		// While not used right now, it will for certain be used in future games or game updates as DX12 becomes the industry standard. Best to install and stay ahead of updated
 		componentName: "vkd3d",
-		extractTo: "vkd3d-temp",
+		extractTo: "vkd3d",
 		saveTo: "vkd3d.tar.zst",
 		postInstall: async () => {
 			// Run setup_vkd3d_proton.sh to automate the installation process
-			await executeLocalBinary("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
+			await executeLocalBinary("vkd3d/setup_vkd3d_proton.sh", "install", {
 				WINEPREFIX: await winePrefix(),
 			});
 
 			await removeDir("vkd3d");
 		},
-	},
+	},*/
 ] as const;
 
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)
@@ -130,7 +130,7 @@ export const updateWineComponents = async (): Promise<void> => {
 				}
 
 				// Save installed component version to settings
-				await updateModuleTracker(component.componentName as AppModules, json[0].tag);
+				await updateModuleTracker(component.componentName, json[0].tag);
 			} else {
 				throw new Error("Endpoint returned non-OK response code");
 			}
@@ -253,7 +253,7 @@ export const winePrefix = async (): Promise<string> => {
 	return new Promise((resolve) => {
 		appDataDir().then((appData) => {
 			join(appData, "wine").then((res) => {
-				resolve(res as string);
+				resolve(res);
 			});
 		});
 	});
@@ -265,6 +265,7 @@ export const updateModuleTracker = async (
 ) => {
 	const current = await getOption<WineComponentData>("installedComponents");
 	current[module] = newVersion;
+	await setOption("installedComponents", current);
 };
 
 export const getModuleVersion = async (

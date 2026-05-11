@@ -143,7 +143,7 @@ export type LauncherBrandingData = {
 };
 
 export type WineComponent = {
-	componentName: string;
+	componentName: AppModules;
 	extractTo: string;
 	saveTo: string;
 	postInstall?: () => Promise<void>;
