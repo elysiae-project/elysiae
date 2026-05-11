@@ -130,7 +130,7 @@ export const readDir = async (path: string): Promise<DirEntry[]> => {
 };
 
 /**
- * Extracts a compressed archive to a specified location. Supports any archive format that ``7za`` supports
+ * Extracts a compressed archive to a specified location. Supports most commpon tar compression formats (gz, xz, zstd) and zip
  * @param archivePath Path to archive
  * @param dest destination to extract to
  */
