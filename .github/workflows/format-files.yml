@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+            token: ${{ secrets.PROJECT_LINTING_KEY }}
 
       - name: Install NodeJS
         uses: actions/setup-node@v6
@@ -30,3 +32,11 @@ jobs:
         run: |
           cd src-tauri
           cargo clippy --fix --allow-dirty
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git diff-index --quiet HEAD || git commit -m "chore: format & lint project files"
+          git push origin HEAD:main

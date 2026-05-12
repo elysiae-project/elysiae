@@ -39,6 +39,7 @@ jobs:
         run: |
           curl -s https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py | uv run --with tomlkit - -o download-sources/cargo.json ./src-tauri/Cargo.lock          
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+
           flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
           node scripts/gen-corepack.ts
 
@@ -47,5 +48,5 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add --all
-          git diff-index --quiet HEAD || git commit -m "Update Flatpak download sources"
+          git diff-index --quiet HEAD || git commit -m "chore: update flatpak download sources"
           git push origin HEAD:main
