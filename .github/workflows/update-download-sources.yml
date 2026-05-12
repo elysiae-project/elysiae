@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with: 
+          token: ${{ secrets.FLATPAK_UPDATE_KEY }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -49,6 +51,3 @@ jobs:
           git add --all
           git diff-index --quiet HEAD || git commit -m "Update Flatpak download sources"
           git push origin HEAD:main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          token: ${{ secrets.GITHUB_TOKEN }}
