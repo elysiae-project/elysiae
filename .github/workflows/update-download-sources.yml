@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  update-sources:
+  update-flatpak-download-sources:
     permissions:
       contents: write
       pull-requests: write
@@ -26,21 +26,17 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # V8.1.0 (Latest as of writing)
 
-      - name: Install Dependencies
+      - name: Install Python & Python Dependencies
         run: |
-          sudo apt update
-          sudo apt install -y build-essential python3 pipx python3-tomlkit python3-aiohttp wget
-
-      - name: Install Flatpak Builder Tools
-        run: |
-          pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
-
+          uv python install
+          uv tool install "flatpak-node-generator @ git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node"
       - name: Generate Sources
         run: |
-          python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
-          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+          curl -s https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py | uv run --with tomlkit - -o download-sources/cargo.json ./src-tauri/Cargo.lock          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
           flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
           node scripts/gen-corepack.ts
 
