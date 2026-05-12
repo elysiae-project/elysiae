@@ -31,6 +31,7 @@ jobs:
       - name: Backend Format
         run: |
           cd src-tauri
+          rustfmt --edition 2024 --style-edition 2024 --color always ./src/**.rs
           cargo clippy --fix --allow-dirty
 
       - name: Commit and push changes
