@@ -6,6 +6,7 @@ on:
       - "yarn.lock"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
+      - ".github/workflows/update-download-sources.yml"
     branches:
       - main
   workflow_dispatch:
@@ -36,7 +37,8 @@ jobs:
           uv tool install "flatpak-node-generator @ git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node"
       - name: Generate Sources
         run: |
-          curl -s https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py | uv run --with tomlkit - -o download-sources/cargo.json ./src-tauri/Cargo.lock          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+          curl -s https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py | uv run --with tomlkit - -o download-sources/cargo.json ./src-tauri/Cargo.lock          
+          sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
           flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
           node scripts/gen-corepack.ts
 
