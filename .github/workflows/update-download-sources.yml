@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with: 
+        with:
           token: ${{ secrets.FLATPAK_UPDATE_KEY }}
 
       - name: Set up Node.js

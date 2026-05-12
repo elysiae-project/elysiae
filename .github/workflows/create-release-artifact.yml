@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  package-yoohoo:
+  package-elysiae:
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -15,8 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: yoohoo.flatpak
-          manifest-path: dev.shob3r.yoohoo.yml
+          bundle: app.elysiae.Elysiae.flatpak
+          manifest-path: app.elysiae.Eylsiae.yml
           cache-key: flatpak-builder-${{ github.sha }}
           branch: main
           upload-artifact: true
