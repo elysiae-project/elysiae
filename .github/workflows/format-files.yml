@@ -3,11 +3,11 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - 'package.json'
-      - 'yarn.lock'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/update-download-sources.yml'
+      - "package.json"
+      - "yarn.lock"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/update-download-sources.yml"
   workflow_dispatch:
 
 jobs:
@@ -49,7 +49,7 @@ jobs:
         run: |
           rustfmt +nightly ./src/**.rs
           cargo clippy --fix --allow-dirty
-          
+
       - name: Commit and push changes
         run: |
           git config --global user.name 'github-actions[bot]'
