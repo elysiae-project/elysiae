@@ -27,10 +27,10 @@ const dropdownList = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH3]: "bg-white text-bh-dropdown-text",
+				[Variants.BH3]: "bg-white text-bh3-dropdown-text",
 				[Variants.HK4E]:
 					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
-				[Variants.HKRPG]: "bg-sr-list-bg mt-12 rounded-xs",
+				[Variants.HKRPG]: "bg-hkrpg-list-bg mt-12 rounded-xs",
 				[Variants.NAP]: "bg-[#353535] rounded-2xl ",
 			},
 		},
@@ -42,11 +42,11 @@ const dropdownItem = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH3]: "active:bg-bh-dropdown-item-active",
+				[Variants.BH3]: "active:bg-bh3-dropdown-item-active",
 				[Variants.HK4E]:
 					"hover:bg-ys-item-hover active:bg-[#ece5d8] rounded-4xl text-[#ece5d8] active:text-[#495366]",
 				[Variants.HKRPG]:
-					"py-5 active:bg-sr-item-active-bg hover:bg-sr-item-hover-bg",
+					"py-5 active:bg-hkrpg-item-active-bg hover:bg-hkrpg-item-hover-bg",
 				[Variants.NAP]:
 					"text-white active:text-black active:animate-nap-pulsate rounded-full text-center",
 			},
