@@ -1,10 +1,10 @@
 edition = "2024"
 style_edition = "2024"
-# wrap_comments = true
-# trailing_comma = "Vertical"
-# comment_width = 80
+wrap_comments = true
+trailing_comma = "Vertical"
+comment_width = 80
 array_width = 60
 max_width = 100
 fn_params_layout = "Tall"
-# color = "Always"
+color = "Always"
 newline_style = "Unix"
