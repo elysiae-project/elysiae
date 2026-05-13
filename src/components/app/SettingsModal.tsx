@@ -172,8 +172,7 @@ const DiskSize = () => {
 			setSize("Calculating...");
 		});
 	}, [game]);
-	if(!gameInstalled) return null;
-	return <p class="text-sm">Size On Disk: {size}</p>;
+	return <p class="text-sm">{gameInstalled ? `Size On Disk: ${size}` : `Not Installed`}</p>;
 };
 
 const GameManagerButton = ({gameOption}: {gameOption: GameOption}) => {
