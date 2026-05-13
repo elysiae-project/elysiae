@@ -14,7 +14,6 @@ import {
 	checkGameUpdate,
 	downloadUpdate,
 	isGameInstalled,
-	isPreinstallAvailable,
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
 import { join } from "@tauri-apps/api/path";
@@ -222,7 +221,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 								<DiskSize />
 							</div>
 						</div>
-						<div class="flex flex-col justify-center h-auto mt-2.5 gap-y-2.5">
+						<div class="flex flex-col justify-center h-full gap-y-2.5">
 							{gameOptions.map((item) => {
 								return (
 									<GameManagerButton gameOption={item}/>
