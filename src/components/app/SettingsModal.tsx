@@ -1,6 +1,6 @@
 import Modal from "../Modal";
 import { AppModules, ModalHandle, Option, Variants } from "../../types";
-import { forwardRef, useEffect, useRef, useState } from "preact/compat";
+import { forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import {
@@ -9,10 +9,11 @@ import {
 	getGameSize,
 } from "../../util/AppFunctions";
 import Button from "../Button";
-import { FileCheck, RefreshCw, Trash } from "lucide-preact";
+import { FileCheck, LucideIcon, RefreshCw, Trash } from "lucide-preact";
 import {
 	checkGameUpdate,
 	downloadUpdate,
+	isGameInstalled,
 	isPreinstallAvailable,
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
@@ -23,7 +24,13 @@ import { getOption, setOption } from "../../util/Settings";
 import ToggleSwitch from "../ToggleSwitch";
 import { getModuleVersion, updateWineComponent } from "../../lib/WineManager";
 
-const gameOptions = [
+type GameOption = {
+	icon: LucideIcon;
+	text: string;
+	action: (game: Variants) => Promise<void> | void;
+}
+
+const gameOptions: GameOption[] = [
 	{
 		icon: Trash,
 		text: "Uninstall",
@@ -155,15 +162,42 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 const DiskSize = () => {
 	const { game } = useGame();
 	const [size, setSize] = useState<string>("Calculating...");
+	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
 	useEffect(() => {
 		getGameSize(game).then((res) => {
-			setSize(`${res.toString()}GB`);
+			setGameInstalled(true);
+			setSize(`${res.toFixed(2)}GB`);
+		}).catch(() => {
+			setGameInstalled(false);
+			setSize("Calculating...");
 		});
 	}, [game]);
-
-	return <p>Size On Disk: {size}</p>;
+	if(!gameInstalled) return null;
+	return <p class="text-sm">Size On Disk: {size}</p>;
 };
+
+const GameManagerButton = ({gameOption}: {gameOption: GameOption}) => {
+	const { game } = useGame();
+	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
+
+	useEffect(() => {
+		isGameInstalled(game).then((res) => {
+			setGameInstalled(res);
+		})
+	}, []);
+	
+	return <Button 
+			intent="primary" 
+			disabled={!gameInstalled}
+			width={25} 
+			height={25} 
+			onClick={async() => {await gameOption.action(game)}}
+			>
+				{gameOption.text}
+			</Button>
+
+}
 
 export const SettingsModal = forwardRef<ModalHandle>(
 	function SettingsModal(_, ref) {
@@ -184,22 +218,14 @@ export const SettingsModal = forwardRef<ModalHandle>(
 								/>
 							</div>
 							<div class="flex flex-col justify-center">
-								<h1 class="text-sm">{getGameName(game)}</h1>
+								<h1 class="text-md">{getGameName(game)}</h1>
 								<DiskSize />
 							</div>
 						</div>
 						<div class="flex flex-col justify-center h-auto mt-2.5 gap-y-2.5">
 							{gameOptions.map((item) => {
 								return (
-									<Button
-										intent="primary"
-										width={25}
-										height={25}
-										onClick={async () => {
-											await item.action(game);
-										}}>
-										{item.text}
-									</Button>
+									<GameManagerButton gameOption={item}/>
 								);
 							})}
 						</div>
