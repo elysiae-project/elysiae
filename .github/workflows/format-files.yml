@@ -2,10 +2,18 @@ name: Format Project Files
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'package.json'
+      - 'yarn.lock'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/update-download-sources.yml'
   workflow_dispatch:
 
 jobs:
   format:
+    # Prevents recusive runs
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,7 +31,7 @@ jobs:
           toolchain: nightly
           components: clippy, rustfmt
 
-      - name: Install System dependencies
+      - name: Install system dependencies
         run: |
           sudo apt update
           sudo apt install libwebkit2gtk-4.1-dev build-essential file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev -y
@@ -33,19 +41,20 @@ jobs:
           corepack enable
           yarn
 
-      - name: Fromat with prettier
+      - name: Format with Prettier
         run: yarn format
 
-      - name: format with rustfmt & Clippy
+      - name: Format with rustfmt & Clippy
         working-directory: ./src-tauri
         run: |
           rustfmt +nightly ./src/**.rs
           cargo clippy --fix --allow-dirty
-
+          
       - name: Commit and push changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add --all
           git diff-index --quiet HEAD || git commit -m "style: format & lint project files"
+          git pull --rebase origin main
           git push origin HEAD:main
