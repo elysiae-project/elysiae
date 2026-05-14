@@ -6,7 +6,7 @@ import MenuClose from "./MenuClose.tsx";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const titlebarStyles = cva(
-	"h-15 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
+	"h-16 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
 	{
 		variants: {
 			game: {
@@ -30,6 +30,7 @@ export default function Titlebar() {
 				<h1 class="text-center text-[1.35rem]">Elysiae</h1>
 				<AnimatePresence mode="wait" initial={false}>
 					<MenuClose
+						size={42}
 						clickAction={() => {
 							getCurrentWindow().close();
 						}}

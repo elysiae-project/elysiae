@@ -23,8 +23,12 @@ const menuCloseStyles = cva(
 
 export default function MenuClose({
 	clickAction,
+	size = 32,
 }: {
 	clickAction: () => void;
+	size?: number;
+	width?: number;
+	height?: number;
 }) {
 	const { game } = useGame();
 	const assetPath = `/icon/${getActiveGameCode(game)}`;
@@ -32,6 +36,7 @@ export default function MenuClose({
 
 	return (
 		<button
+			style={{ width: `${size}px`, height: `${size}px` }}
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
@@ -52,14 +57,14 @@ export default function MenuClose({
 			<img
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}
-				width={18}
-				height={18}
+				width={size / 2.33}
+				height={size / 2.33}
 			/>
 			<img
 				style={{ display: mouseDown ? "" : "none" }}
 				src={`${assetPath}/close-click.svg`}
-				width={18}
-				height={18}
+				width={size / 2.33}
+				height={size / 2.33}
 			/>
 		</button>
 	);
