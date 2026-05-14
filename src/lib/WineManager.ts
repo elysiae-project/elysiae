@@ -314,13 +314,15 @@ export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {
 
 	const installedTag = await getModuleVersion(module).catch((e) => {
 		error(`moduleTagsMatch: ${e}`);
-		return true;
+		throw e;
 	});
-	const json = await getApiJson<ModuleData>(url).catch((e) => {
-		error(`moduleTagsMatch: ${e}`);
-		return true;
-	});
-
-	
+	if (installedTag !== null) {
+		try {
+			const json = await getApiJson<ModuleData>(url);
+			return json.tag === installedTag;
+		} catch (e: any) {
+			error(`moduleTagsMatch: ${e}`);
+		}
+	}
 	return false;
 };
