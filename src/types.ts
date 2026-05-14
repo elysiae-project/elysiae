@@ -149,12 +149,6 @@ export type WineComponent = {
 	postInstall?: () => Promise<void>;
 };
 
-export type ComponentData = {
-	tag: string;
-	download_url: string;
-	hash: string;
-};
-
 export type WineModule = {
 	name: string;
 	downloadLink: string;
