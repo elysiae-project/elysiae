@@ -1,4 +1,4 @@
-import React from "react-dom/src";
+import React from "react";
 
 export enum Variants {
 	BH3,
@@ -217,7 +217,7 @@ export type ModalHandle = {
 };
 
 export type ModalProps = {
-	title: string;
+	title?: string;
 	width?: number;
 	height?: number;
 	children: React.ReactNode;
@@ -238,3 +238,9 @@ type DropdownOption = BaseOption<"dropdown", string> & {
 type BooleanOption = BaseOption<"boolean", boolean>;
 
 export type Option = DropdownOption | BooleanOption;
+
+export type ModuleData = {
+	tag: string;
+	download_url: string;
+	hash: string;
+};
