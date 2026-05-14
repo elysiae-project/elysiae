@@ -2,13 +2,11 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import {
 	WineComponentData,
 	AppModules,
-	ComponentData,
 	WineComponent,
 	WineModule,
 	ModuleData,
 } from "../types";
 import { exists, extractFile, readDir, remove, removeDir, rename } from "./Fs";
-import { fetch } from "@tauri-apps/plugin-http";
 import { downloadFile, getApiJson } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
@@ -147,27 +145,21 @@ export const updateWineComponent = async (
 	try {
 		info(`Installing/Updating ${data.componentName}`);
 		const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${data.componentName}.json`;
-		const assetResponse = await fetch(assetURL);
-		if (assetResponse.status === 200) {
-			// Download file to download location
-			const json: ComponentData = (await assetResponse.json())[0];
-			await downloadFile(json.download_url, data.saveTo);
+		const assetResponse = await getApiJson<ModuleData[]>(assetURL);
+		// Download file to download location
+		const json = assetResponse[0];
+		await downloadFile(json.download_url, data.saveTo);
 
-			// Extract downloaded file to folder location
-			await extractFile(data.saveTo, data.extractTo);
+		// Extract downloaded file to folder location
+		await extractFile(data.saveTo, data.extractTo);
 
-			// Perform postinstall actions, if any exist
-			if (typeof data.postInstall !== "undefined") {
-				await data.postInstall();
-			}
-
-			// Update the wine module tracker
-			await updateModuleTracker(data.componentName, json.tag);
-		} else {
-			throw new Error(
-				`installWineComponent: Endpoint "${assetURL}" returned non-zero access code (${assetResponse.status})`,
-			);
+		// Perform postinstall actions, if any exist
+		if (typeof data.postInstall !== "undefined") {
+			await data.postInstall();
 		}
+
+		// Update the wine module tracker
+		await updateModuleTracker(data.componentName, json.tag);
 	} catch (e) {
 		error(`installWineComponent: ${e}`);
 		return;
@@ -318,8 +310,8 @@ export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {
 	});
 	if (installedTag !== null) {
 		try {
-			const json = await getApiJson<ModuleData>(url);
-			return json.tag === installedTag;
+			const json = await getApiJson<ModuleData[]>(url);
+			return json[0].tag === installedTag;
 		} catch (e: any) {
 			error(`moduleTagsMatch: ${e}`);
 		}
