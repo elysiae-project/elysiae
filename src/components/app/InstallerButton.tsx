@@ -59,7 +59,7 @@ export default function InstallerButton() {
 	return (
 		<div class="w-auto flex flex-row gap-x-3.5">
 			<Button
-				intent="primary"
+				variant="primary"
 				disabled={downloadActive && !gameInstalled}
 				onClick={async () => {
 					if (!wineAvailable) {

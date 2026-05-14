@@ -39,7 +39,7 @@ export default function PreinstallButton() {
 
 	return (
 		<Button
-			intent="secondary"
+			variant="secondary"
 			width={65}
 			height={65}
 			disabled={downloadActive}

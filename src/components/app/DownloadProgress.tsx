@@ -102,7 +102,7 @@ export default function GameDownloadProgress() {
 								await pauseDownload();
 							}
 						}}
-						intent="secondary"
+						variant="secondary"
 						width={15}
 						height={15}>
 						{isPaused ? (

@@ -60,7 +60,7 @@ function App() {
 						<DownloadProgress />
 						<PreinstallButton />
 						<Button
-							intent="secondary"
+							variant="secondary"
 							onClick={() => {
 								settingsModal.current?.open();
 							}}
