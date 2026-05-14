@@ -7,7 +7,7 @@ import { fetch } from "@tauri-apps/plugin-http";
  * @param verifyingString the string you want to verify
  * @returns boolean value based on weather verifyingString is a valid http URL or not
  */
-export const isURLValid = (verifyingString: string): boolean => {
+const isURLValid = (verifyingString: string): boolean => {
 	try {
 		const testURL = new URL(verifyingString);
 		return testURL.protocol === "http:" || testURL.protocol === "https:";
@@ -51,7 +51,7 @@ export const downloadFile = async (url: string, destination: string) => {
 		`download://progress/${downloadID}`,
 		({ payload }) => {
 			// TODO: Create some sort of function that can automatically determine the best size unit
-			// For now, just using MB
+			// For now, just use MB
 			const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
 			const total = (payload.total / 1024 ** 2).toFixed(2);
 			info(`Downloaded ${downloaded}MB of ${total}MB`);
