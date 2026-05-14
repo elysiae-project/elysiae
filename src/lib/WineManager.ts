@@ -5,10 +5,11 @@ import {
 	ComponentData,
 	WineComponent,
 	WineModule,
+	ModuleData,
 } from "../types";
 import { exists, extractFile, readDir, remove, removeDir, rename } from "./Fs";
 import { fetch } from "@tauri-apps/plugin-http";
-import { downloadFile } from "../util/WebUtils";
+import { downloadFile, getApiJson } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
 import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
 import { getOption, setOption } from "../util/Settings";
@@ -306,4 +307,20 @@ export const getModuleVersion = async (
 			})
 			.catch(reject);
 	});
+};
+
+export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {
+	const url = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${module}.json`;
+
+	const installedTag = await getModuleVersion(module).catch((e) => {
+		error(`moduleTagsMatch: ${e}`);
+		return true;
+	});
+	const json = await getApiJson<ModuleData>(url).catch((e) => {
+		error(`moduleTagsMatch: ${e}`);
+		return true;
+	});
+
+	
+	return false;
 };

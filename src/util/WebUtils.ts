@@ -20,7 +20,7 @@ export const isURLValid = (verifyingString: string): boolean => {
  * @param url link to an API
  * @returns JavaScipt Object from API URL
  */
-export const getApiJson = async (url: string): Promise<any> => {
+export const getApiJson = async <T = any>(url: string): Promise<T> => {
 	return new Promise((resolve, reject) => {
 		if (!isURLValid(url)) {
 			reject(`getApiJson: URL ${url} is invalid`);
@@ -32,7 +32,7 @@ export const getApiJson = async (url: string): Promise<any> => {
 				response
 					.json()
 					.then((json) => {
-						resolve(json);
+						resolve(json as T);
 					})
 					.catch((e) => {
 						reject(`getApiJson: ${e}`);
