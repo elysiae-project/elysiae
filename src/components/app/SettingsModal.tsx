@@ -1,6 +1,6 @@
 import Modal from "../Modal";
 import { AppModules, ModalHandle, Option, Variants } from "../../types";
-import { forwardRef, useEffect, useState } from "preact/compat";
+import { Component, forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import {
@@ -9,30 +9,36 @@ import {
 	getGameSize,
 } from "../../util/AppFunctions";
 import Button from "../Button";
-import { FileCheck, LucideIcon, RefreshCw, Trash } from "lucide-preact";
+import {
+	FileCheck,
+	Folder,
+	Icon,
+	LucideIcon,
+	RefreshCw,
+	Trash,
+} from "lucide-preact";
 import {
 	checkGameUpdate,
 	downloadUpdate,
 	isGameInstalled,
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
-import { join } from "@tauri-apps/api/path";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { remove } from "../../lib/Fs";
 import Dropdown from "../Dropdown";
 import { getOption, setOption } from "../../util/Settings";
 import ToggleSwitch from "../ToggleSwitch";
 import { getModuleVersion, updateWineComponent } from "../../lib/WineManager";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 type GameOption = {
 	icon: LucideIcon;
-	text: string;
 	action: (game: Variants) => Promise<void> | void;
-}
+};
 
 const gameOptions: GameOption[] = [
 	{
 		icon: Trash,
-		text: "Uninstall",
 		action: async (game: Variants) => {
 			// TODO: Add confirmation modal
 			const gameCode = getActiveGameCode(game);
@@ -42,14 +48,12 @@ const gameOptions: GameOption[] = [
 	},
 	{
 		icon: FileCheck,
-		text: "Verify",
 		action: async (game: Variants) => {
 			await verifyGameIntegrity(game);
 		},
 	},
 	{
 		icon: RefreshCw,
-		text: "Check for Updates",
 		action: async (game: Variants) => {
 			const res = await checkGameUpdate(game);
 			if (res !== null) {
@@ -59,6 +63,17 @@ const gameOptions: GameOption[] = [
 					await downloadUpdate(game, false);
 				}
 			}
+		},
+	},
+	{
+		icon: Folder,
+		action: async (game: Variants) => {
+			const folder = await join(
+				await appDataDir(),
+				"games",
+				getActiveGameCode(game),
+			);
+			await openPath(folder);
 		},
 	},
 ];
@@ -132,12 +147,12 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 
 const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 	const [version, setVersion] = useState<string>("");
+	const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
 	useEffect(() => {
 		getModuleVersion(componentName).then((res) => {
-			if(res === null) {
+			if (res === null) {
 				setVersion("Not Installed");
-			}
-			else setVersion(`Version ${res}`);
+			} else setVersion(`Version ${res}`);
 		});
 	}, []);
 
@@ -147,13 +162,16 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 				<h1>{componentName}</h1>
 				<p>{version}</p>
 			</div>
-			<Button
-			height={10}
-			width={120}
-				intent="primary"
-				onClick={async () => updateWineComponent(componentName)}>
-				Update
-			</Button>
+			<div class="flex items-center">
+				<Button
+					height={32}
+					width={96}
+					size="small"
+					variant="primary"
+					onClick={async () => updateWineComponent(componentName)}>
+					<p class="text-[0.95rem]">Update</p>
+				</Button>
+			</div>
 		</div>
 	);
 };
@@ -164,38 +182,48 @@ const DiskSize = () => {
 	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
 	useEffect(() => {
-		getGameSize(game).then((res) => {
-			setGameInstalled(true);
-			setSize(`${res.toFixed(2)}GB`);
-		}).catch(() => {
-			setGameInstalled(false);
-			setSize("Calculating...");
-		});
+		getGameSize(game)
+			.then((res) => {
+				setGameInstalled(true);
+				setSize(`${res.toFixed(2)}GB`);
+			})
+			.catch(() => {
+				setGameInstalled(false);
+				setSize("Calculating...");
+			});
 	}, [game]);
-	return <p class="text-sm">{gameInstalled ? `Size On Disk: ${size}` : `Not Installed`}</p>;
+	return (
+		<p class="text-sm">
+			{gameInstalled ? `Size On Disk: ${size}` : `Not Installed`}
+		</p>
+	);
 };
 
-const GameManagerButton = ({gameOption}: {gameOption: GameOption}) => {
+const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 	const { game } = useGame();
 	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
+	const Icon = gameOption.icon;
 
 	useEffect(() => {
 		isGameInstalled(game).then((res) => {
 			setGameInstalled(res);
-		})
+		});
 	}, []);
-	
-	return <Button 
-			intent="primary" 
-			disabled={!gameInstalled}
-			width={25} 
-			height={25} 
-			onClick={async() => {await gameOption.action(game)}}
-			>
-				{gameOption.text}
-			</Button>
 
-}
+	return (
+		<Button
+			variant={gameInstalled ? "primary" : "secondary"}
+			disabled={!gameInstalled}
+			size="xSmall"
+			width={35}
+			height={35}
+			onClick={async () => {
+				await gameOption.action(game);
+			}}>
+			<Icon />
+		</Button>
+	);
+};
 
 export const SettingsModal = forwardRef<ModalHandle>(
 	function SettingsModal(_, ref) {
@@ -203,45 +231,37 @@ export const SettingsModal = forwardRef<ModalHandle>(
 		const { game } = useGame();
 
 		return (
-			<Modal ref={ref} title="Elysiae Settings" width={900} height={450}>
-				<div class="flex flex-row w-full min-h-112.5">
-					<div class="min-w-[35%] px-2 py-1.5 border-r-2 border-gray-500">
-						<div class="flex flex-row gap-x-2.5 border-b-2 py-1.5">
-							<div class="border-2 rounded-sm">
-								<img
-									width={60}
-									height={60}
-									alt=""
-									src={branding?.[game].icon}
-								/>
-							</div>
-							<div class="flex flex-col justify-center">
-								<h1 class="text-md">{getGameName(game)}</h1>
+			<Modal ref={ref} width={750} height={450}>
+				<div class="flex flex-col w-full h-full gap-y-5">
+					<div class="flex flex-row justify-between mb-2">
+						<div class="flex flex-row gap-x-2.5">
+							<img
+								class="rounded-lg"
+								width={52}
+								height={52}
+								alt=""
+								src={branding?.[game].icon}
+							/>
+							<div class="flex justify-center flex-col">
+								<h1>{getGameName(game)}</h1>
 								<DiskSize />
 							</div>
 						</div>
-						<div class="flex flex-col justify-center h-full gap-y-2.5">
-							{gameOptions.map((item) => {
-								return (
-									<GameManagerButton gameOption={item}/>
-								);
-							})}
+						<div class="flex flex-row-reverse items-center gap-x-2.5">
+							{gameOptions.map((option) => (
+								<GameManagerButton gameOption={option} />
+							))}
 						</div>
 					</div>
-					<div class="flex flex-col px-2 py-1.5 w-full">
-						<div class="flex flex-col h-1/2">
-							<h1 class="text-xl text-center">Wine Modules</h1>
-							<div class="flex flex-col justify-between gap-y-2">
-								{["wine", "dxvk", "jadeite"].map((wineComponent) => {
-									return <ComponentInfo componentName={wineComponent as AppModules}/>
-								})}
-							</div>
-						</div>
-						<div class="h-1/2 flex flex-col gap-y-2.5 ">
-							<h1 class="text-xl text-center">Settings</h1>
-							{regularOptions.map((option, index) => {
-								return <OptionRow key={index} option={option} />;
-							})}
+					<div>
+						<h1>Options</h1>
+					</div>
+					<div>
+						<h1>Modules</h1>
+						<div class="flex flex-col gap-y-2">
+							{["wine", "dxvk", "jadeite"].map((item) => (
+								<ComponentInfo componentName={item as AppModules} />
+							))}
 						</div>
 					</div>
 				</div>
