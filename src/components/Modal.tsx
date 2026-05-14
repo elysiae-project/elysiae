@@ -17,29 +17,14 @@ const modalStyles = cva("overflow-y-scroll", {
 	},
 });
 
-const modalTitlebarStyles = cva(
-	"flex flex-row justify-between items-center mb-3 text-center border-b-2 w-full px-4 py-0.5 ",
-	{
-		variants: {
-			game: {
-				[Variants.BH3]: "border-b-white",
-				[Variants.HK4E]:
-					"text-hk4e-modal-titlebar-text border-b-hk4e-modal-titlebar-border",
-				[Variants.HKRPG]: "border-b-black",
-				[Variants.NAP]: "border-b-white",
-			},
-		},
-	},
-);
-
 export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 	{
-		title,
+		title = "",
 		children,
 		width = 750,
 		height = 250,
 	}: {
-		title: string;
+		title?: string;
 		children: React.ReactNode;
 		width?: number;
 		height?: number;
@@ -64,7 +49,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 				class={modalStyles({ game })}
 				style={{ minWidth: `${width}px`, minHeight: `${height}px` }}
 				onClick={(e) => e.stopPropagation()}>
-				<div className={modalTitlebarStyles({ game })}>
+				<div class="flex flex-row justify-between items-center mb-3 text-center w-full px-4 py-2">
 					<h1 class="text-xl text-center">{title}</h1>
 					<MenuClose clickAction={() => setIsOpen(false)} />
 				</div>
