@@ -53,7 +53,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 					<h1 class="text-xl text-center">{title}</h1>
 					<MenuClose clickAction={() => setIsOpen(false)} />
 				</div>
-				<div class="w-full h-full px-3 items-center">{children}</div>
+				<div class="w-full h-full px-5 items-center">{children}</div>
 			</div>
 		</div>
 	);
