@@ -1,11 +1,11 @@
 import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame";
-import { Variants } from "../types";
+import { ComponentSize, Variants } from "../types";
 import { MutableRef, useEffect, useRef, useState } from "preact/hooks";
 import { ArrowDown, Check } from "lucide-preact";
 
 const dropdownStyles = cva(
-	"flex flex-row h-10 px-3 items-center justify-between transition duration-150",
+	"flex flex-row items-center justify-between transition duration-150",
 	{
 		variants: {
 			game: {
@@ -18,27 +18,41 @@ const dropdownStyles = cva(
 				[Variants.NAP]:
 					"nap-dots rounded-full border-3 border-[#353535] active:animate-nap-pulsate",
 			},
+			size: {
+				xSmall: "px-0.75 h-2.5 text-xs",
+				small:  "px-1.5 h-5 text-sm",
+				medium: "px-3 h-10 text-base",
+				large:  "px-6 h-20 text-lg",
+				xLarge: "px-12 h-40 text-xl",
+			},
 		},
 	},
 );
 
 const dropdownList = cva(
-	"min-h-auto mt-10.5 absolute flex w-full flex-col transition-opacity duration-150 z-100",
+	"min-h-auto absolute flex w-full flex-col transition-opacity duration-150 z-100",
 	{
 		variants: {
 			game: {
 				[Variants.BH3]: "bg-white text-bh3-dropdown-text",
 				[Variants.HK4E]:
 					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
-				[Variants.HKRPG]: "bg-hkrpg-list-bg mt-12 rounded-xs",
-				[Variants.NAP]: "bg-[#353535] rounded-2xl ",
+				[Variants.HKRPG]: "bg-hkrpg-list-bg rounded-xs",
+				[Variants.NAP]: "bg-[#353535] rounded-2xl",
+			},
+			size: {
+				xSmall: "mt-2.5",
+				small:  "mt-5",
+				medium: "mt-10",
+				large:  "mt-20",
+				xLarge: "mt-40",
 			},
 		},
 	},
 );
 
 const dropdownItem = cva(
-	"w-full h-8 py-1 px-2 flex flex-row bg-transparent justify-between items-center text-center transition-all duration-175",
+	"w-full py-1 px-2 flex flex-row bg-transparent justify-between items-center text-center transition-all duration-175",
 	{
 		variants: {
 			game: {
@@ -49,6 +63,13 @@ const dropdownItem = cva(
 					"py-5 active:bg-hkrpg-item-active-bg hover:bg-hkrpg-item-hover-bg",
 				[Variants.NAP]:
 					"text-white active:text-black active:animate-nap-pulsate rounded-full text-center",
+			},
+			size: {
+				xSmall: "h-2",
+				small:  "h-4",
+				medium: "h-8",
+				large:  "h-16",
+				xLarge: "h-32",
 			},
 		},
 	},
@@ -67,6 +88,7 @@ export default function Dropdown({
 	onChangeAction,
 	width = 120,
 	height = 20,
+	size = "medium",
 }: {
 	labels: string[];
 	values?: string[];
@@ -74,13 +96,14 @@ export default function Dropdown({
 	onChangeAction: (label: string) => void;
 	width?: number;
 	height?: number;
+	size?: ComponentSize;
 }) {
 	const { game } = useGame();
 	const initialValueIndex = getInitialValue(initialValue, values);
 
-	let [open, setOpen] = useState<boolean>(false);
-	let [label, setLabel] = useState<string>(labels[initialValueIndex]);
-	let [currentIndex, setCurrentIndex] = useState<number>(initialValueIndex);
+	const [open, setOpen] = useState<boolean>(false);
+	const [label, setLabel] = useState<string>(labels[initialValueIndex]);
+	const [currentIndex, setCurrentIndex] = useState<number>(initialValueIndex);
 
 	const dropdownDiv: MutableRef<HTMLDivElement | null> = useRef(null);
 
@@ -94,46 +117,59 @@ export default function Dropdown({
 	};
 
 	useEffect(() => {
-		const onClick = () => {
-			setOpen(false);
+		if (!open) return;
+
+		const handleOutsideClick = (e: MouseEvent) => {
+			if (
+				dropdownDiv.current &&
+				!dropdownDiv.current.contains(e.target as Node)
+			) {
+				setOpen(false);
+			}
 		};
-		if (open) {
-			document.addEventListener("click", onClick);
-		}
+
+		document.addEventListener("mousedown", handleOutsideClick);
 		return () => {
-			document.removeEventListener("click", onClick);
+			document.removeEventListener("mousedown", handleOutsideClick);
 		};
 	}, [open]);
+
+	const containerStyle = {
+		width: `${width}px`,
+		height: `${height}px`,
+	};
 
 	return (
 		<div
 			class="relative"
 			ref={dropdownDiv}
-			style={{ minWidth: `${width}px`, minHeight: `${height}px` }}>
-			<div class="flex h-full flex-col overflow-y-auto">
+			style={containerStyle}
+		>
+			<div class="flex h-full flex-col">
 				<div
-					class={dropdownStyles({ game: game })}
+					class={dropdownStyles({ game, size })}
 					onClick={(e) => {
 						e.stopPropagation();
 						setOpen(!open);
 					}}
-					>
+				>
 					<h1>{label}</h1>
 					<ArrowDown />
 				</div>
 				<div
-					class={dropdownList({ game: game })}
-					style={open ? "opacity: 100" : "opacity: 0; scale: 0"}>
-					{labels.map((listLabel, index) => {
-						return (
-							<div
-								onClick={() => onChange(index)}
-								class={dropdownItem({ game: game })}>
-								<p class="pt-0.5">{listLabel}</p>
-								{index === currentIndex ? <Check /> : null}
-							</div>
-						);
-					})}
+					class={dropdownList({ game, size })}
+					style={open ? "opacity: 100" : "opacity: 0; pointer-events: none; scale: 0"}
+				>
+					{labels.map((listLabel, index) => (
+						<div
+							key={index}
+							onClick={() => onChange(index)}
+							class={dropdownItem({ game, size })}
+						>
+							<p class="pt-0.5">{listLabel}</p>
+							{index === currentIndex ? <Check /> : null}
+						</div>
+					))}
 				</div>
 			</div>
 		</div>
