@@ -83,7 +83,7 @@ const gameOptions: GameOption[] = [
 
 const options: Option[] = [
 	{
-		name: "Preferred VO Language",
+		name: "Default Voice-Over Language",
 		type: "dropdown",
 		labels: ["English", "Chinese", "Japanese", "Korean"],
 		values: ["en", "cn", "jp", "kr"],
@@ -136,9 +136,9 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 			{option.type === "boolean" ? (
 				value !== null ? (
 					<ToggleSwitch
-						size="medium"
-						height={40}
-						width={90}
+						size="small"
+						height={30}
+						width={75}
 						startActive={value}
 						onClick={async (newValue) => {
 							await option.setValue(newValue);
