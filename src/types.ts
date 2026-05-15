@@ -27,6 +27,8 @@ export type AppOptions =
 	| "blockNotifications"
 	| "installedComponents";
 
+export type ComponentSize = "xSmall" | "small" | "medium" | "large" | "xLarge";
+
 // Game
 
 export type GameData = {

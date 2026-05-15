@@ -1,6 +1,6 @@
 import Modal from "../Modal";
 import { AppModules, ModalHandle, Option, Variants } from "../../types";
-import { Component, forwardRef, useEffect, useState } from "preact/compat";
+import { forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import {
@@ -12,7 +12,6 @@ import Button from "../Button";
 import {
 	FileCheck,
 	Folder,
-	Icon,
 	LucideIcon,
 	RefreshCw,
 	Trash,
@@ -28,7 +27,11 @@ import { remove } from "../../lib/Fs";
 import Dropdown from "../Dropdown";
 import { getOption, setOption } from "../../util/Settings";
 import ToggleSwitch from "../ToggleSwitch";
-import { getModuleVersion, updateWineComponent } from "../../lib/WineManager";
+import {
+	getModuleVersion,
+	moduleTagsMatch,
+	updateWineComponent,
+} from "../../lib/WineManager";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 type GameOption = {
@@ -78,7 +81,7 @@ const gameOptions: GameOption[] = [
 	},
 ];
 
-const regularOptions: Option[] = [
+const options: Option[] = [
 	{
 		name: "Preferred VO Language",
 		type: "dropdown",
@@ -104,7 +107,7 @@ const regularOptions: Option[] = [
 	},
 ];
 
-const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
+const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 	const [value, setValue] = useState<any>(null);
 
 	useEffect(() => {
@@ -117,7 +120,8 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 			{option.type === "dropdown" ? (
 				value !== null ? (
 					<Dropdown
-						width={250}
+						width={200}
+						height={35}
 						labels={option.labels}
 						values={option.values}
 						initialValue={value}
@@ -132,6 +136,9 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 			{option.type === "boolean" ? (
 				value !== null ? (
 					<ToggleSwitch
+						size="medium"
+						height={40}
+						width={90}
 						startActive={value}
 						onClick={async (newValue) => {
 							await option.setValue(newValue);
@@ -148,28 +155,39 @@ const OptionRow = ({ option }: { option: (typeof regularOptions)[number] }) => {
 const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 	const [version, setVersion] = useState<string>("");
 	const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+
 	useEffect(() => {
 		getModuleVersion(componentName).then((res) => {
 			if (res === null) {
 				setVersion("Not Installed");
-			} else setVersion(`Version ${res}`);
+				moduleTagsMatch(componentName).then((res) => {
+					setUpdateAvailable(!res);
+				});
+			} else setVersion(`${res}`);
 		});
 	}, []);
 
 	return (
 		<div class="flex flex-row w-full">
 			<div class="flex flex-col w-full justify-between">
-				<h1>{componentName}</h1>
-				<p>{version}</p>
+				<h1 class="text-[1.10rem]">
+					{String(componentName).charAt(0).toUpperCase() +
+						String(componentName).slice(1)}
+				</h1>
+				<p class="text-[0.85rem]">{version}</p>
 			</div>
 			<div class="flex items-center">
 				<Button
-					height={32}
-					width={96}
+					height={37}
+					width={105}
 					size="small"
-					variant="primary"
-					onClick={async () => updateWineComponent(componentName)}>
-					<p class="text-[0.95rem]">Update</p>
+					variant={updateAvailable ? "primary" : "secondary"}
+					disabled={!updateAvailable}
+					onClick={() => {
+						updateWineComponent(componentName); // No need to wait for the function to complete
+						setUpdateAvailable(false);
+					}}>
+					<p class="text-[1rem]">Update</p>
 				</Button>
 			</div>
 		</div>
@@ -232,7 +250,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 
 		return (
 			<Modal ref={ref} width={750} height={450}>
-				<div class="flex flex-col w-full h-full gap-y-5">
+				<div class="flex flex-col w-full h-full gap-y-5 py-2.5 overflow-y-scroll">
 					<div class="flex flex-row justify-between mb-2">
 						<div class="flex flex-row gap-x-2.5">
 							<img
@@ -254,11 +272,16 @@ export const SettingsModal = forwardRef<ModalHandle>(
 						</div>
 					</div>
 					<div>
-						<h1>Options</h1>
+						<h1 class="text-xl mb-2.5">Options</h1>
+						<div class="flex flex-col gap-y-3">
+							{options.map((option) => (
+								<OptionRow option={option} />
+							))}
+						</div>
 					</div>
-					<div>
-						<h1>Modules</h1>
-						<div class="flex flex-col gap-y-2">
+					<div class="mb-2.5">
+						<h1 class="text-xl mb-2.5">Modules</h1>
+						<div class="flex flex-col gap-y-3">
 							{["wine", "dxvk", "jadeite"].map((item) => (
 								<ComponentInfo componentName={item as AppModules} />
 							))}
