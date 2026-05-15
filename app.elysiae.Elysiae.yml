@@ -12,6 +12,7 @@ writable-sdk: true
 
 finish-args:
   - --socket=wayland
+  - --socket=fallback-x11 # X11 IS being dropped from DEs, but from some review of other flathub PRs, it is generally expected to still exist. this line will likely be removed once most major DEs (i.e. gnome, kde, xfce, MATE) drop x11 support or disable support for x11 by default
   - --device=dri
   - --share=ipc
   - --share=network
