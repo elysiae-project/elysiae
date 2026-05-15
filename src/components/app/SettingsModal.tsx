@@ -33,6 +33,7 @@ import {
 	updateWineComponent,
 } from "../../lib/WineManager";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { requestPermission } from "@tauri-apps/plugin-notification";
 
 type GameOption = {
 	icon: LucideIcon;
@@ -102,6 +103,10 @@ const options: Option[] = [
 			return !(await getOption("blockNotifications"));
 		},
 		setValue: async (newValue: boolean): Promise<void> => {
+			// No need to request permission as:
+			// 1. Notifications are enabled by default
+			// 2. If user rejects notifications when they first pop up, the setting value will be changes to false
+			// 3. Once the notifications are accepted on the DE side, the setting in the json effectiely takes over. If the user rejects notifications on the request, then re-enables them, they will get another request, and the cycle repeats. once the permission is accepted once though, there will be no permission popup again
 			await setOption("blockNotifications", !newValue);
 		},
 	},
