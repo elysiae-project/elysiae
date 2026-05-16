@@ -10,44 +10,49 @@
   <project_license>BSD-3-Clause</project_license>
   <description>
     <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
-    <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling,
-      and serve as a replacement for the aag launchers and other Linux-based launchers/</p>
+    <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and other Linux-based launchers/</p>
   </description>
   <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
   <categories>
     <category>Game</category>
     <category>LauncherStore</category>
   </categories>
-  <supports>
+  <requires>
+    <kernel version="6.14" compare="ge">Linux</kernel>
+    <internet>always</internet>
+    <memory compare="ge">1024</memory>
+  </requires>
+  <recommends>
     <control>keyboard</control>
     <control>pointing</control>
-    <control>gamepad</control>    <!--No
-    clue if this works, I don't own a controller to be able to test it with-->
+    <memory>2048</memory>
+    <display_length compare="ge">1279</display_length>
+  </recommends>
+  <supports>
+    <control>gamepad</control>
+    <!--No clue if this works, I don't own a controller to be able to test it with-->
     <control>touch</control>
   </supports>
-  <requires>
-    <display_length compare="ge">1279</display_length>
-  </requires>
   <url type="homepage">https://elysiae.app</url>
   <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
   <branding>
     <color type="primary" scheme_preference="light">#4bcaf4</color>
     <color type="primary" scheme_preference="dark">#473a7c</color>
   </branding>
-  <!-- TODO: Create actual release information after 1.0.0 release 
-   <screenshots>
-        <screenshot type="default"> 
-            <caption>Elysiae's main UI</caption> 
-        </screenshot> 
-        <screenshot> 
-            <caption></caption>
-        </screenshot>
-    </screenshots>
-    <releases> 
-        <release version="1.0.0" date="2026-05-20"> 
-        </release> 
-    </releases>
-    -->
+  <!-- TODO: Create actual release information after 1.0.0 release
+  <screenshots>
+    <screenshot type="default">
+      <caption>Elysiae's main UI</caption>
+    </screenshot>
+    <screenshot>
+      <caption></caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="1.0.0" date="2026-05-20">
+    </release>
+  </releases>
+  -->
   <content_rating type="oars-1.1">
     <content_attribute id="violence-fantasy">moderate</content_attribute>
     <content_attribute id="violence-bloodshed">mild</content_attribute>

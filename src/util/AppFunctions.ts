@@ -1,13 +1,7 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { Command } from "@tauri-apps/plugin-shell";
-import { appDataDir } from "@tauri-apps/api/path";
 import { GameCodes, Variants } from "../types";
 import { invoke } from "@tauri-apps/api/core";
-
-/** Closes the app */
-export const closeApp = (): void => {
-	getCurrentWindow().close();
-};
 
 /** @returns Game codes (in type `Variants`) as string (`bh/ys/sr/nap`) */
 export const getActiveGameCode = (currentGame: Variants): GameCodes => {
@@ -38,6 +32,22 @@ export const getVariantFromCode = (code: string): Variants | null => {
 	}
 };
 
+export const getGameSize = async (game: Variants): Promise<number> => {
+	return new Promise((resolve, reject) => {
+		join("games", getActiveGameCode(game))
+			.then((gameDir) => {
+				invoke("get_dir_size", {
+					path: gameDir,
+				})
+					.then((res) => {
+						resolve((res as number) / 1024 ** 3);
+					})
+					.catch(reject);
+			})
+			.catch(reject);
+	});
+};
+
 /**
  * Gets the name of a specified game
  *
@@ -54,6 +64,20 @@ export const getGameName = (game: Variants) => {
 		case Variants.NAP:
 			return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f";
 	}
+};
+
+/**
+ * Converts a Relative Path in the app data directory to an absolute path
+ *
+ * @param relativePath The relative path
+ * @returns Absolute path from relative path (in app data directory)
+ */
+export const relativePathConverter = async (relativePath: string) => {
+	return await join(await appDataDir(), relativePath);
+};
+
+export const absolutePathConverter = async (absolutePath: string) => {
+	return absolutePath.split(await appDataDir())[1];
 };
 
 /**

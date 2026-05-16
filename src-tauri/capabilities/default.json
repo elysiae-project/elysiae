@@ -14,55 +14,26 @@
 		{
 			"identifier": "http:default",
 			"allow": [
-				{
-					"url": "https://*.hoyoverse.com"
-				},
-				{
-					"url": "https://autopatch*.**"
-				},
-				{
-					"url": "https://api.github.com"
-				},
-				{
-					"url": "https://raw.githubusercontent.com"
-				},
-				{
-					"url": "https://codeberg.org"
-				}
+				{ "url": "https://*.hoyoverse.com" },
+				{ "url": "https://autopatch*.**" },
+				{ "url": "https://api.github.com" },
+				{ "url": "https://raw.githubusercontent.com" },
+				{ "url": "https://codeberg.org" }
 			]
 		},
 		{
 			"identifier": "shell:allow-execute",
 			"allow": [
-				{
-					"name": "sh",
-					"cmd": "sh",
-					"args": true
-				},
-				{
-					"name": "mv",
-					"cmd": "mv",
-					"args": true
-				},
-				{
-					"name": "rm",
-					"cmd": "rm",
-					"args": true
-				},
-				{
-					"name": "binaries/7za",
-					"sidecar": true,
-					"args": true
-				}
+				{ "name": "sh", "cmd": "sh", "args": true }
 			]
 		},
 		{
 			"identifier": "fs:scope",
-			"allow": [
-				{
-					"path": "$APPDATA/**"
-				}
-			]
+			"allow": [{ "path": "$APPDATA/**" }]
+		},
+		{
+			"identifier": "opener:allow-open-path",
+			"allow": [{ "path": "$APPDATA/**" }]
 		},
 		"store:default",
 		"shell:default",

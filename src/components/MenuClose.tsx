@@ -5,14 +5,14 @@ import { useState } from "preact/hooks";
 import { Variants } from "../types";
 
 const menuCloseStyles = cva(
-	"h-10 w-10 flex items-center justify-center transition-all duration-75",
+	"flex items-center justify-center transition-all duration-75 h-10 w-10",
 	{
 		variants: {
 			game: {
 				// Additional Styles aren't needed for bh3 or hkrpg as they are just the icon
 				[Variants.BH3]: null,
 				[Variants.HK4E]:
-					"border-3 p-0.5 border-hk4e-btnborder bg-hk4e-item-active-bg hover:border-transparent hover:drop-shadow-lg hover:drop-shadow-hk4e-btn-hover-shadow rounded-full active:bg-hk4e-btn-active-bg active:border-transparent",
+					"border-3 p-0.5 border-hk4e-btnborder bg-hk4e-item-active-bg hover:border-transparent rounded-full active:bg-hk4e-btn-active-bg active:border-transparent",
 				[Variants.HKRPG]: null,
 				[Variants.NAP]:
 					"rounded-full nap-dots-titlebar-btn border-3 border-nap-btn-border-strong active:animate-nap-pulsate active:border-transparent",
@@ -23,8 +23,12 @@ const menuCloseStyles = cva(
 
 export default function MenuClose({
 	clickAction,
+	size = 32,
 }: {
 	clickAction: () => void;
+	size?: number;
+	width?: number;
+	height?: number;
 }) {
 	const { game } = useGame();
 	const assetPath = `/icon/${getActiveGameCode(game)}`;
@@ -32,6 +36,7 @@ export default function MenuClose({
 
 	return (
 		<button
+			style={{ width: `${size}px`, height: `${size}px` }}
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
 			onPointerDown={(e) => {
@@ -51,14 +56,14 @@ export default function MenuClose({
 			<img
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}
-				width={18}
-				height={18}
+				width={size / 2.33}
+				height={size / 2.33}
 			/>
 			<img
 				style={{ display: mouseDown ? "" : "none" }}
 				src={`${assetPath}/close-click.svg`}
-				width={18}
-				height={18}
+				width={size / 2.33}
+				height={size / 2.33}
 			/>
 		</button>
 	);

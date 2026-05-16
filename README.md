@@ -6,9 +6,6 @@
 
 <h2 align="center">Universal "Anime Game" Launcher for Linux</h2>
 
-> [!WARNING]  
-> This project is in Alpha! Some features are missing and others may have issues.
-
 > [!IMPORTANT]
 > This project will only be available as source code until a 1.0 release is complete. Afterwards, it will be submitted to Flathub for distribution there.
 
@@ -18,28 +15,22 @@ Elysiae aims to create a unified launcher for all "anime games", intending to se
 
 The launchers created by an-anime-team have many issues, namely:
 
-1. The Launchers only support one game at a time, requiring multiple installs if you play multiple "anime games" (side-note: each launcher has pretty much the exact same codebase except for which game it will scrape data from instead)
+1. Each launcher supports only one game, so players who enjoy multiple "anime games" must install multiple launchers. It should be noted that each launcher are almost identical in terms of code and differ only in which game's data they fetch. Furthermore, each launcher installs its own wine environment, which creates unnecessary bloat when multiple launchers are installed.
 
-2. Maintainers have to swoop in every other month to save the project from breaking
+2. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal by heavily focusing on extensibility. The unified launcher was released _without_ support for any of the games they were meant to support as of March 31st, 2026.
 
-3. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal, now trying to be some sort of "anime steam" platform.
-
-After multiple bad update cycles that I've experienced using their launchers, I have decided to create Elysiae, which has the philosophy of having everything a user could want while also working as the user expected, as much of the time as possible, and being as accessible as possible
+The Elysiae Project aims to provide an alternative to the launchers maintained by an-anime-team, offering Linux players a unified way to launch and manage their "anime games".
 
 ## Software Requirements
 
-Minimum:
+To use Elysiae, Your system must meet the following requirements:
 
 - A 64-Bit CPU
-- Linux Kernel >= 6.1 with support for futex2 (Most distros will have this)
-- systemd (Most Linux installs. If you don't know what this means, you have this)
-- A Desktop Environment running on the Wayland compositor (You most likely have this)
-- About 300Mb of storage (base install + wine environment)
-- Enough additional storage to install any of the games you'd like to play (~70-110GB per game)
-
-Recommended:
-
-- Linux Kernel >= 6.14. Support for futex2 is optional if you have at least 6.14 installed
+- At least 1024MB of memory
+- Linux Kernel >= 6.14
+- Systemd
+- DE running with Wayland
+- About 300MB of storage for Elysiae and the Wine Environment it provides
 
 ## Building From Source / Contributing to Elysiae
 
@@ -47,10 +38,8 @@ Please see [Contributing](https://github.com/elysiae-project/elysiae/blob/main/C
 
 ## For the lawyers of the "anime game" company
 
-Elysiae does **NOT** use any cheats/game plug-ins in order to get your games running. I am **NOT** hosting any game content myself, and am fetching it directly from your servers, like HoYoPlay does, and do not modify any files downloaded in this manner. Finally, I also do not condone any user action that would result in a violation of your Terms of Service. I am merely providing a method for Linux users to play your games
-
-Please look at the source code to verify my claims.
+Elysiae does **NOT** use any cheats/game plug-ins in order to get your games running. The Elyisae Project does **NOT** host any game content and is fetching it directly from your servers, just like your own services, and do not modify any files downloaded in this manner. Finally, The Elysiae Project also does not condone any user action that would result in a violation of your Terms of Service. The Elysiae Project only provides a method for Linux users to play your games.
 
 ## Disclaimer
 
-Elysiae should be completely safe to use. However, please note that I am not responsible for any consequences that may come from using Elysiae. Use this program at your own risk
+Elysiae should be completely safe to use. However, please note that we are not responsible for any consequences that may come from using the launcher. Use Elysiae at your own risk.

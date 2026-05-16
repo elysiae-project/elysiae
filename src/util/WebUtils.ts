@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
  * @returns Boolean value based on weather verifyingString is a valid http URL
  *   or not
  */
-export const isURLValid = (verifyingString: string): boolean => {
+const isURLValid = (verifyingString: string): boolean => {
 	try {
 		const testURL = new URL(verifyingString);
 		return testURL.protocol === "http:" || testURL.protocol === "https:";
@@ -21,7 +21,7 @@ export const isURLValid = (verifyingString: string): boolean => {
  * @param url Link to an API
  * @returns JavaScipt Object from API URL
  */
-export const getApiJson = async (url: string): Promise<any> => {
+export const getApiJson = async <T = any>(url: string): Promise<T> => {
 	return new Promise((resolve, reject) => {
 		if (!isURLValid(url)) {
 			reject(`getApiJson: URL ${url} is invalid`);
@@ -33,7 +33,7 @@ export const getApiJson = async (url: string): Promise<any> => {
 				response
 					.json()
 					.then((json) => {
-						resolve(json);
+						resolve(json as T);
 					})
 					.catch((e) => {
 						reject(`getApiJson: ${e}`);
@@ -51,6 +51,8 @@ export const downloadFile = async (url: string, destination: string) => {
 	const unlisten = await listen<{ progress: number; total: number }>(
 		`download://progress/${downloadID}`,
 		({ payload }) => {
+			// TODO: Create some sort of function that can automatically determine the best size unit
+			// For now, just use MB
 			const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
 			const total = (payload.total / 1024 ** 2).toFixed(2);
 			info(`Downloaded ${downloaded}MB of ${total}MB`);

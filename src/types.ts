@@ -1,3 +1,7 @@
+import React from "react";
+
+// Enums
+
 export enum Variants {
 	BH3,
 	HK4E,
@@ -12,6 +16,33 @@ export enum BhServers {
 	SEA,
 	TW,
 }
+
+// Primitive / Alias Types
+
+export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
+export type AppModules = "wine" | "dxvk" | "jadeite";
+export type AppOptions =
+	| "selectedGame"
+	| "voLanguage"
+	| "blockNotifications"
+	| "installedComponents";
+
+export type ComponentSize = "xs" | "sm" | "md" | "lg" | "xl";
+
+// Game
+
+export type GameData = {
+	gameCode: string;
+	gameDir: string;
+	requestedLanguage: string;
+};
+
+export type ResumeInfo = {
+	gameId: string;
+	downloadType: "fresh" | "update" | "preinstall";
+};
+
+// Launcher – Graphics
 
 export type LauncherGraphicsRawGameData = {
 	game: {
@@ -53,6 +84,7 @@ export type LauncherGraphicsRawData = {
 		game_info_list: LauncherGraphicsRawGameData[];
 	};
 };
+
 export type LauncherGraphicsData = {
 	[key in Variants]: {
 		backgroundImage: string;
@@ -61,6 +93,8 @@ export type LauncherGraphicsData = {
 		icon: string;
 	};
 };
+
+// Launcher – Branding
 
 export type LauncherBrandingRawGameData = {
 	id: string;
@@ -132,6 +166,7 @@ export type LauncherBrandingRawData = {
 		games: LauncherBrandingRawGameData[];
 	};
 };
+
 export type LauncherBrandingData = {
 	[key in Variants]: {
 		id: string;
@@ -140,17 +175,20 @@ export type LauncherBrandingData = {
 	};
 };
 
+// Wine / Components
+
 export type WineComponent = {
-	componentName: string;
+	componentName: AppModules;
 	extractTo: string;
 	saveTo: string;
 	postInstall?: () => Promise<void>;
 };
 
-export type ComponentData = {
-	tag: string;
-	download_url: string;
-	hash: string;
+export type WineComponentData = {
+	wine: string | null;
+	dxvk: string | null;
+	jadeite: string | null;
+	vkd3d: string | null;
 };
 
 export type WineModule = {
@@ -158,6 +196,14 @@ export type WineModule = {
 	downloadLink: string;
 	moduleType: "exe" | "dll32" | "dll64";
 };
+
+export type ModuleData = {
+	tag: string;
+	download_url: string;
+	hash: string;
+};
+
+// Sophon / Download Progress
 
 export type SophonProgress =
 	| { type: "fetchingManifest" }
@@ -199,16 +245,35 @@ export type WineSetupProgress =
 	| { type: "wineSetupInstalling"; component: string }
 	| { type: "wineSetupFinished" };
 
-export type GameData = {
-	gameCode: string;
-	gameDir: string;
-	requestedLanguage: string;
+// Modal
+
+export type ModalHandle = {
+	open: () => void;
+	close: () => void;
+	toggle: (state: boolean) => void;
 };
 
-export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
-export type AppOptions = "selectedGame" | "voLanguage" | "blockNotifications";
-
-export type ResumeInfo = {
-	gameId: string;
-	downloadType: "fresh" | "update" | "preinstall";
+export type ModalProps = {
+	title?: string;
+	width?: number;
+	height?: number;
+	children: React.ReactNode;
 };
+
+// Settings / Options
+
+type BaseOption<T, V> = {
+	name: string;
+	type: T;
+	getValue: () => Promise<V>;
+	setValue: (value: V) => Promise<void>;
+};
+
+type DropdownOption = BaseOption<"dropdown", string> & {
+	labels: string[];
+	values: string[];
+};
+
+type BooleanOption = BaseOption<"boolean", boolean>;
+
+export type Option = DropdownOption | BooleanOption;

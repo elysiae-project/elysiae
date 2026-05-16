@@ -46,7 +46,7 @@ export const runGame = async (game: Variants): Promise<void> => {
 		getActiveGameCode(game),
 		getGameExeName(game),
 	);
-	[Variants.BH3, Variants.HKRPG].includes(game)
+	game === Variants.HKRPG
 		? await runExeWithJadeite(gamePath)
 		: await runExeWithWine(gamePath);
 };

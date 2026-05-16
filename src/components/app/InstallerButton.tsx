@@ -4,8 +4,11 @@ import {
 	resumeDownloadInterrupted,
 	runGame,
 } from "../../lib/GameDownloader";
+import {
+	updateAllWineComponents,
+	wineEnvAvailable,
+} from "../../lib/WineManager";
 import { getActiveGameCode, getVariantFromCode } from "../../util/AppFunctions";
-import { updateWineComponents, wineEnvAvailable } from "../../lib/WineManager";
 import { useDownload } from "../../hooks/useDownload";
 import { useEffect, useState } from "preact/hooks";
 import { useGame } from "../../hooks/useGame";
@@ -15,7 +18,6 @@ export default function InstallerButton() {
 	const { game } = useGame();
 	const { state, setDownloadingGame, setResumable, setWineSetupProgress } =
 		useDownload();
-
 	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
 	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
@@ -57,14 +59,16 @@ export default function InstallerButton() {
 	return (
 		<div class="flex w-auto flex-row gap-x-3.5">
 			<Button
-				intent="primary"
+				variant="primary"
+				width={13.75}
+				height={4.06}
 				disabled={(downloadActive && !gameInstalled) || state.isSettingUpWine}
 				onClick={async () => {
 					if (!wineAvailable) {
-						setWineAvailable(true);
-						await updateWineComponents((event) => {
+						await updateAllWineComponents((event) => {
 							setWineSetupProgress(event);
 						});
+						setWineAvailable(true);
 					} else if (canResume && resumeVariant !== null) {
 						setResumable(null);
 						setDownloadingGame(resumeVariant);

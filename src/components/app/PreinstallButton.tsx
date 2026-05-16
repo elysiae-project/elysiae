@@ -13,7 +13,6 @@ export default function PreinstallButton() {
 	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
 	const { game } = useGame();
 	const { state, setDownloadingGame } = useDownload();
-
 	const downloadActive =
 		state.isDownloading ||
 		state.isAssembling ||
@@ -39,8 +38,9 @@ export default function PreinstallButton() {
 
 	return (
 		<Button
-			intent="primary"
-			iconButton
+			variant="secondary"
+			width={4}
+			height={4}
 			disabled={downloadActive}
 			onClick={async () => {
 				setDownloadingGame(game);

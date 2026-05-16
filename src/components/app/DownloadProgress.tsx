@@ -135,8 +135,9 @@ export default function GameDownloadProgress() {
 								await pauseDownload();
 							}
 						}}
-						intent="secondary"
-						iconButton>
+						variant="secondary"
+						width={1}
+						height={1}>
 						{isPaused ? (
 							<Play className={"-m-1 leading-0"} />
 						) : (

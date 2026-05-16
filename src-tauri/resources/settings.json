@@ -1,5 +1,10 @@
 {
-	"selectedGame": "sr",
+	"selectedGame": "hkrpg",
 	"voLanguage": "en",
-	"blockNotifications": false
+	"blockNotifications": false,
+	"installedComponents": {
+		"wine": null,
+		"dxvk": null,
+		"jadeite": null
+	}
 }

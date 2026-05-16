@@ -1,9 +1,9 @@
+import { ComponentSize, Variants } from "../types";
 import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame";
-import { Variants } from "../types";
 
 const buttonStyles = cva(
-	"transition-all duration-175 px-5 py-2 flex flex-row gap-3 justify-center items-center transiton-all min-h-15 text-[1.25em]",
+	"transition-all duration-175 flex flex-row gap-3 justify-center items-center transiton-all text-[1.25em]",
 	{
 		variants: {
 			game: {
@@ -22,6 +22,13 @@ const buttonStyles = cva(
 			disabled: {
 				false: null,
 				true: "opacity-50 pointer-events-none",
+			},
+			size: {
+				xs: "px-1.25 py-0.5",
+				sm: "px-2.5 py-1",
+				md: "px-5 py-2",
+				lg: "",
+				xl: "",
 			},
 		},
 		compoundVariants: [
@@ -78,22 +85,36 @@ const buttonStyles = cva(
 export default function Button({
 	onClick,
 	children,
-	intent: variant,
-	iconButton = false,
+	variant,
+	size = "md",
 	disabled = false,
+	width = 220,
+	height = 65,
 }: {
 	onClick: () => void;
 	children: any;
-	intent: "primary" | "secondary";
-	iconButton?: boolean;
+	variant: "primary" | "secondary";
+	size?: ComponentSize;
 	disabled?: boolean;
+	width?: number;
+	height?: number;
 }) {
 	const { game } = useGame();
+
 	return (
 		<button
 			disabled={disabled}
 			onClick={onClick}
-			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled })} ${iconButton ? "aspect-square min-w-10" : "min-w-65"}`}>
+			class={`${buttonStyles({
+				game: game,
+				variant: variant,
+				disabled: disabled,
+				size: size,
+			})}`}
+			style={{
+				width: `${width}rem`,
+				height: `${height}rem`,
+			}}>
 			{children}
 		</button>
 	);

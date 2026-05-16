@@ -7,33 +7,20 @@ import {
 	remove as tauriRemove,
 	mkdir as tauriMkdir,
 	rename as tauriRename,
+	readDir as tauriReadDir,
 } from "@tauri-apps/plugin-fs";
-import { BaseDirectory } from "@tauri-apps/plugin-fs";
+import { BaseDirectory, DirEntry } from "@tauri-apps/plugin-fs";
 import { error, info } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
 
-/**
- * Checks if a folder exists, relative to the app data directory
- *
- * @param path Path to file/folder
- * @returns Weather or not a path exists
- */
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
-		tauriExists(path, {
-			baseDir: BaseDirectory.AppData,
-		})
+		tauriExists(path, { baseDir: BaseDirectory.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
 };
 
-/**
- * Write to a file within the app data directory
- *
- * @param path Path to write to (relative to app data dir)
- * @param contents Contents to write to the file, Can be binary or text
- */
 export const writeFile = async (
 	path: string,
 	contents:
@@ -54,9 +41,7 @@ export const readFile = async (
 	path: string,
 ): Promise<Uint8Array<ArrayBuffer>> => {
 	return new Promise((resolve, reject) => {
-		tauriReadFile(path, {
-			baseDir: BaseDirectory.AppData,
-		})
+		tauriReadFile(path, { baseDir: BaseDirectory.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -64,9 +49,7 @@ export const readFile = async (
 
 export const readTextFile = async (path: string): Promise<string> => {
 	return new Promise((resolve, reject) => {
-		tauriReadTextFile(path, {
-			baseDir: BaseDirectory.AppData,
-		})
+		tauriReadTextFile(path, { baseDir: BaseDirectory.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -74,9 +57,7 @@ export const readTextFile = async (path: string): Promise<string> => {
 
 export const remove = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriRemove(path, {
-			baseDir: BaseDirectory.AppData,
-		})
+		tauriRemove(path, { baseDir: BaseDirectory.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -84,10 +65,7 @@ export const remove = async (path: string): Promise<void> => {
 
 export const removeDir = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriRemove(path, {
-			recursive: true,
-			baseDir: BaseDirectory.AppData,
-		})
+		tauriRemove(path, { recursive: true, baseDir: BaseDirectory.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -95,10 +73,7 @@ export const removeDir = async (path: string): Promise<void> => {
 
 export const mkdir = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriMkdir(path, {
-			baseDir: BaseDirectory.AppData,
-			recursive: true,
-		})
+		tauriMkdir(path, { baseDir: BaseDirectory.AppData, recursive: true })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -118,9 +93,19 @@ export const rename = async (
 	});
 };
 
+export const readDir = async (path: string): Promise<DirEntry[]> => {
+	return new Promise((resolve, reject) => {
+		tauriReadDir(path, { baseDir: BaseDirectory.AppData })
+			.then((res) => {
+				resolve(res);
+			})
+			.catch(reject);
+	});
+};
+
 /**
- * Extracts a compressed archive to a specified location. Supports any archive
- * format that `7za` supports
+ * Extracts a compressed archive to a specified location. Supports most common
+ * tar compression formats (gz, xz, zstd) and zip
  *
  * @param archivePath Path to archive
  * @param dest Destination to extract to
@@ -131,10 +116,7 @@ export const extractFile = async (
 ): Promise<void> => {
 	info(archivePath);
 	if (await exists(archivePath)) {
-		await invoke("extract_file", {
-			archive: archivePath,
-			dest: dest,
-		});
+		await invoke("extract_file", { archive: archivePath, dest: dest });
 		remove(archivePath);
 	} else {
 		error(`extractFile: "${archivePath}" does not exist`);

@@ -1,15 +1,17 @@
 import {
-	ComponentData,
+	AppModules,
+	ModuleData,
 	WineComponent,
+	WineComponentData,
 	WineModule,
 	WineSetupProgress,
 } from "../types";
-import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
+import { downloadFileWithProgress, getApiJson } from "../util/WebUtils";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
-import { downloadFileWithProgress } from "../util/WebUtils";
+import { executeLocalBinary } from "../util/AppFunctions";
 import { appDataDir, join } from "@tauri-apps/api/path";
+import { getOption, setOption } from "../util/Settings";
 import { error, info } from "@tauri-apps/plugin-log";
-import { fetch } from "@tauri-apps/plugin-http";
 
 const components: ((
 	onProgress: (event: WineSetupProgress) => void,
@@ -28,19 +30,32 @@ const components: ((
 			}
 		},
 	}),
-	() => ({
+	(onProgress) => ({
 		componentName: "dxvk",
 		extractTo: "dxvk",
 		saveTo: "dxvk.tar.gz",
 		postInstall: async () => {
-			const appData = await appDataDir();
+			const dirs = [
+				{
+					initialDirName: "x64",
+					finalDirName: "system32",
+				},
+				{
+					initialDirName: "x32",
+					finalDirName: "syswow64",
+				},
+			] as const;
 
-			await executeShellCommand(
-				`mv -v ${appData}/dxvk/x64/*.dll ${appData}/wine/drive_c/windows/system32`,
-			);
-			await executeShellCommand(
-				`mv -v ${appData}/dxvk/x32/*.dll ${appData}/wine/drive_c/windows/syswow64`,
-			);
+			dirs.map(async (dirInfo) => {
+				const destPath = await join(
+					"wine",
+					"drive_c",
+					"windows",
+					dirInfo.finalDirName,
+				);
+				const sourceFolder = await join("dxvk", dirInfo.initialDirName);
+				rename(sourceFolder, destPath);
+			});
 
 			const dllNames = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
 			await Promise.all(
@@ -52,7 +67,7 @@ const components: ((
 			await removeDir("dxvk");
 		},
 	}),
-	() => ({
+	(onProgress) => ({
 		componentName: "jadeite",
 		extractTo: "jadeite",
 		saveTo: "jadeite.zip",
@@ -60,28 +75,31 @@ const components: ((
 			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
 	}),
-	() => ({
-		componentName: "vkd3d",
-		extractTo: "vkd3d-temp",
-		saveTo: "vkd3d.tar.zst",
-		postInstall: async () => {
-			await executeLocalBinary("vkd3d-temp/setup_vkd3d_proton.sh", "install", {
-				WINEPREFIX: await winePrefix(),
-			});
-
-			await removeDir("vkd3d-temp");
-		},
-	}),
+	/*(onProgress) => ({
+    // While not used right now, it will for certain be used in future games or game updates as DX12 gets adopted by these games
+    componentName: "vkd3d",
+    extractTo: "vkd3d",
+    saveTo: "vkd3d.tar.zst",
+    postInstall: async () => {
+      // Run setup_vkd3d_proton.sh to automate the installation process
+      await executeLocalBinary("vkd3d/setup_vkd3d_proton.sh", "install", {
+        WINEPREFIX: await winePrefix(),
+      });
+      await removeDir("vkd3d");
+    },
+  }),*/
 ];
 
+// Components that do not need to be updated (i.e. Visual C++ Redistributable)
+// TODO: Review which of these modules are actually needed
 const wineModules: WineModule[] = [
 	{
-		name: "vcrun2026-x64",
+		name: "vcrun-x64",
 		downloadLink: "https://aka.ms/vc14/vc_redist.x64.exe",
 		moduleType: "exe",
 	},
 	{
-		name: "vcrun2026-x86",
+		name: "vcrun-x86",
 		downloadLink: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
 		moduleType: "exe",
 	},
@@ -99,65 +117,92 @@ const wineModules: WineModule[] = [
 	},
 ] as const;
 
-export const updateWineComponents = async (
+/** Update all components in the wine install */
+export const updateAllWineComponents = async (
 	onProgress: (event: WineSetupProgress) => void,
 ): Promise<void> => {
-	info(`${await appDataDir()}`);
-	for (const componentFactory of components) {
-		const component = componentFactory(onProgress);
+	const modules: AppModules[] = ["wine", "dxvk", "jadeite"];
+	for (let i = 0; i < modules.length; i++) {
 		try {
-			info(`Installing ${component.componentName}`);
-
-			const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${component.componentName}.json`;
-			const response = await fetch(assetURL);
-			if (response.status === 200) {
-				const json: ComponentData[] = await response.json();
-
-				onProgress({
-					type: "wineSetupDownloading",
-					component: component.componentName,
-					downloaded_bytes: 0,
-					total_bytes: 0,
-				});
-
-				await downloadFileWithProgress(
-					json[0].download_url,
-					component.saveTo,
-					(progress, total) => {
-						onProgress({
-							type: "wineSetupDownloading",
-							component: component.componentName,
-							downloaded_bytes: progress,
-							total_bytes: total,
-						});
-					},
-				);
-
-				onProgress({
-					type: "wineSetupExtracting",
-					component: component.componentName,
-				});
-
-				await extractFile(component.saveTo, component.extractTo);
-
-				if (typeof component.postInstall !== "undefined") {
-					onProgress({
-						type: "wineSetupInstalling",
-						component: component.componentName,
-					});
-					await component.postInstall();
-				}
-			} else {
-				throw new Error("Endpoint returned non-OK response code");
-			}
+			await updateWineComponent(modules[i], onProgress);
 		} catch (e) {
-			error(`updateWineComponents ${e}`);
+			error(`updateAllWineComponents: ${e}`);
+			return;
 		}
 	}
 	info("Wine Component Download Complete");
 	onProgress({ type: "wineSetupFinished" });
 };
 
+/**
+ * Updates a specified wine component
+ *
+ * @param componentName A valid wine component name
+ */
+export const updateWineComponent = async (
+	componentName: AppModules,
+	onProgress: (event: WineSetupProgress) => void,
+): Promise<void> => {
+	const index = components.findIndex(
+		(factory) => factory(onProgress).componentName === componentName,
+	);
+	const component = components[index](onProgress);
+
+	try {
+		info(`Installing/Updating ${component.componentName}`);
+		const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${component.componentName}.json`;
+		const assetResponse = await getApiJson<ModuleData[]>(assetURL);
+
+		const json = assetResponse[0];
+
+		onProgress({
+			type: "wineSetupDownloading",
+			component: component.componentName,
+			downloaded_bytes: 0,
+			total_bytes: 0,
+		});
+
+		await downloadFileWithProgress(
+			json.download_url,
+			component.saveTo,
+			(progress, total) => {
+				onProgress({
+					type: "wineSetupDownloading",
+					component: component.componentName,
+					downloaded_bytes: progress,
+					total_bytes: total,
+				});
+			},
+		);
+
+		onProgress({
+			type: "wineSetupExtracting",
+			component: component.componentName,
+		});
+
+		await extractFile(component.saveTo, component.extractTo);
+
+		if (typeof component.postInstall !== "undefined") {
+			onProgress({
+				type: "wineSetupInstalling",
+				component: component.componentName,
+			});
+			await component.postInstall();
+		}
+
+		// Update the wine module tracker
+		await updateModuleTracker(component.componentName, json.tag);
+	} catch (e) {
+		error(`installWineComponent: ${e}`);
+		return;
+	}
+	info(`Installation/Update of ${component.componentName} succeeded.`);
+};
+
+/**
+ * Install additional Windows programs/libraries required for the programs that
+ * Elysiae runs
+ */
 const installWineModules = async (
 	onProgress: (event: WineSetupProgress) => void,
 ): Promise<void> => {
@@ -217,7 +262,6 @@ export const wineCommand = async (
 	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
 		WINEARCH: "win64",
-		WINEFSYNC: "1",
 		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
 	});
 };
@@ -246,21 +290,64 @@ const registerNewDLL = async (dllName: string): Promise<void> => {
 };
 
 export const wineEnvAvailable = async (): Promise<boolean> => {
-	const winePath = await winePrefix();
-	const driveC = await join(winePath, "drive_c");
+	const winePrefixPath = await winePrefix();
+	const driveC = await join(winePrefixPath, "drive_c");
 
-	if ((await exists(winePath)) && (await exists(driveC))) {
-		return true;
-	}
-	return false;
+	return (
+		(await exists(winePrefixPath)) &&
+		(await exists(driveC)) &&
+		(await exists("jadeite"))
+	);
 };
 
 export const winePrefix = async (): Promise<string> => {
 	return new Promise((resolve) => {
 		appDataDir().then((appData) => {
 			join(appData, "wine").then((res) => {
-				resolve(res as string);
+				resolve(res);
 			});
 		});
 	});
+};
+
+export const updateModuleTracker = async (
+	module: AppModules,
+	newVersion: string,
+) => {
+	const current = await getOption<WineComponentData>("installedComponents");
+	current[module] = newVersion;
+	await setOption("installedComponents", current);
+};
+
+export const getModuleVersion = async (
+	module: AppModules | undefined = undefined,
+): Promise<WineComponentData | string | null> => {
+	return new Promise((resolve, reject) => {
+		getOption<WineComponentData>("installedComponents")
+			.then((data) => {
+				if (typeof module === undefined) {
+					resolve(data);
+				}
+				resolve(data[module as AppModules]);
+			})
+			.catch(reject);
+	});
+};
+
+export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {
+	const url = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${module}.json`;
+
+	const installedTag = await getModuleVersion(module).catch((e) => {
+		error(`moduleTagsMatch: ${e}`);
+		throw e;
+	});
+	if (installedTag !== null) {
+		try {
+			const json = await getApiJson<ModuleData[]>(url);
+			return json[0].tag === installedTag;
+		} catch (e: any) {
+			error(`moduleTagsMatch: ${e}`);
+		}
+	}
+	return false;
 };
