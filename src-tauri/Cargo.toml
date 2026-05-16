@@ -11,7 +11,7 @@ name = "elysiae_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.1", features = [] }
+tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
 glib = "0.22.7"
@@ -20,7 +20,7 @@ tokio-util = "0.7.18"
 futures = "0.3.32"
 futures-util = "0.3.32"
 
-tauri = { version = "2.11.1", features = ["protocol-asset", "tray-icon"] }
+tauri = { version = "2.11.2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2.5.4"
 
 serde = { version = "1.0.228", features = ["derive"] }
@@ -56,7 +56,7 @@ tauri-plugin-single-instance = "2.4.2"
 
 [dev-dependencies]
 tempfile = "3.27.0"
-wiremock = "0.6"
+wiremock = "0.6.5"
 
 [profile.release]
 opt-level = 3
