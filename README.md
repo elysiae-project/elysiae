@@ -17,7 +17,7 @@ The launchers created by an-anime-team have many issues, namely:
 
 1. Each launcher supports only one game, so players who enjoy multiple "anime games" must install multiple launchers. It should be noted that each launcher are almost identical in terms of code and differ only in which game's data they fetch. Furthermore, each launcher installs its own wine environment, which creates unnecessary bloat when multiple launchers are installed.
 
-2. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal by heavily focusing on extensibility. The unified launcher was released *without* support for any of the games they were meant to support as of March 31st, 2026.
+2. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal by heavily focusing on extensibility. The unified launcher was released _without_ support for any of the games they were meant to support as of March 31st, 2026.
 
 The Elysiae Project aims to provide an alternative to the launchers maintained by an-anime-team, offering Linux players a unified way to launch and manage their "anime games".
 

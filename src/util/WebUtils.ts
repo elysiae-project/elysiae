@@ -6,15 +6,15 @@ import { invoke } from "@tauri-apps/api/core";
 /**
  * @param verifyingString The string you want to verify
  * @returns Boolean value based on weather verifyingString is a valid http URL
- * or not
+ *   or not
  */
 const isURLValid = (verifyingString: string): boolean => {
-  try {
-    const testURL = new URL(verifyingString);
-    return testURL.protocol === "http:" || testURL.protocol === "https:";
-  } catch {
-    return false;
-  }
+	try {
+		const testURL = new URL(verifyingString);
+		return testURL.protocol === "http:" || testURL.protocol === "https:";
+	} catch {
+		return false;
+	}
 };
 
 /**
@@ -22,75 +22,75 @@ const isURLValid = (verifyingString: string): boolean => {
  * @returns JavaScipt Object from API URL
  */
 export const getApiJson = async <T = any>(url: string): Promise<T> => {
-  return new Promise((resolve, reject) => {
-    if (!isURLValid(url)) {
-      reject(`getApiJson: URL ${url} is invalid`);
-    }
-    fetch(url, {
-      method: "GET",
-    }).then((response) => {
-      if (response.status === 200) {
-        response
-          .json()
-          .then((json) => {
-            resolve(json as T);
-          })
-          .catch((e) => {
-            reject(`getApiJson: ${e}`);
-          });
-      } else {
-        reject(`getAPIJson: ${url} returned status code ${response.status}`);
-      }
-    });
-  });
+	return new Promise((resolve, reject) => {
+		if (!isURLValid(url)) {
+			reject(`getApiJson: URL ${url} is invalid`);
+		}
+		fetch(url, {
+			method: "GET",
+		}).then((response) => {
+			if (response.status === 200) {
+				response
+					.json()
+					.then((json) => {
+						resolve(json as T);
+					})
+					.catch((e) => {
+						reject(`getApiJson: ${e}`);
+					});
+			} else {
+				reject(`getAPIJson: ${url} returned status code ${response.status}`);
+			}
+		});
+	});
 };
 
 export const downloadFile = async (url: string, destination: string) => {
-  const downloadID = crypto.randomUUID();
+	const downloadID = crypto.randomUUID();
 
-  const unlisten = await listen<{ progress: number; total: number }>(
-    `download://progress/${downloadID}`,
-    ({ payload }) => {
-      // TODO: Create some sort of function that can automatically determine the best size unit
-      // For now, just use MB
-      const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
-      const total = (payload.total / 1024 ** 2).toFixed(2);
-      info(`Downloaded ${downloaded}MB of ${total}MB`);
-    },
-  );
+	const unlisten = await listen<{ progress: number; total: number }>(
+		`download://progress/${downloadID}`,
+		({ payload }) => {
+			// TODO: Create some sort of function that can automatically determine the best size unit
+			// For now, just use MB
+			const downloaded = (payload.progress / 1024 ** 2).toFixed(2);
+			const total = (payload.total / 1024 ** 2).toFixed(2);
+			info(`Downloaded ${downloaded}MB of ${total}MB`);
+		},
+	);
 
-  try {
-    await invoke("download_file", {
-      url: url,
-      dest: destination,
-      uuid: downloadID,
-    });
-  } finally {
-    unlisten();
-  }
+	try {
+		await invoke("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} finally {
+		unlisten();
+	}
 };
 
 export const downloadFileWithProgress = async (
-  url: string,
-  destination: string,
-  onProgress: (progress: number, total: number) => void,
+	url: string,
+	destination: string,
+	onProgress: (progress: number, total: number) => void,
 ) => {
-  const downloadID = crypto.randomUUID();
+	const downloadID = crypto.randomUUID();
 
-  const unlisten = await listen<{ progress: number; total: number }>(
-    `download://progress/${downloadID}`,
-    ({ payload }) => {
-      onProgress(payload.progress, payload.total);
-    },
-  );
+	const unlisten = await listen<{ progress: number; total: number }>(
+		`download://progress/${downloadID}`,
+		({ payload }) => {
+			onProgress(payload.progress, payload.total);
+		},
+	);
 
-  try {
-    await invoke("download_file", {
-      url: url,
-      dest: destination,
-      uuid: downloadID,
-    });
-  } finally {
-    unlisten();
-  }
+	try {
+		await invoke("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} finally {
+		unlisten();
+	}
 };

@@ -1,33 +1,33 @@
-import Modal from "../Modal";
-import { AppModules, ModalHandle, Option, Variants } from "../../types";
-import { forwardRef, useEffect, useState } from "preact/compat";
-import { useApi } from "../../hooks/useApi";
-import { useGame } from "../../hooks/useGame";
-import {
-	getActiveGameCode,
-	getGameName,
-	getGameSize,
-} from "../../util/AppFunctions";
-import Button from "../Button";
-import { FileCheck, Folder, LucideIcon, RefreshCw, Trash } from "lucide-preact";
 import {
 	checkGameUpdate,
 	downloadUpdate,
 	isGameInstalled,
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { remove } from "../../lib/Fs";
-import { useDownload } from "../../hooks/useDownload";
-import Dropdown from "../Dropdown";
-import { getOption, setOption } from "../../util/Settings";
-import ToggleSwitch from "../ToggleSwitch";
 import {
 	getModuleVersion,
 	moduleTagsMatch,
 	updateWineComponent,
 } from "../../lib/WineManager";
+import {
+	getActiveGameCode,
+	getGameName,
+	getGameSize,
+} from "../../util/AppFunctions";
+import { FileCheck, Folder, LucideIcon, RefreshCw, Trash } from "lucide-preact";
+import { AppModules, ModalHandle, Option, Variants } from "../../types";
+import { forwardRef, useEffect, useState } from "preact/compat";
+import { getOption, setOption } from "../../util/Settings";
+import { appDataDir, join } from "@tauri-apps/api/path";
+import { useDownload } from "../../hooks/useDownload";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { useGame } from "../../hooks/useGame";
+import { useApi } from "../../hooks/useApi";
+import ToggleSwitch from "../ToggleSwitch";
+import { remove } from "../../lib/Fs";
+import Dropdown from "../Dropdown";
+import Button from "../Button";
+import Modal from "../Modal";
 
 type GameOption = {
 	icon: LucideIcon;
@@ -114,7 +114,7 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 	}, []);
 
 	return (
-		<div class="flex flex-row w-full justify-between items-center">
+		<div class="flex w-full flex-row items-center justify-between">
 			<h1>{option.name}</h1>
 			{option.type === "dropdown" ? (
 				value !== null ? (
@@ -152,9 +152,9 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 };
 
 const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
-  const [version, setVersion] = useState<string>("");
-  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
-  const { setWineSetupProgress } = useDownload();
+	const [version, setVersion] = useState<string>("");
+	const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+	const { setWineSetupProgress } = useDownload();
 
 	useEffect(() => {
 		getModuleVersion(componentName).then((res) => {
@@ -168,8 +168,8 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 	}, []);
 
 	return (
-		<div class="flex flex-row w-full">
-			<div class="flex flex-col w-full justify-between">
+		<div class="flex w-full flex-row">
+			<div class="flex w-full flex-col justify-between">
 				<h1 class="text-[1.10rem]">
 					{String(componentName).charAt(0).toUpperCase() +
 						String(componentName).slice(1)}
@@ -184,7 +184,9 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 					variant={updateAvailable ? "primary" : "secondary"}
 					disabled={!updateAvailable}
 					onClick={() => {
-						updateWineComponent(componentName, (event) => { setWineSetupProgress(event); });
+						updateWineComponent(componentName, (event) => {
+							setWineSetupProgress(event);
+						});
 						setUpdateAvailable(false);
 					}}>
 					<p class="text-[1rem]">Update</p>
@@ -244,14 +246,14 @@ const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 };
 
 export const SettingsModal = forwardRef<ModalHandle>(
-function SettingsModal(_, ref) {
-  const { branding } = useApi();
-  const { game } = useGame();
+	function SettingsModal(_, ref) {
+		const { branding } = useApi();
+		const { game } = useGame();
 
-  return (
+		return (
 			<Modal ref={ref} width={750} height={450}>
-				<div class="flex flex-col w-full h-full gap-y-5 py-2.5 overflow-y-scroll">
-					<div class="flex flex-row justify-between mb-2">
+				<div class="flex h-full w-full flex-col gap-y-5 overflow-y-scroll py-2.5">
+					<div class="mb-2 flex flex-row justify-between">
 						<div class="flex flex-row gap-x-2.5">
 							<img
 								class="rounded-lg"
@@ -260,7 +262,7 @@ function SettingsModal(_, ref) {
 								alt=""
 								src={branding?.[game].icon}
 							/>
-							<div class="flex justify-center flex-col">
+							<div class="flex flex-col justify-center">
 								<h1>{getGameName(game)}</h1>
 								<DiskSize />
 							</div>
@@ -272,7 +274,7 @@ function SettingsModal(_, ref) {
 						</div>
 					</div>
 					<div>
-						<h1 class="text-xl mb-2.5">Options</h1>
+						<h1 class="mb-2.5 text-xl">Options</h1>
 						<div class="flex flex-col gap-y-3">
 							{options.map((option) => (
 								<OptionRow option={option} />
@@ -280,7 +282,7 @@ function SettingsModal(_, ref) {
 						</div>
 					</div>
 					<div class="mb-2.5">
-						<h1 class="text-xl mb-2.5">Modules</h1>
+						<h1 class="mb-2.5 text-xl">Modules</h1>
 						<div class="flex flex-col gap-y-3">
 							{["wine", "dxvk", "jadeite"].map((item) => (
 								<ComponentInfo componentName={item as AppModules} />

@@ -1,9 +1,9 @@
-import { createContext, ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
-import { Variants } from "../types";
-import { getOption, setOption } from "../util/Settings";
 import { getActiveGameCode, getVariantFromCode } from "../util/AppFunctions";
+import { createContext, ComponentChildren } from "preact";
+import { getOption, setOption } from "../util/Settings";
+import { useEffect, useState } from "preact/hooks";
 import { warn } from "@tauri-apps/plugin-log";
+import { Variants } from "../types";
 
 interface GameContextType {
 	game: Variants;
@@ -19,14 +19,15 @@ export const GameProvider = ({ children }: { children: ComponentChildren }) => {
 	const [game, setGame] = useState<Variants>(Variants.HKRPG);
 	useEffect(() => {
 		(async () => {
-			const lastSelectedGame = getVariantFromCode(await getOption<string>("selectedGame"));
-			if(lastSelectedGame) {
+			const lastSelectedGame = getVariantFromCode(
+				await getOption<string>("selectedGame"),
+			);
+			if (lastSelectedGame) {
 				setGame(lastSelectedGame);
-			}
-			else {
+			} else {
 				warn("GameProvider: selectedGame option is missing, null, or empty");
 			}
-		})()
+		})();
 	}, []);
 
 	useEffect(() => {
