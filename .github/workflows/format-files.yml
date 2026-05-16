@@ -1,19 +1,9 @@
 name: Format Project Files
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "package.json"
-      - "yarn.lock"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/update-download-sources.yml"
   workflow_dispatch:
 
 jobs:
   format:
-    # Prevents recusive runs
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
