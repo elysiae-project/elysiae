@@ -40,8 +40,8 @@ export default function PreinstallButton() {
 	return (
 		<Button
 			variant="secondary"
-			width={65}
-			height={65}
+			width={4}
+			height={4}
 			disabled={downloadActive}
 			onClick={async () => {
 				setDownloadingGame(game);

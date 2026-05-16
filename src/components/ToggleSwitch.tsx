@@ -14,11 +14,11 @@ const toggleSwitchStyles = cva("transition-colors duration-150 delay-0", {
 			[Variants.NAP]: "rounded-full border-4 border-nap-dot-border",
 		},
 		size: {
-			xSmall: "p-0.375",
-			small: "p-0.75",
-			medium: "p-1.5",
-			large: "p-3",
-			xLarge: "p-6",
+			xs: "p-0.375",
+			sm: "p-0.75",
+			md: "p-1.5",
+			lg: "p-3",
+			xl: "p-6",
 		},
 		variant: {
 			active: null,
@@ -72,20 +72,20 @@ const toggleSwitchKnobStyles = cva(
 );
 
 // Used for travel distance calculation in the component. These values match the amount of padding in the different button sizes
-const PADDING_PX: Record<ComponentSize, number> = {
-	xSmall: 1.5,
-	small: 3,
-	medium: 6,
-	large: 12,
-	xLarge: 24,
+const PADDING_REM: Record<ComponentSize, number> = {
+	xs: 0.375,
+	sm: 0.75,
+	md: 1.5,
+	lg: 3.0,
+	xl: 6.0,
 };
 
 export default function ToggleSwitch({
 	onClick,
 	startActive = false,
-	width = 120,
-	height = 20,
-	size = "medium",
+	width = 7.5,
+	height = 1.25,
+	size = "md",
 }: {
 	onClick: (enabled: boolean) => void;
 	startActive?: boolean;
@@ -96,7 +96,7 @@ export default function ToggleSwitch({
 	const { game } = useGame();
 	const [enabled, setEnabled] = useState<boolean>(startActive);
 
-	const padding = PADDING_PX[size];
+	const padding = PADDING_REM[size];
 	const knobSize = Math.max(height - padding * 2, 4);
 	const travelDistance = Math.max(width - knobSize - padding * 2, 0);
 
@@ -106,7 +106,7 @@ export default function ToggleSwitch({
 				setEnabled(!enabled);
 				onClick(!enabled);
 			}}
-			style={{ width: `${width}px`, height: `${height}px` }}
+			style={{ width: `${width}rem`, height: `${height}rem` }}
 			class={toggleSwitchStyles({
 				game,
 				size,
@@ -114,8 +114,8 @@ export default function ToggleSwitch({
 			})}>
 			<div
 				style={{
-					width: `${knobSize}px`,
-					height: `${knobSize}px`,
+					width: `${knobSize}rem`,
+					height: `${knobSize}rem`,
 					transform: `translateX(${enabled ? travelDistance : 0}px) translateZ(1px)`,
 					transition: "transform 0.175s ease",
 				}}

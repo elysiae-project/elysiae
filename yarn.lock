@@ -233,13 +233,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chenglou/pretext@npm:^0.0.7":
-  version: 0.0.7
-  resolution: "@chenglou/pretext@npm:0.0.7"
-  checksum: 10c0/538711926543040b0248ca7a6346fc383fec3d96d33e409f5acd6e8dbe8ecda4f795e3a757fd32690c13797f834a2538fecef2debca8c892b7a33864bf26823a
-  languageName: node
-  linkType: hard
-
 "@emnapi/core@npm:1.10.0, @emnapi/core@npm:^1.10.0":
   version: 1.10.0
   resolution: "@emnapi/core@npm:1.10.0"
@@ -1225,7 +1218,6 @@ __metadata:
   resolution: "elysiae@workspace:."
   dependencies:
     "@babel/core": "npm:^7.29.0"
-    "@chenglou/pretext": "npm:^0.0.7"
     "@preact/preset-vite": "npm:^2.10.5"
     "@tailwindcss/vite": "npm:^4.3.0"
     "@tauri-apps/api": "npm:^2.11.0"

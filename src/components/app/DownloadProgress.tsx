@@ -103,8 +103,8 @@ export default function GameDownloadProgress() {
 							}
 						}}
 						variant="secondary"
-						width={15}
-						height={15}>
+						width={1}
+						height={1}>
 						{isPaused ? (
 							<Play className={"leading-0 -m-1"} />
 						) : (

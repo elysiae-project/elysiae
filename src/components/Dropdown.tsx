@@ -19,11 +19,11 @@ const dropdownStyles = cva(
 					"nap-dots rounded-full border-3 border-[#353535] active:animate-nap-pulsate",
 			},
 			size: {
-				xSmall: "px-0.75 h-2.5 text-xs",
-				small:  "px-1.5 h-5 text-sm",
-				medium: "px-3 h-10 text-base",
-				large:  "px-6 h-20 text-lg",
-				xLarge: "px-12 h-40 text-xl",
+				xs: "px-0.75 h-2.5 text-xs",
+				sm: "px-1.5 h-5 text-sm",
+				md: "px-3 h-10 text-base",
+				lg: "px-6 h-20 text-lg",
+				xl: "px-12 h-40 text-xl",
 			},
 		},
 	},
@@ -41,11 +41,11 @@ const dropdownList = cva(
 				[Variants.NAP]: "bg-[#353535] rounded-2xl",
 			},
 			size: {
-				xSmall: "mt-2.5",
-				small:  "mt-5",
-				medium: "mt-10",
-				large:  "mt-20",
-				xLarge: "mt-40",
+				xs: "mt-2.5",
+				sm: "mt-5",
+				md: "mt-10",
+				lg: "mt-20",
+				xl: "mt-40",
 			},
 		},
 	},
@@ -65,11 +65,11 @@ const dropdownItem = cva(
 					"text-white active:text-black active:animate-nap-pulsate rounded-full text-center",
 			},
 			size: {
-				xSmall: "h-2",
-				small:  "h-4",
-				medium: "h-8",
-				large:  "h-16",
-				xLarge: "h-32",
+				xs: "h-2",
+				sm: "h-4",
+				md: "h-8",
+				lg: "h-16",
+				xl: "h-32",
 			},
 		},
 	},
@@ -86,9 +86,9 @@ export default function Dropdown({
 	values = labels,
 	initialValue = 0,
 	onChangeAction,
-	width = 120,
-	height = 20,
-	size = "medium",
+	width = 7.5,
+	height = 1.25,
+	size = "md",
 }: {
 	labels: string[];
 	values?: string[];
@@ -135,37 +135,32 @@ export default function Dropdown({
 	}, [open]);
 
 	const containerStyle = {
-		width: `${width}px`,
-		height: `${height}px`,
+		width: `${width}rem`,
+		height: `${height}rem`,
 	};
 
 	return (
-		<div
-			class="relative"
-			ref={dropdownDiv}
-			style={containerStyle}
-		>
+		<div class="relative" ref={dropdownDiv} style={containerStyle}>
 			<div class="flex h-full flex-col">
 				<div
 					class={dropdownStyles({ game, size })}
 					onClick={(e) => {
 						e.stopPropagation();
 						setOpen(!open);
-					}}
-				>
+					}}>
 					<h1>{label}</h1>
 					<ArrowDown />
 				</div>
 				<div
 					class={dropdownList({ game, size })}
-					style={open ? "opacity: 100" : "opacity: 0; pointer-events: none; scale: 0"}
-				>
+					style={
+						open ? "opacity: 100" : "opacity: 0; pointer-events: none; scale: 0"
+					}>
 					{labels.map((listLabel, index) => (
 						<div
 							key={index}
 							onClick={() => onChange(index)}
-							class={dropdownItem({ game, size })}
-						>
+							class={dropdownItem({ game, size })}>
 							<p class="pt-0.5">{listLabel}</p>
 							{index === currentIndex ? <Check /> : null}
 						</div>

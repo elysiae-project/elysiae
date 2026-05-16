@@ -60,6 +60,8 @@ export default function InstallerButton() {
 		<div class="w-auto flex flex-row gap-x-3.5">
 			<Button
 				variant="primary"
+				width={13.75}
+				height={4.06}
 				disabled={downloadActive && !gameInstalled}
 				onClick={async () => {
 					if (!wineAvailable) {

@@ -12,7 +12,6 @@
 	},
 	"dependencies": {
 		"@babel/core": "^7.29.0",
-		"@chenglou/pretext": "^0.0.7",
 		"@tauri-apps/api": "^2.11.0",
 		"@tauri-apps/plugin-fs": "^2.5.1",
 		"@tauri-apps/plugin-http": "^2.5.9",

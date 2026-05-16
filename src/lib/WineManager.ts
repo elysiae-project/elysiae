@@ -6,10 +6,10 @@ import {
 	WineModule,
 	ModuleData,
 } from "../types";
-import { exists, extractFile, readDir, remove, removeDir, rename } from "./Fs";
+import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 import { downloadFile, getApiJson } from "../util/WebUtils";
 import { error, info } from "@tauri-apps/plugin-log";
-import { executeLocalBinary, executeShellCommand } from "../util/AppFunctions";
+import { executeLocalBinary } from "../util/AppFunctions";
 import { getOption, setOption } from "../util/Settings";
 
 // Components that get regular updates (i.e. wine, dxvk)

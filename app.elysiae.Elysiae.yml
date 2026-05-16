@@ -12,7 +12,8 @@ writable-sdk: true
 
 finish-args:
   - --socket=wayland
-  - --socket=fallback-x11 # X11 IS being dropped from DEs, but from some review of other flathub PRs, it is generally expected to still exist. this line will likely be removed once most major DEs (i.e. gnome, kde, xfce, MATE) drop x11 support or disable support for x11 by default
+  # X11 is being dropped from DEs, but is generally expected to still be supported
+  - --socket=fallback-x11
   - --device=dri
   - --share=ipc
   - --share=network
@@ -48,7 +49,7 @@ modules:
       - ./flatpak-node/autogen.sh
       - yarn install
       - yarn tauri build
-      - install -Dm0644 LICENSE -t $FLATPAK_DEST/share/licenses/$FLATPAK_ID/Elysiae
+      - install -Dm0644 LICENSE -t ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/Elysiae
       - install -Dm755 src-tauri/target/release/Elysiae /app/bin/Elysiae
       - install -Dm644 Elysiae.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - install -Dm644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png

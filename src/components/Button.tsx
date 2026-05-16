@@ -1,5 +1,5 @@
 import { useGame } from "../hooks/useGame";
-import { Variants } from "../types";
+import { ComponentSize, Variants } from "../types";
 import { cva } from "class-variance-authority";
 
 const buttonStyles = cva(
@@ -24,11 +24,11 @@ const buttonStyles = cva(
 				true: "opacity-50 pointer-events-none",
 			},
 			size: {
-				xSmall: "px-1.25 py-0.5",
-				small: "px-2.5 py-1",
-				medium: "px-5 py-2",
-				large: "",
-				xLarge: ""
+				xs: "px-1.25 py-0.5",
+				sm: "px-2.5 py-1",
+				md: "px-5 py-2",
+				lg: "",
+				xl: ""
 			},
 		},
 		compoundVariants: [
@@ -86,7 +86,7 @@ export default function Button({
 	onClick,
 	children,
 	variant,
-	size = "medium",
+	size = "md",
 	disabled = false,
 	width = 220,
 	height = 65,
@@ -94,7 +94,7 @@ export default function Button({
 	onClick: () => void;
 	children: any;
 	variant: "primary" | "secondary";
-	size?: "xSmall" | "small" | "medium" | "large" | "xLarge";
+	size?: ComponentSize;
 	disabled?: boolean;
 	width?: number;
 	height?: number;
@@ -106,8 +106,8 @@ export default function Button({
 			onClick={onClick}
 			class={`${buttonStyles({ game: game, variant: variant, disabled: disabled, size: size })}`}
 			style={{
-				width: `${width}px`,
-				height: `${height}px`,
+				width: `${width}rem`,
+				height: `${height}rem`,
 			}}>
 			{children}
 		</button>

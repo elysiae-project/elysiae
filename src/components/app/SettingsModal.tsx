@@ -9,13 +9,7 @@ import {
 	getGameSize,
 } from "../../util/AppFunctions";
 import Button from "../Button";
-import {
-	FileCheck,
-	Folder,
-	LucideIcon,
-	RefreshCw,
-	Trash,
-} from "lucide-preact";
+import { FileCheck, Folder, LucideIcon, RefreshCw, Trash } from "lucide-preact";
 import {
 	checkGameUpdate,
 	downloadUpdate,
@@ -33,7 +27,6 @@ import {
 	updateWineComponent,
 } from "../../lib/WineManager";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { requestPermission } from "@tauri-apps/plugin-notification";
 
 type GameOption = {
 	icon: LucideIcon;
@@ -125,8 +118,8 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 			{option.type === "dropdown" ? (
 				value !== null ? (
 					<Dropdown
-						width={200}
-						height={35}
+						width={12.5}
+						height={2}
 						labels={option.labels}
 						values={option.values}
 						initialValue={value}
@@ -141,9 +134,9 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 			{option.type === "boolean" ? (
 				value !== null ? (
 					<ToggleSwitch
-						size="small"
-						height={30}
-						width={75}
+						size="sm"
+						height={2}
+						width={4.5}
 						startActive={value}
 						onClick={async (newValue) => {
 							await option.setValue(newValue);
@@ -183,9 +176,9 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 			</div>
 			<div class="flex items-center">
 				<Button
-					height={37}
-					width={105}
-					size="small"
+					height={2.3}
+					width={6.5}
+					size="sm"
 					variant={updateAvailable ? "primary" : "secondary"}
 					disabled={!updateAvailable}
 					onClick={() => {
@@ -237,9 +230,9 @@ const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 		<Button
 			variant={gameInstalled ? "primary" : "secondary"}
 			disabled={!gameInstalled}
-			size="xSmall"
-			width={35}
-			height={35}
+			size="xs"
+			width={2.1}
+			height={2.1}
 			onClick={async () => {
 				await gameOption.action(game);
 			}}>

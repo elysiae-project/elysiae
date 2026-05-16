@@ -1,6 +1,6 @@
 # Contributing To Elysiae
 
-Elysiae is an application developed by only two people. We are both new to creating desktop applications with tauri and in general left a lot of room for improement down the road. If you are a capable developer and are willing to contribute improvements to Elysiae, we are welcoming your changes with open arms!
+Elysiae is an application developed by only two people. We are both new to developing desktop applications with Tauri and in general left a lot of room for improvement down the road. If you are a capable developer and are willing to contribute to Elysiae, we welcome your changes with open arms!
 
 ## Setting up the development environment
 
@@ -21,7 +21,7 @@ After installing the system dependencies, install the NodeJS dependencies in the
 > Elysiae uses the yarn package manager for NodeJS package management. Please ensure that corepack is installed and enabled by running `npm i -g corepack@latest && corepack enable`. Doing so will download the appropriate version of `yarn` once you run the installation command below
 
 ```sh
-yarn
+yarn install
 ```
 
 ### Flatpak Build Support
