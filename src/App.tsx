@@ -64,8 +64,8 @@ function App() {
 							onClick={() => {
 								settingsModal.current?.open();
 							}}
-							width={65}
-							height={65}>
+							width={4}
+							height={4}>
 							<Settings className="leading-0 -m-1" />
 						</Button>
 						<InstallerButton />

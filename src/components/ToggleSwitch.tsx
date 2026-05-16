@@ -73,11 +73,11 @@ const toggleSwitchKnobStyles = cva(
 
 // Used for travel distance calculation in the component. These values match the amount of padding in the different button sizes
 const PADDING_REM: Record<ComponentSize, number> = {
-	xs: 0.375,
-	sm: 0.75,
-	md: 1.5,
-	lg: 3.0,
-	xl: 6.0,
+	xs: 0.9375,
+	sm: 0.1875,
+	md: 0.375,
+	lg: 0.75,
+	xl: 1.5,
 };
 
 export default function ToggleSwitch({
@@ -97,7 +97,7 @@ export default function ToggleSwitch({
 	const [enabled, setEnabled] = useState<boolean>(startActive);
 
 	const padding = PADDING_REM[size];
-	const knobSize = Math.max(height - padding * 2, 4);
+	const knobSize = Math.max(height - padding * 2, 0.25);
 	const travelDistance = Math.max(width - knobSize - padding * 2, 0);
 
 	return (
@@ -116,7 +116,7 @@ export default function ToggleSwitch({
 				style={{
 					width: `${knobSize}rem`,
 					height: `${knobSize}rem`,
-					transform: `translateX(${enabled ? travelDistance : 0}px) translateZ(1px)`,
+					transform: `translateX(${enabled ? travelDistance : 0}rem) translateZ(1px)`,
 					transition: "transform 0.175s ease",
 				}}
 				class={toggleSwitchKnobStyles({ game })}>
