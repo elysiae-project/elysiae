@@ -18,72 +18,74 @@ import SettingsModal from "./components/app/SettingsModal.tsx";
 import { useRef } from "preact/hooks";
 
 const textTheme = cva(null, {
-	variants: {
-		game: {
-			[Variants.BH3]: "font-bh3-hkrpg text-white",
-			[Variants.HK4E]: "font-hk4e text-black",
-			[Variants.HKRPG]: "font-bh3-hkrpg text-black",
-			[Variants.NAP]: "font-nap text-white",
-		},
-	},
+  variants: {
+    game: {
+      [Variants.BH3]: "font-bh3-hkrpg text-white",
+      [Variants.HK4E]: "font-hk4e text-black",
+      [Variants.HKRPG]: "font-bh3-hkrpg text-black",
+      [Variants.NAP]: "font-nap text-white",
+    },
+  },
 });
 
 const bgTheme = cva("h-full w-full overflow-hidden", {
-	variants: {
-		game: {
-			[Variants.BH3]: "bg-bh3-bg rounded-b-xl",
-			[Variants.HK4E]: "bg-hk4e-bg",
-			[Variants.HKRPG]: "bg-hkrpg-bg rounded-b-xs ",
-			[Variants.NAP]: "bg-nap-bg rounded-br-xl border-nap-border",
-		},
-	},
+  variants: {
+    game: {
+      [Variants.BH3]: "bg-bh3-bg rounded-b-xl",
+      [Variants.HK4E]: "bg-hk4e-bg",
+      [Variants.HKRPG]: "bg-hkrpg-bg rounded-b-xs",
+      [Variants.NAP]: "bg-nap-bg rounded-br-xl border-nap-border",
+    },
+  },
 });
 
 function App() {
-	const { game } = useGame();
-	const { graphics } = useApi();
-	const settingsModal = useRef<ModalHandle>(null);
+  const { game } = useGame();
+  const { graphics } = useApi();
+  const settingsModal = useRef<ModalHandle>(null);
 
-	return (
-		<div
-			class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}>
-			<Titlebar />
-			<Sidebar />
-			<SettingsModal ref={settingsModal} />
+  return (
+    <div
+      class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}
+    >
+      <Titlebar />
+      <Sidebar />
+      <SettingsModal ref={settingsModal} />
 
-			<div class={bgTheme({ game: game })}>
-				<div class="relative h-full w-full">
-					{graphics ? <Background /> : <></>}
+      <div class={bgTheme({ game: game })}>
+        <div class="relative h-full w-full">
+          {graphics ? <Background /> : <></>}
 
-					<div class="absolute inset-0 z-10 flex flex-row items-end justify-end px-15 py-10 w-full gap-x-3">
-						{/* Page content */}
-						<DownloadProgress />
-						<PreinstallButton />
-						<Button
-							variant="secondary"
-							onClick={() => {
-								settingsModal.current?.open();
-							}}
-							width={4}
-							height={4}>
-							<Settings className="leading-0 -m-1" />
-						</Button>
-						<InstallerButton />
-					</div>
-				</div>
-			</div>
-		</div>
-	);
+          <div class="absolute inset-0 z-10 flex flex-row items-end justify-end gap-x-3 px-15 py-10 w-full">
+            {/* Page content */}
+            <DownloadProgress />
+            <PreinstallButton />
+            <Button
+              variant="secondary"
+              onClick={() => {
+                settingsModal.current?.open();
+              }}
+              width={4}
+              height={4}
+            >
+              <Settings className="leading-0 -m-1" />
+            </Button>
+            <InstallerButton />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AppWrapper() {
-	return (
-		<GameProvider>
-			<ApiProvider>
-				<DownloadProvider>
-					<App />
-				</DownloadProvider>
-			</ApiProvider>
-		</GameProvider>
-	);
+  return (
+    <GameProvider>
+      <ApiProvider>
+        <DownloadProvider>
+          <App />
+        </DownloadProvider>
+      </ApiProvider>
+    </GameProvider>
+  );
 }

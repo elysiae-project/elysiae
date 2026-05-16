@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State, command};
 use tauri_plugin_log::log;
@@ -69,17 +70,28 @@ fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
         .map(|p| p.join(DOWNLOAD_STATE_FILE))
 }
 
-/// Persists download state to disk atomically (write to .tmp, then rename)
-/// to prevent corrupted state files on crash or power loss.
+/// Persists download state to disk atomically (write to unique .tmp, then
+/// rename) to prevent corrupted state files on crash or power loss.
+/// Each call uses a unique temporary file to avoid races between concurrent
+/// `spawn_blocking` saves that could otherwise collide on a shared `.tmp` path.
 pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(), String> {
     let Some(path) = download_state_path(app) else {
         let msg = "Failed to resolve download state path".to_string();
         log::error!("{}", msg);
         return Err(msg);
     };
+    if let Some(parent) = path.parent()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        let msg = format!("Failed to create download state directory: {}", e);
+        log::error!("{}", msg);
+        return Err(msg);
+    }
     match serde_json::to_string(state) {
         Ok(json) => {
-            let tmp_path = path.with_extension("tmp");
+            static SAVE_COUNTER: AtomicU64 = AtomicU64::new(0);
+            let seq = SAVE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+            let tmp_path = path.with_extension(format!("save-{seq}.tmp"));
             if let Err(e) = fs::write(&tmp_path, &json) {
                 let msg = format!("Failed to write temp download state: {}", e);
                 log::error!("{}", msg);
@@ -231,6 +243,17 @@ pub enum SophonProgress {
     Warning { message: String },
     /// Fatal error occurred.
     Error { message: String },
+    /// Installing plugins/SDKs into the game directory.
+    InstallingPlugins {
+        current_plugin: String,
+        total_plugins: usize,
+    },
+    /// Downloading a plugin/SDK ZIP package.
+    DownloadingPlugin {
+        name: String,
+        downloaded_bytes: u64,
+        total_bytes: u64,
+    },
     /// Download completed successfully.
     Finished,
 }
@@ -306,6 +329,7 @@ pub async fn sophon_download(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -324,6 +348,8 @@ pub async fn sophon_download(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -332,6 +358,25 @@ pub async fn sophon_download(
 
     match result {
         Ok(()) => {
+            let plugin_emit = app_handle.clone();
+            let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                Arc::new(move |p| emit(&plugin_emit, p));
+            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Plugin installation failed: {}", e);
+            }
+            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Channel SDK installation failed: {}", e);
+            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -381,6 +426,7 @@ pub async fn sophon_update(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -399,6 +445,8 @@ pub async fn sophon_update(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -407,6 +455,25 @@ pub async fn sophon_update(
 
     match result {
         Ok(()) => {
+            let plugin_emit = app_handle.clone();
+            let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                Arc::new(move |p| emit(&plugin_emit, p));
+            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Plugin installation failed: {}", e);
+            }
+            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Channel SDK installation failed: {}", e);
+            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -455,6 +522,7 @@ pub async fn sophon_preinstall(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -473,6 +541,8 @@ pub async fn sophon_preinstall(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -522,6 +592,7 @@ pub async fn sophon_resume_download(
         .resolve(&state.output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
+    let game_id = state.game_id.clone();
     let prev_chunks = state.downloaded_chunks.clone();
     let current_tag = state.current_tag.clone();
     let old_manifest_hash = state.manifest_hash.clone();
@@ -597,6 +668,7 @@ pub async fn sophon_resume_download(
     *active.0.lock().await = Some(handle.clone());
 
     let app_clone = app_handle.clone();
+    let vo_langs: Vec<String> = vec![state.vo_lang.clone()];
     let result = game_installer::install(
         installers,
         &game_dir,
@@ -615,6 +687,8 @@ pub async fn sophon_resume_download(
             updater: Arc::new(move |p| emit(&app_clone, p)),
             state_saver: saver,
         },
+        &game_id,
+        &vo_langs,
     )
     .await;
 
@@ -623,6 +697,28 @@ pub async fn sophon_resume_download(
 
     match result {
         Ok(()) => {
+            if !is_preinstall {
+                let plugin_emit = app_handle.clone();
+                let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                    Arc::new(move |p| emit(&plugin_emit, p));
+                if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                    let u = plugin_updater.clone();
+                    move |p| u(p)
+                })
+                .await
+                {
+                    log::warn!("Plugin installation failed: {}", e);
+                }
+                if let Err(e) =
+                    game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                        let u = plugin_updater.clone();
+                        move |p| u(p)
+                    })
+                    .await
+                {
+                    log::warn!("Channel SDK installation failed: {}", e);
+                }
+            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -718,5 +814,122 @@ pub async fn sophon_verify_integrity(
 fn emit(app: &AppHandle, progress: SophonProgress) {
     if let Err(e) = app.emit("sophon://progress", progress) {
         log::error!("Failed to emit progress event: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proto_parse::{SophonManifestAssetChunk, SophonManifestAssetProperty};
+    use super::*;
+
+    fn make_asset(name: &str, md5: &str, size: u64) -> SophonManifestAssetProperty {
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: size,
+            asset_hash_md5: md5.into(),
+        }
+    }
+
+    fn make_asset_with_chunks(
+        name: &str,
+        md5: &str,
+        size: u64,
+        xxh: u64,
+    ) -> SophonManifestAssetProperty {
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: vec![SophonManifestAssetChunk {
+                chunk_name: "chunk_0".into(),
+                chunk_decompressed_hash_md5: "decomp_md5".into(),
+                chunk_on_file_offset: 0,
+                chunk_size: size,
+                chunk_size_decompressed: size,
+                chunk_compressed_hash_xxh: xxh,
+                chunk_compressed_hash_md5: "comp_md5".into(),
+            }],
+            asset_type: 0,
+            asset_size: size,
+            asset_hash_md5: md5.into(),
+        }
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_deterministic() {
+        let manifest = proto_parse::SophonManifestProto {
+            assets: vec![
+                make_asset("a.pak", "md5_a", 100),
+                make_asset("b.pak", "md5_b", 200),
+            ],
+        };
+        let h1 = compute_content_manifest_hash(&manifest);
+        let h2 = compute_content_manifest_hash(&manifest);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_order_independent() {
+        let manifest_ab = proto_parse::SophonManifestProto {
+            assets: vec![
+                make_asset("a.pak", "md5_a", 100),
+                make_asset("b.pak", "md5_b", 200),
+            ],
+        };
+        let manifest_ba = proto_parse::SophonManifestProto {
+            assets: vec![
+                make_asset("b.pak", "md5_b", 200),
+                make_asset("a.pak", "md5_a", 100),
+            ],
+        };
+        assert_eq!(
+            compute_content_manifest_hash(&manifest_ab),
+            compute_content_manifest_hash(&manifest_ba),
+        );
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_different() {
+        let manifest1 = proto_parse::SophonManifestProto {
+            assets: vec![make_asset("a.pak", "md5_a", 100)],
+        };
+        let manifest2 = proto_parse::SophonManifestProto {
+            assets: vec![make_asset("a.pak", "md5_different", 100)],
+        };
+        assert_ne!(
+            compute_content_manifest_hash(&manifest1),
+            compute_content_manifest_hash(&manifest2),
+        );
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_empty() {
+        let manifest = proto_parse::SophonManifestProto { assets: vec![] };
+        let hash = compute_content_manifest_hash(&manifest);
+        assert_eq!(hash.len(), 16);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_excludes_xxh() {
+        let manifest_a = proto_parse::SophonManifestProto {
+            assets: vec![make_asset_with_chunks("a.pak", "md5_a", 100, 111)],
+        };
+        let manifest_b = proto_parse::SophonManifestProto {
+            assets: vec![make_asset_with_chunks("a.pak", "md5_a", 100, 999)],
+        };
+        assert_eq!(
+            compute_content_manifest_hash(&manifest_a),
+            compute_content_manifest_hash(&manifest_b),
+        );
+    }
+
+    #[test]
+    fn compute_content_manifest_hash_truncated() {
+        let manifest = proto_parse::SophonManifestProto {
+            assets: vec![make_asset("x.pak", "abc", 50)],
+        };
+        let hash = compute_content_manifest_hash(&manifest);
+        assert_eq!(hash.len(), 16);
     }
 }

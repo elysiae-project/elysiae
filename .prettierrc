@@ -7,5 +7,14 @@
 	"singleQuote": false,
 	"endOfLine": "lf",
 	"arrowParens": "always",
-	"bracketSameLine": true
+	"bracketSameLine": true,
+	"plugins": [
+		"prettier-plugin-css-order",
+		"prettier-plugin-jsdoc",
+		"prettier-plugin-multiline-arrays",
+		"prettier-plugin-organize-attributes",
+		"prettier-plugin-sort-imports",
+		"prettier-plugin-tailwindcss"
+	],
+	"tailwindStylesheet": "./src/App.css"
 }

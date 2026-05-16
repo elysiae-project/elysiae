@@ -73,14 +73,12 @@ pub fn run() {
 
 #[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
-    /*
-     * webkit2gtk/webkit isn't implementing some of the the wayland compositor
-     * protocols to the letter and NVIDIA drivers freak out because it
-     * expects implementations that do follow the standards to the letter
-     */
+    // Webkit2Gtk has a longstanding bug that prevents NVIDIA systems using wayland
+    // from running tauri apps. This env var is the least destructive way to solve
+    // until it is fixed
     if is_nvidia() && is_wayland() {
-        println!("Elysiae: Applying NVIDIA Wayland Hotfix");
-        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+        println!("Elysiae: Applying NVIDIA Wayland Workaround");
+        unsafe { std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1") };
     }
 }
 

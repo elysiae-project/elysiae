@@ -103,6 +103,9 @@ pub enum SophonError {
 
     #[error("{kind} index {index} out of bounds")]
     IndexOutOfBounds { kind: &'static str, index: usize },
+
+    #[error("Plugin validation failed: {0}")]
+    PluginValidationFailed(String),
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {
@@ -118,3 +121,70 @@ impl From<SophonError> for String {
 }
 
 pub type SophonResult<T> = Result<T, SophonError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_display_md5_mismatch() {
+        let err = SophonError::Md5Mismatch {
+            item: "file.pkg".to_string(),
+            expected: "abc123".to_string(),
+            actual: "def456".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("file.pkg"));
+        assert!(msg.contains("abc123"));
+        assert!(msg.contains("def456"));
+    }
+
+    #[test]
+    fn error_display_size_mismatch() {
+        let err = SophonError::SizeMismatch {
+            item: "data.bin".to_string(),
+            expected: 1024,
+            actual: 512,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("data.bin"));
+        assert!(msg.contains("1024"));
+        assert!(msg.contains("512"));
+    }
+
+    #[test]
+    fn error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let sophon_err: SophonError = io_err.into();
+        assert!(matches!(sophon_err, SophonError::Io(_)));
+    }
+
+    #[test]
+    fn error_display_cancelled() {
+        let err = SophonError::Cancelled;
+        assert_eq!(err.to_string(), "Download cancelled");
+    }
+
+    #[test]
+    fn error_display_path_traversal() {
+        let err = SophonError::PathTraversal(PathBuf::from("../../etc/passwd"));
+        let msg = err.to_string();
+        assert!(msg.contains("../../etc/passwd"));
+    }
+
+    #[test]
+    fn error_from_semaphore_acquire() {
+        let sophon_err = SophonError::Semaphore("no permits available".to_string());
+        assert!(matches!(sophon_err, SophonError::Semaphore(_)));
+    }
+
+    #[test]
+    fn error_into_string() {
+        let s: String = SophonError::Cancelled.into();
+        assert_eq!(s, "Download cancelled");
+        let s: String = SophonError::PathTraversal(PathBuf::from("/bad/path")).into();
+        assert!(s.contains("/bad/path"));
+        let s: String = SophonError::NoManifests.into();
+        assert!(!s.is_empty());
+    }
+}

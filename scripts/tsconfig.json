@@ -5,6 +5,6 @@
 		"module": "nodenext",
 		"strict": true,
 		"moduleResolution": "nodenext",
-		"baseUrl": "."
+		"types": ["node"]
 	}
 }

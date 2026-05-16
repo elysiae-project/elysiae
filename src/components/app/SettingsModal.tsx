@@ -18,6 +18,7 @@ import {
 } from "../../lib/GameDownloader";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { remove } from "../../lib/Fs";
+import { useDownload } from "../../hooks/useDownload";
 import Dropdown from "../Dropdown";
 import { getOption, setOption } from "../../util/Settings";
 import ToggleSwitch from "../ToggleSwitch";
@@ -151,8 +152,9 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 };
 
 const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
-	const [version, setVersion] = useState<string>("");
-	const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+  const [version, setVersion] = useState<string>("");
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+  const { setWineSetupProgress } = useDownload();
 
 	useEffect(() => {
 		getModuleVersion(componentName).then((res) => {
@@ -182,7 +184,7 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 					variant={updateAvailable ? "primary" : "secondary"}
 					disabled={!updateAvailable}
 					onClick={() => {
-						updateWineComponent(componentName); // No need to wait for the function to complete
+						updateWineComponent(componentName, (event) => { setWineSetupProgress(event); });
 						setUpdateAvailable(false);
 					}}>
 					<p class="text-[1rem]">Update</p>
@@ -242,11 +244,11 @@ const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 };
 
 export const SettingsModal = forwardRef<ModalHandle>(
-	function SettingsModal(_, ref) {
-		const { branding } = useApi();
-		const { game } = useGame();
+function SettingsModal(_, ref) {
+  const { branding } = useApi();
+  const { game } = useGame();
 
-		return (
+  return (
 			<Modal ref={ref} width={750} height={450}>
 				<div class="flex flex-col w-full h-full gap-y-5 py-2.5 overflow-y-scroll">
 					<div class="flex flex-row justify-between mb-2">

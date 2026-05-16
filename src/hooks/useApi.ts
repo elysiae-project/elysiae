@@ -1,5 +1,5 @@
-import { useContext } from "preact/hooks";
 import { ApiContext } from "../contexts/ApiContext";
+import { useContext } from "preact/hooks";
 
 export const useApi = () => {
 	const context = useContext(ApiContext);

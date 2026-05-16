@@ -11,11 +11,12 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tauri_plugin_log::log;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::adaptive::{ActiveGuard, AdaptiveConcurrency};
-use super::api::{fetch_build, fetch_front_door, vo_lang_matches};
+use super::adaptive_assembly::AdaptiveAssembly;
+use super::adaptive_download::AdaptiveSemaphore;
+use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
 use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
 use super::cache::{self, VerificationEntry};
 use super::error::{SophonError, SophonResult};
@@ -57,13 +58,15 @@ struct InstallContext {
     chunks_since_save: Arc<AtomicU64>,
     pending_saves: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
+    adaptive_assembly: Arc<AdaptiveAssembly>,
 }
 
-struct InstallerData {
+pub(crate) struct InstallerData {
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
     files: Vec<SophonManifestAssetProperty>,
     label: String,
+    pub matching_field: String,
 }
 
 struct DownloadItem {
@@ -81,6 +84,7 @@ pub struct SophonInstaller {
     pub manifest: SophonManifestProto,
     pub chunk_download: DownloadInfo,
     pub label: String,
+    pub matching_field: String,
     #[allow(dead_code)]
     pub tag: String,
     pub manifest_hash: String,
@@ -103,6 +107,7 @@ impl SophonInstaller {
                 .url_suffix
                 .trim_matches('/')
                 .replace('/', "-"),
+            matching_field: meta.matching_field.clone(),
             tag: tag.to_owned(),
             manifest_hash: result.hash,
         })
@@ -166,21 +171,26 @@ async fn build_installers_from_data(
     vo_lang: &str,
     tag: &str,
 ) -> SophonResult<Vec<SophonInstaller>> {
-    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
-
-    let vo_meta = build
+    let qualifying: Vec<&SophonManifestMeta> = build
         .manifests
         .iter()
-        .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
-        .or_else(|| build.manifests.get(1))
-        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+        .filter(|m| {
+            m.matching_field == "game"
+                || vo_lang_matches(&m.matching_field, vo_lang)
+                || !is_known_vo_locale(&m.matching_field)
+        })
+        .collect();
 
-    let (game_inst, vo_inst) = tokio::try_join!(
-        SophonInstaller::from_manifest_meta(client, game_meta, tag),
-        SophonInstaller::from_manifest_meta(client, vo_meta, tag),
-    )?;
+    if qualifying.is_empty() {
+        return Err(SophonError::NoGameManifest);
+    }
 
-    Ok(vec![game_inst, vo_inst])
+    let mut installers = Vec::with_capacity(qualifying.len());
+    for meta in &qualifying {
+        installers.push(SophonInstaller::from_manifest_meta(client, meta, tag).await?);
+    }
+
+    Ok(installers)
 }
 
 fn combine_manifest_hashes(installers: &[SophonInstaller]) -> String {
@@ -256,7 +266,9 @@ async fn build_diff_installers(
     let mut deleted_files: Vec<String> = Vec::new();
 
     for new_meta in &new_build.manifests {
-        if new_meta.matching_field != "game" && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+        if new_meta.matching_field != "game"
+            && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+            && is_known_vo_locale(&new_meta.matching_field)
         {
             continue;
         }
@@ -305,6 +317,7 @@ async fn build_diff_installers(
                 .url_suffix
                 .trim_matches('/')
                 .replace('/', "-"),
+            matching_field: new_meta.matching_field.clone(),
             tag: tag.to_owned(),
             manifest_hash: new_manifest_hash,
         });
@@ -332,6 +345,7 @@ fn build_installer_data(installers: Vec<SophonInstaller>) -> Vec<InstallerData> 
         .into_iter()
         .map(|inst| InstallerData {
             label: inst.label,
+            matching_field: inst.matching_field,
             client: Arc::new(inst.client),
             chunk_download: Arc::new(inst.chunk_download),
             files: inst
@@ -462,6 +476,12 @@ async fn build_download_state(
         }
     }
 
+    log::info!(
+        "build_download_state: {} download items, {} chunk->file mappings, file_idx={}",
+        download_items.len(),
+        chunk_to_files.len(),
+        file_idx,
+    );
     Ok((download_items, chunk_to_files))
 }
 
@@ -497,15 +517,20 @@ async fn drain_join_set(
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
     assemble_rx: mpsc::Receiver<(usize, usize)>,
-) -> tokio::task::JoinHandle<SophonResult<()>> {
+) -> (
+    tokio::task::JoinHandle<SophonResult<()>>,
+    tokio_util::sync::CancellationToken,
+) {
     let ctx = Arc::clone(ctx);
+    let assembly_cancel = ctx.adaptive_assembly.spawn_adjuster();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let mut rx = assemble_rx;
         let mut join_set = tokio::task::JoinSet::new();
 
         loop {
-            while join_set.len() < ASSEMBLY_CONCURRENCY {
+            let max_concurrency = ctx.adaptive_assembly.current_target();
+            while join_set.len() < max_concurrency {
                 match rx.try_recv() {
                     Ok((file_idx, tmp_dir_idx)) => {
                         let params = make_assembly_params(&ctx, file_idx, tmp_dir_idx);
@@ -532,10 +557,12 @@ fn spawn_assembly_coordinator(
                 let _ = res??;
             }
         }
-    })
+    });
+
+    (handle, assembly_cancel)
 }
 
-fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveConcurrency>) -> CancellationToken {
+fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveSemaphore>) -> CancellationToken {
     let cancel_token = CancellationToken::new();
     let adaptive = Arc::clone(adaptive);
     let token = cancel_token.clone();
@@ -626,7 +653,7 @@ async fn download_chunk_with_retries(
     Ok(())
 }
 
-fn notify_assembly_ready(
+async fn notify_assembly_ready(
     chunk_name: &str,
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
@@ -644,11 +671,17 @@ fn notify_assembly_ready(
                 }
             })
             .collect(),
-        None => Vec::new(),
+        None => {
+            log::warn!(
+                "notify_assembly_ready: chunk '{}' not found in chunk_to_files (already removed or never registered)",
+                chunk_name
+            );
+            Vec::new()
+        }
     };
 
     for entry in ready {
-        let _ = assemble_tx.try_send(entry);
+        let _ = assemble_tx.send(entry).await;
     }
 }
 
@@ -658,14 +691,9 @@ async fn process_download_item(
     chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>>,
     assemble_tx: mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
-    adaptive: Arc<AdaptiveConcurrency>,
-    semaphore: Arc<Semaphore>,
+    adaptive: Arc<AdaptiveSemaphore>,
 ) -> SophonResult<()> {
-    while !adaptive.can_start() {
-        tokio::task::yield_now().await;
-    }
-    let _guard = ActiveGuard::new(&adaptive);
-    let _permit = semaphore.acquire().await?;
+    let _permit = adaptive.acquire().await;
 
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
@@ -760,7 +788,7 @@ async fn process_download_item(
         }
     }
 
-    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
+    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx).await;
 
     Ok(())
 }
@@ -771,8 +799,7 @@ async fn run_downloads(
     chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
-    adaptive: Arc<AdaptiveConcurrency>,
-    semaphore: Arc<Semaphore>,
+    adaptive: Arc<AdaptiveSemaphore>,
 ) -> Vec<SophonResult<()>> {
     futures_util::stream::iter(download_items)
         .map(|item| {
@@ -781,23 +808,15 @@ async fn run_downloads(
             let assemble_tx = assemble_tx.clone();
             let handle = handle.clone();
             let adaptive = Arc::clone(&adaptive);
-            let semaphore = Arc::clone(&semaphore);
 
-            process_download_item(
-                item,
-                ctx,
-                chunk_to_files,
-                assemble_tx,
-                handle,
-                adaptive,
-                semaphore,
-            )
+            process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
         })
         .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
         .collect()
         .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finalize_install(
     ctx: &InstallContext,
     results: Vec<SophonResult<()>>,
@@ -805,6 +824,8 @@ async fn finalize_install(
     tag: &str,
     is_preinstall: bool,
     assembly_task: tokio::task::JoinHandle<SophonResult<()>>,
+    game_code: &str,
+    vo_langs: &[String],
 ) -> SophonResult<()> {
     let cancelled = results
         .iter()
@@ -821,6 +842,21 @@ async fn finalize_install(
 
     results.into_iter().find(|r| r.is_err()).transpose()?;
     assembly_task.await??;
+
+    {
+        let assembled = ctx.assembled_files.load(Ordering::Relaxed);
+        let total = ctx.total_files;
+        if assembled != total {
+            log::warn!(
+                "Sophon install completed but assembled_files ({}) != total_files ({}). {} files may be missing!",
+                assembled,
+                total,
+                total - assembled,
+            );
+        } else {
+            log::info!("Sophon install: all {} files assembled successfully", total);
+        }
+    }
 
     {
         let dc = ctx
@@ -866,6 +902,54 @@ async fn finalize_install(
     })
     .await??;
 
+    if game_code == "hkrpg" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_hkrpg_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hkrpg audio language record: {}", e);
+            }
+        })
+        .await?;
+        let gd = ctx.game_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_hkrpg_app_info(&gd) {
+                log::warn!("Failed to write hkrpg app.info: {}", e);
+            }
+            if let Err(e) = super::game_filters::write_hkrpg_binary_version_files(&gd) {
+                log::warn!("Failed to write hkrpg binary version files: {}", e);
+            }
+        })
+        .await?;
+    } else if game_code == "hk4e" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_hk4e_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hk4e audio language record: {}", e);
+            }
+        })
+        .await?;
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        let af = (*ctx.all_files).clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_pkg_version_from_manifest(&gd, &af, &vl) {
+                log::warn!("Failed to write hk4e pkg_version: {}", e);
+            }
+        })
+        .await?;
+    } else if game_code == "nap" && !is_preinstall {
+        let gd = ctx.game_dir.clone();
+        let vl = vo_langs.to_vec();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = super::game_filters::write_nap_audio_lang_records(&gd, &vl) {
+                log::warn!("Failed to write nap audio language records: {}", e);
+            }
+        })
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -880,6 +964,7 @@ pub struct InstallCallbacks {
     pub state_saver: StateSaver,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn install(
     installers: Vec<SophonInstaller>,
     game_dir: &Path,
@@ -888,6 +973,8 @@ pub async fn install(
     resume: ResumeContext,
     options: InstallOptions,
     callbacks: InstallCallbacks,
+    game_code: &str,
+    vo_langs: &[String],
 ) -> SophonResult<()> {
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
@@ -939,13 +1026,30 @@ pub async fn install(
         }
     }
 
-    let installer_data = build_installer_data(installers);
-    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(
-        installer_data
-            .iter()
-            .flat_map(|d| d.files.clone())
-            .collect(),
-    );
+    let mut installer_data = build_installer_data(installers);
+    if game_code == "nap" {
+        super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
+    }
+    let mut all_files: Vec<SophonManifestAssetProperty> = installer_data
+        .iter()
+        .flat_map(|d| d.files.clone())
+        .collect();
+    if game_code == "hkrpg" {
+        super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
+    } else if game_code == "hk4e" {
+        super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
+    } else if game_code == "nap" {
+        super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
+    }
+    let filtered_set: HashSet<String> = all_files.iter().map(|f| f.asset_name.clone()).collect();
+    let installer_data: Vec<InstallerData> = installer_data
+        .into_iter()
+        .map(|mut d| {
+            d.files.retain(|f| filtered_set.contains(&f.asset_name));
+            d
+        })
+        .collect();
+    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
             .iter()
@@ -954,6 +1058,21 @@ pub async fn install(
     );
 
     let (total_compressed, total_files) = compute_totals(&installer_data);
+    log::info!(
+        "Sophon install: {} total files across {} installers, {} compressed bytes",
+        total_files,
+        installer_data.len(),
+        total_compressed,
+    );
+    for (i, d) in installer_data.iter().enumerate() {
+        log::info!(
+            "  installer[{}]: label={}, matching_field={}, files={}",
+            i,
+            d.label,
+            d.matching_field,
+            d.files.len(),
+        );
+    }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
 
     let pre_downloaded: HashSet<String> = if options.is_resume {
@@ -1043,6 +1162,7 @@ pub async fn install(
         HashMap::new()
     };
 
+    let adaptive_assembly = Arc::new(AdaptiveAssembly::new());
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
         game_dir: game_dir.to_path_buf(),
@@ -1063,10 +1183,11 @@ pub async fn install(
         chunks_since_save: Arc::new(AtomicU64::new(0)),
         pending_saves: Arc::new(Mutex::new(Vec::new())),
         state_saver: callbacks.state_saver,
+        adaptive_assembly: Arc::clone(&adaptive_assembly),
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
-    let assembly_task = spawn_assembly_coordinator(&ctx, assemble_rx);
+    let (assembly_task, _assembly_cancel_token) = spawn_assembly_coordinator(&ctx, assemble_rx);
 
     let (download_items, chunk_to_files) = build_download_state(
         installer_data,
@@ -1091,8 +1212,7 @@ pub async fn install(
         }) = Instant::now();
     }
 
-    let adaptive = Arc::new(AdaptiveConcurrency::new());
-    let semaphore = Arc::new(Semaphore::new(ADAPTIVE_MAX_CONCURRENCY));
+    let adaptive = Arc::new(AdaptiveSemaphore::new());
     let _cancel_token = spawn_adaptive_adjuster(&adaptive);
 
     let results = run_downloads(
@@ -1102,7 +1222,6 @@ pub async fn install(
         &assemble_tx,
         options.handle,
         Arc::clone(&adaptive),
-        semaphore,
     )
     .await;
 
@@ -1126,6 +1245,8 @@ pub async fn install(
         tag,
         options.is_preinstall,
         assembly_task,
+        game_code,
+        vo_langs,
     )
     .await
 }
@@ -1162,36 +1283,39 @@ pub async fn verify_integrity(
     let (branch, _) = api::fetch_front_door(client, game_id).await?;
     let build = api::fetch_build(client, &branch.main, Some(&tag)).await?;
 
-    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
-    let vo_meta = build
+    let qualifying: Vec<&SophonManifestMeta> = build
         .manifests
         .iter()
-        .find(|m| api::vo_lang_matches(&m.matching_field, vo_lang))
-        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+        .filter(|m| {
+            m.matching_field == "game"
+                || api::vo_lang_matches(&m.matching_field, vo_lang)
+                || !api::is_known_vo_locale(&m.matching_field)
+        })
+        .collect();
 
-    let game_manifest =
-        api::fetch_manifest(client, &game_meta.manifest_download, &game_meta.manifest.id)
-            .await?
-            .manifest;
-    let vo_manifest = api::fetch_manifest(client, &vo_meta.manifest_download, &vo_meta.manifest.id)
-        .await?
-        .manifest;
+    if qualifying.is_empty() {
+        return Err(SophonError::NoGameManifest);
+    }
 
-    let game_chunk_download = &game_meta.manifest_download;
-    let vo_chunk_download = &vo_meta.manifest_download;
+    let mut manifest_results: Vec<SophonManifestProto> = Vec::new();
+    let mut chunk_downloads: Vec<&DownloadInfo> = Vec::new();
+    for meta in &qualifying {
+        let result =
+            api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        manifest_results.push(result.manifest);
+        chunk_downloads.push(&meta.chunk_download);
+    }
 
-    let all_assets: Vec<(&SophonManifestAssetProperty, &DownloadInfo)> = game_manifest
-        .assets
+    let all_assets: Vec<(&SophonManifestAssetProperty, &DownloadInfo)> = manifest_results
         .iter()
-        .filter(|a| !a.is_directory())
-        .map(|a| (a, game_chunk_download))
-        .chain(
-            vo_manifest
+        .zip(chunk_downloads.iter())
+        .flat_map(|(manifest, dl)| {
+            manifest
                 .assets
                 .iter()
                 .filter(|a| !a.is_directory())
-                .map(|a| (a, vo_chunk_download)),
-        )
+                .map(|a| (a, *dl))
+        })
         .collect();
 
     let total_files = all_assets.len() as u64;
@@ -1319,4 +1443,500 @@ async fn redownload_asset(
     result?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::sophon_downloader::api_scrape::Compression;
+
+    fn make_chunk(name: &str, size: u64) -> SophonManifestAssetChunk {
+        SophonManifestAssetChunk {
+            chunk_name: name.into(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_size: size,
+            chunk_size_decompressed: size,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        }
+    }
+
+    fn make_file(
+        name: &str,
+        md5: &str,
+        chunks: Vec<SophonManifestAssetChunk>,
+    ) -> SophonManifestAssetProperty {
+        let size: u64 = chunks.iter().map(|c| c.chunk_size_decompressed).sum();
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: chunks,
+            asset_type: 0,
+            asset_size: size,
+            asset_hash_md5: md5.into(),
+        }
+    }
+
+    fn make_dir(name: &str) -> SophonManifestAssetProperty {
+        SophonManifestAssetProperty {
+            asset_name: name.into(),
+            asset_chunks: vec![],
+            asset_type: 64,
+            asset_size: 0,
+            asset_hash_md5: String::new(),
+        }
+    }
+
+    fn make_download_info() -> DownloadInfo {
+        DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com".into(),
+            url_suffix: "chunks".into(),
+        }
+    }
+
+    fn make_installer_data(files: Vec<SophonManifestAssetProperty>) -> InstallerData {
+        InstallerData {
+            client: Arc::new(Client::new()),
+            chunk_download: Arc::new(make_download_info()),
+            files,
+            label: "test".into(),
+            matching_field: "game".into(),
+        }
+    }
+
+    fn make_sophon_installer(hash: &str) -> SophonInstaller {
+        SophonInstaller {
+            client: Client::new(),
+            manifest: SophonManifestProto { assets: vec![] },
+            chunk_download: make_download_info(),
+            label: "test".into(),
+            matching_field: "game".into(),
+            tag: "1.0".into(),
+            manifest_hash: hash.into(),
+        }
+    }
+
+    #[test]
+    fn compute_totals_no_dupes() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("c1", 100), make_chunk("c2", 200)],
+            )]),
+            make_installer_data(vec![make_file("b.pak", "bb", vec![make_chunk("c3", 300)])]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 600);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn compute_totals_with_dedup() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("shared", 500)],
+            )]),
+            make_installer_data(vec![make_file(
+                "b.pak",
+                "bb",
+                vec![make_chunk("shared", 500)],
+            )]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 500);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn compute_totals_empty() {
+        let data: Vec<InstallerData> = vec![];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 0);
+        assert_eq!(files, 0);
+    }
+
+    #[test]
+    fn compute_totals_same_name_different_size() {
+        let data = vec![
+            make_installer_data(vec![make_file(
+                "a.pak",
+                "aa",
+                vec![make_chunk("shared", 500)],
+            )]),
+            make_installer_data(vec![make_file(
+                "b.pak",
+                "bb",
+                vec![make_chunk("shared", 600)],
+            )]),
+        ];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 500);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn compute_diff_files_all_new() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![
+                make_file("a.pak", "aa", vec![]),
+                make_file("b.pak", "bb", vec![]),
+                make_file("c.pak", "cc", vec![]),
+            ],
+        };
+        let old_md5_map = HashMap::new();
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert_eq!(diff.len(), 3);
+    }
+
+    #[test]
+    fn compute_diff_files_unchanged_excluded() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![make_file("a.pak", "aa", vec![])],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("a.pak".to_string(), "aa".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert!(diff.is_empty());
+    }
+
+    #[test]
+    fn compute_diff_files_changed_included() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![make_file("a.pak", "new_md5", vec![])],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("a.pak".to_string(), "old_md5".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert_eq!(diff.len(), 1);
+    }
+
+    #[test]
+    fn compute_diff_files_dirs_filtered() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![make_dir("GameData"), make_file("a.pak", "aa", vec![])],
+        };
+        let diff = compute_diff_files(new_manifest, &HashMap::new());
+        assert_eq!(diff.len(), 1);
+        assert_eq!(diff[0].asset_name, "a.pak");
+    }
+
+    #[test]
+    fn compute_diff_files_mixed() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![
+                make_file("new.pak", "nn", vec![]),
+                make_file("changed.pak", "new_md5", vec![]),
+                make_file("unchanged.pak", "same", vec![]),
+                make_dir("somedir"),
+            ],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("changed.pak".to_string(), "old_md5".to_string());
+        old_md5_map.insert("unchanged.pak".to_string(), "same".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert_eq!(diff.len(), 2);
+        let names: Vec<&str> = diff.iter().map(|f| f.asset_name.as_str()).collect();
+        assert!(names.contains(&"new.pak"));
+        assert!(names.contains(&"changed.pak"));
+    }
+
+    #[test]
+    fn collect_deleted_files_basic() {
+        let old = SophonManifestProto {
+            assets: vec![
+                make_file("A", "a1", vec![]),
+                make_file("B", "b1", vec![]),
+                make_file("C", "c1", vec![]),
+            ],
+        };
+        let mut new_names = HashSet::new();
+        new_names.insert("A");
+        new_names.insert("D");
+        let deleted = collect_deleted_files(&old, &new_names);
+        assert_eq!(deleted.len(), 2);
+        assert!(deleted.contains(&"B".to_string()));
+        assert!(deleted.contains(&"C".to_string()));
+    }
+
+    #[test]
+    fn collect_deleted_files_none() {
+        let old = SophonManifestProto {
+            assets: vec![make_file("A", "a1", vec![]), make_file("B", "b1", vec![])],
+        };
+        let mut new_names = HashSet::new();
+        new_names.insert("A");
+        new_names.insert("B");
+        let deleted = collect_deleted_files(&old, &new_names);
+        assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn collect_deleted_files_dirs_excluded() {
+        let old = SophonManifestProto {
+            assets: vec![make_dir("old_dir"), make_file("A", "a1", vec![])],
+        };
+        let new_names: HashSet<&str> = HashSet::from(["A"]);
+        let deleted = collect_deleted_files(&old, &new_names);
+        assert!(deleted.is_empty());
+    }
+
+    #[test]
+    fn build_old_md5_map_basic() {
+        let manifest = SophonManifestProto {
+            assets: vec![
+                make_file("a.pak", "md5_a", vec![]),
+                make_file("b.pak", "md5_b", vec![]),
+                make_dir("dir"),
+            ],
+        };
+        let map = build_old_md5_map(manifest);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("a.pak"), Some(&"md5_a".to_string()));
+        assert_eq!(map.get("b.pak"), Some(&"md5_b".to_string()));
+    }
+
+    #[test]
+    fn combine_manifest_hashes_deterministic() {
+        let installers = vec![
+            make_sophon_installer("hash_a"),
+            make_sophon_installer("hash_b"),
+        ];
+        let h1 = combine_manifest_hashes(&installers);
+        let h2 = combine_manifest_hashes(&installers);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn combine_manifest_hashes_order_independent() {
+        let installers_ab = vec![
+            make_sophon_installer("hash_a"),
+            make_sophon_installer("hash_b"),
+        ];
+        let installers_ba = vec![
+            make_sophon_installer("hash_b"),
+            make_sophon_installer("hash_a"),
+        ];
+        assert_eq!(
+            combine_manifest_hashes(&installers_ab),
+            combine_manifest_hashes(&installers_ba),
+        );
+    }
+
+    #[tokio::test]
+    async fn notify_assembly_ready_single_file_ready() {
+        let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
+        let (tx, mut rx) = mpsc::channel::<(usize, usize)>(16);
+
+        let pending: PendingCount = Arc::new(Mutex::new(1usize));
+        chunk_to_files.insert(
+            "chunk_a".to_string(),
+            vec![(0usize, 0usize, Arc::clone(&pending))],
+        );
+
+        notify_assembly_ready("chunk_a", &chunk_to_files, &tx).await;
+
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "file should be sent to assembly channel");
+        assert_eq!(received.unwrap(), (0, 0));
+        assert_eq!(*pending.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn notify_assembly_ready_chunk_not_in_map() {
+        let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
+        let (tx, rx) = mpsc::channel::<(usize, usize)>(16);
+        drop(rx);
+
+        notify_assembly_ready("nonexistent_chunk", &chunk_to_files, &tx).await;
+    }
+
+    #[tokio::test]
+    async fn check_needs_download_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("does_not_exist.bin");
+        let chunk = make_chunk("c1", 100);
+        let cache = Arc::new(DashMap::new());
+
+        let needs = check_needs_download(dest, &chunk, &cache).await.unwrap();
+        assert!(needs);
+    }
+
+    #[tokio::test]
+    async fn check_needs_download_valid_cached_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("cached.bin");
+        let data = b"hello cache";
+        std::fs::write(&file_path, data).unwrap();
+
+        let md5_hex = {
+            let mut hasher = md5::Md5::new();
+            hasher.update(data);
+            hex::encode(hasher.finalize())
+        };
+
+        let metadata = std::fs::metadata(&file_path).unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let cache: Arc<DashMap<String, VerificationEntry>> = Arc::new(DashMap::new());
+        cache.insert(
+            file_path.to_string_lossy().to_string(),
+            VerificationEntry {
+                size: data.len() as u64,
+                md5: md5_hex.clone(),
+                mtime_secs: mtime,
+            },
+        );
+
+        let mut chunk = make_chunk("c1", data.len() as u64);
+        chunk.chunk_compressed_hash_md5 = md5_hex;
+
+        let needs = check_needs_download(file_path, &chunk, &cache)
+            .await
+            .unwrap();
+        assert!(!needs);
+    }
+
+    #[tokio::test]
+    async fn download_chunk_with_retries_success_on_first() {
+        use crate::commands::sophon_downloader::api_scrape::Compression;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let data = b"chunk payload".to_vec();
+        let expected_md5 = hex::encode(md5::Md5::digest(&data));
+
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "test_retry_chunk".to_string(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_size: data.len() as u64,
+            chunk_size_decompressed: data.len() as u64,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: expected_md5,
+        };
+
+        let dl_info = Arc::new(DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: format!("{}/", server.uri()),
+            url_suffix: "chunks".to_string(),
+        });
+
+        Mock::given(method("GET"))
+            .and(path("chunks/test_retry_chunk"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let item = DownloadItem {
+            chunk,
+            client: Arc::new(Client::new()),
+            chunk_download: dl_info,
+            is_pre_downloaded: false,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("test_retry_chunk.zstd");
+
+        let ctx = Arc::new(InstallContext {
+            chunks_dir: Arc::new(dir.path().to_path_buf()),
+            game_dir: dir.path().to_path_buf(),
+            all_tmp_dirs: Arc::new(vec![]),
+            all_files: Arc::new(vec![]),
+            downloaded_bytes: Arc::new(AtomicU64::new(0)),
+            assembled_files: Arc::new(AtomicU64::new(0)),
+            total_bytes: 0,
+            total_files: 0,
+            resume_bytes_offset: Arc::new(AtomicU64::new(0)),
+            verify_cache: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(DashMap::new()),
+            last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+            last_update: Arc::new(Mutex::new(Instant::now())),
+            download_start: Instant::now(),
+            updater: Arc::new(|_| {}),
+            downloaded_chunks: Arc::new(Mutex::new(HashMap::new())),
+            chunks_since_save: Arc::new(AtomicU64::new(0)),
+            pending_saves: Arc::new(Mutex::new(Vec::new())),
+            state_saver: Arc::new(|_| {}),
+            adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
+        });
+
+        let handle = DownloadHandle::new();
+
+        let result = download_chunk_with_retries(&item, &dest, &ctx, &handle).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn compute_totals_filters_directories() {
+        let file1 = make_file("a.pak", "aa", vec![make_chunk("c1", 100)]);
+        let dir1 = make_dir("GameData");
+        let data = vec![make_installer_data(vec![dir1, file1])];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 100);
+        assert_eq!(files, 2);
+    }
+
+    #[test]
+    fn build_installer_data_filters_directories() {
+        let installer = SophonInstaller {
+            client: Client::new(),
+            manifest: SophonManifestProto {
+                assets: vec![
+                    make_dir("GameData"),
+                    make_file("a.pak", "aa", vec![make_chunk("c1", 100)]),
+                ],
+            },
+            chunk_download: make_download_info(),
+            label: "test".into(),
+            matching_field: "game".into(),
+            tag: "1.0".into(),
+            manifest_hash: "abc".into(),
+        };
+
+        let result = build_installer_data(vec![installer]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].files.len(), 1);
+        assert_eq!(result[0].files[0].asset_name, "a.pak");
+    }
+
+    #[test]
+    fn combine_manifest_hashes_empty() {
+        let installers: Vec<SophonInstaller> = vec![];
+        let hash = combine_manifest_hashes(&installers);
+        assert!(!hash.is_empty());
+        assert_eq!(hash.len(), 16);
+    }
+
+    #[test]
+    fn compute_diff_files_all_unchanged() {
+        let new_manifest = SophonManifestProto {
+            assets: vec![
+                make_file("a.pak", "aa", vec![]),
+                make_file("b.pak", "bb", vec![]),
+            ],
+        };
+        let mut old_md5_map = HashMap::new();
+        old_md5_map.insert("a.pak".to_string(), "aa".to_string());
+        old_md5_map.insert("b.pak".to_string(), "bb".to_string());
+        let diff = compute_diff_files(new_manifest, &old_md5_map);
+        assert!(diff.is_empty());
+    }
 }

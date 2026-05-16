@@ -86,7 +86,7 @@ pub struct DownloadInfo {
 }
 
 /// Compression format for downloaded content.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(i32)]
 #[serde(try_from = "i32", into = "i32")]
 pub enum Compression {
@@ -139,5 +139,77 @@ pub fn front_door_game_index(game_id: &str) -> Option<usize> {
         "hkrpg" => Some(1),
         "nap" => Some(0),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn front_door_game_index_known() {
+        assert_eq!(front_door_game_index("nap"), Some(0));
+        assert_eq!(front_door_game_index("hkrpg"), Some(1));
+        assert_eq!(front_door_game_index("hk4e"), Some(2));
+        assert_eq!(front_door_game_index("bh3"), Some(3));
+    }
+
+    #[test]
+    fn front_door_game_index_unknown() {
+        assert_eq!(front_door_game_index("unknown"), None);
+    }
+
+    #[test]
+    fn compression_try_from_valid() {
+        assert_eq!(Compression::try_from(0).unwrap(), Compression::None);
+        assert_eq!(Compression::try_from(1).unwrap(), Compression::Zstd);
+    }
+
+    #[test]
+    fn compression_try_from_invalid() {
+        assert!(Compression::try_from(5).is_err());
+    }
+
+    #[test]
+    fn compression_try_from_boundary() {
+        assert!(Compression::try_from(-1).is_err());
+        assert!(Compression::try_from(2).is_err());
+        assert!(Compression::try_from(i32::MAX).is_err());
+    }
+
+    #[test]
+    fn download_info_url_for() {
+        let dl = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com/".to_string(),
+            url_suffix: "v1".to_string(),
+        };
+        assert_eq!(
+            dl.url_for("manifest.dat"),
+            "https://example.com/v1/manifest.dat"
+        );
+    }
+
+    #[test]
+    fn download_info_is_compressed() {
+        let zstd = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::Zstd,
+            url_prefix: String::new(),
+            url_suffix: String::new(),
+        };
+        assert!(zstd.is_compressed());
+
+        let none = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: String::new(),
+            url_suffix: String::new(),
+        };
+        assert!(!none.is_compressed());
     }
 }

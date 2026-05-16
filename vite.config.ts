@@ -1,7 +1,7 @@
-import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
 import { readFileSync } from "node:fs";
+import { defineConfig } from "vite";
 
 const isWSL = () => {
 	if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) {
@@ -33,7 +33,7 @@ export default defineConfig(async () => ({
 					protocol: "ws",
 					host,
 					port: 1421,
-			  }
+				}
 			: undefined,
 		watch: {
 			usePolling: isWSL(),

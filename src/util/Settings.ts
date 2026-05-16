@@ -1,6 +1,6 @@
+import { load, Store } from "@tauri-apps/plugin-store";
 import { resolveResource } from "@tauri-apps/api/path";
 import { error } from "@tauri-apps/plugin-log";
-import { load, Store } from "@tauri-apps/plugin-store";
 import { AppOptions } from "../types";
 
 let store: Store | undefined;
@@ -41,7 +41,10 @@ export const getOption = async <T = unknown>(key: AppOptions): Promise<T> => {
 	});
 };
 
-export const setOption = async<T = unknown>(key: AppOptions, value: T): Promise<void> => {
+export const setOption = async <T = unknown>(
+	key: AppOptions,
+	value: T,
+): Promise<void> => {
 	if (!store) {
 		store = await loadStore();
 	}

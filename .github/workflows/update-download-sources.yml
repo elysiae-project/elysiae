@@ -6,39 +6,40 @@ on:
       - "yarn.lock"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
+      - ".github/workflows/update-download-sources.yml"
     branches:
       - main
   workflow_dispatch:
 
 jobs:
-  update-sources:
+  update-flatpak-download-sources:
     permissions:
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.FLATPAK_UPDATE_KEY }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y build-essential python3 pipx python3-tomlkit python3-aiohttp wget
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
 
-      - name: Install Flatpak Builder Tools
+      - name: Install dependencies
         run: |
-          pipx install git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node
-          wget https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py -O ~/flatpak-cargo-generator.py
-
+          uv python install
+          uv tool install "flatpak-node-generator @ git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node"
       - name: Generate Sources
         run: |
-          python3 ~/flatpak-cargo-generator.py -o download-sources/cargo.json ./src-tauri/Cargo.lock
+          curl -s https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py | uv run --with tomlkit - -o download-sources/cargo.json ./src-tauri/Cargo.lock
           sed -i 's/"dest": "c/"dest": "src-tauri\/c/g' download-sources/cargo.json
+
           flatpak-node-generator yarn -o download-sources/yarn.json yarn.lock
           node scripts/gen-corepack.ts
 
@@ -47,8 +48,5 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add --all
-          git diff-index --quiet HEAD || git commit -m "Update Flatpak download sources"
+          git diff-index --quiet HEAD || git commit -m "chore: update flatpak download sources"
           git push origin HEAD:main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          token: ${{ secrets.GITHUB_TOKEN }}
