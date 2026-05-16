@@ -6,149 +6,151 @@ runtime: org.gnome.Platform
 runtime-version: "50"
 sdk: org.gnome.Sdk//50
 sdk-extensions:
-- org.freedesktop.Sdk.Extension.node24
-- org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node24
+  - org.freedesktop.Sdk.Extension.rust-stable
 writable-sdk: true
 
 finish-args:
-- --socket=wayland
-# X11 is being dropped from DEs, but is generally expected to still be supported
-- --socket=fallback-x11
-- --device=dri
-- --share=ipc
-- --share=network
-- --filesystem=xdg-run/path
+  - --socket=wayland
+  # X11 is being dropped from DEs, but is generally expected to still be supported
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+  - --share=network
+  - --filesystem=xdg-run/path
+  - --filesystem=home
 modules:
-- name: intltool
-  cleanup:
-  - "*"
-  sources:
-  - type: archive
-    url: https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz
-    sha256: 67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd
-  - type: file
-    url: https://raw.githubusercontent.com/flathub/shared-modules/master/intltool/intltool-perl5.26-regex-fixes.patch
-    sha256: 56234b43434bb39352e0e410259b5dee5a4c882654cda759333aedbf14096c4e
-    dest-filename: intltool-perl5.26-regex-fixes.patch
-  - type: shell
-    commands:
-    - patch -p1 < intltool-perl5.26-regex-fixes.patch
+  - name: intltool
+    cleanup:
+      - "*"
+    sources:
+      - type: archive
+        url: https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz
+        sha256: 67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd
+      - type: file
+        url: https://raw.githubusercontent.com/flathub/shared-modules/master/intltool/intltool-perl5.26-regex-fixes.patch
+        sha256: 56234b43434bb39352e0e410259b5dee5a4c882654cda759333aedbf14096c4e
+        dest-filename: intltool-perl5.26-regex-fixes.patch
+      - type: shell
+        commands:
+          - patch -p1 < intltool-perl5.26-regex-fixes.patch
 
-- name: libdbusmenu
-  buildsystem: autotools
-  build-options:
-    cflags: -Wno-error
-  cleanup:
-  - "*.la"
-  - /include
-  - /lib/pkgconfig
-  - /libexec
-  - /share/doc
-  - /share/gtk-doc
-  config-opts:
-  - --with-gtk=3
-  - --disable-dumper
-  - --disable-static
-  - --disable-tests
-  - --disable-gtk-doc
-  - --enable-introspection=no
-  - --disable-vala
-  sources:
-  - type: archive
-    url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
-    sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
-  - type: file
-    url: https://raw.githubusercontent.com/flathub/shared-modules/master/libayatana-appindicator/0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
-    sha256: 77fb7ed44e4cb8a32f2095959ee677beea15c12adedf537f6c335ddd082efd75
-    dest-filename: 0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
-  - type: shell
-    commands:
-    - patch -p1 < 0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
+  - name: libdbusmenu
+    buildsystem: autotools
+    build-options:
+      cflags: -Wno-error
+    cleanup:
+      - "*.la"
+      - /include
+      - /lib/pkgconfig
+      - /libexec
+      - /share/doc
+      - /share/gtk-doc
+    config-opts:
+      - --with-gtk=3
+      - --disable-dumper
+      - --disable-static
+      - --disable-tests
+      - --disable-gtk-doc
+      - --enable-introspection=no
+      - --disable-vala
+    sources:
+      - type: archive
+        url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
+        sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
+      - type: file
+        url: https://raw.githubusercontent.com/flathub/shared-modules/master/libayatana-appindicator/0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
+        sha256: 77fb7ed44e4cb8a32f2095959ee677beea15c12adedf537f6c335ddd082efd75
+        dest-filename: 0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
+      - type: shell
+        commands:
+          - patch -p1 < 0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
 
-- name: ayatana-ido
-  buildsystem: cmake-ninja
-  cleanup:
-  - /include
-  - /lib/pkgconfig
-  config-opts:
-  - -DENABLE_INTROSPECTION=OFF
-  sources:
-  - type: git
-    url: https://github.com/AyatanaIndicators/ayatana-ido.git
-    tag: 0.10.4
-    commit: f968079b09e2310fefc3fc307359025f1c74b3eb
-  - type: file
-    url: https://raw.githubusercontent.com/flathub/shared-modules/master/libayatana-appindicator/0001-Make-introspection-configurable.patch
-    sha256: 9653b86013dacd3dc980d38b7f6bc0fe6ee105d38ec263267d7a9dd12f2d88af
-    dest-filename: 0001-Make-introspection-configurable.patch
-  - type: shell
-    commands:
-    - patch -p1 < 0001-Make-introspection-configurable.patch
+  - name: ayatana-ido
+    buildsystem: cmake-ninja
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+    config-opts:
+      - -DENABLE_INTROSPECTION=OFF
+    sources:
+      - type: git
+        url: https://github.com/AyatanaIndicators/ayatana-ido.git
+        tag: 0.10.4
+        commit: f968079b09e2310fefc3fc307359025f1c74b3eb
+      - type: file
+        url: https://raw.githubusercontent.com/flathub/shared-modules/master/libayatana-appindicator/0001-Make-introspection-configurable.patch
+        sha256: 9653b86013dacd3dc980d38b7f6bc0fe6ee105d38ec263267d7a9dd12f2d88af
+        dest-filename: 0001-Make-introspection-configurable.patch
+      - type: shell
+        commands:
+          - patch -p1 < 0001-Make-introspection-configurable.patch
 
-- name: libayatana-indicator
-  buildsystem: cmake-ninja
-  cleanup:
-  - /include
-  - /lib/pkgconfig
-  - /libexec
-  - /share
-  sources:
-  - type: git
-    url: https://github.com/AyatanaIndicators/libayatana-indicator.git
-    tag: 0.9.4
-    commit: 611bb384b73fa6311777ba4c41381a06f5b99dad
+  - name: libayatana-indicator
+    buildsystem: cmake-ninja
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /libexec
+      - /share
+    sources:
+      - type: git
+        url: https://github.com/AyatanaIndicators/libayatana-indicator.git
+        tag: 0.9.4
+        commit: 611bb384b73fa6311777ba4c41381a06f5b99dad
 
-- name: libayatana-appindicator
-  buildsystem: cmake-ninja
-  cleanup:
-  - /include
-  - /lib/pkgconfig
-  config-opts:
-  - -DENABLE_BINDINGS_MONO=NO
-  - -DENABLE_BINDINGS_VALA=NO
-  - -DENABLE_GTKDOC=NO
-  sources:
-  - type: git
-    url: https://github.com/AyatanaIndicators/libayatana-appindicator.git
-    tag: 0.5.94
-    commit: 31e8bb083b307e1cc96af4874a94707727bd1e79
+  - name: libayatana-appindicator
+    buildsystem: cmake-ninja
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+    config-opts:
+      - -DENABLE_BINDINGS_MONO=NO
+      - -DENABLE_BINDINGS_VALA=NO
+      - -DENABLE_GTKDOC=NO
+    sources:
+      - type: git
+        url: https://github.com/AyatanaIndicators/libayatana-appindicator.git
+        tag: 0.5.94
+        commit: 31e8bb083b307e1cc96af4874a94707727bd1e79
 
-- name: Elysiae
-  buildsystem: simple
-  sources:
-  - type: git
-    url: https://github.com/elysiae-project/elysiae
-    branch: main
-  - ../download-sources/cargo.json
-  - ../download-sources/corepack.json
-  - ../download-sources/yarn.json
-  build-options:
-    append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin:/run/build/Elysiae/flatpak-node/corepack-shims
-    env:
-      HOME: /run/build/Elysiae
-      CARGO_HOME: /run/build/Elysiae/src-tauri/cargo
-      CARGO_NET_OFFLINE: "true"
-      RUSTUP_HOME: /run/build/Elysiae/rustup
-      XDG_CACHE_HOME: /run/build/Elysiae/flatpak-node/cache
-      npm_config_nodedir: /usr/lib/sdk/node24
-      COREPACK_HOME: /run/build/Elysiae/flatpak-node/corepack-home
-      COREPACK_ENABLE_NETWORK: "0"
-      YARN_ENABLE_TELEMETRY: "0"
-      YARN_ENABLE_NETWORK: "0"
-      YARN_ENABLE_GLOBAL_CACHE: "0"
-      YARN_GLOBAL_FOLDER: /run/build/Elysiae/flatpak-node/yarn-berry
-  build-commands:
-  - set -e
-  - echo "127.0.0.1 localhost" >> /etc/hosts
-  - ./flatpak-node/autogen.sh
-  - yarn install
-  - yarn tauri build
-  - install -Dm0644 LICENSE -t ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/Elysiae
-  - install -Dm755 src-tauri/target/release/Elysiae /app/bin/Elysiae
-  - install -Dm644 Elysiae.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
-  - install -Dm644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
-  - install -Dm644 src-tauri/icons/32x32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
-  - install -Dm644 src-tauri/icons/64x64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
-  - install -Dm644 src-tauri/icons/128x128@2x.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
-  - install -Dm644 src-tauri/icons/icon.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
-  - install -Dm644 app.elysiae.Elysiae.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+  - name: Elysiae
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/elysiae-project/elysiae
+        branch: main
+      - ../download-sources/cargo.json
+      - ../download-sources/corepack.json
+      - ../download-sources/yarn.json
+    build-options:
+      append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin:/run/build/Elysiae/flatpak-node/corepack-shims
+      env:
+        HOME: /run/build/Elysiae
+        CARGO_HOME: /run/build/Elysiae/src-tauri/cargo
+        CARGO_NET_OFFLINE: "true"
+        RUSTUP_HOME: /run/build/Elysiae/rustup
+        XDG_CACHE_HOME: /run/build/Elysiae/flatpak-node/cache
+        npm_config_nodedir: /usr/lib/sdk/node24
+        COREPACK_HOME: /run/build/Elysiae/flatpak-node/corepack-home
+        COREPACK_ENABLE_NETWORK: "0"
+        YARN_ENABLE_TELEMETRY: "0"
+        YARN_ENABLE_NETWORK: "0"
+        YARN_ENABLE_GLOBAL_CACHE: "0"
+        YARN_GLOBAL_FOLDER: /run/build/Elysiae/flatpak-node/yarn-berry
+        RUST_BACKTRACE: "1"
+    build-commands:
+      - set -e
+      - echo "127.0.0.1 localhost" >> /etc/hosts
+      - ./flatpak-node/autogen.sh
+      - yarn install
+      - yarn tauri build
+      - install -Dm0644 LICENSE -t ${FLATPAK_DEST}/share/licenses/${FLATPAK_ID}/Elysiae
+      - install -Dm755 src-tauri/target/release/Elysiae /app/bin/Elysiae
+      - install -Dm644 Elysiae.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/32x32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/64x64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/icon.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
+      - install -Dm644 app.elysiae.Elysiae.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
