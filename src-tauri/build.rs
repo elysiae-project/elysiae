@@ -10,7 +10,9 @@ fn main() {
     );
 
     if !kernel_version_at_least_6_14_0() {
-        eprintln!("Elysiae is only supported on Linux Kernel version 6.14 or later. Please run a system update before attempting to compile Elysiae again");
+        eprintln!(
+            "Elysiae is only supported on Linux Kernel version 6.14 or later. Please run a system update before attempting to compile Elysiae again"
+        );
         std::process::exit(1);
     }
 

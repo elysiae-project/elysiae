@@ -1,53 +1,55 @@
 import { AnimatePresence, motion } from "motion/react";
-import { fadeInOut } from "../util/Animations";
-import { useGame } from "../hooks/useGame";
 import { useApi } from "../hooks/useApi";
+import { useGame } from "../hooks/useGame";
+import { fadeInOut } from "../util/Animations";
 
 function BackgroundMedia({
-	src,
-	isVideo,
+  src,
+  isVideo,
 }: {
-	src: string | undefined;
-	isVideo: boolean;
+  src: string | undefined;
+  isVideo: boolean;
 }) {
-	return isVideo ? (
-		<motion.video
-			class="background"
-			{...(fadeInOut as any)}
-			src={src}
-			autoplay
-			loop
-			muted
-			playsInline
-		/>
-	) : (
-		<motion.img class="background" {...(fadeInOut as any)} src={src} alt="" />
-	);
+  return isVideo ? (
+    <motion.video
+      class="background"
+      // biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
+      {...(fadeInOut as any)}
+      src={src}
+      autoplay
+      loop
+      muted
+      playsInline
+    />
+  ) : (
+    // biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
+    <motion.img class="background" {...(fadeInOut as any)} src={src} alt="" />
+  );
 }
 
 export default function Background() {
-	const { game } = useGame();
-	const { graphics } = useApi();
+  const { game } = useGame();
+  const { graphics } = useApi();
 
-	if (!graphics) return null;
-	const { backgroundImage, backgroundVideo, backgroundVideoOverlay } =
-		graphics[game];
-	const isVideo = backgroundVideo !== "";
+  if (!graphics) return null;
+  const { backgroundImage, backgroundVideo, backgroundVideoOverlay } =
+    graphics[game];
+  const isVideo = backgroundVideo !== "";
 
-	return (
-		<div class="absolute inset-0 overflow-hidden">
-			<AnimatePresence mode="sync">
-				<BackgroundMedia
-					key={`${game}-bg`}
-					src={isVideo ? backgroundVideo : backgroundImage}
-					isVideo={isVideo}
-				/>
-				<BackgroundMedia
-					key={`${game}-overlay`}
-					src={backgroundVideoOverlay}
-					isVideo={false}
-				/>
-			</AnimatePresence>
-		</div>
-	);
+  return (
+    <div class="absolute inset-0 overflow-hidden">
+      <AnimatePresence mode="sync">
+        <BackgroundMedia
+          key={`${game}-bg`}
+          src={isVideo ? backgroundVideo : backgroundImage}
+          isVideo={isVideo}
+        />
+        <BackgroundMedia
+          key={`${game}-overlay`}
+          src={backgroundVideoOverlay}
+          isVideo={false}
+        />
+      </AnimatePresence>
+    </div>
+  );
 }

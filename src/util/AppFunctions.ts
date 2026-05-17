@@ -1,51 +1,51 @@
+import { invoke } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { Command } from "@tauri-apps/plugin-shell";
-import { GameCodes, Variants } from "../types";
-import { invoke } from "@tauri-apps/api/core";
+import { type GameCodes, Variants } from "../types";
 
 /** @returns Game codes (in type `Variants`) as string (`bh/ys/sr/nap`) */
 export const getActiveGameCode = (currentGame: Variants): GameCodes => {
-	switch (currentGame) {
-		case Variants.BH3:
-			return "bh3";
-		case Variants.HK4E:
-			return "hk4e";
-		case Variants.HKRPG:
-			return "hkrpg";
-		case Variants.NAP:
-			return "nap";
-	}
+  switch (currentGame) {
+    case Variants.BH3:
+      return "bh3";
+    case Variants.HK4E:
+      return "hk4e";
+    case Variants.HKRPG:
+      return "hkrpg";
+    case Variants.NAP:
+      return "nap";
+  }
 };
 
 export const getVariantFromCode = (code: string): Variants | null => {
-	switch (code) {
-		case "bh3":
-			return Variants.BH3;
-		case "hk4e":
-			return Variants.HK4E;
-		case "hkrpg":
-			return Variants.HKRPG;
-		case "nap":
-			return Variants.NAP;
-		default:
-			return null;
-	}
+  switch (code) {
+    case "bh3":
+      return Variants.BH3;
+    case "hk4e":
+      return Variants.HK4E;
+    case "hkrpg":
+      return Variants.HKRPG;
+    case "nap":
+      return Variants.NAP;
+    default:
+      return null;
+  }
 };
 
 export const getGameSize = async (game: Variants): Promise<number> => {
-	return new Promise((resolve, reject) => {
-		join("games", getActiveGameCode(game))
-			.then((gameDir) => {
-				invoke("get_dir_size", {
-					path: gameDir,
-				})
-					.then((res) => {
-						resolve((res as number) / 1024 ** 3);
-					})
-					.catch(reject);
-			})
-			.catch(reject);
-	});
+  return new Promise((resolve, reject) => {
+    join("games", getActiveGameCode(game))
+      .then((gameDir) => {
+        invoke("get_dir_size", {
+          path: gameDir,
+        })
+          .then((res) => {
+            resolve((res as number) / 1024 ** 3);
+          })
+          .catch(reject);
+      })
+      .catch(reject);
+  });
 };
 
 /**
@@ -54,16 +54,16 @@ export const getGameSize = async (game: Variants): Promise<number> => {
  * @param game
  */
 export const getGameName = (game: Variants) => {
-	switch (game) {
-		case Variants.BH3:
-			return "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64";
-		case Variants.HK4E:
-			return "\x47\x65\x6e\x73\x68\x69\x6e\x20\x49\x6d\x70\x61\x63\x74";
-		case Variants.HKRPG:
-			return "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c";
-		case Variants.NAP:
-			return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f";
-	}
+  switch (game) {
+    case Variants.BH3:
+      return "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64";
+    case Variants.HK4E:
+      return "\x47\x65\x6e\x73\x68\x69\x6e\x20\x49\x6d\x70\x61\x63\x74";
+    case Variants.HKRPG:
+      return "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c";
+    case Variants.NAP:
+      return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f";
+  }
 };
 
 /**
@@ -73,11 +73,11 @@ export const getGameName = (game: Variants) => {
  * @returns Absolute path from relative path (in app data directory)
  */
 export const relativePathConverter = async (relativePath: string) => {
-	return await join(await appDataDir(), relativePath);
+  return await join(await appDataDir(), relativePath);
 };
 
 export const absolutePathConverter = async (absolutePath: string) => {
-	return absolutePath.split(await appDataDir())[1];
+  return absolutePath.split(await appDataDir())[1];
 };
 
 /**
@@ -86,16 +86,16 @@ export const absolutePathConverter = async (absolutePath: string) => {
  * @param game
  */
 export const getGameExeName = (game: Variants): string => {
-	switch (game) {
-		case Variants.BH3:
-			return "\x42\x48\x33.exe";
-		case Variants.HK4E:
-			return "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe";
-		case Variants.HKRPG:
-			return "\x53\x74\x61\x72\x52\x61\x69\x6c.exe";
-		case Variants.NAP:
-			return "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f.exe";
-	}
+  switch (game) {
+    case Variants.BH3:
+      return "\x42\x48\x33.exe";
+    case Variants.HK4E:
+      return "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe";
+    case Variants.HKRPG:
+      return "\x53\x74\x61\x72\x52\x61\x69\x6c.exe";
+    case Variants.NAP:
+      return "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f.exe";
+  }
 };
 
 /**
@@ -103,9 +103,9 @@ export const getGameExeName = (game: Variants): string => {
  *   development environment
  */
 export const inDevEnv = async (): Promise<boolean> => {
-	return new Promise((resolve, reject) => {
-		invoke<boolean>("in_dev_env").then(resolve).catch(reject);
-	});
+  return new Promise((resolve, reject) => {
+    invoke<boolean>("in_dev_env").then(resolve).catch(reject);
+  });
 };
 
 /**
@@ -115,12 +115,12 @@ export const inDevEnv = async (): Promise<boolean> => {
  * @param env (optional) environment variables
  */
 export const executeShellCommand = async (
-	command: string,
-	env?: Record<string, string> | undefined,
+  command: string,
+  env?: Record<string, string> | undefined,
 ): Promise<void> => {
-	await Command.create("sh", ["-c", command], {
-		env: env,
-	}).execute();
+  await Command.create("sh", ["-c", command], {
+    env: env,
+  }).execute();
 };
 
 /**
@@ -131,17 +131,17 @@ export const executeShellCommand = async (
  * @param env (optional) environment variables
  */
 export const executeLocalBinary = async (
-	binaryPath: string,
-	args?: string,
-	env?: Record<string, string> | undefined,
+  binaryPath: string,
+  args?: string,
+  env?: Record<string, string> | undefined,
 ): Promise<void> => {
-	const appData = await appDataDir();
-	await executeShellCommand(
-		`${appData}/${binaryPath} ${typeof args !== "undefined" ? args : ""}`,
-		env,
-	).catch((e) => {
-		throw new Error(e);
-	});
+  const appData = await appDataDir();
+  await executeShellCommand(
+    `${appData}/${binaryPath} ${typeof args !== "undefined" ? args : ""}`,
+    env,
+  ).catch((e) => {
+    throw new Error(e);
+  });
 };
 
 /**
@@ -151,7 +151,7 @@ export const executeLocalBinary = async (
  * @returns Wine Windows path converted froma POSIX path
  */
 export const posixToWinPath = (path: string): string => {
-	return `Z:\\${path.replaceAll("/", "\\")}`;
+  return `Z:\\${path.replaceAll("/", "\\")}`;
 };
 
 /**
@@ -161,13 +161,13 @@ export const posixToWinPath = (path: string): string => {
  * @returns POSIX path converted from a Wine Windows Path
  */
 export const winToPosixPath = (path: string): string => {
-	return `/${path.slice(3).replaceAll("\\", "/")}`;
+  return `/${path.slice(3).replaceAll("\\", "/")}`;
 };
 
 export const formatNumber = (num: number): string => {
-	try {
-		return new Intl.NumberFormat(navigator.language).format(num);
-	} catch {
-		return new Intl.NumberFormat("en-US").format(num);
-	}
+  try {
+    return new Intl.NumberFormat(navigator.language).format(num);
+  } catch {
+    return new Intl.NumberFormat("en-US").format(num);
+  }
 };
