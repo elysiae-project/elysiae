@@ -1,6 +1,6 @@
-import { ComponentSize, Variants } from "../types";
 import { cva } from "class-variance-authority";
 import { useGame } from "../hooks/useGame";
+import { type ComponentSize, Variants } from "../types";
 
 const buttonStyles = cva(
 	"transition-all duration-175 flex flex-row gap-3 justify-center items-center transiton-all text-[1.25em]",
@@ -92,7 +92,7 @@ export default function Button({
 	height = 65,
 }: {
 	onClick: () => void;
-	children: any;
+	children: React.ReactNode;
 	variant: "primary" | "secondary";
 	size?: ComponentSize;
 	disabled?: boolean;
@@ -103,6 +103,7 @@ export default function Button({
 
 	return (
 		<button
+			type="button"
 			disabled={disabled}
 			onClick={onClick}
 			class={`${buttonStyles({
@@ -114,7 +115,8 @@ export default function Button({
 			style={{
 				width: `${width}rem`,
 				height: `${height}rem`,
-			}}>
+			}}
+		>
 			{children}
 		</button>
 	);

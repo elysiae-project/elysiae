@@ -1,13 +1,13 @@
-import {
+import { listen } from "@tauri-apps/api/event";
+import { type ComponentChildren, createContext } from "preact";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { getResumeInfo } from "../lib/GameDownloader";
+import type {
 	ResumeInfo,
 	SophonProgress,
 	Variants,
 	WineSetupProgress,
 } from "../types";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { createContext, ComponentChildren } from "preact";
-import { getResumeInfo } from "../lib/GameDownloader";
-import { listen } from "@tauri-apps/api/event";
 
 export interface DownloadState {
 	isPaused: boolean;
@@ -303,7 +303,8 @@ export const DownloadProvider = ({
 
 	return (
 		<DownloadContext.Provider
-			value={{ state, setDownloadingGame, setResumable, setWineSetupProgress }}>
+			value={{ state, setDownloadingGame, setResumable, setWineSetupProgress }}
+		>
 			{children}
 		</DownloadContext.Provider>
 	);

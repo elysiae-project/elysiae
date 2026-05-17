@@ -1,10 +1,10 @@
 {
-	"selectedGame": "hkrpg",
-	"voLanguage": "en",
-	"blockNotifications": false,
-	"installedComponents": {
-		"wine": null,
-		"dxvk": null,
-		"jadeite": null
-	}
+  "selectedGame": "hkrpg",
+  "voLanguage": "en",
+  "blockNotifications": false,
+  "installedComponents": {
+    "wine": null,
+    "dxvk": null,
+    "jadeite": null
+  }
 }

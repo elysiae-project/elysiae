@@ -1,9 +1,9 @@
-import { getActiveGameCode, getVariantFromCode } from "../util/AppFunctions";
-import { createContext, ComponentChildren } from "preact";
-import { getOption, setOption } from "../util/Settings";
-import { useEffect, useState } from "preact/hooks";
 import { warn } from "@tauri-apps/plugin-log";
+import { type ComponentChildren, createContext } from "preact";
+import { useEffect, useState } from "preact/hooks";
 import { Variants } from "../types";
+import { getActiveGameCode, getVariantFromCode } from "../util/AppFunctions";
+import { getOption, setOption } from "../util/Settings";
 
 interface GameContextType {
 	game: Variants;

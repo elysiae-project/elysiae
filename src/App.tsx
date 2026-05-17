@@ -1,21 +1,21 @@
-import PreinstallButton from "./components/app/PreinstallButton.tsx";
-import DownloadProgress from "./components/app/DownloadProgress.tsx";
-import InstallerButton from "./components/app/InstallerButton.tsx";
-import { DownloadProvider } from "./contexts/DownloadContext.tsx";
-import SettingsModal from "./components/app/SettingsModal.tsx";
-import { GameProvider } from "./contexts/GameContext.tsx";
-import { ApiProvider } from "./contexts/ApiContext.tsx";
-import Background from "./components/Background.tsx";
-import Sidebar from "./components/app/Sidebar.tsx";
-import Titlebar from "./components/Titlebar.tsx";
-import { ModalHandle, Variants } from "./types";
 import { cva } from "class-variance-authority";
-import Button from "./components/Button.tsx";
-import { useGame } from "./hooks/useGame.ts";
-import { useApi } from "./hooks/useApi.ts";
 import { Settings } from "lucide-preact";
 import { useRef } from "preact/hooks";
 import "./App.css";
+import DownloadProgress from "./components/app/DownloadProgress.tsx";
+import InstallerButton from "./components/app/InstallerButton.tsx";
+import PreinstallButton from "./components/app/PreinstallButton.tsx";
+import SettingsModal from "./components/app/SettingsModal.tsx";
+import Sidebar from "./components/app/Sidebar.tsx";
+import Background from "./components/Background.tsx";
+import Button from "./components/Button.tsx";
+import Titlebar from "./components/Titlebar.tsx";
+import { ApiProvider } from "./contexts/ApiContext.tsx";
+import { DownloadProvider } from "./contexts/DownloadContext.tsx";
+import { GameProvider } from "./contexts/GameContext.tsx";
+import { useApi } from "./hooks/useApi.ts";
+import { useGame } from "./hooks/useGame.ts";
+import { type ModalHandle, Variants } from "./types";
 
 const textTheme = cva(null, {
 	variants: {
@@ -46,14 +46,15 @@ function App() {
 
 	return (
 		<div
-			class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}>
+			class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}
+		>
 			<Titlebar />
 			<Sidebar />
 			<SettingsModal ref={settingsModal} />
 
 			<div class={bgTheme({ game: game })}>
 				<div class="relative h-full w-full">
-					{graphics ? <Background /> : <></>}
+					{graphics ? <Background /> : null}
 
 					<div class="absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 px-15 py-10">
 						{/* Page content */}
@@ -65,7 +66,8 @@ function App() {
 								settingsModal.current?.open();
 							}}
 							width={4}
-							height={4}>
+							height={4}
+						>
 							<Settings className="-m-1 leading-0" />
 						</Button>
 						<InstallerButton />

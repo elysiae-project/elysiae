@@ -1,3 +1,17 @@
+import { appDataDir, join } from "@tauri-apps/api/path";
+import { openPath } from "@tauri-apps/plugin-opener";
+import {
+	FileCheck,
+	Folder,
+	type LucideIcon,
+	RefreshCw,
+	Trash,
+} from "lucide-preact";
+import { forwardRef, useEffect, useState } from "preact/compat";
+import { useApi } from "../../hooks/useApi";
+import { useDownload } from "../../hooks/useDownload";
+import { useGame } from "../../hooks/useGame";
+import { remove } from "../../lib/Fs";
 import {
 	checkGameUpdate,
 	downloadUpdate,
@@ -9,25 +23,17 @@ import {
 	moduleTagsMatch,
 	updateWineComponent,
 } from "../../lib/WineManager";
+import type { AppModules, ModalHandle, Option, Variants } from "../../types";
 import {
 	getActiveGameCode,
 	getGameName,
 	getGameSize,
 } from "../../util/AppFunctions";
-import { FileCheck, Folder, LucideIcon, RefreshCw, Trash } from "lucide-preact";
-import { AppModules, ModalHandle, Option, Variants } from "../../types";
-import { forwardRef, useEffect, useState } from "preact/compat";
 import { getOption, setOption } from "../../util/Settings";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { useDownload } from "../../hooks/useDownload";
-import { openPath } from "@tauri-apps/plugin-opener";
-import { useGame } from "../../hooks/useGame";
-import { useApi } from "../../hooks/useApi";
-import ToggleSwitch from "../ToggleSwitch";
-import { remove } from "../../lib/Fs";
-import Dropdown from "../Dropdown";
 import Button from "../Button";
+import Dropdown from "../Dropdown";
 import Modal from "../Modal";
+import ToggleSwitch from "../ToggleSwitch";
 
 type GameOption = {
 	icon: LucideIcon;
@@ -107,6 +113,7 @@ const options: Option[] = [
 ];
 
 const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
+	// biome-ignore lint/suspicious/noExplicitAny: The best solution for this component is to just use any. I haven't found any other good intuitive solutions
 	const [value, setValue] = useState<any>(null);
 
 	useEffect(() => {
@@ -188,7 +195,8 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 							setWineSetupProgress(event);
 						});
 						setUpdateAvailable(false);
-					}}>
+					}}
+				>
 					<p class="text-[1rem]">Update</p>
 				</Button>
 			</div>
@@ -239,7 +247,8 @@ const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 			height={2.1}
 			onClick={async () => {
 				await gameOption.action(game);
-			}}>
+			}}
+		>
 			<Icon />
 		</Button>
 	);

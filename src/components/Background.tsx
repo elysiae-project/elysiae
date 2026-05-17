@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
-import { fadeInOut } from "../util/Animations";
-import { useGame } from "../hooks/useGame";
 import { useApi } from "../hooks/useApi";
+import { useGame } from "../hooks/useGame";
+import { fadeInOut } from "../util/Animations";
 
 function BackgroundMedia({
 	src,
@@ -13,6 +13,7 @@ function BackgroundMedia({
 	return isVideo ? (
 		<motion.video
 			class="background"
+			// biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
 			{...(fadeInOut as any)}
 			src={src}
 			autoplay
@@ -21,6 +22,7 @@ function BackgroundMedia({
 			playsInline
 		/>
 	) : (
+		// biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
 		<motion.img class="background" {...(fadeInOut as any)} src={src} alt="" />
 	);
 }
