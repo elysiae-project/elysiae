@@ -1,5 +1,5 @@
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
+//use tauri::menu::{MenuBuilder, MenuItemBuilder};
+//use tauri::tray::TrayIconBuilder;
 
 use crate::commands::{app_functions, file_downloader, file_manager};
 mod commands;
@@ -49,7 +49,7 @@ pub fn run() {
             commands::sophon_downloader::sophon_cancel,
             commands::sophon_downloader::sophon_check_update,
         ])
-        .setup(|app| {
+        /* .setup(|app| {
             let quit_item = MenuItemBuilder::new("Quit Elysiae").id("quit").build(app)?;
 
             let menu = MenuBuilder::new(app).items(&[&quit_item]).build()?;
@@ -66,7 +66,7 @@ pub fn run() {
                 .build(app)?;
 
             Ok(())
-        })
+        })*/
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
