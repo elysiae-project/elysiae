@@ -14,8 +14,8 @@
   </description>
   <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
   <categories>
+    <category>Utility</category>
     <category>Game</category>
-    <category>LauncherStore</category>
   </categories>
   <requires>
     <kernel version="6.14" compare="ge">Linux</kernel>
@@ -48,11 +48,14 @@
       <caption></caption>
     </screenshot>
   </screenshots>
+  -->
   <releases>
-    <release version="1.0.0" date="2026-05-20">
+    <release version="1.0.0" date="2026-05-16">
+      <description>
+        <p>Initial Release of the Elysiae Launcher</p>
+      </description>
     </release>
   </releases>
-  -->
   <content_rating type="oars-1.1">
     <content_attribute id="violence-fantasy">moderate</content_attribute>
     <content_attribute id="violence-bloodshed">mild</content_attribute>

@@ -3,5 +3,5 @@ Name=Elysiae
 Exec=Elysiae
 Icon=app.elysiae.Elysiae
 Type=Application
-Categories=Game;LauncherStore;
+Categories=Utility;Game
 Terminal=false
