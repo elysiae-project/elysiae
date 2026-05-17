@@ -1,8 +1,8 @@
+import { resolveResource } from "@tauri-apps/api/path";
 import {
 	requestPermission,
 	sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { resolveResource } from "@tauri-apps/api/path";
 import { getOption, setOption } from "./Settings";
 
 const areNotificationsPermitted = async (): Promise<boolean> => {

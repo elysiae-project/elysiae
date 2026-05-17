@@ -2,8 +2,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cva } from "class-variance-authority";
 import { AnimatePresence } from "motion/react";
 import { useGame } from "../hooks/useGame.ts";
-import MenuClose from "./MenuClose.tsx";
 import { Variants } from "../types";
+import MenuClose from "./MenuClose.tsx";
 
 const titlebarStyles = cva(
 	"h-16 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
@@ -29,7 +29,8 @@ export default function Titlebar() {
 			<div
 				style={{ zIndex: 1005, color: "white" }}
 				class="flex flex-row items-center justify-between px-5 py-1.5"
-				data-tauri-drag-region>
+				data-tauri-drag-region
+			>
 				<h1 class="text-center text-[1.35rem]">Elysiae</h1>
 				<AnimatePresence mode="wait" initial={false}>
 					<MenuClose

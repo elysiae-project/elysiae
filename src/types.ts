@@ -1,4 +1,5 @@
-import React from "react";
+/** biome-ignore-all lint/suspicious/noExplicitAny: Types that use any need them. Currently, those types fetch from an online webpoint that currently returns null but could be updated in the future */
+import type React from "react";
 
 // Enums
 

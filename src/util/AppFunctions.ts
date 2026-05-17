@@ -1,7 +1,7 @@
+import { invoke } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { Command } from "@tauri-apps/plugin-shell";
-import { GameCodes, Variants } from "../types";
-import { invoke } from "@tauri-apps/api/core";
+import { type GameCodes, Variants } from "../types";
 
 /** @returns Game codes (in type `Variants`) as string (`bh/ys/sr/nap`) */
 export const getActiveGameCode = (currentGame: Variants): GameCodes => {

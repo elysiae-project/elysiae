@@ -1,15 +1,15 @@
+import { fetch } from "@tauri-apps/plugin-http";
+import { type ComponentChildren, createContext } from "preact";
+import { useEffect, useState } from "preact/hooks";
 import {
-	LauncherBrandingData,
-	LauncherBrandingRawData,
-	LauncherBrandingRawGameData,
-	LauncherGraphicsData,
-	LauncherGraphicsRawData,
-	LauncherGraphicsRawGameData,
+	type LauncherBrandingData,
+	type LauncherBrandingRawData,
+	type LauncherBrandingRawGameData,
+	type LauncherGraphicsData,
+	type LauncherGraphicsRawData,
+	type LauncherGraphicsRawGameData,
 	Variants,
 } from "../types";
-import { createContext, ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
-import { fetch } from "@tauri-apps/plugin-http";
 
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
@@ -49,7 +49,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 					console.log(data);
 					const formatted = data.data.game_info_list.reduce(
 						(acc: LauncherGraphicsData, game: LauncherGraphicsRawGameData) => {
-							let id;
+							let id: Variants | undefined;
 							switch (game.game.biz) {
 								case "bh3_global":
 									if (game.game.id === BH3_EN_ID) id = Variants.BH3;
@@ -98,7 +98,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 					console.log(data);
 					const formatted = data.data.games.reduce(
 						(acc: LauncherBrandingData, game: LauncherBrandingRawGameData) => {
-							let id;
+							let id: Variants | undefined;
 							switch (game.biz) {
 								case "bh3_global":
 									id = Variants.BH3;
@@ -136,7 +136,8 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 			value={{
 				graphics: graphicsData,
 				branding: brandingData,
-			}}>
+			}}
+		>
 			{children}
 		</ApiContext.Provider>
 	);

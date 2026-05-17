@@ -1,7 +1,7 @@
-import { load, Store } from "@tauri-apps/plugin-store";
 import { resolveResource } from "@tauri-apps/api/path";
 import { error } from "@tauri-apps/plugin-log";
-import { AppOptions } from "../types";
+import { load, type Store } from "@tauri-apps/plugin-store";
+import type { AppOptions } from "../types";
 
 let store: Store | undefined;
 
@@ -31,7 +31,7 @@ export const getOption = async <T = unknown>(key: AppOptions): Promise<T> => {
 
 	return new Promise((resolve, reject) => {
 		store
-			?.get<{ value: any }>(key)
+			?.get<{ value: T }>(key)
 			.then((res) => {
 				resolve(res as T);
 			})

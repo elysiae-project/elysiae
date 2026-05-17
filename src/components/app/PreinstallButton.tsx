@@ -1,16 +1,16 @@
+import { Save } from "lucide-preact";
+import { useEffect, useState } from "preact/hooks";
+import { useDownload } from "../../hooks/useDownload";
+import { useGame } from "../../hooks/useGame";
 import {
 	downloadUpdate,
 	isGameInstalled,
 	isPreinstallAvailable,
 } from "../../lib/GameDownloader";
-import { useDownload } from "../../hooks/useDownload";
-import { useEffect, useState } from "preact/hooks";
-import { useGame } from "../../hooks/useGame";
-import { Save } from "lucide-preact";
 import Button from "../Button";
 
 export default function PreinstallButton() {
-	let [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
+	const [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
 	const { game } = useGame();
 	const { state, setDownloadingGame } = useDownload();
 	const downloadActive =
@@ -34,7 +34,7 @@ export default function PreinstallButton() {
 		};
 	}, [game]);
 
-	if (!preInstAvailable) return <></>;
+	if (!preInstAvailable) return null;
 
 	return (
 		<Button
@@ -45,7 +45,8 @@ export default function PreinstallButton() {
 			onClick={async () => {
 				setDownloadingGame(game);
 				await downloadUpdate(game, true);
-			}}>
+			}}
+		>
 			<Save className="-m-1 leading-0" />
 		</Button>
 	);

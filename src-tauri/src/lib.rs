@@ -51,9 +51,7 @@ pub fn run() {
         ])
         /* .setup(|app| {
             let quit_item = MenuItemBuilder::new("Quit Elysiae").id("quit").build(app)?;
-
             let menu = MenuBuilder::new(app).items(&[&quit_item]).build()?;
-
             TrayIconBuilder::new()
                 .menu(&menu)
                 .icon(app.default_window_icon().unwrap().clone())
@@ -64,7 +62,6 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
-
             Ok(())
         })*/
         .run(tauri::generate_context!())

@@ -1,8 +1,8 @@
-import { ComponentSize, Variants } from "../types";
 import { cva } from "class-variance-authority";
-import { useGame } from "../hooks/useGame";
 import { Check, X } from "lucide-preact";
 import { useState } from "preact/hooks";
+import { useGame } from "../hooks/useGame";
+import { type ComponentSize, Variants } from "../types";
 
 const toggleSwitchStyles = cva("transition-colors duration-150 delay-0", {
 	variants: {
@@ -110,7 +110,8 @@ export default function ToggleSwitch({
 	const travelDistance = Math.max(width - knobSize - padding * 2, 0);
 
 	return (
-		<div
+		<button
+			type="button"
 			onClick={() => {
 				setEnabled(!enabled);
 				onClick(!enabled);
@@ -123,7 +124,8 @@ export default function ToggleSwitch({
 				game,
 				size,
 				variant: enabled ? "active" : "inactive",
-			})}>
+			})}
+		>
 			<div
 				style={{
 					width: `${knobSize}rem`,
@@ -131,13 +133,14 @@ export default function ToggleSwitch({
 					transform: `translateX(${enabled ? travelDistance : 0}rem) translateZ(1px)`,
 					transition: "transform 0.175s ease",
 				}}
-				class={toggleSwitchKnobStyles({ game })}>
+				class={toggleSwitchKnobStyles({ game })}
+			>
 				{enabled ? (
 					<Check size={knobSize * 0.6} />
 				) : (
 					<X size={knobSize * 0.6} />
 				)}
 			</div>
-		</div>
+		</button>
 	);
 }

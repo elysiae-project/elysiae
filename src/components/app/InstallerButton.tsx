@@ -1,3 +1,6 @@
+import { useEffect, useState } from "preact/hooks";
+import { useDownload } from "../../hooks/useDownload";
+import { useGame } from "../../hooks/useGame";
 import {
 	downloadGame,
 	isGameInstalled,
@@ -9,17 +12,14 @@ import {
 	wineEnvAvailable,
 } from "../../lib/WineManager";
 import { getActiveGameCode, getVariantFromCode } from "../../util/AppFunctions";
-import { useDownload } from "../../hooks/useDownload";
-import { useEffect, useState } from "preact/hooks";
-import { useGame } from "../../hooks/useGame";
 import Button from "../Button";
 
 export default function InstallerButton() {
 	const { game } = useGame();
 	const { state, setDownloadingGame, setResumable, setWineSetupProgress } =
 		useDownload();
-	let [wineAvailable, setWineAvailable] = useState<boolean>(false);
-	let [gameInstalled, setGameInstalled] = useState<boolean>(false);
+	const [wineAvailable, setWineAvailable] = useState<boolean>(false);
+	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
 	const downloadActive =
 		state.isDownloading ||
@@ -79,7 +79,8 @@ export default function InstallerButton() {
 					} else {
 						await runGame(game);
 					}
-				}}>
+				}}
+			>
 				{(() => {
 					if (!wineAvailable) {
 						return state.isSettingUpWine ? "Setting Up..." : "Create Env";
