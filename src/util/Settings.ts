@@ -6,48 +6,48 @@ import type { AppOptions } from "../types";
 let store: Store | undefined;
 
 const loadStore = async (): Promise<Store> => {
-  return new Promise((resolve, reject) => {
-    resolveResource("settings.json")
-      .then((storeFile) => {
-        load(storeFile)
-          .then((newStore) => {
-            resolve(newStore);
-          })
-          .catch((e) => {
-            error(`loadStore: ${e}`);
-            reject(e);
-          });
-      })
-      .catch((e) => {
-        error(`loadStore: ${e}`);
-      });
-  });
+	return new Promise((resolve, reject) => {
+		resolveResource("settings.json")
+			.then((storeFile) => {
+				load(storeFile)
+					.then((newStore) => {
+						resolve(newStore);
+					})
+					.catch((e) => {
+						error(`loadStore: ${e}`);
+						reject(e);
+					});
+			})
+			.catch((e) => {
+				error(`loadStore: ${e}`);
+			});
+	});
 };
 
 export const getOption = async <T = unknown>(key: AppOptions): Promise<T> => {
-  if (!store) {
-    store = await loadStore();
-  }
+	if (!store) {
+		store = await loadStore();
+	}
 
-  return new Promise((resolve, reject) => {
-    store
-      ?.get<{ value: T }>(key)
-      .then((res) => {
-        resolve(res as T);
-      })
-      .catch((e) => {
-        reject(`getOption: ${e}`);
-      });
-  });
+	return new Promise((resolve, reject) => {
+		store
+			?.get<{ value: T }>(key)
+			.then((res) => {
+				resolve(res as T);
+			})
+			.catch((e) => {
+				reject(`getOption: ${e}`);
+			});
+	});
 };
 
 export const setOption = async <T = unknown>(
-  key: AppOptions,
-  value: T,
+	key: AppOptions,
+	value: T,
 ): Promise<void> => {
-  if (!store) {
-    store = await loadStore();
-  }
-  await store?.set(key, value);
-  await store.save();
+	if (!store) {
+		store = await loadStore();
+	}
+	await store?.set(key, value);
+	await store.save();
 };
