@@ -10,6 +10,9 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     apply_nvidia_wayland_workaround();
 
+    #[cfg(target_os = "linux")]
+    apply_webkit_memory_improvements();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
@@ -66,6 +69,14 @@ pub fn run() {
         })*/
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(target_os = "linux")]
+fn apply_webkit_memory_improvements() {
+    unsafe {
+        std::env::set_var("WEBKIT_FORCE_MEMORY_PRESSURE_SYSTEM", "critical");
+        std::env::set_var("WEBKIT_CACHE_MODEL", "document_viewer");
+    }
 }
 
 #[cfg(target_os = "linux")]
