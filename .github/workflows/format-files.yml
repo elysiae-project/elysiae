@@ -31,7 +31,7 @@ jobs:
           corepack enable
           yarn
 
-      - name: Format with Prettier
+      - name: Format with Biome
         run: yarn format
 
       - name: Format with rustfmt & Clippy
