@@ -42,7 +42,7 @@ flate2 = "1.1.9"
 zip = "8.6.0"
 tar = "0.4.45"
 md-5 = "0.11.0"
-dashmap = "6.1.0"
+dashmap = "6.2.1"
 hex = "0.4.3"
 bytes = "1.11.1"
 prost = "0.14.3"
@@ -66,4 +66,5 @@ panic = "abort"
 strip = "symbols"
 
 [profile.dev]
+incremental = true
 panic = "abort"
