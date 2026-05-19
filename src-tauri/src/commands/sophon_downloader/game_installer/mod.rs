@@ -8,6 +8,7 @@ mod download;
 mod error;
 mod game_filters;
 mod handle;
+mod hdiffpatch;
 mod installer;
 mod plugin_api;
 mod plugin_install;
