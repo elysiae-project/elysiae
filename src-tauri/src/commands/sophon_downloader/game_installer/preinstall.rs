@@ -1162,13 +1162,7 @@ mod tests {
             }],
             deleted_files: vec!["old_file.pak".to_string()],
             downloaded_chunks: HashSet::from(["chunk_0".to_string()]),
-            diff_download: DownloadInfo {
-                encryption: 0,
-                password: String::new(),
-                compression: crate::commands::sophon_downloader::api_scrape::Compression::None,
-                url_prefix: "https://example.com/".to_string(),
-                url_suffix: "v1".to_string(),
-            },
+            diff_download: make_download_info(),
             main_chunk_download: DownloadInfo {
                 encryption: 0,
                 password: String::new(),
@@ -1249,5 +1243,596 @@ mod tests {
         delete_preinstall_state(dir.path(), "5.0.0");
         assert!(!state_path.exists());
         assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn validate_asset_path_rejects_dotdot() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "../../../etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_path_rejects_absolute() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "/etc/passwd");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_path_rejects_backslash_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "\\Windows\\System32");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_asset_path_accepts_normal_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "GameData/Data.pak");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), dir.path().join("GameData/Data.pak"));
+    }
+
+    #[test]
+    fn validate_asset_path_accepts_nested_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "a/b/c/file.pkg");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn is_file_already_patched_size_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        fs::write(&path, b"short").unwrap();
+        assert!(!is_file_already_patched(&path, 9999, "any_hash"));
+    }
+
+    #[test]
+    fn is_file_already_patched_md5_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        let data = b"hello world";
+        fs::write(&path, data).unwrap();
+        assert!(!is_file_already_patched(
+            &path,
+            data.len() as u64,
+            "wrong_hash"
+        ));
+    }
+
+    #[test]
+    fn is_file_already_patched_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        let data = b"hello world";
+        let md5_hex = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+        assert!(is_file_already_patched(&path, data.len() as u64, &md5_hex));
+    }
+
+    #[test]
+    fn is_file_already_patched_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.bin");
+        assert!(!is_file_already_patched(&path, 100, "any_hash"));
+    }
+
+    #[test]
+    fn patch_method_remove_serialization() {
+        let method = PatchMethod::Remove;
+        let json = serde_json::to_string(&method).unwrap();
+        assert_eq!(json, "\"remove\"");
+        let back: PatchMethod = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, PatchMethod::Remove);
+    }
+
+    #[test]
+    fn patch_method_all_roundtrip() {
+        for method in [
+            PatchMethod::CopyOver,
+            PatchMethod::Patch,
+            PatchMethod::DownloadOver,
+            PatchMethod::Remove,
+            PatchMethod::Skip,
+        ] {
+            let json = serde_json::to_string(&method).unwrap();
+            let back: PatchMethod = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, method);
+        }
+    }
+
+    #[test]
+    fn filter_patch_assets_skips_filtered_download_over() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("ZenlessZoneZero_Data/Persistent")).unwrap();
+        fs::write(
+            dir.path()
+                .join("ZenlessZoneZero_Data/Persistent/KDelResource"),
+            "cutscenes",
+        )
+        .unwrap();
+
+        let state = PreinstallState {
+            tag: "2.0.0".to_string(),
+            game_id: "nap".to_string(),
+            vo_lang: "en".to_string(),
+            installed_tag: "1.0.0".to_string(),
+            patch_assets: vec![
+                PatchAssetInfo {
+                    target_file_path: "game_data.bin".to_string(),
+                    target_file_size: 100,
+                    target_file_hash: "h1".to_string(),
+                    patch_method: PatchMethod::DownloadOver,
+                    patch_name: String::new(),
+                    patch_hash: String::new(),
+                    patch_offset: 0,
+                    patch_size: 0,
+                    patch_chunk_length: 0,
+                    original_file_path: None,
+                    original_file_hash: None,
+                    original_file_size: None,
+                    matching_field: "cutscenes".to_string(),
+                },
+                PatchAssetInfo {
+                    target_file_path: "core_data.bin".to_string(),
+                    target_file_size: 200,
+                    target_file_hash: "h2".to_string(),
+                    patch_method: PatchMethod::Patch,
+                    patch_name: "chunk_0".to_string(),
+                    patch_hash: "ph".to_string(),
+                    patch_offset: 0,
+                    patch_size: 200,
+                    patch_chunk_length: 200,
+                    original_file_path: Some("core_data_old.bin".to_string()),
+                    original_file_hash: Some("oh".to_string()),
+                    original_file_size: Some(180),
+                    matching_field: "cutscenes".to_string(),
+                },
+                PatchAssetInfo {
+                    target_file_path: "main_game.bin".to_string(),
+                    target_file_size: 300,
+                    target_file_hash: "h3".to_string(),
+                    patch_method: PatchMethod::CopyOver,
+                    patch_name: "chunk_1".to_string(),
+                    patch_hash: "ph2".to_string(),
+                    patch_offset: 0,
+                    patch_size: 300,
+                    patch_chunk_length: 300,
+                    original_file_path: None,
+                    original_file_hash: None,
+                    original_file_size: None,
+                    matching_field: "game".to_string(),
+                },
+            ],
+            deleted_files: vec![],
+            downloaded_chunks: HashSet::new(),
+            diff_download: make_download_info(),
+            main_chunk_download: make_download_info(),
+            main_manifest_ids: vec![],
+        };
+
+        let filtered = filter_patch_assets_for_removed_features(dir.path(), &state);
+        assert_eq!(filtered.len(), 3);
+        assert_eq!(filtered[0].patch_method, PatchMethod::Skip);
+        assert_eq!(filtered[1].patch_method, PatchMethod::Skip);
+        assert_eq!(filtered[2].patch_method, PatchMethod::CopyOver);
+    }
+
+    #[test]
+    fn filter_patch_assets_no_filter_when_no_kdel() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = PreinstallState {
+            tag: "2.0.0".to_string(),
+            game_id: "nap".to_string(),
+            vo_lang: "en".to_string(),
+            installed_tag: "1.0.0".to_string(),
+            patch_assets: vec![PatchAssetInfo {
+                target_file_path: "data.bin".to_string(),
+                target_file_size: 100,
+                target_file_hash: "h".to_string(),
+                patch_method: PatchMethod::DownloadOver,
+                patch_name: String::new(),
+                patch_hash: String::new(),
+                patch_offset: 0,
+                patch_size: 0,
+                patch_chunk_length: 0,
+                original_file_path: None,
+                original_file_hash: None,
+                original_file_size: None,
+                matching_field: "cutscenes".to_string(),
+            }],
+            deleted_files: vec![],
+            downloaded_chunks: HashSet::new(),
+            diff_download: make_download_info(),
+            main_chunk_download: make_download_info(),
+            main_manifest_ids: vec![],
+        };
+
+        let filtered = filter_patch_assets_for_removed_features(dir.path(), &state);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].patch_method, PatchMethod::DownloadOver);
+    }
+
+    #[test]
+    fn apply_copy_over_writes_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let data = b"new file content";
+        let md5_hex = hex::encode(md5::Md5::digest(data));
+        fs::write(chunks_dir.join("patch_0"), data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/output.bin".to_string(),
+            target_file_size: data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "patch_0".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: data.len() as u64,
+            patch_chunk_length: data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/output.bin")).unwrap();
+        assert_eq!(written, data);
+    }
+
+    #[test]
+    fn apply_copy_over_with_offset_reads_subrange() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let full_data = b"AAAA_target_content_BBBB";
+        fs::write(chunks_dir.join("patch_1"), full_data).unwrap();
+
+        let target_data = &full_data[5..21];
+        let md5_hex = hex::encode(md5::Md5::digest(target_data));
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/sliced.bin".to_string(),
+            target_file_size: target_data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "patch_1".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 5,
+            patch_size: 16,
+            patch_chunk_length: 16,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/sliced.bin")).unwrap();
+        assert_eq!(written, target_data);
+    }
+
+    #[test]
+    fn apply_copy_over_missing_chunk_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/missing.bin".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "nonexistent_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 100,
+            patch_chunk_length: 100,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        let result = apply_copy_over(dir.path(), &chunks_dir, &asset);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::PatchChunkNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn apply_copy_over_detects_hdiff_magic() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let hdiff_data = b"HDIFF13patchpayload";
+        fs::write(chunks_dir.join("patch_hdiff"), hdiff_data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/hdiff.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "patch_hdiff".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: hdiff_data.len() as u64,
+            patch_chunk_length: hdiff_data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        let result = apply_copy_over(dir.path(), &chunks_dir, &asset);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SophonError::HDiffPatchFailed { .. }),
+            "expected HDiffPatchFailed, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_preinstall_state_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = load_preinstall_state(dir.path(), "nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_preinstall_state_corrupted_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = PreinstallState::state_file_path(dir.path(), "5.0.0");
+        fs::write(&state_path, "not valid json{{{{").unwrap();
+        let result = load_preinstall_state(dir.path(), "5.0.0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn save_preinstall_state_atomic_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = PreinstallState {
+            tag: "5.0.0".to_string(),
+            game_id: "hk4e".to_string(),
+            vo_lang: "en".to_string(),
+            installed_tag: "4.8.0".to_string(),
+            patch_assets: vec![],
+            deleted_files: vec![],
+            downloaded_chunks: HashSet::new(),
+            diff_download: make_download_info(),
+            main_chunk_download: make_download_info(),
+            main_manifest_ids: vec![],
+        };
+
+        save_preinstall_state(dir.path(), &state).unwrap();
+
+        let state_path = PreinstallState::state_file_path(dir.path(), "5.0.0");
+        assert!(state_path.exists());
+        assert!(!state_path.with_extension("json.tmp").exists());
+
+        let loaded = load_preinstall_state(dir.path(), "5.0.0").unwrap();
+        assert_eq!(loaded.tag, "5.0.0");
+        assert!(loaded.patch_assets.is_empty());
+    }
+
+    #[test]
+    fn extract_blacklist_filename_valid() {
+        let line = r#"  {"fileName":"Audio/Chinese/abc.pak","fileSize":"1234"}"#;
+        let result = extract_blacklist_filename(line);
+        assert_eq!(result, Some("Audio/Chinese/abc.pak".to_string()));
+    }
+
+    #[test]
+    fn extract_blacklist_filename_with_backslashes() {
+        let line = r#"  {"fileName":"Audio\Chinese\abc.pak","fileSize":"1234"}"#;
+        let result = extract_blacklist_filename(line);
+        assert_eq!(result, Some("Audio/Chinese/abc.pak".to_string()));
+    }
+
+    #[test]
+    fn extract_blacklist_filename_no_match() {
+        let line = r#"  {"otherField":"value"}"#;
+        let result = extract_blacklist_filename(line);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn extract_blacklist_filename_empty() {
+        let result = extract_blacklist_filename("");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn is_filtered_asset_nap_kdel() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("ZenlessZoneZero_Data/Persistent")).unwrap();
+        fs::write(
+            dir.path()
+                .join("ZenlessZoneZero_Data/Persistent/KDelResource"),
+            "cutscenes|design",
+        )
+        .unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "data.bin".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "c".to_string(),
+            patch_hash: "p".to_string(),
+            patch_offset: 0,
+            patch_size: 100,
+            patch_chunk_length: 100,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "cutscenes".to_string(),
+        };
+        assert!(is_filtered_asset(dir.path(), &asset));
+
+        let asset_game = PatchAssetInfo {
+            target_file_path: "data.bin".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "c".to_string(),
+            patch_hash: "p".to_string(),
+            patch_offset: 0,
+            patch_size: 100,
+            patch_chunk_length: 100,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+        assert!(!is_filtered_asset(dir.path(), &asset_game));
+    }
+
+    #[test]
+    fn is_filtered_asset_hkrpg_blacklist() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("StarRail_Data/Persistent")).unwrap();
+        fs::write(
+            dir.path()
+                .join("StarRail_Data/Persistent/DownloadBlacklist.json"),
+            r#"{"fileName":"Audio/Korean/vo_kr.pak","fileSize":"1000"}"#,
+        )
+        .unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "Audio/Korean/vo_kr.pak".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::DownloadOver,
+            patch_name: String::new(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 0,
+            patch_chunk_length: 0,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "ko-kr".to_string(),
+        };
+        assert!(is_filtered_asset(dir.path(), &asset));
+
+        let asset_en = PatchAssetInfo {
+            target_file_path: "Audio/English/vo_en.pak".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::DownloadOver,
+            patch_name: String::new(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 0,
+            patch_chunk_length: 0,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "en-us".to_string(),
+        };
+        assert!(!is_filtered_asset(dir.path(), &asset_en));
+    }
+
+    #[test]
+    fn is_filtered_asset_genshin_audio_lang() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("GenshinImpact_Data/Persistent")).unwrap();
+        fs::write(
+            dir.path()
+                .join("GenshinImpact_Data/Persistent/audio_lang_installed"),
+            "English(US)\n",
+        )
+        .unwrap();
+
+        let asset_en = PatchAssetInfo {
+            target_file_path: "Audio/English(US)/vo_en.pak".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "c".to_string(),
+            patch_hash: "p".to_string(),
+            patch_offset: 0,
+            patch_size: 100,
+            patch_chunk_length: 100,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "en-us".to_string(),
+        };
+        assert!(!is_filtered_asset(dir.path(), &asset_en));
+
+        let asset_jp = PatchAssetInfo {
+            target_file_path: "Audio/Japanese/vo_jp.pak".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "c".to_string(),
+            patch_hash: "p".to_string(),
+            patch_offset: 0,
+            patch_size: 100,
+            patch_chunk_length: 100,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "ja-jp".to_string(),
+        };
+        assert!(is_filtered_asset(dir.path(), &asset_jp));
+    }
+
+    #[test]
+    fn is_filtered_asset_no_game_dir_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let asset = PatchAssetInfo {
+            target_file_path: "data.bin".to_string(),
+            target_file_size: 100,
+            target_file_hash: "h".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "c".to_string(),
+            patch_hash: "p".to_string(),
+            patch_offset: 0,
+            patch_size: 100,
+            patch_chunk_length: 100,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+        assert!(!is_filtered_asset(dir.path(), &asset));
+    }
+
+    #[test]
+    fn patching_chunk_dir_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks = patching_chunk_dir(dir.path());
+        assert!(chunks.to_string_lossy().contains("patching"));
+        assert!(chunks.to_string_lossy().contains("chunk"));
+    }
+
+    fn make_download_info() -> DownloadInfo {
+        DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: crate::commands::sophon_downloader::api_scrape::Compression::None,
+            url_prefix: "https://example.com/".to_string(),
+            url_suffix: "v1".to_string(),
+        }
     }
 }
