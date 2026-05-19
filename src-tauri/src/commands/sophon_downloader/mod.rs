@@ -26,7 +26,7 @@ pub struct HttpClient(pub reqwest::Client);
 pub struct ActiveDownload(pub tokio::sync::Mutex<Option<DownloadHandle>>);
 
 /// Type of download operation, persisted for correct resumption dispatch.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum DownloadType {
     Fresh,
@@ -253,6 +253,11 @@ pub enum SophonProgress {
         name: String,
         downloaded_bytes: u64,
         total_bytes: u64,
+    },
+    /// Applying preinstall patches to game files.
+    ApplyingPreinstall {
+        applied_files: u64,
+        total_files: u64,
     },
     /// Download completed successfully.
     Finished,
@@ -482,7 +487,7 @@ pub async fn sophon_update(
     }
 }
 
-/// Pre-downloads an upcoming game version.
+/// Pre-downloads an upcoming game version using patch-based preinstall.
 #[command]
 pub async fn sophon_preinstall(
     game_id: String,
@@ -499,10 +504,11 @@ pub async fn sophon_preinstall(
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-    let (installers, tag, manifest_hash) =
-        game_installer::build_preinstall_installers(&client.0, &game_id, &vo_lang)
-            .await
-            .map_err(|e| e.to_string())?;
+    let plan = game_installer::build_preinstall_plan(&client.0, &game_id, &vo_lang, &game_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let tag = plan.tag.clone();
 
     let current_tag = game_installer::read_installed_tag(&game_dir);
 
@@ -512,7 +518,7 @@ pub async fn sophon_preinstall(
         output_path: output_path.clone(),
         download_type: DownloadType::Preinstall,
         current_tag,
-        manifest_hash,
+        manifest_hash: tag.clone(),
         downloaded_chunks: HashMap::new(),
     };
     save_download_state(&app_handle, &state)?;
@@ -522,27 +528,17 @@ pub async fn sophon_preinstall(
 
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
-    let vo_langs: Vec<String> = vec![vo_lang.clone()];
-    let result = game_installer::install(
-        installers,
+
+    let result = game_installer::preinstall_download(
+        &client.0,
+        &plan,
         &game_dir,
-        vec![],
-        &tag,
-        game_installer::ResumeContext {
-            prev_manifest_hash: String::new(),
-            prev_downloaded_chunks: HashMap::new(),
-        },
-        game_installer::InstallOptions {
-            is_preinstall: true,
-            is_resume: false,
-            handle,
-        },
-        game_installer::InstallCallbacks {
-            updater: Arc::new(move |p| emit(&app_clone, p)),
-            state_saver: saver,
-        },
         &game_id,
-        &vo_langs,
+        &vo_lang,
+        handle,
+        Arc::new(move |p| emit(&app_clone, p)),
+        saver,
+        HashMap::new(),
     )
     .await;
 
@@ -550,7 +546,7 @@ pub async fn sophon_preinstall(
     *active.0.lock().await = None;
 
     match result {
-        Ok(()) => {
+        Ok(_) => {
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -565,13 +561,19 @@ pub async fn sophon_apply_preinstall(
     preinstall_tag: String,
     output_path: String,
     app_handle: AppHandle,
+    client: State<'_, HttpClient>,
 ) -> Result<(), String> {
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    game_installer::apply_preinstall(&game_dir, &preinstall_tag)
+    let updater: Arc<dyn Fn(SophonProgress) + Send + Sync> = Arc::new({
+        let app = app_handle.clone();
+        move |p| emit(&app, p)
+    });
+
+    game_installer::apply_preinstall(&client.0, &game_dir, &preinstall_tag, updater)
         .await
         .map_err(|e| e.to_string())
 }
@@ -599,13 +601,71 @@ pub async fn sophon_resume_download(
 
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-    let (installers, deleted_files, tag, manifest_hash, is_preinstall) = match state.download_type {
+    if state.download_type == DownloadType::Preinstall {
+        if let Some(ref saved_tag) = current_tag {
+            let actual_tag = game_installer::read_installed_tag(&game_dir);
+            if actual_tag.as_deref() != Some(saved_tag) {
+                return Err("Cannot resume preinstall: installed game version changed since preinstall started. Delete preinstall data and start over.".to_string());
+            }
+        }
+
+        let plan = game_installer::build_preinstall_plan(
+            &client.0,
+            &state.game_id,
+            &state.vo_lang,
+            &game_dir,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let resumed_state = DownloadState {
+            game_id: state.game_id.clone(),
+            vo_lang: state.vo_lang.clone(),
+            output_path: state.output_path.clone(),
+            download_type: DownloadType::Preinstall,
+            current_tag,
+            manifest_hash: plan.tag.clone(),
+            downloaded_chunks: prev_chunks.clone(),
+        };
+        let saver = make_state_saver(&app_handle, &resumed_state);
+
+        let handle = DownloadHandle::new();
+        *active.0.lock().await = Some(handle.clone());
+
+        let app_clone = app_handle.clone();
+        let result = game_installer::preinstall_download(
+            &client.0,
+            &plan,
+            &game_dir,
+            &game_id,
+            &state.vo_lang,
+            handle,
+            Arc::new(move |p| emit(&app_clone, p)),
+            saver,
+            prev_chunks,
+        )
+        .await;
+
+        clear_download_state(&app_handle);
+        *active.0.lock().await = None;
+
+        return match result {
+            Ok(_) => {
+                emit(&app_handle, SophonProgress::Finished);
+                Ok(())
+            }
+            Err(game_installer::SophonError::Cancelled) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        };
+    }
+
+    let (installers, deleted_files, tag, manifest_hash) = match state.download_type {
         DownloadType::Fresh => {
             let (installers, tag, new_manifest_hash) =
                 game_installer::build_installers(&client.0, &state.game_id, &state.vo_lang)
                     .await
                     .map_err(|e| e.to_string())?;
-            (installers, vec![], tag, new_manifest_hash, false)
+            (installers, vec![], tag, new_manifest_hash)
         }
         DownloadType::Update => {
             let ct = current_tag
@@ -620,27 +680,9 @@ pub async fn sophon_resume_download(
                 )
                 .await
                 .map_err(|e| e.to_string())?;
-            (installers, deleted_files, tag, new_manifest_hash, false)
+            (installers, deleted_files, tag, new_manifest_hash)
         }
-        DownloadType::Preinstall => {
-            // Guard against mixed-version corruption: if the installed version
-            // changed since preinstall started, resuming would write v2.0 files
-            // on top of a different base version, creating an inconsistent state.
-            if let Some(ref saved_tag) = current_tag {
-                let actual_tag = game_installer::read_installed_tag(&game_dir);
-                if actual_tag.as_deref() != Some(saved_tag) {
-                    return Err("Cannot resume preinstall: installed game version changed since preinstall started. Delete preinstall data and start over.".to_string());
-                }
-            }
-            let (installers, tag, new_manifest_hash) = game_installer::build_preinstall_installers(
-                &client.0,
-                &state.game_id,
-                &state.vo_lang,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            (installers, vec![], tag, new_manifest_hash, true)
-        }
+        DownloadType::Preinstall => unreachable!(),
     };
 
     let manifest_changed = old_manifest_hash != manifest_hash;
@@ -679,7 +721,7 @@ pub async fn sophon_resume_download(
             prev_downloaded_chunks: resumed_state.downloaded_chunks,
         },
         game_installer::InstallOptions {
-            is_preinstall,
+            is_preinstall: false,
             is_resume: true,
             handle,
         },
@@ -697,27 +739,24 @@ pub async fn sophon_resume_download(
 
     match result {
         Ok(()) => {
-            if !is_preinstall {
-                let plugin_emit = app_handle.clone();
-                let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
-                    Arc::new(move |p| emit(&plugin_emit, p));
-                if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
-                    let u = plugin_updater.clone();
-                    move |p| u(p)
-                })
-                .await
-                {
-                    log::warn!("Plugin installation failed: {}", e);
-                }
-                if let Err(e) =
-                    game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
-                        let u = plugin_updater.clone();
-                        move |p| u(p)
-                    })
-                    .await
-                {
-                    log::warn!("Channel SDK installation failed: {}", e);
-                }
+            let plugin_emit = app_handle.clone();
+            let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
+                Arc::new(move |p| emit(&plugin_emit, p));
+            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Plugin installation failed: {}", e);
+            }
+            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                let u = plugin_updater.clone();
+                move |p| u(p)
+            })
+            .await
+            {
+                log::warn!("Channel SDK installation failed: {}", e);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())

@@ -73,7 +73,9 @@ pub async fn check_update(
     };
 
     let preinstall_downloaded = if let Some(ref ptag) = preinstall_tag {
-        game_dir.join(format!(".sophon_preinstall_{ptag}")).exists()
+        let marker = game_dir.join(format!(".sophon_preinstall_{ptag}"));
+        let state_file = game_dir.join(format!(".sophon_preinstall_{ptag}.json"));
+        marker.exists() || state_file.exists()
     } else {
         false
     };
