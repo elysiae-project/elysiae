@@ -131,6 +131,33 @@ pub struct Stats {
     pub chunk_count: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct SophonPatchBuildResponse {
+    pub retcode: i32,
+    pub message: String,
+    pub data: SophonPatchBuildData,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SophonPatchBuildData {
+    pub build_id: String,
+    pub patch_id: String,
+    pub tag: String,
+    pub manifests: Vec<SophonPatchManifestMeta>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SophonPatchManifestMeta {
+    pub category_id: String,
+    pub category_name: String,
+    pub matching_field: String,
+    pub manifest: ManifestFileInfo,
+    pub diff_download: DownloadInfo,
+    pub manifest_download: DownloadInfo,
+    pub stats: std::collections::HashMap<String, Stats>,
+}
+
 #[inline]
 pub fn front_door_game_index(game_id: &str) -> Option<usize> {
     match game_id.to_lowercase().as_str() {
