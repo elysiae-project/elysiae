@@ -131,7 +131,6 @@ pub struct Stats {
     pub chunk_count: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonPatchBuildResponse {
     pub retcode: i32,
@@ -139,7 +138,6 @@ pub struct SophonPatchBuildResponse {
     pub data: SophonPatchBuildData,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SophonPatchBuildData {
@@ -149,7 +147,6 @@ pub struct SophonPatchBuildData {
     pub manifests: Vec<SophonPatchManifestMeta>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct SophonPatchManifestMeta {
     pub category_id: String,

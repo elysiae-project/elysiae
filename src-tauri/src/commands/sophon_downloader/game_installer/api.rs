@@ -138,6 +138,77 @@ pub async fn fetch_build(
     Ok(resp.data)
 }
 
+pub const SOPHON_PATCH_BUILD_URL_BASE: &str = concat!(
+    "https://sg-public-api.hoyoverse.com",
+    "/downloader/sophon_chunk/api/getPatchBuild"
+);
+
+pub async fn fetch_patch_build(
+    client: &Client,
+    branch: &PackageBranch,
+) -> SophonResult<SophonPatchBuildData> {
+    let url = format!(
+        "{}?branch={}&package_id={}&password={}&tag={}",
+        SOPHON_PATCH_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password, branch.tag,
+    );
+
+    let resp: SophonPatchBuildResponse = client
+        .post(&url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?
+        .json()
+        .await?;
+    if resp.data.manifests.is_empty() {
+        return Err(SophonError::NoManifests);
+    }
+    Ok(resp.data)
+}
+
+pub struct PatchManifestWithMeta {
+    pub patch_manifest: SophonPatchProto,
+    pub diff_download: DownloadInfo,
+    pub matching_field: String,
+}
+
+pub async fn fetch_patch_manifest(
+    client: &Client,
+    meta: &SophonPatchManifestMeta,
+) -> SophonResult<PatchManifestWithMeta> {
+    let url = meta.manifest_download.url_for(&meta.manifest.id);
+    let bytes = client
+        .get(&url)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+
+    let raw = if meta.manifest_download.is_compressed() {
+        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
+    } else {
+        bytes.to_vec()
+    };
+
+    let patch_manifest =
+        decode_patch_manifest(&raw).map_err(|e| SophonError::PatchManifestDecode(e.to_string()))?;
+
+    Ok(PatchManifestWithMeta {
+        patch_manifest,
+        diff_download: meta.diff_download.clone(),
+        matching_field: meta.matching_field.clone(),
+    })
+}
+
+fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
+    use std::io::Read;
+    let mut decoder = zstd::Decoder::new(bytes)?;
+    let mut out = Vec::new();
+    decoder.read_to_end(&mut out)?;
+    Ok(out)
+}
+
 #[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
     match vo_lang.to_lowercase().as_str() {
