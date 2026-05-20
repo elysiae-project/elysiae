@@ -167,11 +167,17 @@ impl<'a> Rle0Decoder<'a> {
 }
 
 fn rle_varint(buf: &[u8], pos: &mut usize) -> usize {
+    if *pos >= buf.len() {
+        return 0;
+    }
     let first = buf[*pos];
     *pos += 1;
     let mut val = (first & 0x7F) as u64;
     if (first & 0x80) != 0 {
         loop {
+            if *pos >= buf.len() {
+                return val as usize;
+            }
             let b = buf[*pos];
             *pos += 1;
             val = (val << 7) | (b & 0x7F) as u64;

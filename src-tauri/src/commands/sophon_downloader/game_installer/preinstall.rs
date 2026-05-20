@@ -190,6 +190,7 @@ pub async fn build_preinstall_plan(
     let mut all_patch_assets: Vec<PatchAssetInfo> = Vec::new();
     let mut all_deleted_files: Vec<String> = Vec::new();
     let mut seen_chunk_names: HashSet<String> = HashSet::new();
+    let mut seen_patch_targets: HashSet<String> = HashSet::new();
     let mut unique_chunks: Vec<PatchChunkInfo> = Vec::new();
     let mut diff_download: Option<DownloadInfo> = None;
 
@@ -212,9 +213,35 @@ pub async fn build_preinstall_plan(
 
             match patch_info {
                 Some(info) => {
+                    seen_patch_targets.insert(asset_prop.asset_name.clone());
                     let chunk = match &info.chunk {
                         Some(c) => c,
-                        None => continue,
+                        None => {
+                            if has_main_entry {
+                                all_patch_assets.push(PatchAssetInfo {
+                                    target_file_path: asset_prop.asset_name.clone(),
+                                    target_file_size: asset_prop.asset_size as u64,
+                                    target_file_hash: asset_prop.asset_hash_md5.clone(),
+                                    patch_method: PatchMethod::DownloadOver,
+                                    patch_name: String::new(),
+                                    patch_hash: String::new(),
+                                    patch_offset: 0,
+                                    patch_size: 0,
+                                    patch_chunk_length: 0,
+                                    original_file_path: None,
+                                    original_file_hash: None,
+                                    original_file_size: None,
+                                    matching_field: matching_field.clone(),
+                                });
+                            } else {
+                                log::warn!(
+                                    "Patch info exists but chunk is None for asset {} (matching_field={}), and no main manifest",
+                                    asset_prop.asset_name,
+                                    matching_field
+                                );
+                            }
+                            continue;
+                        }
                     };
 
                     let (method, original_file_path, original_file_hash, original_file_size) =
@@ -254,6 +281,7 @@ pub async fn build_preinstall_plan(
                     });
                 }
                 None if has_main_entry => {
+                    seen_patch_targets.insert(asset_prop.asset_name.clone());
                     all_patch_assets.push(PatchAssetInfo {
                         target_file_path: asset_prop.asset_name.clone(),
                         target_file_size: asset_prop.asset_size as u64,
@@ -286,7 +314,9 @@ pub async fn build_preinstall_plan(
             }
             for info in &unused_prop.asset_infos {
                 for file in &info.assets {
-                    all_deleted_files.push(file.file_name.clone());
+                    if !seen_patch_targets.contains(file.file_name.as_str()) {
+                        all_deleted_files.push(file.file_name.clone());
+                    }
                 }
             }
         }
@@ -577,7 +607,23 @@ pub async fn apply_preinstall(
                 let gd = game_dir.to_path_buf();
                 let cd = chunks_dir.to_path_buf();
                 let a = asset.clone();
-                tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await??;
+                let result =
+                    tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await?;
+                if let Err(ref e) = result {
+                    if is_filtered_asset(game_dir, asset) {
+                        log::warn!(
+                            "CopyOver failed for filtered asset, skipping: {} ({e})",
+                            asset.target_file_path
+                        );
+                        applied_files.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                    log::warn!(
+                        "CopyOver failed for {}: {e}, falling back to DownloadOver",
+                        asset.target_file_path
+                    );
+                    apply_download_over(client, game_dir, &state, &asset).await?;
+                }
             }
             PatchMethod::Patch => {
                 let gd = game_dir.to_path_buf();
@@ -586,20 +632,19 @@ pub async fn apply_preinstall(
                 let result =
                     tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a)).await?;
                 if let Err(ref e) = result {
-                    log::warn!(
-                        "HDiff patch failed for {}: {e}, attempting DownloadOver fallback",
-                        asset.target_file_path
-                    );
-                    if !is_filtered_asset(game_dir, asset) {
-                        result?;
-                    } else {
+                    if is_filtered_asset(game_dir, asset) {
                         log::warn!(
-                            "Skipping DownloadOver fallback for filtered asset: {}",
+                            "HDiff patch failed for filtered asset, skipping: {} ({e})",
                             asset.target_file_path
                         );
                         applied_files.fetch_add(1, Ordering::Relaxed);
                         continue;
                     }
+                    log::warn!(
+                        "HDiff patch failed for {}: {e}, falling back to DownloadOver",
+                        asset.target_file_path
+                    );
+                    apply_download_over(client, game_dir, &state, &asset).await?;
                 }
             }
             PatchMethod::DownloadOver => {
@@ -842,28 +887,42 @@ fn apply_hdiff_patch(
         ));
     }
 
-    if let Some(ref expected_md5) = asset.original_file_hash {
-        if let Some(ref expected_size) = asset.original_file_size {
-            if original_path.exists() {
-                let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
-                if actual_size != *expected_size {
-                    if is_filtered_asset(game_dir, asset) {
-                        log::warn!(
-                            "Original file size mismatch for filtered asset, skipping: {}",
-                            asset.target_file_path
-                        );
-                        return Ok(());
-                    }
-                    return Err(SophonError::OriginalFileMissing(format!(
-                        "Size mismatch for {}: expected {}, got {}",
-                        original_path.display(),
-                        expected_size,
-                        actual_size
-                    )));
+    if let Some(ref expected_size) = asset.original_file_size {
+        if original_path.exists() {
+            let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
+            if actual_size != *expected_size {
+                if is_filtered_asset(game_dir, asset) {
+                    log::warn!(
+                        "Original file size mismatch for filtered asset, skipping: {}",
+                        asset.target_file_path
+                    );
+                    return Ok(());
                 }
+                return Err(SophonError::OriginalFileMissing(format!(
+                    "Size mismatch for {}: expected {}, got {}",
+                    original_path.display(),
+                    expected_size,
+                    actual_size
+                )));
             }
         }
-        let _ = expected_md5;
+    }
+    if let Some(ref expected_md5) = asset.original_file_hash {
+        if original_path.exists() && !expected_md5.is_empty() {
+            if !verify_chunk_md5(&original_path, expected_md5) {
+                if is_filtered_asset(game_dir, asset) {
+                    log::warn!(
+                        "Original file MD5 mismatch for filtered asset, skipping: {}",
+                        asset.target_file_path
+                    );
+                    return Ok(());
+                }
+                return Err(SophonError::OriginalFileMissing(format!(
+                    "MD5 mismatch for {}",
+                    original_path.display()
+                )));
+            }
+        }
     }
 
     let chunk_path = chunks_dir.join(&asset.patch_name);
