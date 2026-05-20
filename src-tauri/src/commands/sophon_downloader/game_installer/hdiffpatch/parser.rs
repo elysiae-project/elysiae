@@ -88,6 +88,9 @@ pub(crate) fn read_long_7bit_from_slice(
     tag_bit: u8,
     prev_byte: u8,
 ) -> i64 {
+    if *offset >= buf.len() {
+        return 0;
+    }
     let code = if tag_bit != 0 {
         prev_byte
     } else {
@@ -102,6 +105,9 @@ pub(crate) fn read_long_7bit_from_slice(
     }
     loop {
         if (value >> (8 * 8 - 7)) != 0 {
+            return 0;
+        }
+        if *offset >= buf.len() {
             return 0;
         }
         let code = buf[*offset];
