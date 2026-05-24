@@ -38,31 +38,33 @@ const components: ((
 			const dirs = [
 				{
 					initialDirName: "x64",
-					finalDirName: "system32",
+					destDirName: "system32",
 				},
 				{
 					initialDirName: "x32",
-					finalDirName: "syswow64",
+					destDirName: "syswow64",
 				},
 			] as const;
 
-			dirs.map(async (dirInfo) => {
-				const destPath = await join(
-					"wine",
-					"drive_c",
-					"windows",
-					dirInfo.finalDirName,
-				);
-				const sourceFolder = await join("dxvk", dirInfo.initialDirName);
-				rename(sourceFolder, destPath);
-			});
+			const dlls = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
 
-			const dllNames = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
 			await Promise.all(
-				dllNames.map(async (dll) => {
-					await registerNewDLL(dll);
+				dirs.map(async ({ initialDirName, destDirName }) => {
+					const sourceDir = await join("dxvk", initialDirName);
+					const destDir = await join("wine", "drive_c", "windows", destDirName);
+
+					await Promise.all(
+						dlls.map(async (dll) => {
+							const sourceFile = await join(sourceDir, `${dll}.dll`);
+							const destFile = await join(destDir, `${dll}.dll`);
+							await rename(sourceFile, destFile);
+						}),
+					);
 				}),
 			);
+
+			// Both x32 and x64 DLLs must be in place before the DLL registry keys can be added to the Wine registry
+			await Promise.all(dlls.map(registerNewDLL));
 
 			await removeDir("dxvk");
 		},
