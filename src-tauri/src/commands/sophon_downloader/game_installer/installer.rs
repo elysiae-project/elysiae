@@ -899,7 +899,7 @@ async fn finalize_install(
         .await?;
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
-        let af = (*ctx.all_files).clone();
+        let af = Arc::clone(&ctx.all_files);
         tokio::task::spawn_blocking(move || {
             if let Err(e) = super::game_filters::write_pkg_version_from_manifest(&gd, &af, &vl) {
                 log::warn!("Failed to write hk4e pkg_version: {}", e);
@@ -1008,11 +1008,12 @@ pub async fn install(
     } else if game_code == "nap" {
         super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
     }
-    let filtered_set: HashSet<String> = all_files.iter().map(|f| f.asset_name.clone()).collect();
+    let filtered_set: HashSet<&str> = all_files.iter().map(|f| f.asset_name.as_str()).collect();
     let installer_data: Vec<InstallerData> = installer_data
         .into_iter()
         .map(|mut d| {
-            d.files.retain(|f| filtered_set.contains(&f.asset_name));
+            d.files
+                .retain(|f| filtered_set.contains(f.asset_name.as_str()));
             d
         })
         .collect();

@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::Serialize;
 use tauri_plugin_log::log;
@@ -93,7 +94,7 @@ struct PkgVersionEntry {
 
 pub fn write_pkg_version_from_manifest(
     game_dir: &Path,
-    assets: &[SophonManifestAssetProperty],
+    assets: &Arc<Vec<SophonManifestAssetProperty>>,
     vo_langs: &[String],
 ) -> std::io::Result<()> {
     write_single_pkg_version(game_dir, "pkg_version", assets)?;
