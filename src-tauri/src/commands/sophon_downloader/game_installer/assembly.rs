@@ -316,16 +316,14 @@ pub fn run_assembly_task(
     }
 
     {
-        let mut lu = last_assembly_update.lock().unwrap_or_else(|e| {
-            log::error!("last_assembly_update mutex poisoned, recovering");
-            e.into_inner()
-        });
-        if lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
-            updater(SophonProgress::Assembling {
-                assembled_files: count,
-                total_files,
-            });
-            *lu = Instant::now();
+        if let Ok(mut lu) = last_assembly_update.try_lock() {
+            if lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
+                updater(SophonProgress::Assembling {
+                    assembled_files: count,
+                    total_files,
+                });
+                *lu = Instant::now();
+            }
         }
     }
 
