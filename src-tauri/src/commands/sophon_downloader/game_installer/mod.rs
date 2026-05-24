@@ -16,6 +16,8 @@ mod preinstall;
 mod update;
 
 #[cfg(test)]
+mod bench_tests;
+#[cfg(test)]
 mod integration_tests;
 
 /// Maximum retry attempts for failed chunk downloads.
