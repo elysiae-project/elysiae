@@ -39,7 +39,7 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
     }
 
     // Size cap: if cache is excessively large, clear it entirely
-    const MAX_CACHE_ENTRIES: usize = 50_000;
+    const MAX_CACHE_ENTRIES: usize = 200_000;
     if cache.len() > MAX_CACHE_ENTRIES {
         log::warn!(
             "Verification cache has {} entries (max {}), clearing",

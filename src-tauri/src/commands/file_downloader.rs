@@ -1,10 +1,9 @@
 use reqwest::Client;
 use serde::Serialize;
-use std::fs::File;
-use std::io::Write;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, path::BaseDirectory};
 use tauri::{Manager, command};
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 #[derive(Serialize, Clone)]
 struct DownloadProgress {
@@ -31,7 +30,10 @@ pub async fn download_file(
         return Err(format!("download_file: HTTP {} for {}", status, url));
     }
     let total = response.content_length().unwrap_or(0);
-    let mut file = File::create(&full_path).map_err(|e| e.to_string())?;
+    let file = tokio::fs::File::create(&full_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut writer = BufWriter::with_capacity(256 * 1024, file);
     let mut downloaded_bytes: u64 = 0;
     let mut last_emitted = Instant::now() - Duration::from_millis(250);
     let throttle = Duration::from_millis(250);
@@ -40,7 +42,7 @@ pub async fn download_file(
     use futures_util::StreamExt;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| e.to_string())?;
-        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        writer.write_all(&chunk).await.map_err(|e| e.to_string())?;
         downloaded_bytes += chunk.len() as u64;
 
         if last_emitted.elapsed() >= throttle {
@@ -56,6 +58,7 @@ pub async fn download_file(
                 .map_err(|e| e.to_string())?;
         }
     }
+    writer.flush().await.map_err(|e| e.to_string())?;
     // Emit one last event after download is complete
     app_handle
         .emit(

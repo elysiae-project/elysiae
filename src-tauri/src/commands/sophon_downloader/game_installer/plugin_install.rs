@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use bytes::BytesMut;
 use futures_util::StreamExt;
@@ -88,23 +89,37 @@ async fn download_zip(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "plugin".to_string());
 
-    let mut buffer = BytesMut::with_capacity(256 * 1024);
+    let name_clone = name.clone();
+    let mut buffer = BytesMut::with_capacity(super::DOWNLOAD_STREAM_BUFFER_SIZE);
+    let mut last_emit = Instant::now();
+    let throttle = Duration::from_secs(1);
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
         hasher.update(&bytes);
         buffer.extend_from_slice(&bytes);
-        if buffer.len() >= 256 * 1024 {
+        if buffer.len() >= super::DOWNLOAD_STREAM_BUFFER_SIZE {
             file.write_all(&buffer).await?;
             buffer.clear();
         }
         downloaded += bytes.len() as u64;
-        updater(SophonProgress::DownloadingPlugin {
-            name: name.clone(),
-            downloaded_bytes: downloaded,
-            total_bytes,
-        });
+
+        if last_emit.elapsed() >= throttle {
+            last_emit = Instant::now();
+            updater(SophonProgress::DownloadingPlugin {
+                name: name_clone.clone(),
+                downloaded_bytes: downloaded,
+                total_bytes,
+            });
+        }
     }
+
+    // Emit final progress after loop completes
+    updater(SophonProgress::DownloadingPlugin {
+        name: name_clone,
+        downloaded_bytes: downloaded,
+        total_bytes,
+    });
 
     if !buffer.is_empty() {
         file.write_all(&buffer).await?;
