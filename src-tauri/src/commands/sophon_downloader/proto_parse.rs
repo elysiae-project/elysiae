@@ -79,6 +79,104 @@ pub fn decode_manifest(buf: &[u8]) -> Result<SophonManifestProto, prost::DecodeE
     SophonManifestProto::decode(buf)
 }
 
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonPatchProto {
+    #[prost(message, repeated, tag = "1")]
+    pub patch_assets: Vec<SophonPatchAssetProperty>,
+
+    #[prost(message, repeated, tag = "2")]
+    pub unused_assets: Vec<SophonUnusedAssetProperty>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonPatchAssetProperty {
+    #[prost(string, tag = "1")]
+    pub asset_name: String,
+
+    #[prost(int64, tag = "2")]
+    pub asset_size: i64,
+
+    #[prost(string, tag = "3")]
+    pub asset_hash_md5: String,
+
+    #[prost(message, repeated, tag = "4")]
+    pub asset_infos: Vec<SophonPatchAssetInfo>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonPatchAssetInfo {
+    #[prost(string, tag = "1")]
+    pub version_tag: String,
+
+    #[prost(message, optional, tag = "2")]
+    pub chunk: Option<SophonPatchAssetChunk>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonPatchAssetChunk {
+    #[prost(string, tag = "1")]
+    pub patch_name: String,
+
+    #[prost(string, tag = "2")]
+    pub version_tag: String,
+
+    #[prost(string, tag = "3")]
+    pub build_id: String,
+
+    #[prost(int64, tag = "4")]
+    pub patch_size: i64,
+
+    #[prost(string, tag = "5")]
+    pub patch_md5: String,
+
+    #[prost(int64, tag = "6")]
+    pub patch_offset: i64,
+
+    #[prost(int64, tag = "7")]
+    pub patch_length: i64,
+
+    #[prost(string, tag = "8")]
+    pub original_file_name: String,
+
+    #[prost(int64, tag = "9")]
+    pub original_file_length: i64,
+
+    #[prost(string, tag = "10")]
+    pub original_file_md5: String,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonUnusedAssetProperty {
+    #[prost(string, tag = "1")]
+    pub version_tag: String,
+
+    #[prost(message, repeated, tag = "2")]
+    pub asset_infos: Vec<SophonUnusedAssetInfo>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonUnusedAssetInfo {
+    #[prost(message, repeated, tag = "1")]
+    pub assets: Vec<SophonUnusedAssetFile>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct SophonUnusedAssetFile {
+    #[prost(string, tag = "1")]
+    pub file_name: String,
+
+    #[prost(int64, tag = "2")]
+    pub file_size: i64,
+
+    #[prost(string, tag = "3")]
+    pub file_md5: String,
+}
+
+#[inline]
+pub fn decode_patch_manifest(buf: &[u8]) -> Result<SophonPatchProto, prost::DecodeError> {
+    SophonPatchProto::decode(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
