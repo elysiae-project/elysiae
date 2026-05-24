@@ -51,11 +51,13 @@ pub fn filter_hkrpg_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestA
         return;
     }
 
+    let blacklist_lower: Vec<String> = blacklist.iter().map(|e| e.to_lowercase()).collect();
+
     let original_len = assets.len();
     assets.retain(|asset| {
         let asset_lower = asset.asset_name.to_lowercase();
-        for entry in &blacklist {
-            if asset_lower.contains(&entry.to_lowercase()) {
+        for entry in &blacklist_lower {
+            if asset_lower.contains(entry) {
                 log::warn!("Filtered blacklisted asset: {}", asset.asset_name);
                 return false;
             }

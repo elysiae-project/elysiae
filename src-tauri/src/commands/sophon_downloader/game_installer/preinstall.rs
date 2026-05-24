@@ -391,6 +391,7 @@ pub async fn preinstall_download(
 
     let start = Instant::now();
     let mut last_update = Instant::now();
+    let mut chunks_since_save: u64 = 0;
 
     for chunk_info in &plan.unique_chunks {
         if handle.is_cancelled() {
@@ -450,6 +451,9 @@ pub async fn preinstall_download(
                 } else {
                     0.0
                 };
+                // Final save to ensure all downloaded chunks are persisted
+                state_saver(&chunk_bytes_map);
+
                 updater(SophonProgress::Downloading {
                     downloaded_bytes: db,
                     total_bytes,
@@ -460,8 +464,14 @@ pub async fn preinstall_download(
             }
         }
 
-        state_saver(&chunk_bytes_map);
+        chunks_since_save += 1;
+        if chunks_since_save.is_multiple_of(25) {
+            state_saver(&chunk_bytes_map);
+        }
     }
+
+    // Final save to ensure all downloaded chunks are persisted
+    state_saver(&chunk_bytes_map);
 
     updater(SophonProgress::Downloading {
         downloaded_bytes: total_bytes,

@@ -32,17 +32,17 @@ pub fn filter_hk4e_asset_list(
         return;
     }
 
-    let patterns: Vec<String> = ignored_langs
+    let patterns_lower: Vec<String> = ignored_langs
         .iter()
-        .map(|lang| format!("/{lang}/"))
+        .map(|lang| format!("/{lang}/").to_lowercase())
         .collect();
 
     let original_len = assets.len();
     assets.retain(|asset| {
         let asset_lower = asset.asset_name.to_lowercase();
 
-        for pattern in &patterns {
-            if asset_lower.contains(&pattern.to_lowercase()) {
+        for pattern in &patterns_lower {
+            if asset_lower.contains(pattern) {
                 log::warn!("Filtered unneeded audio asset: {}", asset.asset_name);
                 return false;
             }

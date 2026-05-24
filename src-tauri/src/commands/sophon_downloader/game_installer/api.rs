@@ -211,23 +211,28 @@ fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
 
 #[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
-    match vo_lang.to_lowercase().as_str() {
-        "cn" => matching_field.contains("zh"),
-        "en" => matching_field.contains("en"),
-        "jp" => matching_field.contains("ja"),
-        "kr" => matching_field.contains("ko"),
-        _ => false,
+    let vo = vo_lang.as_bytes();
+    if vo.eq_ignore_ascii_case(b"cn") {
+        matching_field.contains("zh")
+    } else if vo.eq_ignore_ascii_case(b"en") {
+        matching_field.contains("en")
+    } else if vo.eq_ignore_ascii_case(b"jp") {
+        matching_field.contains("ja")
+    } else if vo.eq_ignore_ascii_case(b"kr") {
+        matching_field.contains("ko")
+    } else {
+        false
     }
 }
 
 #[inline]
 pub fn is_known_vo_locale(matching_field: &str) -> bool {
-    let lower = matching_field.to_lowercase();
-    lower.contains("en-us")
-        || lower.contains("zh-cn")
-        || lower.contains("zh-tw")
-        || lower.contains("ko-kr")
-        || lower.contains("ja-jp")
+    let f = matching_field.as_bytes();
+    f.windows(5).any(|w| w.eq_ignore_ascii_case(b"en-us"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"zh-cn"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"zh-tw"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"ko-kr"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"ja-jp"))
 }
 
 #[inline]
