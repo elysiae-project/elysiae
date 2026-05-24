@@ -137,18 +137,7 @@ pub fn assemble_file(
         .truncate(true)
         .open(&tmp_path)?;
 
-    use std::io::Write;
-    {
-        let mut buf_writer_pre = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, &out_file);
-        let zeros = vec![0u8; FILE_WRITE_BUFFER_SIZE];
-        let mut remaining = file.asset_size;
-        while remaining > 0 {
-            let to_write = (remaining as usize).min(FILE_WRITE_BUFFER_SIZE);
-            buf_writer_pre.write_all(&zeros[..to_write])?;
-            remaining -= to_write as u64;
-        }
-        buf_writer_pre.flush()?;
-    }
+    out_file.set_len(file.asset_size)?;
 
     let mut buf_writer = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, out_file);
     let mut total_written: u64 = 0;
@@ -175,10 +164,9 @@ pub fn assemble_file(
     }
 
     buf_writer.flush()?;
-    let out_file = buf_writer
+    let _out_file = buf_writer
         .into_inner()
         .map_err(|e| SophonError::Io(e.into_error()))?;
-    out_file.sync_data()?;
 
     if total_written != file.asset_size {
         return Err(SophonError::SizeMismatch {
