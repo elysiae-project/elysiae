@@ -316,14 +316,14 @@ pub fn run_assembly_task(
     }
 
     {
-        if let Ok(mut lu) = last_assembly_update.try_lock() {
-            if lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
-                updater(SophonProgress::Assembling {
-                    assembled_files: count,
-                    total_files,
-                });
-                *lu = Instant::now();
-            }
+        if let Ok(mut lu) = last_assembly_update.try_lock()
+            && lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
+        {
+            updater(SophonProgress::Assembling {
+                assembled_files: count,
+                total_files,
+            });
+            *lu = Instant::now();
         }
     }
 
