@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use futures_util::StreamExt;
+use futures_util::future::try_join_all;
 use md5::{Digest as _, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -194,8 +195,13 @@ pub async fn build_preinstall_plan(
     let mut unique_chunks: Vec<PatchChunkInfo> = Vec::new();
     let mut diff_download: Option<DownloadInfo> = None;
 
-    for patch_meta in &qualifying_patch {
-        let result = fetch_patch_manifest(client, patch_meta).await?;
+    let fetch_futures: Vec<_> = qualifying_patch
+        .iter()
+        .map(|meta| fetch_patch_manifest(client, meta))
+        .collect();
+    let patch_results = try_join_all(fetch_futures).await?;
+
+    for result in patch_results {
         let patch_manifest = result.patch_manifest;
         let matching_field = result.matching_field;
 

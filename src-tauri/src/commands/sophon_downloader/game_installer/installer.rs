@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
+use futures_util::future::try_join_all;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tauri_plugin_log::log;
@@ -169,10 +170,11 @@ async fn build_installers_from_data(
         return Err(SophonError::NoGameManifest);
     }
 
-    let mut installers = Vec::with_capacity(qualifying.len());
-    for meta in &qualifying {
-        installers.push(SophonInstaller::from_manifest_meta(client, meta, tag).await?);
-    }
+    let futures: Vec<_> = qualifying
+        .iter()
+        .map(|meta| SophonInstaller::from_manifest_meta(client, meta, tag))
+        .collect();
+    let installers = try_join_all(futures).await?;
 
     Ok(installers)
 }
