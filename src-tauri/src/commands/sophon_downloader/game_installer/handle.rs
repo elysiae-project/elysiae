@@ -1,10 +1,14 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use tokio::sync::Notify;
 
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::SophonProgress;
-use tauri_plugin_log::log;
+
+const STATE_RUNNING: u8 = 0;
+const STATE_PAUSED: u8 = 1;
+const STATE_CANCELLED: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlState {
@@ -15,41 +19,43 @@ pub enum ControlState {
 
 #[derive(Clone)]
 pub struct DownloadHandle {
-    state: Arc<Mutex<ControlState>>,
+    state: Arc<AtomicU8>,
     pause_notify: Arc<Notify>,
 }
 
 impl DownloadHandle {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(ControlState::Running)),
+            state: Arc::new(AtomicU8::new(STATE_RUNNING)),
             pause_notify: Arc::new(Notify::new()),
         }
     }
 
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, ControlState> {
-        self.state.lock().unwrap_or_else(|e| {
-            log::error!("Mutex poisoned in DownloadHandle, recovering state");
-            e.into_inner()
-        })
-    }
-
     pub fn pause(&self) {
-        *self.lock_state() = ControlState::Paused;
+        self.state.store(STATE_PAUSED, Ordering::Release);
     }
 
     pub fn resume(&self) {
-        *self.lock_state() = ControlState::Running;
+        self.state.store(STATE_RUNNING, Ordering::Release);
         self.pause_notify.notify_waiters();
     }
 
     pub fn cancel(&self) {
-        *self.lock_state() = ControlState::Cancelled;
+        self.state.store(STATE_CANCELLED, Ordering::Release);
         self.pause_notify.notify_waiters();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        *self.lock_state() == ControlState::Cancelled
+        self.state.load(Ordering::Acquire) == STATE_CANCELLED
+    }
+
+    fn get_state(&self) -> ControlState {
+        match self.state.load(Ordering::Acquire) {
+            STATE_RUNNING => ControlState::Running,
+            STATE_PAUSED => ControlState::Paused,
+            STATE_CANCELLED => ControlState::Cancelled,
+            _ => ControlState::Running,
+        }
     }
 
     pub async fn wait_if_paused(
@@ -59,8 +65,7 @@ impl DownloadHandle {
         total_bytes: u64,
     ) -> SophonResult<()> {
         loop {
-            let state = *self.lock_state();
-            match state {
+            match self.get_state() {
                 ControlState::Running => return Ok(()),
                 ControlState::Cancelled => return Err(SophonError::Cancelled),
                 ControlState::Paused => {
@@ -101,13 +106,13 @@ mod tests {
     #[test]
     fn handle_pause_resume() {
         let handle = DownloadHandle::new();
-        assert_eq!(*handle.lock_state(), ControlState::Running);
+        assert_eq!(handle.get_state(), ControlState::Running);
 
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
 
         handle.resume();
-        assert_eq!(*handle.lock_state(), ControlState::Running);
+        assert_eq!(handle.get_state(), ControlState::Running);
     }
 
     #[test]
@@ -149,12 +154,12 @@ mod tests {
     fn handle_multiple_pause_calls() {
         let handle = DownloadHandle::new();
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
         handle.resume();
-        assert_eq!(*handle.lock_state(), ControlState::Running);
+        assert_eq!(handle.get_state(), ControlState::Running);
     }
 }
