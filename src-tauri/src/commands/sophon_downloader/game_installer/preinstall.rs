@@ -451,8 +451,6 @@ pub async fn preinstall_download(
                 } else {
                     0.0
                 };
-                // Final save to ensure all downloaded chunks are persisted
-                state_saver(&chunk_bytes_map);
 
                 updater(SophonProgress::Downloading {
                     downloaded_bytes: db,
@@ -579,7 +577,7 @@ pub async fn apply_preinstall(
     preinstall_tag: &str,
     updater: ProgressUpdater,
 ) -> SophonResult<()> {
-    let state = load_preinstall_state(game_dir, preinstall_tag)?;
+    let mut state = load_preinstall_state(game_dir, preinstall_tag)?;
 
     let current_tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
 
@@ -594,9 +592,10 @@ pub async fn apply_preinstall(
     let total_files = state.patch_assets.len() as u64;
     let applied_files = Arc::new(AtomicU64::new(0u64));
 
-    let filtered_assets = filter_patch_assets_for_removed_features(game_dir, &state);
+    let filter_cache = FilterCache::new(game_dir);
+    filter_patch_assets_for_removed_features(&filter_cache, &mut state.patch_assets);
 
-    for asset in &filtered_assets {
+    for asset in &state.patch_assets {
         if asset.patch_method == PatchMethod::Skip {
             applied_files.fetch_add(1, Ordering::Relaxed);
             log::warn!(
@@ -618,6 +617,8 @@ pub async fn apply_preinstall(
             continue;
         }
 
+        let is_filtered = is_filtered_asset(&filter_cache, asset);
+
         match asset.patch_method {
             PatchMethod::CopyOver => {
                 let gd = game_dir.to_path_buf();
@@ -626,7 +627,7 @@ pub async fn apply_preinstall(
                 let result =
                     tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await?;
                 if let Err(ref e) = result {
-                    if is_filtered_asset(game_dir, asset) {
+                    if is_filtered {
                         log::warn!(
                             "CopyOver failed for filtered asset, skipping: {} ({e})",
                             asset.target_file_path
@@ -645,10 +646,12 @@ pub async fn apply_preinstall(
                 let gd = game_dir.to_path_buf();
                 let cd = chunks_dir.to_path_buf();
                 let a = asset.clone();
+                let fc = filter_cache.clone();
                 let result =
-                    tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a)).await?;
+                    tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a, &fc))
+                        .await?;
                 if let Err(ref e) = result {
-                    if is_filtered_asset(game_dir, asset) {
+                    if is_filtered {
                         log::warn!(
                             "HDiff patch failed for filtered asset, skipping: {} ({e})",
                             asset.target_file_path
@@ -726,49 +729,110 @@ fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) 
     verify_chunk_md5(path, expected_md5)
 }
 
-fn is_filtered_asset(game_dir: &Path, asset: &PatchAssetInfo) -> bool {
+#[derive(Clone)]
+struct FilterCache {
+    kdel_tokens: Option<Vec<String>>,
+    blacklist_entries: Option<Vec<String>>,
+    ignored_lang_patterns: Option<Vec<String>>,
+}
+
+impl FilterCache {
+    fn new(game_dir: &Path) -> Self {
+        let game_dir_str = game_dir.to_string_lossy();
+
+        let kdel_tokens = if game_dir_str.contains("ZenlessZoneZero")
+            || game_dir.join("ZenlessZoneZero_Data").exists()
+        {
+            let kdel_path = game_dir.join("ZenlessZoneZero_Data/Persistent/KDelResource");
+            fs::read_to_string(&kdel_path).ok().and_then(|content| {
+                let first_line = content.lines().next()?;
+                let tokens: Vec<String> = first_line
+                    .split(&['|', ';', ',', '$', '#', '@', '+', ' '][..])
+                    .map(|token| {
+                        token
+                            .trim_matches(&['|', ';', ',', '$', '#', '@', '+', ' '][..])
+                            .to_string()
+                    })
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                if tokens.is_empty() {
+                    None
+                } else {
+                    Some(tokens)
+                }
+            })
+        } else {
+            None
+        };
+
+        let blacklist_entries = if game_dir.join("StarRail_Data").exists() {
+            let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
+            fs::read_to_string(&blacklist_path)
+                .ok()
+                .map(|content| {
+                    content
+                        .lines()
+                        .filter_map(|line| extract_blacklist_filename(line))
+                        .map(|name| name.to_lowercase())
+                        .collect::<Vec<String>>()
+                })
+                .and_then(|entries| {
+                    if entries.is_empty() {
+                        None
+                    } else {
+                        Some(entries)
+                    }
+                })
+        } else {
+            None
+        };
+
+        let ignored_lang_patterns = if game_dir.join("GenshinImpact_Data").exists()
+            || game_dir.join("YuanShen_Data").exists()
+        {
+            let persistent_dir = find_genshin_persistent_dir(game_dir);
+            let installed = read_genshin_installed_langs(&persistent_dir);
+            let all_langs: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
+            let ignored: Vec<String> = all_langs
+                .iter()
+                .filter(|lang| !installed.iter().any(|inst| inst == **lang))
+                .map(|lang| format!("/{lang}/").to_lowercase())
+                .collect();
+            Some(ignored)
+        } else {
+            None
+        };
+
+        FilterCache {
+            kdel_tokens,
+            blacklist_entries,
+            ignored_lang_patterns,
+        }
+    }
+}
+
+fn is_filtered_asset(cache: &FilterCache, asset: &PatchAssetInfo) -> bool {
     let asset_lower = asset.target_file_path.to_lowercase();
-    let game_dir_str = game_dir.to_string_lossy();
 
-    if game_dir_str.contains("ZenlessZoneZero") || game_dir.join("ZenlessZoneZero_Data").exists() {
-        let kdel_path = game_dir.join("ZenlessZoneZero_Data/Persistent/KDelResource");
-        if let Ok(content) = fs::read_to_string(&kdel_path) {
-            if let Some(first_line) = content.lines().next() {
-                for token in first_line.split(&['|', ';', ',', '$', '#', '@', '+', ' '][..]) {
-                    let trimmed = token.trim_matches(&['|', ';', ',', '$', '#', '@', '+', ' '][..]);
-                    if !trimmed.is_empty() && asset.matching_field.eq_ignore_ascii_case(trimmed) {
-                        return true;
-                    }
-                }
+    if let Some(ref tokens) = cache.kdel_tokens {
+        for token in tokens {
+            if asset.matching_field.eq_ignore_ascii_case(token) {
+                return true;
             }
         }
     }
 
-    if game_dir.join("StarRail_Data").exists() {
-        let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
-        if let Ok(content) = fs::read_to_string(&blacklist_path) {
-            for line in content.lines() {
-                if let Some(file_name) = extract_blacklist_filename(line) {
-                    if asset_lower.contains(&file_name.to_lowercase()) {
-                        return true;
-                    }
-                }
+    if let Some(ref entries) = cache.blacklist_entries {
+        for entry in entries {
+            if asset_lower.contains(entry.as_str()) {
+                return true;
             }
         }
     }
 
-    if game_dir.join("GenshinImpact_Data").exists() || game_dir.join("YuanShen_Data").exists() {
-        let persistent_dir = find_genshin_persistent_dir(game_dir);
-        let installed_langs = read_genshin_installed_langs(&persistent_dir);
-        let all_langs: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
-        let ignored_langs: Vec<&str> = all_langs
-            .iter()
-            .filter(|lang| !installed_langs.iter().any(|installed| installed == **lang))
-            .copied()
-            .collect();
-
-        for lang in &ignored_langs {
-            if asset_lower.contains(&format!("/{lang}/").to_lowercase()) {
+    if let Some(ref patterns) = cache.ignored_lang_patterns {
+        for pattern in patterns {
+            if asset_lower.contains(pattern.as_str()) {
                 return true;
             }
         }
@@ -823,27 +887,16 @@ fn read_genshin_installed_langs(persistent_dir: &Path) -> Vec<String> {
     vec!["English(US)".to_string()]
 }
 
-fn filter_patch_assets_for_removed_features(
-    game_dir: &Path,
-    state: &PreinstallState,
-) -> Vec<PatchAssetInfo> {
-    state
-        .patch_assets
-        .iter()
-        .map(|asset| {
-            let should_skip = matches!(
-                asset.patch_method,
-                PatchMethod::DownloadOver | PatchMethod::Patch
-            ) && is_filtered_asset(game_dir, asset);
-            if should_skip {
-                let mut filtered = asset.clone();
-                filtered.patch_method = PatchMethod::Skip;
-                filtered
-            } else {
-                asset.clone()
-            }
-        })
-        .collect()
+fn filter_patch_assets_for_removed_features(cache: &FilterCache, assets: &mut [PatchAssetInfo]) {
+    for asset in assets.iter_mut() {
+        if matches!(
+            asset.patch_method,
+            PatchMethod::DownloadOver | PatchMethod::Patch
+        ) && is_filtered_asset(cache, asset)
+        {
+            asset.patch_method = PatchMethod::Skip;
+        }
+    }
 }
 
 fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -> SophonResult<()> {
@@ -897,6 +950,7 @@ fn apply_hdiff_patch(
     game_dir: &Path,
     chunks_dir: &Path,
     asset: &PatchAssetInfo,
+    cache: &FilterCache,
 ) -> SophonResult<()> {
     let original_path = match &asset.original_file_path {
         Some(p) => validate_asset_path(game_dir, p)?,
@@ -904,7 +958,7 @@ fn apply_hdiff_patch(
     };
 
     if !original_path.exists() {
-        if is_filtered_asset(game_dir, asset) {
+        if is_filtered_asset(cache, asset) {
             log::warn!(
                 "Original file missing for filtered asset, skipping: {}",
                 asset.target_file_path
@@ -920,7 +974,7 @@ fn apply_hdiff_patch(
         if original_path.exists() {
             let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
             if actual_size != *expected_size {
-                if is_filtered_asset(game_dir, asset) {
+                if is_filtered_asset(cache, asset) {
                     log::warn!(
                         "Original file size mismatch for filtered asset, skipping: {}",
                         asset.target_file_path
@@ -939,7 +993,7 @@ fn apply_hdiff_patch(
     if let Some(ref expected_md5) = asset.original_file_hash {
         if original_path.exists() && !expected_md5.is_empty() {
             if !verify_chunk_md5(&original_path, expected_md5) {
-                if is_filtered_asset(game_dir, asset) {
+                if is_filtered_asset(cache, asset) {
                     log::warn!(
                         "Original file MD5 mismatch for filtered asset, skipping: {}",
                         asset.target_file_path
@@ -1506,11 +1560,13 @@ mod tests {
             main_manifest_ids: vec![],
         };
 
-        let filtered = filter_patch_assets_for_removed_features(dir.path(), &state);
-        assert_eq!(filtered.len(), 3);
-        assert_eq!(filtered[0].patch_method, PatchMethod::Skip);
-        assert_eq!(filtered[1].patch_method, PatchMethod::Skip);
-        assert_eq!(filtered[2].patch_method, PatchMethod::CopyOver);
+        let cache = FilterCache::new(dir.path());
+        let mut assets = state.patch_assets.clone();
+        filter_patch_assets_for_removed_features(&cache, &mut assets);
+        assert_eq!(assets.len(), 3);
+        assert_eq!(assets[0].patch_method, PatchMethod::Skip);
+        assert_eq!(assets[1].patch_method, PatchMethod::Skip);
+        assert_eq!(assets[2].patch_method, PatchMethod::CopyOver);
     }
 
     #[test]
@@ -1543,9 +1599,11 @@ mod tests {
             main_manifest_ids: vec![],
         };
 
-        let filtered = filter_patch_assets_for_removed_features(dir.path(), &state);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].patch_method, PatchMethod::DownloadOver);
+        let cache = FilterCache::new(dir.path());
+        let mut assets = state.patch_assets.clone();
+        filter_patch_assets_for_removed_features(&cache, &mut assets);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].patch_method, PatchMethod::DownloadOver);
     }
 
     #[test]
@@ -1759,6 +1817,8 @@ mod tests {
         )
         .unwrap();
 
+        let cache = FilterCache::new(dir.path());
+
         let asset = PatchAssetInfo {
             target_file_path: "data.bin".to_string(),
             target_file_size: 100,
@@ -1774,7 +1834,7 @@ mod tests {
             original_file_size: None,
             matching_field: "cutscenes".to_string(),
         };
-        assert!(is_filtered_asset(dir.path(), &asset));
+        assert!(is_filtered_asset(&cache, &asset));
 
         let asset_game = PatchAssetInfo {
             target_file_path: "data.bin".to_string(),
@@ -1791,7 +1851,7 @@ mod tests {
             original_file_size: None,
             matching_field: "game".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset_game));
+        assert!(!is_filtered_asset(&cache, &asset_game));
     }
 
     #[test]
@@ -1804,6 +1864,8 @@ mod tests {
             r#"{"fileName":"Audio/Korean/vo_kr.pak","fileSize":"1000"}"#,
         )
         .unwrap();
+
+        let cache = FilterCache::new(dir.path());
 
         let asset = PatchAssetInfo {
             target_file_path: "Audio/Korean/vo_kr.pak".to_string(),
@@ -1820,7 +1882,7 @@ mod tests {
             original_file_size: None,
             matching_field: "ko-kr".to_string(),
         };
-        assert!(is_filtered_asset(dir.path(), &asset));
+        assert!(is_filtered_asset(&cache, &asset));
 
         let asset_en = PatchAssetInfo {
             target_file_path: "Audio/English/vo_en.pak".to_string(),
@@ -1837,7 +1899,7 @@ mod tests {
             original_file_size: None,
             matching_field: "en-us".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset_en));
+        assert!(!is_filtered_asset(&cache, &asset_en));
     }
 
     #[test]
@@ -1850,6 +1912,8 @@ mod tests {
             "English(US)\n",
         )
         .unwrap();
+
+        let cache = FilterCache::new(dir.path());
 
         let asset_en = PatchAssetInfo {
             target_file_path: "Audio/English(US)/vo_en.pak".to_string(),
@@ -1866,7 +1930,7 @@ mod tests {
             original_file_size: None,
             matching_field: "en-us".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset_en));
+        assert!(!is_filtered_asset(&cache, &asset_en));
 
         let asset_jp = PatchAssetInfo {
             target_file_path: "Audio/Japanese/vo_jp.pak".to_string(),
@@ -1883,12 +1947,13 @@ mod tests {
             original_file_size: None,
             matching_field: "ja-jp".to_string(),
         };
-        assert!(is_filtered_asset(dir.path(), &asset_jp));
+        assert!(is_filtered_asset(&cache, &asset_jp));
     }
 
     #[test]
     fn is_filtered_asset_no_game_dir_markers() {
         let dir = tempfile::tempdir().unwrap();
+        let cache = FilterCache::new(dir.path());
         let asset = PatchAssetInfo {
             target_file_path: "data.bin".to_string(),
             target_file_size: 100,
@@ -1904,7 +1969,7 @@ mod tests {
             original_file_size: None,
             matching_field: "game".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset));
+        assert!(!is_filtered_asset(&cache, &asset));
     }
 
     #[test]
