@@ -1,5 +1,7 @@
 use flate2::read::GzDecoder as Gz;
 use fs_extra::dir::get_size;
+use md5::Digest;
+use sha2::Sha256;
 use std::path::Path;
 use tar::Archive as Tar;
 use tauri::{AppHandle, Manager, command, path::BaseDirectory};
@@ -63,6 +65,22 @@ pub fn get_dir_size(path: String, app_handle: AppHandle) -> Result<u64, String> 
     let dir_size = get_size(full_path).map_err(|e| e.to_string())?;
 
     Ok(dir_size)
+}
+
+#[command]
+pub fn get_sha256_sum(path: String, app_handle: AppHandle) -> Result<String, String> {
+    let full_path = app_handle
+        .path()
+        .resolve(&path, BaseDirectory::AppData)
+        .unwrap();
+
+    let mut hasher = Sha256::new();
+    let file_bytes = std::fs::read(full_path).unwrap();
+
+    hasher.update(file_bytes);
+    let str_hash = hex::encode(hasher.finalize());
+
+    Ok(str_hash)
 }
 
 fn flatten(dest: &Path) -> Result<(), String> {

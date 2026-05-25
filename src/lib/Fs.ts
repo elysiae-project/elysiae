@@ -105,3 +105,15 @@ export const extractFile = async (
 		error(`extractFile: "${archivePath}" does not exist`);
 	}
 };
+
+export const getFileHash = async (path: string): Promise<string> => {
+	return new Promise((resolve, reject) => {
+		invoke<string>("get_sha256_sum", {
+			path: path,
+		})
+			.then((res) => {
+				resolve(res);
+			})
+			.catch(reject);
+	});
+};
