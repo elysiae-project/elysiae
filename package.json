@@ -25,7 +25,8 @@
     "class-variance-authority": "^0.7.1",
     "lucide-preact": "^1.16.0",
     "motion": "^12.40.0",
-    "preact": "^10.29.2"
+    "preact": "^10.29.2",
+    "thumbhash": "^0.1.1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
