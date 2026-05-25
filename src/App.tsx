@@ -1,13 +1,13 @@
 import { cva } from "class-variance-authority";
 import { Settings } from "lucide-preact";
-import { useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import "./App.css";
+import Background from "./components/app/Background.tsx";
 import DownloadProgress from "./components/app/DownloadProgress.tsx";
 import InstallerButton from "./components/app/InstallerButton.tsx";
 import PreinstallButton from "./components/app/PreinstallButton.tsx";
 import SettingsModal from "./components/app/SettingsModal.tsx";
 import Sidebar from "./components/app/Sidebar.tsx";
-import Background from "./components/Background.tsx";
 import Button from "./components/Button.tsx";
 import Titlebar from "./components/Titlebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
@@ -16,6 +16,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
 import { type ModalHandle, Variants } from "./types";
+import { inDevEnv } from "./util/AppFunctions.ts";
 
 const textTheme = cva(null, {
 	variants: {
@@ -43,6 +44,14 @@ function App() {
 	const { game } = useGame();
 	const { graphics } = useApi();
 	const settingsModal = useRef<ModalHandle>(null);
+
+	useEffect(() => {
+		inDevEnv().then(() => {
+			document.addEventListener("contextmenu", (e) => {
+				e.preventDefault();
+			});
+		});
+	}, []);
 
 	return (
 		<div
