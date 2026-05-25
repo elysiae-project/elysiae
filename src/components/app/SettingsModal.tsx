@@ -25,9 +25,9 @@ import {
 } from "../../lib/WineManager";
 import type { AppModules, ModalHandle, Option, Variants } from "../../types";
 import {
-	getActiveGameCode,
-	getGameName,
 	getGameSize,
+	variantToGameCode,
+	variantToGameName,
 } from "../../util/AppFunctions";
 import { getOption, setOption } from "../../util/Settings";
 import Button from "../Button";
@@ -45,7 +45,7 @@ const gameOptions: GameOption[] = [
 		icon: Trash,
 		action: async (game: Variants) => {
 			// TODO: Add confirmation modal
-			const gameCode = getActiveGameCode(game);
+			const gameCode = variantToGameCode[game];
 			const path = await join("games", gameCode);
 			await remove(path);
 		},
@@ -75,7 +75,7 @@ const gameOptions: GameOption[] = [
 			const folder = await join(
 				await appDataDir(),
 				"games",
-				getActiveGameCode(game),
+				variantToGameCode[game],
 			);
 			await openPath(folder);
 		},
@@ -272,7 +272,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 								src={branding?.[game].icon}
 							/>
 							<div class="flex flex-col justify-center">
-								<h1>{getGameName(game)}</h1>
+								<h1>{variantToGameName[game]}</h1>
 								<DiskSize />
 							</div>
 						</div>

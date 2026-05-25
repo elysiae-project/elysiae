@@ -3,38 +3,37 @@ import { appDataDir, join } from "@tauri-apps/api/path";
 import { Command } from "@tauri-apps/plugin-shell";
 import { type GameCodes, Variants } from "../types";
 
-/** @returns Game codes (in type `Variants`) as string (`bh/ys/sr/nap`) */
-export const getActiveGameCode = (currentGame: Variants): GameCodes => {
-	switch (currentGame) {
-		case Variants.BH3:
-			return "bh3";
-		case Variants.HK4E:
-			return "hk4e";
-		case Variants.HKRPG:
-			return "hkrpg";
-		case Variants.NAP:
-			return "nap";
-	}
+export const gameCodeToVariant: Record<GameCodes, Variants> = {
+	nap: Variants.NAP,
+	hkrpg: Variants.HKRPG,
+	hk4e: Variants.HK4E,
+	bh3: Variants.BH3,
 };
 
-export const getVariantFromCode = (code: string): Variants | null => {
-	switch (code) {
-		case "bh3":
-			return Variants.BH3;
-		case "hk4e":
-			return Variants.HK4E;
-		case "hkrpg":
-			return Variants.HKRPG;
-		case "nap":
-			return Variants.NAP;
-		default:
-			return null;
-	}
+export const variantToGameCode: Record<Variants, GameCodes> = {
+	0: "bh3",
+	1: "hk4e",
+	2: "hkrpg",
+	3: "nap",
+};
+
+export const variantToGameName: Record<Variants, string> = {
+	0: "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64",
+	1: "\x47\x65\x6e\x73\x68\x69\x6e\x20\x49\x6d\x70\x61\x63\x74",
+	2: "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c",
+	3: "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f",
+};
+
+export const variantToExeName: Record<Variants, string> = {
+	0: "\x42\x48\x33.exe",
+	1: "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe",
+	2: "\x53\x74\x61\x72\x52\x61\x69\x6c.exe",
+	3: "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f.exe",
 };
 
 export const getGameSize = async (game: Variants): Promise<number> => {
 	return new Promise((resolve, reject) => {
-		join("games", getActiveGameCode(game))
+		join("games", variantToGameCode[game])
 			.then((gameDir) => {
 				invoke("get_dir_size", {
 					path: gameDir,
@@ -49,24 +48,6 @@ export const getGameSize = async (game: Variants): Promise<number> => {
 };
 
 /**
- * Gets the name of a specified game
- *
- * @param game
- */
-export const getGameName = (game: Variants) => {
-	switch (game) {
-		case Variants.BH3:
-			return "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64";
-		case Variants.HK4E:
-			return "\x47\x65\x6e\x73\x68\x69\x6e\x20\x49\x6d\x70\x61\x63\x74";
-		case Variants.HKRPG:
-			return "\x48\x6f\x6e\x6b\x61\x69\x3a\x20\x53\x74\x61\x72\x20\x52\x61\x69\x6c";
-		case Variants.NAP:
-			return "\x5a\x65\x6e\x6c\x65\x73\x73\x20\x5a\x6f\x6e\x65\x20\x5a\x65\x72\x6f";
-	}
-};
-
-/**
  * Converts a Relative Path in the app data directory to an absolute path
  *
  * @param relativePath The relative path
@@ -78,24 +59,6 @@ export const relativePathConverter = async (relativePath: string) => {
 
 export const absolutePathConverter = async (absolutePath: string) => {
 	return absolutePath.split(await appDataDir())[1];
-};
-
-/**
- * Gets the executable name of a game
- *
- * @param game
- */
-export const getGameExeName = (game: Variants): string => {
-	switch (game) {
-		case Variants.BH3:
-			return "\x42\x48\x33.exe";
-		case Variants.HK4E:
-			return "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74.exe";
-		case Variants.HKRPG:
-			return "\x53\x74\x61\x72\x52\x61\x69\x6c.exe";
-		case Variants.NAP:
-			return "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f.exe";
-	}
 };
 
 /**

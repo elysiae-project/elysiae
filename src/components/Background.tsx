@@ -49,7 +49,7 @@ export default function Background() {
 
 	return (
 		<div class="absolute inset-0 overflow-hidden">
-			<AnimatePresence mode="sync">
+			<AnimatePresence mode="popLayout">
 				<BackgroundMedia
 					key={`${game}-bg`}
 					src={isVideo ? backgroundVideo : backgroundImage}

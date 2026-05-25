@@ -1,8 +1,8 @@
 import { warn } from "@tauri-apps/plugin-log";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { Variants } from "../types";
-import { getActiveGameCode, getVariantFromCode } from "../util/AppFunctions";
+import { type GameCodes, Variants } from "../types";
+import { gameCodeToVariant, variantToGameCode } from "../util/AppFunctions";
 import { getOption, setOption } from "../util/Settings";
 
 interface GameContextType {
@@ -19,9 +19,7 @@ export const GameProvider = ({ children }: { children: ComponentChildren }) => {
 	const [game, setGame] = useState<Variants>(Variants.HKRPG);
 	useEffect(() => {
 		(async () => {
-			const lastSelectedGame = getVariantFromCode(
-				await getOption<string>("selectedGame"),
-			);
+			const lastSelectedGame = gameCodeToVariant[await getOption<string>("selectedGame") as GameCodes]
 			if (lastSelectedGame) {
 				setGame(lastSelectedGame);
 			} else {
@@ -32,7 +30,7 @@ export const GameProvider = ({ children }: { children: ComponentChildren }) => {
 
 	useEffect(() => {
 		(async () => {
-			const gameCode = getActiveGameCode(game);
+			const gameCode = variantToGameCode[game];
 			await setOption("selectedGame", gameCode);
 		})();
 	}, [game]);
