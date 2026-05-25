@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -77,7 +77,7 @@ struct DownloadItem {
     is_pre_downloaded: bool,
 }
 
-type PendingCount = Arc<Mutex<usize>>;
+type PendingCount = Arc<AtomicUsize>;
 type FileEntry = (usize, usize, PendingCount);
 
 pub struct SophonInstaller {
@@ -376,7 +376,7 @@ fn register_chunks_for_file(
         return;
     }
 
-    let pending = Arc::new(Mutex::new(chunk_count));
+    let pending = Arc::new(AtomicUsize::new(chunk_count));
     for chunk in &file.asset_chunks {
         chunk_to_files
             .entry(chunk.chunk_name.clone())
@@ -650,9 +650,8 @@ async fn notify_assembly_ready(
         Some((_, entries)) => entries
             .into_iter()
             .filter_map(|(file_idx, tmp_dir_idx, pending)| {
-                let mut count = pending.lock().unwrap();
-                *count -= 1;
-                if *count == 0 {
+                let prev = pending.fetch_sub(1, Ordering::AcqRel);
+                if prev == 1 {
                     Some((file_idx, tmp_dir_idx))
                 } else {
                     None
@@ -1697,7 +1696,7 @@ mod tests {
         let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
         let (tx, mut rx) = mpsc::channel::<(usize, usize)>(16);
 
-        let pending: PendingCount = Arc::new(Mutex::new(1usize));
+        let pending: PendingCount = Arc::new(AtomicUsize::new(1usize));
         chunk_to_files.insert(
             "chunk_a".to_string(),
             vec![(0usize, 0usize, Arc::clone(&pending))],
@@ -1708,7 +1707,7 @@ mod tests {
         let received = rx.try_recv();
         assert!(received.is_ok(), "file should be sent to assembly channel");
         assert_eq!(received.unwrap(), (0, 0));
-        assert_eq!(*pending.lock().unwrap(), 0);
+        assert_eq!(pending.load(Ordering::Acquire), 0);
     }
 
     #[tokio::test]
