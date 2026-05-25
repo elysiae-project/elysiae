@@ -216,7 +216,7 @@ fn bench_zstd_decompress_write() {
 
     let output_path = dir.path().join("assembled.bin");
 
-    // --- Production path: open File → zstd::Decoder → io::copy → BufWriter ---
+    // --- Without BufReader (old approach) ---
     let iterations = 10;
     let start = Instant::now();
     for _ in 0..iterations {
@@ -233,7 +233,7 @@ fn bench_zstd_decompress_write() {
     let per = elapsed / iterations;
     let throughput_mb = (raw_size as f64 / (1024.0 * 1024.0)) / per.as_secs_f64();
 
-    // --- Alternative: add BufReader on the read side ---
+    // --- With BufReader (current production path) ---
     let start = Instant::now();
     for _ in 0..iterations {
         let f = fs::File::open(&compressed_path).expect("open compressed");
@@ -254,27 +254,26 @@ fn bench_zstd_decompress_write() {
 
     println!("bench_zstd_decompress_write:");
     println!(
-        "  chunk: {} MiB, {} iterations",
+        " chunk: {} MiB, {} iterations",
         raw_size / (1024 * 1024),
         iterations
     );
     println!(
-        "  current (no BufReader):  {} per chunk, {throughput_mb:.1} MiB/s",
+        " without BufReader: {} per chunk, {throughput_mb:.1} MiB/s",
         fmt_dur(per)
     );
     println!(
-        "  with BufReader(256 KiB): {} per chunk, {throughput_bufread:.1} MiB/s",
+        " with BufReader(256 KiB): {} per chunk, {throughput_bufread:.1} MiB/s",
         fmt_dur(per_bufread)
     );
-    println!("  speedup: {ratio:.2}x");
+    println!(" speedup: {ratio:.2}x");
 
-    // Memory: production uses 1 MiB write buffer + no read buffer
     println!(
-        "  current peak buffer: {} KiB (write only)",
+        " peak buffer (old): {} KiB (write only)",
         super::FILE_WRITE_BUFFER_SIZE / 1024
     );
     println!(
-        "  with BufReader peak: {} KiB (read+write)",
+        " peak buffer (new): {} KiB (read+write)",
         (super::FILE_WRITE_BUFFER_SIZE + 256 * 1024) / 1024
     );
 }

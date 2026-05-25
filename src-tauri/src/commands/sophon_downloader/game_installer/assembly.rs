@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -199,7 +199,8 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     file_hasher: Option<&mut Md5>,
 ) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
-    let mut decoder = zstd::Decoder::new(f)?;
+    let buf_reader = BufReader::with_capacity(256 * 1024, f);
+    let mut decoder = zstd::Decoder::new(buf_reader)?;
 
     writer.flush()?;
     writer.seek(SeekFrom::Start(offset))?;
