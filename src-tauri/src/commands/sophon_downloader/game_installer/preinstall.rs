@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use futures_util::StreamExt;
@@ -379,8 +379,14 @@ pub async fn preinstall_download(
     };
 
     let already_downloaded: HashSet<String> = resume_chunks.keys().cloned().collect();
-    let mut downloaded_chunks: HashSet<String> = already_downloaded.clone();
-    let mut chunk_bytes_map: HashMap<String, u64> = resume_chunks.clone();
+    let downloaded_chunks: Arc<DashMap<String, ()>> = Arc::new(DashMap::new());
+    for k in already_downloaded.iter() {
+        downloaded_chunks.insert(k.clone(), ());
+    }
+    let chunk_bytes_map: Arc<DashMap<String, u64>> = Arc::new(DashMap::new());
+    for (k, v) in resume_chunks {
+        chunk_bytes_map.insert(k, v);
+    }
 
     updater(SophonProgress::Downloading {
         downloaded_bytes: resume_offset,
@@ -390,83 +396,119 @@ pub async fn preinstall_download(
     });
 
     let start = Instant::now();
-    let mut last_update = Instant::now();
-    let mut chunks_since_save: u64 = 0;
+    let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
+    let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
+    let max_concurrency = super::ADAPTIVE_MAX_CONCURRENCY;
 
-    for chunk_info in &plan.unique_chunks {
-        if handle.is_cancelled() {
-            return Err(SophonError::Cancelled);
-        }
+    let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
+    let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
+        .map(|chunk_info| {
+            let client = client.clone();
+            let diff_download = plan.diff_download.clone();
+            let chunks_dir = chunks_dir.clone();
+            let handle = handle.clone();
+            let updater = Arc::clone(&updater);
+            let downloaded_bytes = Arc::clone(&downloaded_bytes);
+            let downloaded_chunks = Arc::clone(&downloaded_chunks);
+            let chunk_bytes_map = Arc::clone(&chunk_bytes_map);
+            let state_saver = Arc::clone(&state_saver);
+            let last_update = Arc::clone(&last_update);
+            let chunks_since_save = Arc::clone(&chunks_since_save);
+            let already_downloaded_chunk = already_downloaded.contains(&chunk_info.patch_name);
 
-        handle
-            .wait_if_paused(
-                &*updater,
-                downloaded_bytes.load(Ordering::Relaxed) + resume_offset,
-                total_bytes,
-            )
-            .await?;
+            async move {
+                if handle.is_cancelled() {
+                    return Err(SophonError::Cancelled);
+                }
 
-        let chunk_path = chunks_dir.join(&chunk_info.patch_name);
+                handle
+                    .wait_if_paused(
+                        &*updater,
+                        downloaded_bytes.load(Ordering::Relaxed) + resume_offset,
+                        total_bytes,
+                    )
+                    .await?;
 
-        let needs_download =
-            if chunk_path.exists() && verify_chunk_md5(&chunk_path, &chunk_info.patch_md5) {
-                downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                if !already_downloaded.contains(&chunk_info.patch_name) {
-                    downloaded_chunks.insert(chunk_info.patch_name.clone());
+                let chunk_path = chunks_dir.join(&chunk_info.patch_name);
+
+                let needs_download = if chunk_path.exists()
+                    && verify_chunk_md5(&chunk_path, &chunk_info.patch_md5)
+                {
+                    downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
+                    if !already_downloaded_chunk {
+                        downloaded_chunks.insert(chunk_info.patch_name.clone(), ());
+                        chunk_bytes_map
+                            .insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
+                    }
+                    false
+                } else {
+                    true
+                };
+
+                if needs_download {
+                    download_patch_chunk_with_retries(
+                        &client,
+                        &diff_download,
+                        &chunk_info.patch_name,
+                        &chunk_path,
+                        4,
+                    )
+                    .await?;
+
+                    downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
+                    downloaded_chunks.insert(chunk_info.patch_name.clone(), ());
                     chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                 }
-                continue;
-            } else {
-                true
-            };
 
-        if needs_download {
-            download_patch_chunk_with_retries(
-                client,
-                &plan.diff_download,
-                &chunk_info.patch_name,
-                &chunk_path,
-                4,
-            )
-            .await?;
+                let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
+                {
+                    if let Ok(mut lu) = last_update.try_lock()
+                        && lu.elapsed()
+                            >= std::time::Duration::from_millis(super::PROGRESS_UPDATE_INTERVAL_MS)
+                    {
+                        let total_elapsed = start.elapsed().as_secs_f64();
+                        let speed_bps = if total_elapsed > 0.0 {
+                            db as f64 / total_elapsed
+                        } else {
+                            0.0
+                        };
+                        let remaining = total_bytes.saturating_sub(db);
+                        let eta = if speed_bps > 0.0 {
+                            remaining as f64 / speed_bps
+                        } else {
+                            0.0
+                        };
 
-            downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-            downloaded_chunks.insert(chunk_info.patch_name.clone());
-            chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
-        }
+                        updater(SophonProgress::Downloading {
+                            downloaded_bytes: db,
+                            total_bytes,
+                            speed_bps,
+                            eta_seconds: eta,
+                        });
+                        *lu = Instant::now();
+                    }
+                }
 
-        let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
-        {
-            let elapsed = last_update.elapsed();
-            if elapsed >= std::time::Duration::from_millis(super::PROGRESS_UPDATE_INTERVAL_MS) {
-                let total_elapsed = start.elapsed().as_secs_f64();
-                let speed_bps = if total_elapsed > 0.0 {
-                    db as f64 / total_elapsed
-                } else {
-                    0.0
-                };
-                let remaining = total_bytes.saturating_sub(db);
-                let eta = if speed_bps > 0.0 {
-                    remaining as f64 / speed_bps
-                } else {
-                    0.0
-                };
+                let save_count = chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
+                if save_count.is_multiple_of(25) {
+                    state_saver(&chunk_bytes_map);
+                }
 
-                updater(SophonProgress::Downloading {
-                    downloaded_bytes: db,
-                    total_bytes,
-                    speed_bps,
-                    eta_seconds: eta,
-                });
-                last_update = Instant::now();
+                Ok(())
+            }
+        })
+        .buffer_unordered(max_concurrency)
+        .collect()
+        .await;
+
+    for result in &results {
+        if let Err(e) = result {
+            if matches!(e, SophonError::Cancelled) {
+                return Err(SophonError::Cancelled);
             }
         }
-
-        chunks_since_save += 1;
-        if chunks_since_save.is_multiple_of(25) {
-            state_saver(&chunk_bytes_map);
-        }
     }
+    results.into_iter().find(|r| r.is_err()).transpose()?;
 
     // Final save to ensure all downloaded chunks are persisted
     state_saver(&chunk_bytes_map);
@@ -478,6 +520,8 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
+    let downloaded_chunks: HashSet<String> =
+        downloaded_chunks.iter().map(|e| e.key().clone()).collect();
     let state = PreinstallState {
         tag: plan.tag.clone(),
         game_id: game_id.to_string(),
