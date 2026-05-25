@@ -24,7 +24,7 @@
     "@tauri-apps/plugin-store": "^2.4.3",
     "class-variance-authority": "^0.7.1",
     "lucide-preact": "^1.16.0",
-    "motion": "^12.38.0",
+    "motion": "^12.40.0",
     "preact": "^10.29.2"
   },
   "devDependencies": {
@@ -32,10 +32,10 @@
     "@preact/preset-vite": "^2.10.5",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.2",
-    "@types/node": "^25.8.0",
+    "@types/node": "^25.9.1",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.13"
+    "vite": "^8.0.14"
   },
   "packageManager": "yarn@4.15.0"
 }
