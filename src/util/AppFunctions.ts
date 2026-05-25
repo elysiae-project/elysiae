@@ -144,19 +144,22 @@ const isURLValid = (verifyingString: string): boolean => {
 	}
 };
 
-export const downloadFileWithProgress = async (
+export const downloadFile = async (
 	url: string,
 	destination: string,
 	onProgress: (progress: number, total: number) => void,
+	broadcastProgress: boolean = true,
 ) => {
 	const downloadID = crypto.randomUUID();
 
-	const unlisten = await listen<{ progress: number; total: number }>(
-		`download://progress/${downloadID}`,
-		({ payload }) => {
-			onProgress(payload.progress, payload.total);
-		},
-	);
+	const unlisten = broadcastProgress
+		? await listen<{ progress: number; total: number }>(
+				`download://progress/${downloadID}`,
+				({ payload }) => {
+					onProgress(payload.progress, payload.total);
+				},
+			)
+		: null;
 
 	try {
 		await invoke("download_file", {
@@ -165,6 +168,6 @@ export const downloadFileWithProgress = async (
 			uuid: downloadID,
 		});
 	} finally {
-		unlisten();
+		if (unlisten) unlisten();
 	}
 };
