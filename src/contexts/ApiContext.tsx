@@ -2,6 +2,9 @@ import { fetch } from "@tauri-apps/plugin-http";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import {
+	type GameCodes,
+	type LauncherBackgroundData,
+	type LauncherBackgroundRawData,
 	type LauncherBrandingData,
 	type LauncherBrandingRawData,
 	type LauncherBrandingRawGameData,
@@ -11,18 +14,29 @@ import {
 	Variants,
 } from "../types";
 
+const GITHUB_ASSET_BASE =
+	"https://raw.githubusercontent.com/elysiae-project/assets/refs/heads/main";
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
 
 const BH3_EN_ID = "bxPTXSET5t";
 
+const GAME_CODE_TO_VARIANT: Record<GameCodes, Variants> = {
+	nap: Variants.NAP,
+	hkrpg: Variants.HKRPG,
+	hk4e: Variants.HK4E,
+	bh3: Variants.BH3,
+};
+
 interface ApiContextType {
 	graphics: LauncherGraphicsData | null;
+	backgrounds: LauncherBackgroundData | null;
 	branding: LauncherBrandingData | null;
 }
 
 export const ApiContext = createContext<ApiContextType>({
 	graphics: null,
+	backgrounds: null,
 	branding: null,
 });
 
@@ -32,6 +46,8 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	const [graphicsData, setGraphicsData] = useState<LauncherGraphicsData | null>(
 		null,
 	);
+	const [backgroundData, setBackgroundData] =
+		useState<LauncherBackgroundData | null>(null);
 	const [brandingData, setBrandingData] = useState<LauncherBrandingData | null>(
 		null,
 	);
@@ -39,6 +55,30 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	useEffect(() => {
 		if (!loading) {
 			loading = true;
+
+			fetch(
+				"https://raw.githubusercontent.com/elysiae-project/assets/refs/heads/main/launcherAssets.json",
+			).then((res) => {
+				res.json().then((data: LauncherBackgroundRawData) => {
+					const formatted = (Object.keys(data) as GameCodes[]).reduce(
+						(acc: LauncherBackgroundData, code: GameCodes) => {
+							const variant = GAME_CODE_TO_VARIANT[code];
+							const entry = data[code];
+
+							const bg = entry.backgrounds.find((b) => b.video !== null) ??
+								entry.backgrounds[0];
+
+							acc[variant] = {
+								backgroundImage: `${GITHUB_ASSET_BASE}/${bg.image}`,
+								backgroundVideo: `${GITHUB_ASSET_BASE}/${bg.video}`,
+							};
+							return acc;
+						},
+						{} as LauncherBackgroundData,
+					);
+					setBackgroundData(formatted);
+				});
+			});
 
 			fetch(
 				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getAllGameBasicInfo"].join("/")}?launcher_id=${LAUNCHER_ID}&language=${LANGUAGE}`,
@@ -135,6 +175,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 		<ApiContext.Provider
 			value={{
 				graphics: graphicsData,
+				backgrounds: backgroundData,
 				branding: brandingData,
 			}}
 		>

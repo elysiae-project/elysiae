@@ -89,13 +89,30 @@ export type LauncherGraphicsRawData = {
 export type LauncherGraphicsData = {
 	[key in Variants]: {
 		backgroundImage: string;
-		backgroundVideo: string;
+		backgroundVideo: string | null;
 		backgroundVideoOverlay: string;
 		icon: string;
 	};
 };
 
 // Launcher – Branding
+export type LauncherBackgroundData = {
+	[key in Variants]: {
+		backgroundVideo: string | null;
+		backgroundImage: string | null;
+	};
+};
+
+export type LauncherBackgroundRawData = {
+	[key in GameCodes]: {
+		backgrounds: LauncherBackgroundAsset[];
+	};
+};
+
+type LauncherBackgroundAsset = {
+	image: string | null;
+	video: string | null;
+};
 
 export type LauncherBrandingRawGameData = {
 	id: string;
