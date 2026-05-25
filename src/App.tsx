@@ -46,10 +46,12 @@ function App() {
 	const settingsModal = useRef<ModalHandle>(null);
 
 	useEffect(() => {
-		inDevEnv().then(() => {
-			document.addEventListener("contextmenu", (e) => {
-				e.preventDefault();
-			});
+		inDevEnv().then((res) => {
+			if (!res) {
+				document.addEventListener("contextmenu", (e) => {
+					e.preventDefault();
+				});
+			}
 		});
 	}, []);
 

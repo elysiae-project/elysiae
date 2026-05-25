@@ -18,7 +18,6 @@ import { gameCodeToVariant } from "../util/AppFunctions";
 const GITHUB_ASSET_BASE = "https://assets.elysiae.app/assets/";
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
-
 const BH3_EN_ID = "bxPTXSET5t";
 
 interface ApiContextType {
@@ -48,7 +47,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	useEffect(() => {
 		if (!loading) {
 			loading = true;
-
 			fetch("https://assets.elysiae.app/assets/launcherAssets.json").then(
 				(res) => {
 					res.json().then((data: LauncherBackgroundRawData) => {
