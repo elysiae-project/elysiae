@@ -368,6 +368,7 @@ fn register_chunks_for_file(
     ctx: &InstallContext,
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     download_items: &mut Vec<DownloadItem>,
+    download_items_index: &mut HashMap<String, usize>,
     data: &InstallerData,
     pre_downloaded: &HashSet<String>,
 ) {
@@ -388,6 +389,7 @@ fn register_chunks_for_file(
         match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
             Entry::Vacant(vacant) => {
                 vacant.insert(1);
+                download_items_index.insert(chunk.chunk_name.clone(), download_items.len());
                 download_items.push(DownloadItem {
                     chunk: chunk.clone(),
                     client: Arc::clone(&data.client),
@@ -397,12 +399,10 @@ fn register_chunks_for_file(
             }
             Entry::Occupied(mut occupied) => {
                 *occupied.get_mut() += 1;
-                if is_pre
-                    && let Some(item) = download_items
-                        .iter_mut()
-                        .find(|i| i.chunk.chunk_name == chunk.chunk_name)
-                {
-                    item.is_pre_downloaded = is_pre;
+                if is_pre {
+                    if let Some(&idx) = download_items_index.get(&chunk.chunk_name) {
+                        download_items[idx].is_pre_downloaded = is_pre;
+                    }
                 }
             }
         }
@@ -418,6 +418,7 @@ async fn build_download_state(
 ) -> SophonResult<(Vec<DownloadItem>, Arc<DashMap<String, Vec<FileEntry>>>)> {
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::new();
+    let mut download_items_index: HashMap<String, usize> = HashMap::new();
     let mut file_idx = 0usize;
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
@@ -455,6 +456,7 @@ async fn build_download_state(
                 ctx,
                 &chunk_to_files,
                 &mut download_items,
+                &mut download_items_index,
                 &data,
                 pre_downloaded,
             );
