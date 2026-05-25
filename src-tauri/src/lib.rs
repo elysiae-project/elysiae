@@ -1,6 +1,3 @@
-//use tauri::menu::{MenuBuilder, MenuItemBuilder};
-//use tauri::tray::TrayIconBuilder;
-
 use crate::commands::{app_functions, file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
@@ -52,21 +49,6 @@ pub fn run() {
             commands::sophon_downloader::sophon_cancel,
             commands::sophon_downloader::sophon_check_update,
         ])
-        /* .setup(|app| {
-            let quit_item = MenuItemBuilder::new("Quit Elysiae").id("quit").build(app)?;
-            let menu = MenuBuilder::new(app).items(&[&quit_item]).build()?;
-            TrayIconBuilder::new()
-                .menu(&menu)
-                .icon(app.default_window_icon().unwrap().clone())
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    if event.id().as_ref() == "quit" {
-                        app.exit(0)
-                    }
-                })
-                .build(app)?;
-            Ok(())
-        })*/
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -92,8 +74,7 @@ fn apply_nvidia_wayland_workaround() {
 
 #[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
-    // If a NVIDIA graphics card is present, one of these two files should also be
-    // available
+    // If a NVIDIA graphics card is present, one of these two paths should exist
     std::path::Path::new("/proc/driver/nvidia/version").exists()
         || std::path::Path::new("/dev/nvidia0").exists()
 }

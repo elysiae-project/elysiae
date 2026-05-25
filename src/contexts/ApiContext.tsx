@@ -13,19 +13,13 @@ import {
 	type LauncherGraphicsRawGameData,
 	Variants,
 } from "../types";
+import { gameCodeToVariant } from "../util/AppFunctions";
 
 const GITHUB_ASSET_BASE = "https://assets.elysiae.app/assets/";
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
 
 const BH3_EN_ID = "bxPTXSET5t";
-
-const GAME_CODE_TO_VARIANT: Record<GameCodes, Variants> = {
-	nap: Variants.NAP,
-	hkrpg: Variants.HKRPG,
-	hk4e: Variants.HK4E,
-	bh3: Variants.BH3,
-};
 
 interface ApiContextType {
 	graphics: LauncherGraphicsData | null;
@@ -55,12 +49,12 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 		if (!loading) {
 			loading = true;
 
-			fetch("http://assets.elysiae.app/assets/launcherAssets.json").then(
+			fetch("https://assets.elysiae.app/assets/launcherAssets.json").then(
 				(res) => {
 					res.json().then((data: LauncherBackgroundRawData) => {
 						const formatted = (Object.keys(data) as GameCodes[]).reduce(
 							(acc: LauncherBackgroundData, code: GameCodes) => {
-								const variant = GAME_CODE_TO_VARIANT[code];
+								const variant = gameCodeToVariant[code];
 								const entry = data[code];
 
 								const bg =

@@ -3,9 +3,9 @@ import { join } from "@tauri-apps/api/path";
 import { info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
 import {
-	variantToGameName,
-	variantToGameCode,
 	variantToExeName,
+	variantToGameCode,
+	variantToGameName,
 } from "../util/AppFunctions";
 import { broadcastNotification } from "../util/NotificationHelper";
 import { getOption } from "../util/Settings";
