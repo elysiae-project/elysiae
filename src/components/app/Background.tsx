@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import { fadeInOut } from "../../util/Animations";
@@ -12,12 +12,19 @@ function BackgroundMedia({
 	isVideo: boolean;
 }) {
 	const videoRef = useRef<HTMLVideoElement>(null);
+	const localSrc = useState<string | null>(null);
+
+
 
 	useEffect(() => {
 		if (isVideo && videoRef.current) {
 			videoRef.current.play().catch(() => {});
 		}
 	}, [isVideo, src]);
+
+	if(!localSrc) {
+		return <div></div>
+	}
 
 	return isVideo ? (
 		<motion.video

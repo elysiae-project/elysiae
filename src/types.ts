@@ -109,7 +109,7 @@ export type LauncherBackgroundRawData = {
 	};
 };
 
-type LauncherBackgroundAsset = {
+export type LauncherBackgroundAsset = {
 	image: string | null;
 	video: string | null;
 };

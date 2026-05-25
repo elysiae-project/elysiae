@@ -8,7 +8,11 @@ import type {
 	WineModule,
 	WineSetupProgress,
 } from "../types";
-import { downloadFileWithProgress, executeLocalBinary, getApiJson } from "../util/AppFunctions";
+import {
+	downloadFile,
+	executeLocalBinary,
+	getApiJson,
+} from "../util/AppFunctions";
 import { getOption, setOption } from "../util/Settings";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 
@@ -163,7 +167,7 @@ export const updateWineComponent = async (
 			total_bytes: 0,
 		});
 
-		await downloadFileWithProgress(
+		await downloadFile(
 			json.download_url,
 			component.saveTo,
 			(progress, total) => {
@@ -220,18 +224,14 @@ const installWineModules = async (
 				total_bytes: 0,
 			});
 
-			await downloadFileWithProgress(
-				module.downloadLink,
-				filename,
-				(progress, total) => {
-					onProgress({
-						type: "wineSetupDownloading",
-						component: module.name,
-						downloaded_bytes: progress,
-						total_bytes: total,
-					});
-				},
-			);
+			await downloadFile(module.downloadLink, filename, (progress, total) => {
+				onProgress({
+					type: "wineSetupDownloading",
+					component: module.name,
+					downloaded_bytes: progress,
+					total_bytes: total,
+				});
+			});
 
 			if (module.moduleType === "exe") {
 				await runExeWithWine(filename, "/install /quiet /norestart");
