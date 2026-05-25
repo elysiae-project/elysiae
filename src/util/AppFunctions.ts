@@ -50,8 +50,7 @@ export const getGameSize = async (game: Variants): Promise<number> => {
 };
 
 /**
- * @returns `boolean` value based on weather or not the app is running in a
- *   development environment
+ * @returns value based on weather or not the app is running in a development environment
  */
 export const inDevEnv = async (): Promise<boolean> => {
 	return new Promise((resolve, reject) => {

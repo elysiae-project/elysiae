@@ -15,7 +15,7 @@ import {
 } from "../types";
 import { gameCodeToVariant } from "../util/AppFunctions";
 
-const GITHUB_ASSET_BASE = "https://assets.elysiae.app/assets/";
+const GITHUB_ASSET_BASE = "https://assets.elysiae.app/";
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
 const BH3_EN_ID = "bxPTXSET5t";
@@ -47,9 +47,11 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	useEffect(() => {
 		if (!loading) {
 			loading = true;
-			fetch("https://assets.elysiae.app/assets/launcherAssets.json").then(
-				(res) => {
+			fetch("https://assets.elysiae.app/launcherAssets.json")
+				.then((res) => {
 					res.json().then((data: LauncherBackgroundRawData) => {
+						console.log(`Elysiae Video Assets:`);
+						console.log(data);
 						const formatted = (Object.keys(data) as GameCodes[]).reduce(
 							(acc: LauncherBackgroundData, code: GameCodes) => {
 								const variant = gameCodeToVariant[code];
@@ -69,8 +71,8 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 						);
 						setBackgroundData(formatted);
 					});
-				},
-			);
+				})
+				.catch((err) => console.error(err));
 
 			fetch(
 				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getAllGameBasicInfo"].join("/")}?launcher_id=${LAUNCHER_ID}&language=${LANGUAGE}`,
@@ -78,7 +80,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 				.then((res) => res.json())
 				.then((data: LauncherGraphicsRawData) => {
 					if (data.message !== "OK") throw new Error(data.message);
-					console.log(data);
 					const formatted = data.data.game_info_list.reduce(
 						(acc: LauncherGraphicsData, game: LauncherGraphicsRawGameData) => {
 							let id: Variants | undefined;
@@ -115,10 +116,9 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 						},
 						{} as LauncherGraphicsData,
 					);
-					console.log(formatted);
 					setGraphicsData(formatted);
 				})
-				.catch((err) => console.log(err))
+				.catch((err) => console.error(err))
 				.finally(() => (loading = false));
 
 			fetch(
@@ -127,7 +127,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 				.then((res) => res.json())
 				.then((data: LauncherBrandingRawData) => {
 					if (data.message !== "OK") throw new Error(data.message);
-					console.log(data);
 					const formatted = data.data.games.reduce(
 						(acc: LauncherBrandingData, game: LauncherBrandingRawGameData) => {
 							let id: Variants | undefined;
@@ -155,10 +154,9 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 						},
 						{} as LauncherBrandingData,
 					);
-					console.log(formatted);
 					setBrandingData(formatted);
 				})
-				.catch((err) => console.log(err))
+				.catch((err) => console.error(err))
 				.finally(() => (loading = false));
 		}
 	}, []);
