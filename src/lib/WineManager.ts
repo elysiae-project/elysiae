@@ -48,7 +48,6 @@ const components: ((
 					destDirName: "syswow64",
 				},
 			] as const;
-
 			const dlls = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
 
 			await Promise.all(
@@ -68,11 +67,11 @@ const components: ((
 
 			// Both x32 and x64 DLLs must be in place before the DLL registry keys can be added to the Wine registry
 			await Promise.all(dlls.map(registerNewDLL));
-
 			await removeDir("dxvk");
 		},
 	}),
 	() => ({
+		// This will likely not be needed in the coming months. TODO: Remove when tests show that it isn't needed
 		componentName: "jadeite",
 		extractTo: "jadeite",
 		saveTo: "jadeite.zip",
@@ -80,19 +79,6 @@ const components: ((
 			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
 	}),
-	/*(onProgress) => ({
-    // While not used right now, it will for certain be used in future games or game updates as DX12 gets adopted by these games
-    componentName: "vkd3d",
-    extractTo: "vkd3d",
-    saveTo: "vkd3d.tar.zst",
-    postInstall: async () => {
-      // Run setup_vkd3d_proton.sh to automate the installation process
-      await executeLocalBinary("vkd3d/setup_vkd3d_proton.sh", "install", {
-        WINEPREFIX: await winePrefix(),
-      });
-      await removeDir("vkd3d");
-    },
-  }),*/
 ];
 
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)

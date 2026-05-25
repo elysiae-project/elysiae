@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
-	BaseDirectory,
+	BaseDirectory as BaseDir,
 	type DirEntry,
 	exists as tauriExists,
 	mkdir as tauriMkdir,
@@ -14,7 +14,7 @@ import { error, info } from "@tauri-apps/plugin-log";
 
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
-		tauriExists(path, { baseDir: BaseDirectory.AppData })
+		tauriExists(path, { baseDir: BaseDir.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -24,7 +24,7 @@ export const readFile = async (
 	path: string,
 ): Promise<Uint8Array<ArrayBuffer>> => {
 	return new Promise((resolve, reject) => {
-		tauriReadFile(path, { baseDir: BaseDirectory.AppData })
+		tauriReadFile(path, { baseDir: BaseDir.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -32,7 +32,7 @@ export const readFile = async (
 
 export const readTextFile = async (path: string): Promise<string> => {
 	return new Promise((resolve, reject) => {
-		tauriReadTextFile(path, { baseDir: BaseDirectory.AppData })
+		tauriReadTextFile(path, { baseDir: BaseDir.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -40,7 +40,7 @@ export const readTextFile = async (path: string): Promise<string> => {
 
 export const remove = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriRemove(path, { baseDir: BaseDirectory.AppData })
+		tauriRemove(path, { baseDir: BaseDir.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -48,7 +48,7 @@ export const remove = async (path: string): Promise<void> => {
 
 export const removeDir = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriRemove(path, { recursive: true, baseDir: BaseDirectory.AppData })
+		tauriRemove(path, { recursive: true, baseDir: BaseDir.AppData })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -56,7 +56,7 @@ export const removeDir = async (path: string): Promise<void> => {
 
 export const mkdir = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriMkdir(path, { baseDir: BaseDirectory.AppData, recursive: true })
+		tauriMkdir(path, { baseDir: BaseDir.AppData, recursive: true })
 			.then(resolve)
 			.catch(reject);
 	});
@@ -68,8 +68,8 @@ export const rename = async (
 ): Promise<void> => {
 	return new Promise((resolve, reject) => {
 		tauriRename(originalPath, destPath, {
-			newPathBaseDir: BaseDirectory.AppData,
-			oldPathBaseDir: BaseDirectory.AppData,
+			newPathBaseDir: BaseDir.AppData,
+			oldPathBaseDir: BaseDir.AppData,
 		})
 			.then(resolve)
 			.catch(reject);
@@ -78,7 +78,7 @@ export const rename = async (
 
 export const readDir = async (path: string): Promise<DirEntry[]> => {
 	return new Promise((resolve, reject) => {
-		tauriReadDir(path, { baseDir: BaseDirectory.AppData })
+		tauriReadDir(path, { baseDir: BaseDir.AppData })
 			.then((res) => {
 				resolve(res);
 			})

@@ -183,23 +183,21 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 				</h1>
 				<p class="text-[0.85rem]">{version}</p>
 			</div>
-			<div class="flex items-center">
-				<Button
-					height={2.3}
-					width={6.5}
-					size="sm"
-					variant={updateAvailable ? "primary" : "secondary"}
-					disabled={!updateAvailable}
-					onClick={() => {
-						updateWineComponent(componentName, (event) => {
-							setWineSetupProgress(event);
-						});
-						setUpdateAvailable(false);
-					}}
-				>
-					<p class="text-[1rem]">Update</p>
-				</Button>
-			</div>
+			<Button
+				height={2.3}
+				width={6.5}
+				size="sm"
+				variant={updateAvailable ? "primary" : "secondary"}
+				disabled={!updateAvailable}
+				onClick={() => {
+					updateWineComponent(componentName, (event) => {
+						setWineSetupProgress(event);
+					});
+					setUpdateAvailable(false);
+				}}
+			>
+				<p class="text-[1rem]">Update</p>
+			</Button>
 		</div>
 	);
 };
@@ -292,7 +290,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 					</div>
 					<div class="mb-2.5">
 						<h1 class="mb-2.5 text-xl">Modules</h1>
-						<div class="flex flex-col gap-y-3">
+						<div class="flex flex-col justify-center gap-y-3">
 							{["wine", "dxvk", "jadeite"].map((item) => (
 								<ComponentInfo componentName={item as AppModules} />
 							))}

@@ -21,7 +21,7 @@ const titlebarStyles = cva(
 	},
 );
 
-export default function Titlebar() {
+export const Titlebar = () => {
 	const { game } = useGame();
 
 	return (
@@ -43,4 +43,6 @@ export default function Titlebar() {
 			</div>
 		</div>
 	);
-}
+};
+
+export default Titlebar;

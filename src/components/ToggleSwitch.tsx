@@ -90,7 +90,7 @@ const PADDING_REM: Record<ComponentSize, number> = {
 	xl: 1.5,
 };
 
-export default function ToggleSwitch({
+export const ToggleSwitch = ({
 	onClick,
 	startActive = false,
 	width = 7.5,
@@ -102,7 +102,7 @@ export default function ToggleSwitch({
 	width?: number;
 	height?: number;
 	size?: ComponentSize;
-}) {
+}) => {
 	const { game } = useGame();
 	const [enabled, setEnabled] = useState<boolean>(startActive);
 	const padding = PADDING_REM[size];
@@ -143,4 +143,6 @@ export default function ToggleSwitch({
 			</div>
 		</button>
 	);
-}
+};
+
+export default ToggleSwitch;

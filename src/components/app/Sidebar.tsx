@@ -2,7 +2,7 @@ import { motion } from "motion/react";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 
-export default function Sidebar() {
+export const Sidebar = () => {
 	const { game, setGame } = useGame();
 	const { branding } = useApi();
 
@@ -32,3 +32,5 @@ export default function Sidebar() {
 		</motion.div>
 	);
 }
+
+export default Sidebar;

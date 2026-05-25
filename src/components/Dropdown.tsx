@@ -81,7 +81,7 @@ const getInitialValue = (value: number | string, values: string[]): number => {
 	return valueIndex !== -1 ? valueIndex : 0;
 };
 
-export default function Dropdown({
+export const Dropdown = ({
 	labels,
 	values = labels,
 	initialValue = 0,
@@ -97,7 +97,7 @@ export default function Dropdown({
 	width?: number;
 	height?: number;
 	size?: ComponentSize;
-}) {
+}) => {
 	const { game } = useGame();
 	const initialValueIndex = getInitialValue(initialValue, values);
 	const [open, setOpen] = useState<boolean>(false);
@@ -174,3 +174,5 @@ export default function Dropdown({
 		</div>
 	);
 }
+
+export default Dropdown;

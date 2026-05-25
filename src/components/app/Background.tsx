@@ -4,17 +4,15 @@ import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import { fadeInOut } from "../../util/Animations";
 
-function BackgroundMedia({
+const BackgroundMedia = ({
 	src,
 	isVideo,
 }: {
 	src: string | null;
 	isVideo: boolean;
-}) {
+}) => {
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const localSrc = useState<string | null>(null);
-
-
 
 	useEffect(() => {
 		if (isVideo && videoRef.current) {
@@ -22,8 +20,8 @@ function BackgroundMedia({
 		}
 	}, [isVideo, src]);
 
-	if(!localSrc) {
-		return <div></div>
+	if (!localSrc) {
+		return <div></div>;
 	}
 
 	return isVideo ? (
@@ -42,9 +40,9 @@ function BackgroundMedia({
 		// biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
 		<motion.img class="background" {...(fadeInOut as any)} src={src} alt="" />
 	);
-}
+};
 
-export default function Background() {
+export const Background = () => {
 	const { game } = useGame();
 	const { graphics, backgrounds } = useApi();
 
@@ -70,4 +68,6 @@ export default function Background() {
 			</AnimatePresence>
 		</div>
 	);
-}
+};
+
+export default Background;

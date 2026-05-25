@@ -40,7 +40,7 @@ const bgTheme = cva("h-full w-full overflow-hidden", {
 	},
 });
 
-function App() {
+const App = () => {
 	const { game } = useGame();
 	const { graphics } = useApi();
 	const settingsModal = useRef<ModalHandle>(null);
@@ -87,7 +87,7 @@ function App() {
 			</div>
 		</div>
 	);
-}
+};
 
 export default function AppWrapper() {
 	return (

@@ -82,7 +82,7 @@ const buttonStyles = cva(
 	},
 );
 
-export default function Button({
+export const Button = ({
 	onClick,
 	children,
 	variant,
@@ -98,7 +98,7 @@ export default function Button({
 	disabled?: boolean;
 	width?: number;
 	height?: number;
-}) {
+}) => {
 	const { game } = useGame();
 
 	return (
@@ -120,4 +120,6 @@ export default function Button({
 			{children}
 		</button>
 	);
-}
+};
+
+export default Button;

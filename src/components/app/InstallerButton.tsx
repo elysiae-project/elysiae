@@ -15,7 +15,7 @@ import type { GameCodes } from "../../types";
 import { gameCodeToVariant, variantToGameCode } from "../../util/AppFunctions";
 import Button from "../Button";
 
-export default function InstallerButton() {
+export const InstallerButton = () => {
 	const { game } = useGame();
 	const { state, setDownloadingGame, setResumable, setWineSetupProgress } =
 		useDownload();
@@ -100,4 +100,6 @@ export default function InstallerButton() {
 			</Button>
 		</div>
 	);
-}
+};
+
+export default InstallerButton;

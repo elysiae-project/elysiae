@@ -25,13 +25,13 @@ const progressbarContainerStyles = cva("h-full transition-all duration-300", {
 	},
 });
 
-export default function Progressbar({
+export const ProgressBar = ({
 	progress,
 	game,
 }: {
 	progress: number;
 	game: Variants;
-}) {
+}) => {
 	return (
 		<div class={progressbarStyles({ game })}>
 			<div
@@ -41,3 +41,5 @@ export default function Progressbar({
 		</div>
 	);
 }
+
+export default ProgressBar;

@@ -21,7 +21,7 @@ const menuCloseStyles = cva(
 	},
 );
 
-export default function MenuClose({
+export const MenuClose = ({
 	clickAction,
 	size = 32,
 }: {
@@ -29,7 +29,7 @@ export default function MenuClose({
 	size?: number;
 	width?: number;
 	height?: number;
-}) {
+}) => {
 	const { game } = useGame();
 	const assetPath = `/icon/${variantToGameCode[game]}`;
 	const [mouseDown, setMouseDown] = useState<boolean>(false);
@@ -71,4 +71,6 @@ export default function MenuClose({
 			/>
 		</button>
 	);
-}
+};
+
+export default MenuClose;
