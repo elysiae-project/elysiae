@@ -18,7 +18,8 @@
         { "url": "https://autopatch*.**" },
         { "url": "https://api.github.com" },
         { "url": "https://raw.githubusercontent.com" },
-        { "url": "https://codeberg.org" }
+        { "url": "https://codeberg.org" },
+        { "url": "https://*.elysiae.app"}
       ]
     },
     {
