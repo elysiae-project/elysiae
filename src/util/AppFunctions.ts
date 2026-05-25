@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { appDataDir, join } from "@tauri-apps/api/path";
+import { fetch } from "@tauri-apps/plugin-http";
 import { Command } from "@tauri-apps/plugin-shell";
 import { type GameCodes, Variants } from "../types";
 
@@ -48,20 +50,6 @@ export const getGameSize = async (game: Variants): Promise<number> => {
 };
 
 /**
- * Converts a Relative Path in the app data directory to an absolute path
- *
- * @param relativePath The relative path
- * @returns Absolute path from relative path (in app data directory)
- */
-export const relativePathConverter = async (relativePath: string) => {
-	return await join(await appDataDir(), relativePath);
-};
-
-export const absolutePathConverter = async (absolutePath: string) => {
-	return absolutePath.split(await appDataDir())[1];
-};
-
-/**
  * @returns `boolean` value based on weather or not the app is running in a
  *   development environment
  */
@@ -107,30 +95,77 @@ export const executeLocalBinary = async (
 	});
 };
 
-/**
- * Convert a POSIX path to a Windows path used by Wine
- *
- * @param path POSIX Path
- * @returns Wine Windows path converted froma POSIX path
- */
-export const posixToWinPath = (path: string): string => {
-	return `Z:\\${path.replaceAll("/", "\\")}`;
-};
-
-/**
- * Convert a Windows path used by Wine to POSIX
- *
- * @param path Wine Windows Path
- * @returns POSIX path converted from a Wine Windows Path
- */
-export const winToPosixPath = (path: string): string => {
-	return `/${path.slice(3).replaceAll("\\", "/")}`;
-};
-
 export const formatNumber = (num: number): string => {
 	try {
 		return new Intl.NumberFormat(navigator.language).format(num);
 	} catch {
 		return new Intl.NumberFormat("en-US").format(num);
+	}
+};
+
+/**
+ * @param url Link to an API
+ * @returns JavaScipt Object from API URL
+ */
+export const getApiJson = async <T>(url: string): Promise<T> => {
+	return new Promise((resolve, reject) => {
+		if (!isURLValid(url)) {
+			reject(`getApiJson: URL ${url} is invalid`);
+		}
+		fetch(url, {
+			method: "GET",
+		}).then((response) => {
+			if (response.status === 200) {
+				response
+					.json()
+					.then((json) => {
+						resolve(json as T);
+					})
+					.catch((e) => {
+						reject(`getApiJson: ${e}`);
+					});
+			} else {
+				reject(`getAPIJson: ${url} returned status code ${response.status}`);
+			}
+		});
+	});
+};
+
+/**
+ * @param verifyingString The string you want to verify
+ * @returns Boolean value based on weather verifyingString is a valid http URL
+ *   or not
+ */
+const isURLValid = (verifyingString: string): boolean => {
+	try {
+		const testURL = new URL(verifyingString);
+		return testURL.protocol === "http:" || testURL.protocol === "https:";
+	} catch {
+		return false;
+	}
+};
+
+export const downloadFileWithProgress = async (
+	url: string,
+	destination: string,
+	onProgress: (progress: number, total: number) => void,
+) => {
+	const downloadID = crypto.randomUUID();
+
+	const unlisten = await listen<{ progress: number; total: number }>(
+		`download://progress/${downloadID}`,
+		({ payload }) => {
+			onProgress(payload.progress, payload.total);
+		},
+	);
+
+	try {
+		await invoke("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} finally {
+		unlisten();
 	}
 };
