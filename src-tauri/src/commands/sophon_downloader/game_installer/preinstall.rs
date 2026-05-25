@@ -856,13 +856,21 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     let mut chunk_file = fs::File::open(&chunk_path)?;
     chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
 
-    let mut data = vec![0u8; asset.patch_chunk_length as usize];
-    chunk_file.read_exact(&mut data)?;
-
-    if data.starts_with(HDIFF_MAGIC) {
+    // Check if this is an HDiff patch by reading just the magic bytes
+    let mut magic_buf = [0u8; HDIFF_MAGIC.len()];
+    if asset.patch_chunk_length >= HDIFF_MAGIC.len() as u64 {
+        chunk_file.read_exact(&mut magic_buf)?;
+    }
+    if &magic_buf == HDIFF_MAGIC.as_ref() {
+        // Need full data in memory for HDiff patching
+        let mut data = vec![0u8; asset.patch_chunk_length as usize];
+        data[..HDIFF_MAGIC.len()].copy_from_slice(HDIFF_MAGIC.as_ref());
+        chunk_file.read_exact(&mut data[HDIFF_MAGIC.len()..])?;
         return apply_hdiff_patch_with_empty_original(game_dir, &data, asset);
     }
 
+    // Stream copy: read from chunk file + write to target without loading all into
+    // memory
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -870,7 +878,12 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     let temp_path = target_path.with_extension("temp");
     {
         let mut file = fs::File::create(&temp_path)?;
-        file.write_all(&data)?;
+        // Write the magic bytes we already read (non-HDIFF data)
+        file.write_all(&magic_buf)?;
+        // Stream the rest using a bounded buffer
+        let remaining = asset.patch_chunk_length - magic_buf.len() as u64;
+        let mut limited = (&mut chunk_file).take(remaining);
+        std::io::copy(&mut limited, &mut file)?;
     }
     if target_path.exists() {
         let _ = fs::remove_file(&target_path);
@@ -950,14 +963,15 @@ fn apply_hdiff_patch(
     {
         let mut chunk_file = fs::File::open(&chunk_path)?;
         chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
-        let mut data = vec![0u8; asset.patch_chunk_length as usize];
-        chunk_file.read_exact(&mut data)?;
 
         if let Some(parent) = diff_temp.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut diff_file = fs::File::create(&diff_temp)?;
-        diff_file.write_all(&data)?;
+        let diff_file = fs::File::create(&diff_temp)?;
+        let mut writer = std::io::BufWriter::new(diff_file);
+        let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
+        std::io::copy(&mut limited, &mut writer)?;
+        writer.flush()?;
     }
 
     let target_path = game_dir.join(&asset.target_file_path);
