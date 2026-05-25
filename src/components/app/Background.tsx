@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef } from "preact/hooks";
-import { useApi } from "../hooks/useApi";
-import { useGame } from "../hooks/useGame";
-import { fadeInOut } from "../util/Animations";
+import { useApi } from "../../hooks/useApi";
+import { useGame } from "../../hooks/useGame";
+import { fadeInOut } from "../../util/Animations";
 
 function BackgroundMedia({
 	src,
