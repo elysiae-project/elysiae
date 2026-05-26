@@ -1,8 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState } from "preact/hooks";
+import { useRef } from "preact/hooks";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
-import { fadeInOut } from "../../util/Animations";
 
 const BackgroundMedia = ({
 	src,
@@ -12,27 +11,34 @@ const BackgroundMedia = ({
 	isVideo: boolean;
 }) => {
 	const videoRef = useRef<HTMLVideoElement>(null);
-	const localSrc = useState<string | null>(null);
+	// const localSrc = useState<string | null>(null);
 
-	if (!localSrc) {
-		return <div></div>;
-	}
+	if(!src) return null;
 
 	return isVideo ? (
 		<motion.video
 			ref={videoRef}
 			class="background"
-			// biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
-			{...(fadeInOut as any)}
-			src={src}
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={{ opacity: 0 }}
+			transition={{ duration: 0.25, ease: "easeInOut" }}
+			src={src as string}
 			autoplay
 			loop
 			muted
 			playsInline
 		/>
 	) : (
-		// biome-ignore lint/suspicious/noExplicitAny: Stops a stupid type error
-		<motion.img class="background" {...(fadeInOut as any)} src={src} alt="" />
+		<motion.img
+			class="background"
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={{ opacity: 0 }}
+			transition={{ duration: 0.25, ease: "easeInOut" }}
+			src={src as string}
+			alt=""
+		/>
 	);
 };
 
