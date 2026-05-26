@@ -1,4 +1,5 @@
 import { cva } from "class-variance-authority";
+import { motion } from "motion/react";
 import { forwardRef } from "preact/compat";
 import { useImperativeHandle, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
@@ -10,7 +11,8 @@ const modalStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH3]: "bg-bh3-modal-bg rounded-lg border border-bh3-modal-border",
+				[Variants.BH3]:
+					"bg-bh3-modal-bg rounded-lg border border-bh3-modal-border",
 				[Variants.HK4E]: "bg-hk4e-modal-bg rounded-md text-white",
 				[Variants.HKRPG]: "bg-hkrpg-modal-bg rounded-md",
 				[Variants.NAP]:
@@ -56,7 +58,14 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 			class="absolute inset-0 z-20 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
 			onClick={() => setIsOpen(false)}
 		>
-			<button
+			<motion.button
+				initial={{ y: 100, opacity: 0 }}
+				animate={{
+					y: 0,
+					opacity: 1,
+					transition: { duration: 0.15 },
+				}}
+				exit={{ scale: 0, transition: { duration: 0.1 } }}
 				type="button"
 				class={modalStyles({ game })}
 				style={{ minWidth: `${width}px`, minHeight: `${height}px` }}
@@ -67,7 +76,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 					<MenuClose clickAction={() => setIsOpen(false)} />
 				</div>
 				<div class="h-full w-full">{children}</div>
-			</button>
+			</motion.button>
 		</button>
 	);
 });

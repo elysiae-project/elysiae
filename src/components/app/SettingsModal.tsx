@@ -11,6 +11,11 @@ import { forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
+import {
+	getGameSize,
+	variantToGameCode,
+	variantToGameName,
+} from "../../lib/AppFunctions";
 import { remove } from "../../lib/Fs";
 import {
 	checkGameUpdate,
@@ -18,18 +23,13 @@ import {
 	isGameInstalled,
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
+import { getOption, setOption } from "../../lib/Settings";
 import {
 	getModuleVersion,
 	moduleTagsMatch,
 	updateWineComponent,
 } from "../../lib/WineManager";
 import type { AppModules, ModalHandle, Option, Variants } from "../../types";
-import {
-	getGameSize,
-	variantToGameCode,
-	variantToGameName,
-} from "../../util/AppFunctions";
-import { getOption, setOption } from "../../util/Settings";
 import Button from "../Button";
 import Dropdown from "../Dropdown";
 import Modal from "../Modal";
