@@ -143,8 +143,8 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 				value !== null ? (
 					<ToggleSwitch
 						size="sm"
-						height={2}
-						width={4.5}
+						height={2.15}
+						width={5.25}
 						startActive={value}
 						onClick={async (newValue) => {
 							await option.setValue(newValue);
@@ -260,7 +260,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 		return (
 			<Modal ref={ref} width={750} height={450}>
 				<div class="flex h-full w-full flex-col gap-y-5 overflow-y-scroll py-2.5">
-					<div class="mb-2 flex flex-row justify-between">
+					<div class="flex flex-row justify-between">
 						<div class="flex flex-row gap-x-2.5">
 							<img
 								class="rounded-lg"
