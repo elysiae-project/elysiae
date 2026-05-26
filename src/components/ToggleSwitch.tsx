@@ -33,7 +33,7 @@ const toggleSwitchStyles = cva("transition-colors duration-150 delay-0", {
 		{
 			game: Variants.BH3,
 			variant: "active",
-			class: "bg-bh3-toggle-active",
+			class: "bg-bh3-modal-border",
 		},
 		{
 			game: Variants.HK4E,
