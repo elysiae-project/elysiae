@@ -10,7 +10,7 @@ const modalStyles = cva(
 	{
 		variants: {
 			game: {
-				[Variants.BH3]: "bg-bh3-modal-bg rounded-lg",
+				[Variants.BH3]: "bg-bh3-modal-bg rounded-lg border border-bh3-modal-border",
 				[Variants.HK4E]: "bg-hk4e-modal-bg rounded-md text-white",
 				[Variants.HKRPG]: "bg-hkrpg-modal-bg rounded-md",
 				[Variants.NAP]:
@@ -21,11 +21,11 @@ const modalStyles = cva(
 );
 
 const modalTitlebarStyles = cva(
-	"flex flex-row justify-between items-center w-full mb-1 border-b",
+	"flex flex-row justify-between items-center w-full mb-1 border-b pb-1.5",
 	{
 		variants: {
 			game: {
-				[Variants.BH3]: "border-b-white",
+				[Variants.BH3]: "border-b-bh3-modal-border",
 				[Variants.HK4E]:
 					"text-hk4e-modal-titlebar-text border-b-hk4e-modal-titlebar-border",
 				[Variants.HKRPG]: "border-b-black",
@@ -53,7 +53,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 	return (
 		<button
 			type="button"
-			class="absolute inset-0 z-60 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
+			class="absolute inset-0 z-20 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
 			onClick={() => setIsOpen(false)}
 		>
 			<button
