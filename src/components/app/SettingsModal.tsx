@@ -126,8 +126,8 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 			{option.type === "dropdown" ? (
 				value !== null ? (
 					<Dropdown
-						width={12.5}
-						height={2}
+						width={12}
+						height={2.25}
 						labels={option.labels}
 						values={option.values}
 						initialValue={value}
@@ -175,8 +175,8 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 	}, []);
 
 	return (
-		<div class="flex w-full flex-row">
-			<div class="flex w-full flex-col justify-between">
+		<div class="flex flex-row items-center justify-between">
+			<div class="flex flex-col text-left">
 				<h1 class="text-[1.10rem]">
 					{String(componentName).charAt(0).toUpperCase() +
 						String(componentName).slice(1)}
@@ -269,7 +269,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 								alt=""
 								src={branding?.[game].icon}
 							/>
-							<div class="flex flex-col justify-center">
+							<div class="flex flex-col text-left justify-center">
 								<h1>{variantToGameName[game]}</h1>
 								<DiskSize />
 							</div>
@@ -290,7 +290,7 @@ export const SettingsModal = forwardRef<ModalHandle>(
 					</div>
 					<div class="mb-2.5">
 						<h1 class="mb-2.5 text-xl">Modules</h1>
-						<div class="flex flex-col justify-center gap-y-3">
+						<div class="flex flex-col gap-y-3">
 							{["wine", "dxvk", "jadeite"].map((item) => (
 								<ComponentInfo componentName={item as AppModules} />
 							))}
