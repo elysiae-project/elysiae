@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 import { fadeInOut } from "../../util/Animations";
@@ -13,12 +13,6 @@ const BackgroundMedia = ({
 }) => {
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const localSrc = useState<string | null>(null);
-
-	useEffect(() => {
-		if (isVideo && videoRef.current) {
-			videoRef.current.play().catch(() => {});
-		}
-	}, [isVideo, src]);
 
 	if (!localSrc) {
 		return <div></div>;
@@ -54,7 +48,7 @@ export const Background = () => {
 
 	return (
 		<div class="absolute inset-0 overflow-hidden">
-			<AnimatePresence mode="popLayout">
+			<AnimatePresence mode="wait">
 				<BackgroundMedia
 					key={`${game}-bg`}
 					src={isVideo ? backgroundVideo : backgroundImage}
