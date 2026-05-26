@@ -44,13 +44,15 @@ const App = () => {
 	const { game } = useGame();
 	const { graphics } = useApi();
 	const settingsModal = useRef<ModalHandle>(null);
-
 	useEffect(() => {
 		inDevEnv().then((res) => {
 			if (!res) {
 				document.addEventListener("contextmenu", (e) => {
 					e.preventDefault();
 				});
+				return () => {
+					document.removeEventListener("contextmenu", () => {});
+				};
 			}
 		});
 	}, []);
