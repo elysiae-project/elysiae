@@ -2,13 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
-import {
-	broadcastNotification, variantToExeName,
-	variantToGameCode,
-	variantToGameName
-} from "./AppFunctions";
 import { exists } from "./Fs";
+import { broadcastNotification } from "./NotificationBroadcaster";
 import { getOption } from "./Settings";
+import { variantToExeName, variantToGameCode, variantToGameName } from "./VariantConverter";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 
 /**

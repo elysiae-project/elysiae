@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { join } from "@tauri-apps/api/path";
 import {
 	BaseDirectory as BaseDir,
 	type DirEntry,
@@ -11,6 +12,8 @@ import {
 	rename as tauriRename,
 } from "@tauri-apps/plugin-fs";
 import { error, info } from "@tauri-apps/plugin-log";
+import type { Variants } from "../types";
+import { variantToGameCode } from "./VariantConverter";
 
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
@@ -113,6 +116,22 @@ export const getFileHash = async (path: string): Promise<string> => {
 		})
 			.then((res) => {
 				resolve(res);
+			})
+			.catch(reject);
+	});
+};
+
+export const getDirSize = async (game: Variants): Promise<number> => {
+	return new Promise((resolve, reject) => {
+		join("games", variantToGameCode[game])
+			.then((gameDir) => {
+				invoke("get_dir_size", {
+					path: gameDir,
+				})
+					.then((res) => {
+						resolve((res as number) / 1024 ** 3);
+					})
+					.catch(reject);
 			})
 			.catch(reject);
 	});

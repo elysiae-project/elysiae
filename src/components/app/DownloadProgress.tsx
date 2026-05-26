@@ -2,10 +2,18 @@ import { Pause, Play } from "lucide-preact";
 import { useMemo } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
-import { formatNumber, variantToGameName } from "../../lib/AppFunctions";
 import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
+import { variantToGameName } from "../../lib/VariantConverter";
 import Button from "../Button";
 import Progressbar from "../Progressbar";
+
+const formatNumber = (num: number): string => {
+	try {
+		return new Intl.NumberFormat(navigator.language).format(num);
+	} catch {
+		return new Intl.NumberFormat("en-US").format(num);
+	}
+};
 
 export const DownloadProgress = () => {
 	const { state } = useDownload();

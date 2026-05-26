@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { cva } from "class-variance-authority";
 import { Settings } from "lucide-preact";
 import { useEffect, useRef } from "preact/hooks";
@@ -15,7 +16,6 @@ import { DownloadProvider } from "./contexts/DownloadContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
-import { inDevEnv } from "./lib/AppFunctions.ts";
 import { type ModalHandle, Variants } from "./types";
 
 const textTheme = cva(null, {
@@ -45,7 +45,7 @@ const App = () => {
 	const { graphics } = useApi();
 	const settingsModal = useRef<ModalHandle>(null);
 	useEffect(() => {
-		inDevEnv().then((res) => {
+		invoke<boolean>("in_dev_env").then((res) => {
 			if (!res) {
 				document.addEventListener("contextmenu", (e) => {
 					e.preventDefault();

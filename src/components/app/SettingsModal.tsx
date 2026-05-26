@@ -11,12 +11,7 @@ import { forwardRef, useEffect, useState } from "preact/compat";
 import { useApi } from "../../hooks/useApi";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
-import {
-	getGameSize,
-	variantToGameCode,
-	variantToGameName,
-} from "../../lib/AppFunctions";
-import { remove } from "../../lib/Fs";
+import { getDirSize, remove } from "../../lib/Fs";
 import {
 	checkGameUpdate,
 	downloadUpdate,
@@ -24,6 +19,10 @@ import {
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
 import { getOption, setOption } from "../../lib/Settings";
+import {
+	variantToGameCode,
+	variantToGameName,
+} from "../../lib/VariantConverter";
 import {
 	getModuleVersion,
 	moduleTagsMatch,
@@ -208,7 +207,7 @@ const DiskSize = () => {
 	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
 	useEffect(() => {
-		getGameSize(game)
+		getDirSize(game)
 			.then((res) => {
 				setGameInstalled(true);
 				setSize(`${res.toFixed(2)}GB`);

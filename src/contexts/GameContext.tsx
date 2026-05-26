@@ -1,8 +1,8 @@
 import { warn } from "@tauri-apps/plugin-log";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { gameCodeToVariant, variantToGameCode } from "../lib/AppFunctions";
 import { getOption, setOption } from "../lib/Settings";
+import { gameCodeToVariant, variantToGameCode } from "../lib/VariantConverter";
 import { type GameCodes, Variants } from "../types";
 
 interface GameContextType {

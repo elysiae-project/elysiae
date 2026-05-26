@@ -1,13 +1,16 @@
 import { useEffect, useState } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
-import { gameCodeToVariant, variantToGameCode } from "../../lib/AppFunctions";
 import {
 	downloadGame,
 	isGameInstalled,
 	resumeDownloadInterrupted,
 	runGame,
 } from "../../lib/GameDownloader";
+import {
+	gameCodeToVariant,
+	variantToGameCode,
+} from "../../lib/VariantConverter";
 import {
 	updateAllWineComponents,
 	wineEnvAvailable,

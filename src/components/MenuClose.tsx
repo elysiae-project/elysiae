@@ -1,7 +1,7 @@
 import { cva } from "class-variance-authority";
 import { useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
-import { variantToGameCode } from "../lib/AppFunctions";
+import { variantToGameCode } from "../lib/VariantConverter";
 import { Variants } from "../types";
 
 const menuCloseStyles = cva(
