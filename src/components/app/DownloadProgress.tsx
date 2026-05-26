@@ -2,8 +2,8 @@ import { Pause, Play } from "lucide-preact";
 import { useMemo } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
+import { formatNumber, variantToGameName } from "../../lib/AppFunctions";
 import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
-import { formatNumber, variantToGameName } from "../../util/AppFunctions";
 import Button from "../Button";
 import Progressbar from "../Progressbar";
 

@@ -1,6 +1,7 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { gameCodeToVariant } from "../lib/AppFunctions";
 import {
 	type GameCodes,
 	type LauncherBackgroundData,
@@ -13,7 +14,6 @@ import {
 	type LauncherGraphicsRawGameData,
 	Variants,
 } from "../types";
-import { gameCodeToVariant } from "../util/AppFunctions";
 
 const GITHUB_ASSET_BASE = "https://assets.elysiae.app/";
 const LAUNCHER_ID = "VYTpXlbWo8";

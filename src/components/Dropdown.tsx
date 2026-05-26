@@ -30,13 +30,13 @@ const dropdownStyles = cva(
 );
 
 const dropdownList = cva(
-	"min-h-auto absolute flex w-full flex-col transition-opacity duration-150 z-100",
+	"min-h-auto absolute flex w-full flex-col transition-opacity duration-250 z-100",
 	{
 		variants: {
 			game: {
 				[Variants.BH3]: "bg-white text-bh3-dropdown-text",
 				[Variants.HK4E]:
-					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
+					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1",
 				[Variants.HKRPG]: "bg-hkrpg-list-bg rounded-xs",
 				[Variants.NAP]: "bg-[#353535] rounded-2xl",
 			},

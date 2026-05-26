@@ -15,8 +15,8 @@ import { DownloadProvider } from "./contexts/DownloadContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
+import { inDevEnv } from "./lib/AppFunctions.ts";
 import { type ModalHandle, Variants } from "./types";
-import { inDevEnv } from "./util/AppFunctions.ts";
 
 const textTheme = cva(null, {
 	variants: {

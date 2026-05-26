@@ -8,12 +8,8 @@ import type {
 	WineModule,
 	WineSetupProgress,
 } from "../types";
-import {
-	downloadFile,
-	executeLocalBinary,
-	getApiJson,
-} from "../util/AppFunctions";
-import { getOption, setOption } from "../util/Settings";
+import { downloadFile, executeLocalBinary, getApiJson } from "./AppFunctions";
+import { getOption, setOption } from "./Settings";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
 
 const components: ((

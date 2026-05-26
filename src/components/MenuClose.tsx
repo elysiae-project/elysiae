@@ -1,8 +1,8 @@
 import { cva } from "class-variance-authority";
 import { useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
+import { variantToGameCode } from "../lib/AppFunctions";
 import { Variants } from "../types";
-import { variantToGameCode } from "../util/AppFunctions";
 
 const menuCloseStyles = cva(
 	"flex items-center justify-center transition-all duration-75 h-10 w-10",

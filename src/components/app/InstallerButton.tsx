@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
+import { gameCodeToVariant, variantToGameCode } from "../../lib/AppFunctions";
 import {
 	downloadGame,
 	isGameInstalled,
@@ -12,7 +13,6 @@ import {
 	wineEnvAvailable,
 } from "../../lib/WineManager";
 import type { GameCodes } from "../../types";
-import { gameCodeToVariant, variantToGameCode } from "../../util/AppFunctions";
 import Button from "../Button";
 
 export const InstallerButton = () => {
