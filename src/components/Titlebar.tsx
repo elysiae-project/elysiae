@@ -6,7 +6,7 @@ import { Variants } from "../types";
 import MenuClose from "./MenuClose.tsx";
 
 const titlebarStyles = cva(
-	"h-16 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
+	"h-16 min-w-full p-1 transition-all duration-250 overflow-y-hidden z-30",
 	{
 		variants: {
 			game: {
