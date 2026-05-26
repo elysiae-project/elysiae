@@ -50,8 +50,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 			fetch("https://assets.elysiae.app/launcherAssets.json")
 				.then((res) => {
 					res.json().then((data: LauncherBackgroundRawData) => {
-						console.log(`Elysiae Video Assets:`);
-						console.log(data);
 						const formatted = (Object.keys(data) as GameCodes[]).reduce(
 							(acc: LauncherBackgroundData, code: GameCodes) => {
 								const variant = gameCodeToVariant[code];
