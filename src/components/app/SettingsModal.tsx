@@ -252,7 +252,7 @@ const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 };
 
 export const SettingsModal = forwardRef<ModalHandle>(
-	function SettingsModal(_, ref) {
+	(_, ref) => {
 		const { branding } = useApi();
 		const { game } = useGame();
 
