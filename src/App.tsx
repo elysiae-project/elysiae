@@ -17,6 +17,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
 import { type ModalHandle, Variants } from "./types";
+import { PhotosensitivityModal } from "./components/app/PhotosensitivityModal.tsx";
 
 const textTheme = cva(null, {
 	variants: {
@@ -44,6 +45,7 @@ const App = () => {
 	const { game } = useGame();
 	const { graphics } = useApi();
 	const settingsModal = useRef<ModalHandle>(null);
+
 	useEffect(() => {
 		invoke<boolean>("in_dev_env").then((res) => {
 			if (!res) {
@@ -63,6 +65,7 @@ const App = () => {
 		>
 			<Titlebar />
 			<Sidebar />
+			<PhotosensitivityModal />
 			<SettingsModal ref={settingsModal} />
 
 			<div class={bgTheme({ game: game })}>

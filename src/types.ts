@@ -23,6 +23,7 @@ export enum BhServers {
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
 export type AppModules = "wine" | "dxvk" | "jadeite";
 export type AppOptions =
+	| "isFirstLaunch"
 	| "selectedGame"
 	| "voLanguage"
 	| "blockNotifications"
@@ -275,6 +276,7 @@ export type ModalProps = {
 	title?: string;
 	width?: number;
 	height?: number;
+	closeable?: boolean;
 	children: React.ReactNode;
 };
 
