@@ -24,6 +24,7 @@ export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
 export type AppModules = "wine" | "dxvk" | "jadeite";
 export type AppOptions =
 	| "isFirstLaunch"
+	| "lastUsedVersion"
 	| "selectedGame"
 	| "voLanguage"
 	| "blockNotifications"
