@@ -23,7 +23,7 @@ const modalStyles = cva(
 );
 
 const modalTitlebarStyles = cva(
-	"flex flex-row justify-between items-center w-full mb-1 border-b pb-1.5",
+	"flex flex-row justify-between items-center w-full mb-1 pb-1.5",
 	{
 		variants: {
 			game: {
@@ -37,48 +37,62 @@ const modalTitlebarStyles = cva(
 	},
 );
 
-export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
-	{ title = "", children, width = 750, height = 250 }: ModalProps,
-	ref,
-) {
-	const { game } = useGame();
-	const [isOpen, setIsOpen] = useState<boolean>(false);
+export const Modal = forwardRef<ModalHandle, ModalProps>(
+	(
+		{
+			title = "",
+			closeable = true,
+			children,
+			width = 750,
+			height = 250,
+		}: ModalProps,
+		ref,
+	) => {
+		const { game } = useGame();
+		const [isOpen, setIsOpen] = useState<boolean>(false);
 
-	useImperativeHandle(ref, () => ({
-		open: () => setIsOpen(true),
-		close: () => setIsOpen(false),
-		toggle: (state: boolean) => setIsOpen(state),
-	}));
+		useImperativeHandle(ref, () => ({
+			open: () => setIsOpen(true),
+			close: () => setIsOpen(false),
+			toggle: (state: boolean) => setIsOpen(state),
+		}));
 
-	if (!isOpen) return null;
+		if (!isOpen) return null;
 
-	return (
-		<button
-			type="button"
-			class="absolute inset-0 z-20 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
-			onClick={() => setIsOpen(false)}
-		>
-			<motion.button
-				initial={{ y: 100, opacity: 0 }}
-				animate={{
-					y: 0,
-					opacity: 1,
-					transition: { duration: 0.15 },
-				}}
-				exit={{ scale: 0, transition: { duration: 0.1 } }}
+		return (
+			<button
 				type="button"
-				class={modalStyles({ game })}
-				style={{ minWidth: `${width}px`, minHeight: `${height}px` }}
-				onClick={(e) => e.stopPropagation()}
+				class="absolute inset-0 z-20 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
+				onClick={() => {
+					if (closeable) setIsOpen(false);
+				}}
 			>
-				<div className={modalTitlebarStyles({ game })}>
-					<h2>{title}</h2>
-					<MenuClose clickAction={() => setIsOpen(false)} />
-				</div>
-				<div class="h-full w-full">{children}</div>
-			</motion.button>
-		</button>
-	);
-});
+				<motion.button
+					initial={{ y: 100, opacity: 0 }}
+					animate={{
+						y: 0,
+						opacity: 1,
+						transition: { duration: 0.15 },
+					}}
+					exit={{ scale: 0, transition: { duration: 0.1 } }}
+					type="button"
+					class={modalStyles({ game })}
+					style={{ minWidth: `${width}px`, minHeight: `${height}px` }}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<div
+						class={`${modalTitlebarStyles({ game })} ${closeable ? "border-b" : ""}`}
+					>
+						<h2>{title}</h2>
+						{closeable ? (
+							<MenuClose clickAction={() => setIsOpen(false)} />
+						) : null}
+					</div>
+					<div class="h-full w-full">{children}</div>
+				</motion.button>
+			</button>
+		);
+	},
+);
 
 export default Modal;
