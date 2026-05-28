@@ -37,6 +37,7 @@ pub fn run() {
             file_manager::get_dir_size,
             file_manager::get_sha256_sum,
             app_functions::in_dev_env,
+            app_functions::get_app_version,
             commands::sophon_downloader::sophon_download,
             commands::sophon_downloader::sophon_update,
             commands::sophon_downloader::sophon_preinstall,
