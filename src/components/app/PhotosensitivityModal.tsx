@@ -6,15 +6,16 @@ import Modal from "../Modal";
 
 export const PhotosensitivityModal = () => {
 	const modal = useRef<ModalHandle>(null);
-	const [visible, setVisible] = useState<boolean>(true);
+	const [visible, setVisible] = useState<boolean>(false);
 
 	useEffect(() => {
-		getOption("isFirstLaunch").then((res) => {
-			if (res) {
-				setVisible(true);
+		(async () => {
+			const firstLaunch = await getOption<boolean>("isFirstLaunch");
+			setVisible(firstLaunch);
+			if (firstLaunch) {
 				modal.current?.open();
 			}
-		});
+		})();
 	}, []);
 
 	if (!visible) return null;
@@ -25,13 +26,18 @@ export const PhotosensitivityModal = () => {
 				<h1 class="text-2xl">Warning</h1>
 				<p class="text-left">
 					Elysiae depends on compatibility layers like{" "}
-					<a href="https://winehq.org" class="underline">Wine</a> and{" "}
-					<a href="https://github.com/doitsujin/dxvk" class="underline">DXVK</a> to run games on
-					Linux. Due to the nature of these tools, applications running through
-					them are more prone to experience rendering errors that can trigger
-					seizures in certain individuals. If you are one of these individuals,
-					please take caution when using Elysiae and other applications that use
-					Wine and/or DXVK.
+					<a href="https://winehq.org" class="underline">
+						Wine
+					</a>{" "}
+					and{" "}
+					<a href="https://github.com/doitsujin/dxvk" class="underline">
+						DXVK
+					</a>{" "}
+					to run games on Linux. Due to the nature of these tools, applications
+					running through them are more prone to experience rendering errors
+					that can trigger seizures in certain individuals. If you are one of
+					these individuals, please take caution when using Elysiae and other
+					applications that use Wine and/or DXVK.
 				</p>
 				<div class="flex justify-center">
 					<Button
@@ -51,3 +57,5 @@ export const PhotosensitivityModal = () => {
 		</Modal>
 	);
 };
+
+export default PhotosensitivityModal;
