@@ -1,39 +1,22 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
+	BaseDirectory,
+	type DirEntry,
 	exists as tauriExists,
-	writeTextFile as tauriWriteTextFile,
-	writeFile as tauriWriteFile,
+	mkdir as tauriMkdir,
+	readDir as tauriReadDir,
 	readFile as tauriReadFile,
 	readTextFile as tauriReadTextFile,
 	remove as tauriRemove,
-	mkdir as tauriMkdir,
 	rename as tauriRename,
-	readDir as tauriReadDir,
 } from "@tauri-apps/plugin-fs";
-import { BaseDirectory, DirEntry } from "@tauri-apps/plugin-fs";
 import { error, info } from "@tauri-apps/plugin-log";
-import { invoke } from "@tauri-apps/api/core";
 
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
 		tauriExists(path, { baseDir: BaseDirectory.AppData })
 			.then(resolve)
 			.catch(reject);
-	});
-};
-
-export const writeFile = async (
-	path: string,
-	contents:
-		| Uint8Array<ArrayBufferLike>
-		| ReadableStream<Uint8Array<ArrayBufferLike>>
-		| string,
-	appendContents: boolean = false,
-) => {
-	const writeFunction =
-		typeof contents === "string" ? tauriWriteTextFile : tauriWriteFile;
-	await writeFunction(path, contents as any, {
-		baseDir: BaseDirectory.AppData,
-		append: appendContents,
 	});
 };
 

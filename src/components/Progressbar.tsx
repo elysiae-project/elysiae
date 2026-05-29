@@ -36,7 +36,8 @@ export default function Progressbar({
 		<div class={progressbarStyles({ game })}>
 			<div
 				style={{ width: `${progress}%` }}
-				class={progressbarContainerStyles({ game })}></div>
+				class={progressbarContainerStyles({ game })}
+			></div>
 		</div>
 	);
 }

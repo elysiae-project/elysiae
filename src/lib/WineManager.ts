@@ -1,4 +1,6 @@
-import {
+import { appDataDir, join } from "@tauri-apps/api/path";
+import { error, info } from "@tauri-apps/plugin-log";
+import type {
 	AppModules,
 	ModuleData,
 	WineComponent,
@@ -6,12 +8,10 @@ import {
 	WineModule,
 	WineSetupProgress,
 } from "../types";
+import { executeLocalBinary } from "../util/AppFunctions";
+import { getOption, setOption } from "../util/Settings";
 import { downloadFileWithProgress, getApiJson } from "../util/WebUtils";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
-import { executeLocalBinary } from "../util/AppFunctions";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { getOption, setOption } from "../util/Settings";
-import { error, info } from "@tauri-apps/plugin-log";
 
 const components: ((
 	onProgress: (event: WineSetupProgress) => void,
@@ -30,7 +30,7 @@ const components: ((
 			}
 		},
 	}),
-	(onProgress) => ({
+	() => ({
 		componentName: "dxvk",
 		extractTo: "dxvk",
 		saveTo: "dxvk.tar.gz",
@@ -67,7 +67,7 @@ const components: ((
 			await removeDir("dxvk");
 		},
 	}),
-	(onProgress) => ({
+	() => ({
 		componentName: "jadeite",
 		extractTo: "jadeite",
 		saveTo: "jadeite.zip",
@@ -325,7 +325,7 @@ export const getModuleVersion = async (
 	return new Promise((resolve, reject) => {
 		getOption<WineComponentData>("installedComponents")
 			.then((data) => {
-				if (typeof module === undefined) {
+				if (typeof module === "undefined") {
 					resolve(data);
 				}
 				resolve(data[module as AppModules]);
@@ -345,7 +345,7 @@ export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {
 		try {
 			const json = await getApiJson<ModuleData[]>(url);
 			return json[0].tag === installedTag;
-		} catch (e: any) {
+		} catch (e: unknown) {
 			error(`moduleTagsMatch: ${e}`);
 		}
 	}

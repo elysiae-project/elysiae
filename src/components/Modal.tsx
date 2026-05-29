@@ -1,8 +1,8 @@
-import { useImperativeHandle, useState } from "preact/hooks";
-import { ModalHandle, ModalProps, Variants } from "../types";
 import { cva } from "class-variance-authority";
-import { useGame } from "../hooks/useGame";
 import { forwardRef } from "preact/compat";
+import { useImperativeHandle, useState } from "preact/hooks";
+import { useGame } from "../hooks/useGame";
+import { type ModalHandle, type ModalProps, Variants } from "../types";
 import MenuClose from "./MenuClose";
 
 const modalStyles = cva(
@@ -51,20 +51,24 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
 	if (!isOpen) return null;
 
 	return (
-		<div
+		<button
+			type="button"
 			class="absolute inset-0 z-60 flex h-full w-full items-center justify-center bg-black/50 backdrop-blur-md"
-			onClick={() => setIsOpen(false)}>
-			<div
+			onClick={() => setIsOpen(false)}
+		>
+			<button
+				type="button"
 				class={modalStyles({ game })}
 				style={{ minWidth: `${width}px`, minHeight: `${height}px` }}
-				onClick={(e) => e.stopPropagation()}>
+				onClick={(e) => e.stopPropagation()}
+			>
 				<div className={modalTitlebarStyles({ game })}>
 					<h2>{title}</h2>
 					<MenuClose clickAction={() => setIsOpen(false)} />
 				</div>
 				<div class="h-full w-full">{children}</div>
-			</div>
-		</div>
+			</button>
+		</button>
 	);
 });
 

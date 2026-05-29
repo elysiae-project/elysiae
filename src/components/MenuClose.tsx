@@ -1,8 +1,8 @@
-import { getActiveGameCode } from "../util/AppFunctions";
 import { cva } from "class-variance-authority";
-import { useGame } from "../hooks/useGame";
 import { useState } from "preact/hooks";
+import { useGame } from "../hooks/useGame";
 import { Variants } from "../types";
+import { getActiveGameCode } from "../util/AppFunctions";
 
 const menuCloseStyles = cva(
 	"flex items-center justify-center transition-all duration-75 h-10 w-10",
@@ -32,10 +32,11 @@ export default function MenuClose({
 }) {
 	const { game } = useGame();
 	const assetPath = `/icon/${getActiveGameCode(game)}`;
-	let [mouseDown, setMouseDown] = useState<boolean>(false);
+	const [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
 		<button
+			type="button"
 			style={{ width: `${size}px`, height: `${size}px` }}
 			class={menuCloseStyles({ game: game })}
 			onClick={() => clickAction()}
@@ -52,18 +53,21 @@ export default function MenuClose({
 				if (e.currentTarget.hasPointerCapture(e.pointerId)) {
 					e.currentTarget.releasePointerCapture(e.pointerId);
 				}
-			}}>
+			}}
+		>
 			<img
 				style={{ display: mouseDown ? "none" : "" }}
 				src={`${assetPath}/close.svg`}
 				width={size / 2.33}
 				height={size / 2.33}
+				alt="Close Window Button"
 			/>
 			<img
 				style={{ display: mouseDown ? "" : "none" }}
 				src={`${assetPath}/close-click.svg`}
 				width={size / 2.33}
 				height={size / 2.33}
+				alt="Close Window Button"
 			/>
 		</button>
 	);

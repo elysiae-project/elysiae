@@ -1,16 +1,16 @@
+import { invoke } from "@tauri-apps/api/core";
+import { join } from "@tauri-apps/api/path";
+import { info } from "@tauri-apps/plugin-log";
+import { type GameData, type ResumeInfo, Variants } from "../types";
 import {
 	getActiveGameCode,
 	getGameExeName,
 	getGameName,
 } from "../util/AppFunctions";
 import { broadcastNotification } from "../util/NotificationHelper";
-import { runExeWithJadeite, runExeWithWine } from "./WineManager";
-import { GameData, ResumeInfo, Variants } from "../types";
-import { info } from "@tauri-apps/plugin-log";
-import { invoke } from "@tauri-apps/api/core";
 import { getOption } from "../util/Settings";
-import { join } from "@tauri-apps/api/path";
 import { exists } from "./Fs";
+import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 
 /**
  * Downloads a fresh install of any game to `games/gameCode`

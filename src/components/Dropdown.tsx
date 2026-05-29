@@ -1,8 +1,8 @@
-import { MutableRef, useEffect, useRef, useState } from "preact/hooks";
-import { ComponentSize, Variants } from "../types";
-import { ArrowDown, Check } from "lucide-preact";
 import { cva } from "class-variance-authority";
+import { ArrowDown, Check } from "lucide-preact";
+import { type MutableRef, useEffect, useRef, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
+import { type ComponentSize, Variants } from "../types";
 
 const dropdownStyles = cva(
 	"flex flex-row items-center justify-between transition duration-150",
@@ -141,28 +141,33 @@ export default function Dropdown({
 	return (
 		<div class="relative" ref={dropdownDiv} style={containerStyle}>
 			<div class="flex h-full flex-col">
-				<div
+				<button
+					type="button"
 					class={dropdownStyles({ game, size })}
 					onClick={(e) => {
 						e.stopPropagation();
 						setOpen(!open);
-					}}>
+					}}
+				>
 					<h1>{label}</h1>
 					<ArrowDown />
-				</div>
+				</button>
 				<div
 					class={dropdownList({ game, size })}
 					style={
 						open ? "opacity: 100" : "opacity: 0; pointer-events: none; scale: 0"
-					}>
+					}
+				>
 					{labels.map((listLabel, index) => (
-						<div
+						<button
+							type="button"
 							key={index}
 							onClick={() => onChange(index)}
-							class={dropdownItem({ game, size })}>
+							class={dropdownItem({ game, size })}
+						>
 							<p class="pt-0.5">{listLabel}</p>
 							{index === currentIndex ? <Check /> : null}
-						</div>
+						</button>
 					))}
 				</div>
 			</div>

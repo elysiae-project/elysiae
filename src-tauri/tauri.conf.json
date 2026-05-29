@@ -1,50 +1,50 @@
 {
-	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "Elysiae",
-	"version": "1.0.0",
-	"identifier": "app.elysiae.Elysiae",
-	"build": {
-		"beforeDevCommand": "yarn dev",
-		"devUrl": "http://localhost:1420",
-		"beforeBuildCommand": "yarn build",
-		"frontendDist": "../dist"
-	},
-	"app": {
-		"windows": [
-			{
-				"title": "Elysiae",
-				"width": 1200,
-				"height": 700,
-				"minHeight": 700,
-				"minWidth": 1200,
-				"maxHeight": 700,
-				"maxWidth": 1200,
-				"decorations": false,
-				"shadow": false,
-				"transparent": false
-			}
-		],
-		"security": {
-			"csp": null,
-			"assetProtocol": {
-				"enable": true,
-				"scope": ["$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**"]
-			}
-		}
-	},
-	"bundle": {
-		"icon": [
-			"icons/32x32.png",
-			"icons/64x64.png",
-			"icons/128x128.png",
-			"icons/128x128@2x.png",
-			"icons/icon.svg"
-		],
-		"resources": {
-			"resources/settings.json": "settings.json",
-			"icons/icon.png": "appIcon.png"
-		},
-		"active": true,
-		"targets": "app"
-	}
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Elysiae",
+  "version": "1.0.0",
+  "identifier": "app.elysiae.Elysiae",
+  "build": {
+    "beforeDevCommand": "yarn dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "yarn build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Elysiae",
+        "width": 1200,
+        "height": 700,
+        "minHeight": 700,
+        "minWidth": 1200,
+        "maxHeight": 700,
+        "maxWidth": 1200,
+        "decorations": false,
+        "shadow": false,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**"]
+      }
+    }
+  },
+  "bundle": {
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.svg"
+    ],
+    "resources": {
+      "resources/settings.json": "settings.json",
+      "icons/icon.png": "appIcon.png"
+    },
+    "active": true,
+    "targets": "app"
+  }
 }

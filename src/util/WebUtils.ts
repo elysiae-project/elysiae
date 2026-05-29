@@ -1,7 +1,7 @@
-import { fetch } from "@tauri-apps/plugin-http";
-import { listen } from "@tauri-apps/api/event";
-import { info } from "@tauri-apps/plugin-log";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { fetch } from "@tauri-apps/plugin-http";
+import { info } from "@tauri-apps/plugin-log";
 
 /**
  * @param verifyingString The string you want to verify
@@ -21,7 +21,7 @@ const isURLValid = (verifyingString: string): boolean => {
  * @param url Link to an API
  * @returns JavaScipt Object from API URL
  */
-export const getApiJson = async <T = any>(url: string): Promise<T> => {
+export const getApiJson = async <T>(url: string): Promise<T> => {
 	return new Promise((resolve, reject) => {
 		if (!isURLValid(url)) {
 			reject(`getApiJson: URL ${url} is invalid`);
