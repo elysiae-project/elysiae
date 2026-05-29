@@ -149,22 +149,6 @@ pub async fn build_update_installers(
     Ok((installers, deleted_files, new_tag, manifest_hash))
 }
 
-pub async fn build_preinstall_installers(
-    client: &Client,
-    game_id: &str,
-    vo_lang: &str,
-) -> SophonResult<(Vec<SophonInstaller>, String, String)> {
-    let (_, pre_branch) = fetch_front_door(client, game_id).await?;
-    let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
-
-    let build = fetch_build(client, &pre_branch, None).await?;
-    let tag = build.tag.clone();
-
-    let installers = build_installers_from_data(client, &build, vo_lang, &tag).await?;
-    let manifest_hash = combine_manifest_hashes(&installers);
-    Ok((installers, tag, manifest_hash))
-}
-
 async fn build_installers_from_data(
     client: &Client,
     build: &SophonBuildData,
@@ -1249,20 +1233,6 @@ pub async fn install(
         vo_langs,
     )
     .await
-}
-
-pub async fn apply_preinstall(game_dir: &Path, preinstall_tag: &str) -> SophonResult<()> {
-    let marker = game_dir.join(format!(".sophon_preinstall_{preinstall_tag}"));
-    if !marker.exists() {
-        return Err(SophonError::PreinstallMarkerNotFound(preinstall_tag.into()));
-    }
-    let gd = game_dir.to_path_buf();
-    let tag = preinstall_tag.to_owned();
-    tokio::task::spawn_blocking(move || {
-        write_installed_tag(&gd, &tag)?;
-        fs::remove_file(gd.join(format!(".sophon_preinstall_{tag}"))).map_err(SophonError::from)
-    })
-    .await?
 }
 
 pub async fn verify_integrity(

@@ -8,9 +8,11 @@ mod download;
 mod error;
 mod game_filters;
 mod handle;
+mod hdiffpatch;
 mod installer;
 mod plugin_api;
 mod plugin_install;
+mod preinstall;
 mod update;
 
 #[cfg(test)]
@@ -78,11 +80,15 @@ pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
 pub use error::SophonError;
 pub use handle::DownloadHandle;
 pub use installer::{
-    InstallCallbacks, InstallOptions, ResumeContext, StateSaver, apply_preinstall,
-    build_installers, build_preinstall_installers, build_update_installers, install,
-    verify_integrity,
+    InstallCallbacks, InstallOptions, ResumeContext, StateSaver, build_installers,
+    build_update_installers, install, verify_integrity,
 };
 pub use plugin_install::{install_channel_sdks, install_plugins};
+#[allow(unused_imports)]
+pub use preinstall::{
+    PatchAssetInfo, PatchMethod, PreinstallState, apply_preinstall, build_preinstall_plan,
+    preinstall_download,
+};
 pub use update::{UpdateInfo, check_update};
 
 #[cfg(test)]

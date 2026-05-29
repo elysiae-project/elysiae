@@ -20,6 +20,9 @@ fn main() {
 }
 
 fn kernel_version_at_least_6_14_0() -> bool {
+    if std::env::var("ELYSIAE_SKIP_KERNEL_CHECK").is_ok() {
+        return true;
+    }
     let release = match std::fs::read_to_string("/proc/sys/kernel/osrelease") {
         Ok(s) => s,
         Err(_) => return false,

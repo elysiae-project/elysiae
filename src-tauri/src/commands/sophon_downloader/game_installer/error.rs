@@ -106,6 +106,30 @@ pub enum SophonError {
 
     #[error("Plugin validation failed: {0}")]
     PluginValidationFailed(String),
+
+    #[error("Failed to decode patch manifest: {0}")]
+    PatchManifestDecode(String),
+
+    #[error("HDiff patch failed for {file}: {error}")]
+    HDiffPatchFailed { file: String, error: String },
+
+    #[error("Original file missing for patch: {0}")]
+    OriginalFileMissing(String),
+
+    #[error("Patch chunk not found: {0}")]
+    PatchChunkNotFound(String),
+
+    #[error("Preinstall state file corrupted or missing: {0}")]
+    PreinstallStateInvalid(String),
+
+    #[error(
+        "Patch data out of bounds: offset {offset} + length {length} exceeds chunk size {chunk_size}"
+    )]
+    PatchDataOutOfBounds {
+        offset: u64,
+        length: u64,
+        chunk_size: u64,
+    },
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {
