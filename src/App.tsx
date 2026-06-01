@@ -6,6 +6,7 @@ import "./App.css";
 import Background from "./components/app/Background.tsx";
 import DownloadProgress from "./components/app/DownloadProgress.tsx";
 import InstallerButton from "./components/app/InstallerButton.tsx";
+import { PhotosensitivityModal } from "./components/app/PhotosensitivityModal.tsx";
 import PreinstallButton from "./components/app/PreinstallButton.tsx";
 import SettingsModal from "./components/app/SettingsModal.tsx";
 import Sidebar from "./components/app/Sidebar.tsx";
@@ -17,7 +18,6 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
 import { type ModalHandle, Variants } from "./types";
-import { PhotosensitivityModal } from "./components/app/PhotosensitivityModal.tsx";
 
 const textTheme = cva(null, {
 	variants: {
@@ -49,18 +49,19 @@ const App = () => {
 	useEffect(() => {
 		invoke<boolean>("in_dev_env").then((res) => {
 			if (!res) {
-				document.addEventListener("contextmenu", (e) => {
+				const handleContextMenu = (e: Event) => {
 					e.preventDefault();
-				});
+				};
+				document.addEventListener("contextmenu", handleContextMenu);
 				return () => {
-					document.removeEventListener("contextmenu", () => {});
+					document.removeEventListener("contextmenu", handleContextMenu);
 				};
 			}
 		});
 	}, []);
 
 	return (
-		<div
+		<main
 			class={`flex h-screen w-screen flex-col gap-0 ${textTheme({ game: game })}`}
 		>
 			<Titlebar />
@@ -69,28 +70,27 @@ const App = () => {
 			<SettingsModal ref={settingsModal} />
 
 			<div class={bgTheme({ game: game })}>
-				<div class="relative h-full w-full">
+				<span class="relative h-full w-full">
 					{graphics ? <Background /> : null}
-
-					<div class="absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 px-15 py-10">
-						{/* Page content */}
-						<DownloadProgress />
-						<PreinstallButton />
-						<Button
-							variant="secondary"
-							onClick={() => {
-								settingsModal.current?.open();
-							}}
-							width={4}
-							height={4}
-						>
-							<Settings className="-m-1 leading-0" />
-						</Button>
-						<InstallerButton />
-					</div>
-				</div>
+				</span>
+				<section class="absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 px-15 py-10">
+					{/* Page content */}
+					<DownloadProgress />
+					<PreinstallButton />
+					<Button
+						variant="secondary"
+						onClick={() => {
+							settingsModal.current?.open();
+						}}
+						width={4}
+						height={4}
+					>
+						<Settings className="-m-1 leading-0" />
+					</Button>
+					<InstallerButton />
+				</section>
 			</div>
-		</div>
+		</main>
 	);
 };
 
