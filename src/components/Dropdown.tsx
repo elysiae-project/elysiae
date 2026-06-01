@@ -103,7 +103,7 @@ export const Dropdown = ({
 	const [open, setOpen] = useState<boolean>(false);
 	const [label, setLabel] = useState<string>(labels[initialValueIndex]);
 	const [currentIndex, setCurrentIndex] = useState<number>(initialValueIndex);
-	const dropdownDiv: MutableRef<HTMLDivElement | null> = useRef(null);
+	const dialog: MutableRef<HTMLDialogElement | null> = useRef(null);
 
 	const onChange = (index: number) => {
 		if (!open) return;
@@ -120,8 +120,8 @@ export const Dropdown = ({
 
 		const handleOutsideClick = (e: MouseEvent) => {
 			if (
-				dropdownDiv.current &&
-				!dropdownDiv.current.contains(e.target as Node)
+				dialog.current &&
+				!dialog.current.contains(e.target as Node)
 			) {
 				setOpen(false);
 			}
@@ -139,7 +139,7 @@ export const Dropdown = ({
 	};
 
 	return (
-		<div class="relative" ref={dropdownDiv} style={containerStyle}>
+		<dialog class="relative" ref={dialog} style={containerStyle}>
 			<div class="flex h-full flex-col">
 				<button
 					type="button"
@@ -171,7 +171,7 @@ export const Dropdown = ({
 					))}
 				</div>
 			</div>
-		</div>
+		</dialog>
 	);
 }
 
