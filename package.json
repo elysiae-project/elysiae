@@ -13,6 +13,7 @@
     "lint": "biome lint --write"
   },
   "dependencies": {
+    "@babel/core": "^7.29.7",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-http": "^2.5.9",
@@ -33,10 +34,11 @@
     "@preact/preset-vite": "^2.10.5",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.2",
+    "@types/babel__core": "^7.20.5",
     "@types/node": "^25.9.1",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14"
+    "vite": "^8.0.15"
   },
   "packageManager": "yarn@4.15.0"
 }
