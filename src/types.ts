@@ -106,9 +106,7 @@ export type LauncherBackgroundData = {
 };
 
 export type LauncherBackgroundRawData = {
-	[key in GameCodes]: {
-		backgrounds: LauncherBackgroundAsset[];
-	};
+	[key in GameCodes]: LauncherBackgroundAsset[];
 };
 
 export type LauncherBackgroundAsset = {

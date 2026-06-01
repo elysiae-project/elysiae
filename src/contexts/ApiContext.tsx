@@ -15,7 +15,7 @@ import {
 	Variants,
 } from "../types";
 
-const GITHUB_ASSET_BASE = "https://assets.elysiae.app/";
+const ASSETS_BASE = "https://assets.elysiae.app";
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
 const BH3_EN_ID = "bxPTXSET5t";
@@ -55,13 +55,11 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 								const variant = gameCodeToVariant[code];
 								const entry = data[code];
 
-								const bg =
-									entry.backgrounds.find((b) => b.video !== null) ??
-									entry.backgrounds[0];
+								const bg = entry.find((b) => b.video !== null) ?? entry[0];
 
 								acc[variant] = {
-									backgroundImage: `${GITHUB_ASSET_BASE}/${bg.image}`,
-									backgroundVideo: `${GITHUB_ASSET_BASE}/${bg.video}`,
+									backgroundImage: `${ASSETS_BASE}/${bg.image}`,
+									backgroundVideo: `${ASSETS_BASE}/${bg.video}`,
 								};
 								return acc;
 							},
