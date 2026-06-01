@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+	restoreStateCurrent,
+	StateFlags,
+} from "@tauri-apps/plugin-window-state";
 import { cva } from "class-variance-authority";
 import { Settings } from "lucide-preact";
 import { useEffect, useRef } from "preact/hooks";
@@ -58,6 +62,8 @@ const App = () => {
 				};
 			}
 		});
+
+		restoreStateCurrent(StateFlags.ALL);
 	}, []);
 
 	return (

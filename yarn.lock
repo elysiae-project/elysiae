@@ -1203,6 +1203,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tauri-apps/plugin-window-state@npm:^2.4.1":
+  version: 2.4.1
+  resolution: "@tauri-apps/plugin-window-state@npm:2.4.1"
+  dependencies:
+    "@tauri-apps/api": "npm:^2.8.0"
+  checksum: 10c0/18b4da17b30e2faddc69eac2fc215ba08c23ef709aaa079746197d3d2cccfa81d5e7c098cfc9e3b5fa40a4a598d527523351e21f162a555e197cddaa7e39b9fb
+  languageName: node
+  linkType: hard
+
 "@tybys/wasm-util@npm:^0.10.1":
   version: 0.10.1
   resolution: "@tybys/wasm-util@npm:0.10.1"
@@ -1497,6 +1506,7 @@ __metadata:
     "@tauri-apps/plugin-os": "npm:^2.3.2"
     "@tauri-apps/plugin-shell": "npm:^2.3.5"
     "@tauri-apps/plugin-store": "npm:^2.4.3"
+    "@tauri-apps/plugin-window-state": "npm:^2.4.1"
     "@types/babel__core": "npm:^7.20.5"
     "@types/node": "npm:^25.9.1"
     class-variance-authority: "npm:^0.7.1"
@@ -1506,7 +1516,7 @@ __metadata:
     tailwindcss: "npm:^4.3.0"
     thumbhash: "npm:^0.1.1"
     typescript: "npm:^6.0.3"
-    vite: "npm:^8.0.15"
+    vite: "npm:^8.0.16"
   languageName: unknown
   linkType: soft
 
@@ -2487,9 +2497,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vite@npm:^8.0.15":
-  version: 8.0.15
-  resolution: "vite@npm:8.0.15"
+"vite@npm:^8.0.16":
+  version: 8.0.16
+  resolution: "vite@npm:8.0.16"
   dependencies:
     fsevents: "npm:~2.3.3"
     lightningcss: "npm:^1.32.0"
@@ -2540,7 +2550,7 @@ __metadata:
       optional: true
   bin:
     vite: bin/vite.js
-  checksum: 10c0/e6092f761e1ce77ae5508cf2f9be15b801e5626236d6cc213ca4c6f977205bd6719b8b9f784b594d317ee8a68e059a105146f7af86a23416059ba103b18b3c90
+  checksum: 10c0/d75be3fbe2f63e6a8145325970338afaf0dd4d96ba9175c13f9a286fd5f95afc489401b693e4fa6c0899a4dd0e137be91cdf9401a40a635563911ad5036e3467
   languageName: node
   linkType: hard
 

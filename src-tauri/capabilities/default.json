@@ -44,6 +44,7 @@
     "fs:read-all",
     "fs:write-all",
     "notification:default",
-    "core:app:allow-default-window-icon"
+    "core:app:allow-default-window-icon",
+    "window-state:default"
   ]
 }

@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { StateFlags, saveWindowState } from "@tauri-apps/plugin-window-state";
 import { cva } from "class-variance-authority";
 import { AnimatePresence } from "motion/react";
 import { useGame } from "../hooks/useGame.ts";
@@ -35,7 +36,8 @@ export const Titlebar = () => {
 				<AnimatePresence mode="wait" initial={false}>
 					<MenuClose
 						size={42}
-						clickAction={() => {
+						clickAction={async () => {
+							await saveWindowState(StateFlags.ALL);
 							getCurrentWindow().close();
 						}}
 					/>

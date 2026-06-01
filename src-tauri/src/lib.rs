@@ -11,6 +11,7 @@ pub fn run() {
     apply_webkit_memory_improvements();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
