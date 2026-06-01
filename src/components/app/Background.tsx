@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useRef } from "preact/hooks";
 import { useApi } from "../../hooks/useApi";
 import { useGame } from "../../hooks/useGame";
 
@@ -10,14 +9,10 @@ const BackgroundMedia = ({
 	src: string | null;
 	isVideo: boolean;
 }) => {
-	const videoRef = useRef<HTMLVideoElement>(null);
-	// const localSrc = useState<string | null>(null);
-
-	if(!src) return null;
+	if (!src) return null;
 
 	return isVideo ? (
 		<motion.video
-			ref={videoRef}
 			class="background"
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
@@ -52,6 +47,9 @@ export const Background = () => {
 
 	const isVideo = backgroundVideo !== null && backgroundVideo !== "";
 
+	console.log(backgroundVideo);
+	console.log(backgroundImage);
+
 	return (
 		<div class="absolute inset-0 overflow-hidden">
 			<AnimatePresence mode="wait">
@@ -60,6 +58,8 @@ export const Background = () => {
 					src={isVideo ? backgroundVideo : backgroundImage}
 					isVideo={isVideo}
 				/>
+			</AnimatePresence>
+			<AnimatePresence mode="wait">
 				<BackgroundMedia
 					key={`${game}-overlay`}
 					src={backgroundVideoOverlay}
