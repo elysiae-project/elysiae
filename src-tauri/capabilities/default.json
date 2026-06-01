@@ -19,7 +19,7 @@
         { "url": "https://api.github.com" },
         { "url": "https://raw.githubusercontent.com" },
         { "url": "https://codeberg.org" },
-        { "url": "https://assets.elysiae.app" }
+        { "url": "https://assets.elysiae.app/**" }
       ]
     },
     {
