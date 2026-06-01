@@ -22,13 +22,13 @@ const BH3_EN_ID = "bxPTXSET5t";
 
 interface ApiContextType {
 	graphics: LauncherGraphicsData | null;
-	backgrounds: LauncherBackgroundData | null;
+	webBackgrounds: LauncherBackgroundData | null;
 	branding: LauncherBrandingData | null;
 }
 
 export const ApiContext = createContext<ApiContextType>({
 	graphics: null,
-	backgrounds: null,
+	webBackgrounds: null,
 	branding: null,
 });
 
@@ -38,7 +38,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	const [graphicsData, setGraphicsData] = useState<LauncherGraphicsData | null>(
 		null,
 	);
-	const [backgroundData, setBackgroundData] =
+	const [webBackgroundData, setWebBackgroundData] =
 		useState<LauncherBackgroundData | null>(null);
 	const [brandingData, setBrandingData] = useState<LauncherBrandingData | null>(
 		null,
@@ -65,11 +65,10 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 							},
 							{} as LauncherBackgroundData,
 						);
-						setBackgroundData(formatted);
+						setWebBackgroundData(formatted);
 					});
 				})
 				.catch((err) => console.error(err));
-
 			fetch(
 				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getAllGameBasicInfo"].join("/")}?launcher_id=${LAUNCHER_ID}&language=${LANGUAGE}`,
 			)
@@ -161,7 +160,7 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 		<ApiContext.Provider
 			value={{
 				graphics: graphicsData,
-				backgrounds: backgroundData,
+				webBackgrounds: webBackgroundData,
 				branding: brandingData,
 			}}
 		>

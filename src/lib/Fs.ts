@@ -17,9 +17,7 @@ import { variantToGameCode } from "./VariantConverter";
 
 export const exists = async (path: string): Promise<boolean> => {
 	return new Promise((resolve, reject) => {
-		tauriExists(path, { baseDir: BaseDir.AppData })
-			.then(resolve)
-			.catch(reject);
+		tauriExists(path, { baseDir: BaseDir.AppData }).then(resolve).catch(reject);
 	});
 };
 
@@ -43,9 +41,7 @@ export const readTextFile = async (path: string): Promise<string> => {
 
 export const remove = async (path: string): Promise<void> => {
 	return new Promise((resolve, reject) => {
-		tauriRemove(path, { baseDir: BaseDir.AppData })
-			.then(resolve)
-			.catch(reject);
+		tauriRemove(path, { baseDir: BaseDir.AppData }).then(resolve).catch(reject);
 	});
 };
 
@@ -89,6 +85,18 @@ export const readDir = async (path: string): Promise<DirEntry[]> => {
 	});
 };
 
+export const getDirFileNames = async (path: string): Promise<string[]> => {
+	return new Promise((resolve, reject) => {
+		readDir(path)
+			.then((dirItems) => {
+				const final: string[] = [];
+				dirItems.map((i) => final.push(i.name));
+				resolve(final);
+			})
+			.catch(reject);
+	});
+};
+
 /**
  * Extracts a compressed archive to a specified location. Supports most common
  * tar compression formats (gz, xz, zstd) and zip
@@ -107,18 +115,6 @@ export const extractFile = async (
 	} else {
 		error(`extractFile: "${archivePath}" does not exist`);
 	}
-};
-
-export const getFileHash = async (path: string): Promise<string> => {
-	return new Promise((resolve, reject) => {
-		invoke<string>("get_sha256_sum", {
-			path: path,
-		})
-			.then((res) => {
-				resolve(res);
-			})
-			.catch(reject);
-	});
 };
 
 export const getDirSize = async (game: Variants): Promise<number> => {

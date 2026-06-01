@@ -25,6 +25,7 @@ export type AppModules = "wine" | "dxvk" | "jadeite";
 export type AppOptions =
 	| "isFirstLaunch"
 	| "lastUsedVersion"
+	| "cachedBackgrounds"
 	| "selectedGame"
 	| "voLanguage"
 	| "blockNotifications"
@@ -296,3 +297,7 @@ type DropdownOption = BaseOption<"dropdown", string> & {
 type BooleanOption = BaseOption<"boolean", boolean>;
 
 export type Option = DropdownOption | BooleanOption;
+
+export type CachedBackgrounds = {
+	[key in Variants]: string[];
+};
