@@ -47,18 +47,15 @@ export const downloadFile = async (
 	url: string,
 	destination: string,
 	onProgress: (progress: number, total: number) => void,
-	broadcastProgress: boolean = true,
 ) => {
 	const downloadID = crypto.randomUUID();
 
-	const unlisten = broadcastProgress
-		? await listen<{ progress: number; total: number }>(
-				`download://progress/${downloadID}`,
-				({ payload }) => {
-					onProgress(payload.progress, payload.total);
-				},
-			)
-		: null;
+	const unlisten = await listen<{ progress: number; total: number }>(
+		`download://progress/${downloadID}`,
+		({ payload }) => {
+			onProgress(payload.progress, payload.total);
+		},
+	);
 
 	try {
 		await invoke<void>("download_file", {
@@ -67,6 +64,22 @@ export const downloadFile = async (
 			uuid: downloadID,
 		});
 	} finally {
-		if (unlisten) unlisten();
+		unlisten();
+	}
+};
+
+export const downloadFileNoProgress = async (
+	url: string,
+	destination: string,
+) => {
+	const downloadID = crypto.randomUUID();
+	try {
+		await invoke<void>("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} catch (e) {
+		console.error(e);
 	}
 };

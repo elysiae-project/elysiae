@@ -8,7 +8,7 @@ import { useGame } from "../../hooks/useGame";
 import { getDirFileNames, remove } from "../../lib/Fs";
 import { getOption, setOption } from "../../lib/Settings";
 import { variantToGameCode } from "../../lib/VariantConverter";
-import { downloadFile } from "../../lib/Web";
+import { downloadFileNoProgress } from "../../lib/Web";
 import type { CachedBackgrounds, LauncherBackgroundRawData } from "../../types";
 
 type BackgroundItems = {
@@ -87,7 +87,7 @@ export const Background = () => {
 
 			await Promise.all(
 				localDirFileNames.map(async (fileName) => {
-					const path = await join("backgrounds", gameCode, fileName);
+					const path = await join(backgroundDir, fileName);
 					localItems.push({
 						path: path,
 						name: fileName,
@@ -105,13 +105,9 @@ export const Background = () => {
 						[currentImg, currentVideo].map(async (item) => {
 							if (item) {
 								const fileName = item.split("/").pop()?.trim() as string;
-								const hypothetical = await join(
-									"backgrounds",
-									gameCode,
-									fileName,
-								);
+								const localPath = await join(backgroundDir, fileName);
 								webItems.push({
-									path: hypothetical,
+									path: localPath,
 									name: fileName,
 								});
 							}
@@ -127,7 +123,7 @@ export const Background = () => {
 				await Promise.all(
 					toDownload.map(async (file) => {
 						const url = `${gameCodeAssets}/${file.name}`;
-						await downloadFile(url, file.path, () => {}, false);
+						await downloadFileNoProgress(url, file.path);
 					}),
 				);
 
