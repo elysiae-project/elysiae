@@ -1,11 +1,7 @@
 import { fetch } from "@tauri-apps/plugin-http";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { gameCodeToVariant } from "../lib/VariantConverter";
 import {
-	type GameCodes,
-	type LauncherBackgroundData,
-	type LauncherBackgroundRawData,
 	type LauncherBrandingData,
 	type LauncherBrandingRawData,
 	type LauncherBrandingRawGameData,
@@ -15,20 +11,17 @@ import {
 	Variants,
 } from "../types";
 
-const ASSETS_BASE = "https://assets.elysiae.app";
 const LAUNCHER_ID = "VYTpXlbWo8";
 const LANGUAGE = "en";
 const BH3_EN_ID = "bxPTXSET5t";
 
 interface ApiContextType {
 	graphics: LauncherGraphicsData | null;
-	webBackgrounds: LauncherBackgroundData | null;
 	branding: LauncherBrandingData | null;
 }
 
 export const ApiContext = createContext<ApiContextType>({
 	graphics: null,
-	webBackgrounds: null,
 	branding: null,
 });
 
@@ -38,8 +31,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	const [graphicsData, setGraphicsData] = useState<LauncherGraphicsData | null>(
 		null,
 	);
-	const [webBackgroundData, setWebBackgroundData] =
-		useState<LauncherBackgroundData | null>(null);
 	const [brandingData, setBrandingData] = useState<LauncherBrandingData | null>(
 		null,
 	);
@@ -47,28 +38,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 	useEffect(() => {
 		if (!loading) {
 			loading = true;
-			fetch("https://assets.elysiae.app/launcherAssets.json")
-				.then((res) => {
-					res.json().then((data: LauncherBackgroundRawData) => {
-						const formatted = (Object.keys(data) as GameCodes[]).reduce(
-							(acc: LauncherBackgroundData, code: GameCodes) => {
-								const variant = gameCodeToVariant[code];
-								const entry = data[code];
-
-								const bg = entry.find((b) => b.video !== null) ?? entry[0];
-
-								acc[variant] = {
-									backgroundImage: `${ASSETS_BASE}/${bg.image}`,
-									backgroundVideo: `${ASSETS_BASE}/${bg.video}`,
-								};
-								return acc;
-							},
-							{} as LauncherBackgroundData,
-						);
-						setWebBackgroundData(formatted);
-					});
-				})
-				.catch((err) => console.error(err));
 			fetch(
 				`https://${["sg", "hyp", "api"].join("-")}.hoyoverse.com/${["hyp", "hyp-connect", "api", "getAllGameBasicInfo"].join("/")}?launcher_id=${LAUNCHER_ID}&language=${LANGUAGE}`,
 			)
@@ -160,7 +129,6 @@ export const ApiProvider = ({ children }: { children: ComponentChildren }) => {
 		<ApiContext.Provider
 			value={{
 				graphics: graphicsData,
-				webBackgrounds: webBackgroundData,
 				branding: brandingData,
 			}}
 		>
