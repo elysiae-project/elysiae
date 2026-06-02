@@ -17,6 +17,7 @@ import Sidebar from "./components/app/Sidebar.tsx";
 import Button from "./components/Button.tsx";
 import Titlebar from "./components/Titlebar.tsx";
 import { ApiProvider } from "./contexts/ApiContext.tsx";
+import { BackgroundProvider } from "./contexts/BackgroundContext.tsx";
 import { DownloadProvider } from "./contexts/DownloadContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
@@ -105,7 +106,9 @@ export default function AppWrapper() {
 		<GameProvider>
 			<ApiProvider>
 				<DownloadProvider>
-					<App />
+					<BackgroundProvider>
+						<App />
+					</BackgroundProvider>
 				</DownloadProvider>
 			</ApiProvider>
 		</GameProvider>
