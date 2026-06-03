@@ -77,9 +77,9 @@ const App = () => {
 			<SettingsModal ref={settingsModal} />
 
 			<div class={bgTheme({ game: game })}>
-				<span class="relative h-full w-full">
+				<div class="relative h-full w-full">
 					{graphics ? <Background /> : null}
-				</span>
+				</div>
 				<section class="absolute inset-0 z-10 flex w-full flex-row items-end justify-end gap-x-3 px-15 py-10">
 					{/* Page content */}
 					<DownloadProgress />
