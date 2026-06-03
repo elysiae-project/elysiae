@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef } from "preact/hooks";
 import { useApi } from "../../hooks/useApi";
 import { useBackground } from "../../hooks/useBackground";
 import { useGame } from "../../hooks/useGame";
@@ -10,15 +10,21 @@ const BackgroundMedia = ({
 	src: string | null;
 	isVideo: boolean;
 }) => {
-	if (!src) return null;
+	console.log(`Source: ${src}, is video? ${isVideo}`);
+	const video = useRef<HTMLVideoElement>(null);
+	const image = useRef<HTMLImageElement>(null);
+
+	if (!src && (!video || !image)) return null;
+	useEffect(() => {
+		if (isVideo) {
+			video.current?.load();
+		}
+	}, [src, isVideo]);
 
 	return isVideo ? (
-		<motion.video
+		<video
+			ref={video}
 			class="background"
-			initial={{ opacity: 0 }}
-			animate={{ opacity: 1 }}
-			exit={{ opacity: 0 }}
-			transition={{ duration: 0.25, ease: "easeInOut" }}
 			src={src as string}
 			autoplay
 			loop
@@ -26,44 +32,32 @@ const BackgroundMedia = ({
 			playsInline
 		/>
 	) : (
-		<motion.img
-			class="background"
-			initial={{ opacity: 0 }}
-			animate={{ opacity: 1 }}
-			exit={{ opacity: 0 }}
-			transition={{ duration: 0.25, ease: "easeInOut" }}
-			src={src as string}
-			alt=""
-		/>
+		<img class="background" src={src as string} alt="" />
 	);
 };
 
 export const Background = () => {
 	const { game } = useGame();
 	const { graphics } = useApi();
-	const { currentBackground } = useBackground();
+	const { backgroundBlob, backgroundPath } = useBackground();
 
-	if(!currentBackground || !graphics) return null;
+	if (!backgroundBlob || !backgroundPath || !graphics) return null;
 	const { backgroundVideoOverlay } = graphics[game];
 
-	const isVideo = currentBackground.endsWith(".mp4");
+	const isVideo = backgroundPath.endsWith(".mp4");
 
 	return (
 		<div class="absolute inset-0 overflow-hidden">
-			<AnimatePresence mode="wait">
-				<BackgroundMedia
-					key={`${game}-bg`}
-					src={currentBackground}
-					isVideo={isVideo}
-				/>
-			</AnimatePresence>
-			<AnimatePresence mode="wait">
-				<BackgroundMedia
-					key={`${game}-overlay`}
-					src={backgroundVideoOverlay}
-					isVideo={false}
-				/>
-			</AnimatePresence>
+			<BackgroundMedia
+				key={`${game}-bg`}
+				src={backgroundBlob}
+				isVideo={isVideo}
+			/>
+			<BackgroundMedia
+				key={`${game}-overlay`}
+				src={backgroundVideoOverlay}
+				isVideo={false}
+			/>
 		</div>
 	);
 };

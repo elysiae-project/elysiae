@@ -1,9 +1,8 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { join } from "@tauri-apps/api/path";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
-import { exists, getDirFileNames, mkdir, remove } from "../lib/Fs";
+import { exists, getDirFileNames, mkdir, readFile, remove } from "../lib/Fs";
 import { getOption, setOption } from "../lib/Settings";
 import { variantToGameCode } from "../lib/VariantConverter";
 import { downloadFileNoProgress } from "../lib/Web";
@@ -17,12 +16,14 @@ type BackgroundItems = {
 
 interface BackgroundContextType {
 	cachedBackgrounds: CachedBackgrounds | null;
-	currentBackground: string | null;
+	backgroundPath: string | null;
+	backgroundBlob: string | null;
 }
 
 export const BackgroundContext = createContext<BackgroundContextType>({
 	cachedBackgrounds: null,
-	currentBackground: null,
+	backgroundPath: null,
+	backgroundBlob: null,
 });
 
 export const BackgroundProvider = ({
@@ -34,6 +35,10 @@ export const BackgroundProvider = ({
 		useState<CachedBackgrounds | null>(null);
 
 	const [currentBackgroundPath, setCurrentBackgroundPath] = useState<
+		string | null
+	>(null);
+
+	const [currentBackgroundBlob, setCurrentBackgroundBlob] = useState<
 		string | null
 	>(null);
 
@@ -50,9 +55,6 @@ export const BackgroundProvider = ({
 
 	useEffect(() => {
 		(async () => {
-			const gameCode = variantToGameCode[game];
-			const backgroundDir = await join("backgrounds", gameCode);
-
 			if (cachedBackgroundData) {
 				if (
 					cachedBackgroundData[game] &&
@@ -61,16 +63,27 @@ export const BackgroundProvider = ({
 					const index =
 						cachedBackgroundData[game].findIndex((i) => i.endsWith(".mp4")) ??
 						0;
-					const fullPath = await join(
-						backgroundDir,
-						cachedBackgroundData[game][index],
-					);
-					setCurrentBackgroundPath(convertFileSrc(fullPath));
-					console.log(`Background Path: ${currentBackgroundPath}`);
+					const fullPath = await join(cachedBackgroundData[game][index]);
+					setCurrentBackgroundPath(await join(await appDataDir(), fullPath));
+
+					const bgContents = await readFile(fullPath);
+
+					const bgBlob = new Blob([bgContents], {
+						type: cachedBackgroundData[game][index].endsWith(".mp4")
+							? "video/mp4"
+							: "image/webp",
+					});
+
+					const blobURL = URL.createObjectURL(bgBlob);
+					setCurrentBackgroundBlob(blobURL);
+
+					return () => {
+						if (blobURL) URL.revokeObjectURL(blobURL);
+					};
 				}
 			}
 		})();
-	}, [cachedBackgroundData]);
+	}, [cachedBackgroundData, game]);
 
 	useEffect(() => {
 		(async () => {
@@ -166,7 +179,8 @@ export const BackgroundProvider = ({
 		<BackgroundContext.Provider
 			value={{
 				cachedBackgrounds: cachedBackgroundData,
-				currentBackground: currentBackgroundPath,
+				backgroundPath: currentBackgroundPath,
+				backgroundBlob: currentBackgroundBlob,
 			}}
 		>
 			{children}
