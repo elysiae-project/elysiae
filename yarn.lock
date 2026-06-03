@@ -1514,7 +1514,6 @@ __metadata:
     motion: "npm:^12.40.0"
     preact: "npm:^10.29.2"
     tailwindcss: "npm:^4.3.0"
-    thumbhash: "npm:^0.1.1"
     typescript: "npm:^6.0.3"
     vite: "npm:^8.0.16"
   languageName: unknown
@@ -2385,13 +2384,6 @@ __metadata:
     minizlib: "npm:^3.1.0"
     yallist: "npm:^5.0.0"
   checksum: 10c0/ed905e4b33886377df6e9206e5d1bd34458c21666e27943f946799416f86348c938590d573d6a69312cb29c583b122647a64ec92782f2b7e24e68d985dd72531
-  languageName: node
-  linkType: hard
-
-"thumbhash@npm:^0.1.1":
-  version: 0.1.1
-  resolution: "thumbhash@npm:0.1.1"
-  checksum: 10c0/9a23fe65a32b82400a966968a426f7e8a1bee352eedfc24b5342ebfe63f36e2cf8bba5b93adddf220bba625da2ad819ae5fbb6e9d5caa6f215e9ae274249bf87
   languageName: node
   linkType: hard
 
