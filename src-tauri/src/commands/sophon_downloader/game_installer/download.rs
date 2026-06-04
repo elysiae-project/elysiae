@@ -1,12 +1,10 @@
 use std::path::Path;
 
-use bytes::BytesMut;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
-use super::DOWNLOAD_STREAM_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
@@ -30,27 +28,21 @@ pub async fn download_chunk(
         });
     }
 
-    let mut file = tokio::fs::File::create(dest).await?;
+    let file = tokio::fs::File::create(dest).await?;
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
-    let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
+    let mut file = BufWriter::new(file);
 
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;
         hasher.update(&bytes);
-        buffer.extend_from_slice(&bytes);
-        if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
-            file.write_all(&buffer).await?;
-            buffer.clear();
-        }
+        file.write_all(&bytes).await?;
         total_len += bytes.len() as u64;
     }
 
-    if !buffer.is_empty() {
-        file.write_all(&buffer).await?;
-    }
+    file.flush().await?;
 
     if total_len != chunk.chunk_size {
         return Err(SophonError::SizeMismatch {

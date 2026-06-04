@@ -283,21 +283,43 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
         current_tag: state.current_tag.clone(),
         manifest_hash: state.manifest_hash.clone(),
     };
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DownloadStateRef<'a> {
+        game_id: &'a str,
+        vo_lang: &'a str,
+        output_path: &'a str,
+        download_type: &'a DownloadType,
+        current_tag: &'a Option<String>,
+        manifest_hash: &'a str,
+        downloaded_chunks: &'a DashMap<String, u64>,
+    }
     Arc::new(move |chunks: &DashMap<String, u64>| {
-        let chunks_map: HashMap<String, u64> = chunks
-            .iter()
-            .map(|entry| (entry.key().clone(), *entry.value()))
-            .collect();
-        let s = DownloadState {
-            game_id: meta.game_id.clone(),
-            vo_lang: meta.vo_lang.clone(),
-            output_path: meta.output_path.clone(),
-            download_type: meta.download_type.clone(),
-            current_tag: meta.current_tag.clone(),
-            manifest_hash: meta.manifest_hash.clone(),
-            downloaded_chunks: chunks_map,
+        let snapshot = DownloadStateRef {
+            game_id: &meta.game_id,
+            vo_lang: &meta.vo_lang,
+            output_path: &meta.output_path,
+            download_type: &meta.download_type,
+            current_tag: &meta.current_tag,
+            manifest_hash: &meta.manifest_hash,
+            downloaded_chunks: chunks,
         };
-        save_download_state(&app, &s).ok();
+        let Some(path) = download_state_path(&app) else {
+            return;
+        };
+        static SAVE_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let seq = SAVE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+        let tmp_path = path.with_extension(format!("save-{seq}.tmp"));
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let file = match std::fs::File::create(&tmp_path) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        if serde_json::to_writer(file, &snapshot).is_ok() {
+            let _ = fs::rename(&tmp_path, &path);
+        }
     })
 }
 

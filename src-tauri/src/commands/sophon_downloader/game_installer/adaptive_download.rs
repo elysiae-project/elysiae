@@ -47,15 +47,23 @@ impl AdaptiveSemaphore {
     }
 
     pub async fn acquire(&self) -> AdaptivePermit<'_> {
-        let permit = self
-            .semaphore
-            .acquire()
-            .await
-            .expect("adaptive semaphore closed unexpectedly");
-        self.active.fetch_add(1, Ordering::AcqRel);
-        AdaptivePermit {
-            _permit: permit,
-            adaptive: self,
+        loop {
+            let permit = self
+                .semaphore
+                .acquire()
+                .await
+                .expect("adaptive semaphore closed unexpectedly");
+            let active = self.active.fetch_add(1, Ordering::AcqRel) + 1;
+            let target = self.target.load(Ordering::Acquire);
+            if active <= target {
+                return AdaptivePermit {
+                    _permit: permit,
+                    adaptive: self,
+                };
+            }
+            self.active.fetch_sub(1, Ordering::AcqRel);
+            drop(permit);
+            tokio::task::yield_now().await;
         }
     }
 
@@ -122,23 +130,11 @@ impl AdaptiveSemaphore {
         if new_target > current {
             let delta = new_target - current;
             self.semaphore.add_permits(delta);
-        } else if new_target < current {
-            let delta = current - new_target;
-            self.remove_permits(delta);
         }
 
         self.target.store(new_target, Ordering::Release);
         *window_start = now;
         new_target
-    }
-
-    fn remove_permits(&self, count: usize) {
-        for _ in 0..count {
-            match self.semaphore.try_acquire() {
-                Ok(permit) => permit.forget(),
-                Err(_) => break,
-            }
-        }
     }
 
     fn calculate_new_target(current: usize, ewma: f64, prev_ewma: f64, best: f64) -> usize {
@@ -448,15 +444,6 @@ mod tests {
                     .expect("extra permit should be available");
             }
         }
-    }
-
-    #[test]
-    fn remove_permits_reduces_available() {
-        let sem = AdaptiveSemaphore::new();
-        let available_before = sem.semaphore.available_permits();
-        sem.remove_permits(4);
-        let available_after = sem.semaphore.available_permits();
-        assert_eq!(available_after, available_before - 4);
     }
 
     #[test]
