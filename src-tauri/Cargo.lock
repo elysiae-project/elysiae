@@ -14,6 +14,7 @@ dependencies = [
  "futures-util",
  "glib 0.22.7",
  "hex",
+ "libc",
  "lru",
  "md-5",
  "prost",
@@ -995,6 +996,7 @@ dependencies = [
  "lock_api",
  "once_cell",
  "parking_lot_core",
+ "serde",
 ]
 
 [[package]]
