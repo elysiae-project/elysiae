@@ -57,7 +57,7 @@ struct InstallContext {
     updater: ProgressUpdater,
     downloaded_chunks: Arc<DashMap<String, u64>>,
     chunks_since_save: Arc<AtomicU64>,
-    pending_saves: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    last_save: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
     adaptive_assembly: Arc<AdaptiveAssembly>,
 }
@@ -416,9 +416,14 @@ async fn build_download_state(
     completed_indices: Option<&HashSet<usize>>,
     pre_downloaded: &HashSet<String>,
 ) -> SophonResult<(Vec<DownloadItem>, Arc<DashMap<String, Vec<FileEntry>>>)> {
+    let total_chunks: usize = installer_data
+        .iter()
+        .flat_map(|d| d.files.iter())
+        .map(|f| f.asset_chunks.len())
+        .sum();
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
-    let mut download_items: Vec<DownloadItem> = Vec::new();
-    let mut download_items_index: HashMap<String, usize> = HashMap::new();
+    let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
+    let mut download_items_index: HashMap<String, usize> = HashMap::with_capacity(total_chunks);
     let mut file_idx = 0usize;
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
@@ -648,29 +653,22 @@ async fn notify_assembly_ready(
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
 ) {
-    let ready: Vec<(usize, usize)> = match chunk_to_files.remove(chunk_name) {
-        Some((_, entries)) => entries
-            .into_iter()
-            .filter_map(|(file_idx, tmp_dir_idx, pending)| {
-                let prev = pending.fetch_sub(1, Ordering::AcqRel);
-                if prev == 1 {
-                    Some((file_idx, tmp_dir_idx))
-                } else {
-                    None
-                }
-            })
-            .collect(),
+    let entries = match chunk_to_files.remove(chunk_name) {
+        Some((_, entries)) => entries,
         None => {
             log::warn!(
                 "notify_assembly_ready: chunk '{}' not found in chunk_to_files (already removed or never registered)",
                 chunk_name
             );
-            Vec::new()
+            return;
         }
     };
 
-    for entry in ready {
-        let _ = assemble_tx.send(entry).await;
+    for (file_idx, tmp_dir_idx, pending) in entries {
+        let prev = pending.fetch_sub(1, Ordering::AcqRel);
+        if prev == 1 {
+            let _ = assemble_tx.send((file_idx, tmp_dir_idx)).await;
+        }
     }
 }
 
@@ -717,13 +715,11 @@ async fn process_download_item(
     if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
         let dc = Arc::clone(&ctx.downloaded_chunks);
         let saver = Arc::clone(&ctx.state_saver);
-        let handle = tokio::task::spawn_blocking(move || saver(&dc));
-        let mut pending = ctx.pending_saves.lock().unwrap_or_else(|e| {
-            log::error!("pending_saves mutex poisoned, recovering");
+        let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+            log::error!("last_save mutex poisoned, recovering");
             e.into_inner()
         });
-        pending.retain(|h| !h.is_finished());
-        pending.push(handle);
+        *guard = Some(tokio::task::spawn_blocking(move || saver(&dc)));
     }
 
     let db = if was_actually_downloaded || !item.is_pre_downloaded {
@@ -789,7 +785,7 @@ async fn run_downloads(
 
             process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
         })
-        .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
+        .buffer_unordered(adaptive.current_target())
         .collect()
         .await
 }
@@ -798,7 +794,7 @@ async fn run_downloads(
 async fn finalize_install(
     ctx: &InstallContext,
     results: Vec<SophonResult<()>>,
-    deleted_files: &[String],
+    deleted_files: Vec<String>,
     tag: &str,
     is_preinstall: bool,
     assembly_task: tokio::task::JoinHandle<SophonResult<()>>,
@@ -852,9 +848,8 @@ async fn finalize_install(
 
     if !deleted_files.is_empty() {
         let gd = ctx.game_dir.clone();
-        let df = deleted_files.to_vec();
         tokio::task::spawn_blocking(move || {
-            for rel in &df {
+            for rel in &deleted_files {
                 let _ = fs::remove_file(gd.join(rel));
             }
         })
@@ -1158,7 +1153,7 @@ pub async fn install(
         updater: Arc::clone(&callbacks.updater),
         downloaded_chunks: Arc::new(initial_dashmap),
         chunks_since_save: Arc::new(AtomicU64::new(0)),
-        pending_saves: Arc::new(Mutex::new(Vec::new())),
+        last_save: Arc::new(Mutex::new(None)),
         state_saver: callbacks.state_saver,
         adaptive_assembly: Arc::clone(&adaptive_assembly),
     });
@@ -1202,23 +1197,24 @@ pub async fn install(
     )
     .await;
 
-    let pending_handles: Vec<tokio::task::JoinHandle<()>> = {
-        let mut pending = ctx.pending_saves.lock().unwrap_or_else(|e| {
-            log::error!("pending_saves mutex poisoned, recovering");
-            e.into_inner()
-        });
-        pending.drain(..).collect()
-    };
-
-    for handle in pending_handles {
-        let _ = handle.await;
+    {
+        let handle = {
+            let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+                log::error!("last_save mutex poisoned, recovering");
+                e.into_inner()
+            });
+            guard.take()
+        };
+        if let Some(h) = handle {
+            let _ = h.await;
+        }
     }
 
     drop(assemble_tx);
     finalize_install(
         &ctx,
         results,
-        &deleted_files,
+        deleted_files,
         tag,
         options.is_preinstall,
         assembly_task,
@@ -1283,7 +1279,7 @@ pub async fn verify_integrity(
 
     let total_files = all_assets.len() as u64;
     let mut error_count = 0u64;
-    let verify_cache = cache::load_verification_cache(game_dir);
+    let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
     let chunks_dir = game_dir.join("chunks");
     let mut last_emit = Instant::now();
 
@@ -1292,7 +1288,7 @@ pub async fn verify_integrity(
         let file_path = game_dir.join(&asset.asset_name);
 
         let is_valid = tokio::task::spawn_blocking({
-            let verify_cache = Arc::new(verify_cache.clone());
+            let verify_cache = Arc::clone(&verify_cache);
             let file_path = file_path.clone();
             let asset_size = asset.asset_size;
             let asset_md5 = asset.asset_hash_md5.clone();
@@ -1845,7 +1841,7 @@ mod tests {
             updater: Arc::new(|_| {}),
             downloaded_chunks: Arc::new(DashMap::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
-            pending_saves: Arc::new(Mutex::new(Vec::new())),
+            last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
         });
