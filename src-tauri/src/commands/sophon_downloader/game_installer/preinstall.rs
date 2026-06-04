@@ -978,9 +978,11 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         // Write the magic bytes we already read (non-HDIFF data)
         file.write_all(&magic_buf)?;
         // Stream the rest using a bounded buffer
-        let remaining = asset.patch_chunk_length - magic_buf.len() as u64;
-        let mut limited = (&mut chunk_file).take(remaining);
-        std::io::copy(&mut limited, &mut file)?;
+        if asset.patch_chunk_length > magic_buf.len() as u64 {
+            let remaining = asset.patch_chunk_length - magic_buf.len() as u64;
+            let mut limited = (&mut chunk_file).take(remaining);
+            std::io::copy(&mut limited, &mut file)?;
+        }
     }
     if target_path.exists() {
         let _ = fs::remove_file(&target_path);
