@@ -715,11 +715,24 @@ async fn process_download_item(
     if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
         let dc = Arc::clone(&ctx.downloaded_chunks);
         let saver = Arc::clone(&ctx.state_saver);
-        let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
-            log::error!("last_save mutex poisoned, recovering");
-            e.into_inner()
-        });
-        *guard = Some(tokio::task::spawn_blocking(move || saver(&dc)));
+        let prev_handle = {
+            let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+                log::error!("last_save mutex poisoned, recovering");
+                e.into_inner()
+            });
+            guard.take()
+        };
+        if let Some(h) = prev_handle {
+            let _ = h.await;
+        }
+        let new_handle = tokio::task::spawn_blocking(move || saver(&dc));
+        {
+            let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+                log::error!("last_save mutex poisoned, recovering");
+                e.into_inner()
+            });
+            *guard = Some(new_handle);
+        }
     }
 
     let db = if was_actually_downloaded || !item.is_pre_downloaded {
@@ -785,7 +798,7 @@ async fn run_downloads(
 
             process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
         })
-        .buffer_unordered(adaptive.current_target())
+        .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
         .collect()
         .await
 }

@@ -111,7 +111,11 @@ fn available_ram_mb() -> u64 {
         if result != libc::KERN_SUCCESS {
             return u64::MAX;
         }
-        let page_size = libc::sysconf(libc::_SC_PAGESIZE) as u64;
+        let page_size_raw = libc::sysconf(libc::_SC_PAGESIZE);
+        if page_size_raw <= 0 {
+            return u64::MAX;
+        }
+        let page_size = page_size_raw as u64;
         let available_pages = (vm_stats.free_count as u64)
             + (vm_stats.inactive_count as u64)
             + (vm_stats.speculative_count as u64);
