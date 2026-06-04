@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -205,16 +205,34 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     writer.flush()?;
     writer.seek(SeekFrom::Start(offset))?;
 
-    let bytes_written = match file_hasher {
+    const ASSEMBLY_COPY_BUFFER_SIZE: usize = 65536;
+    let mut buffer = vec![0u8; ASSEMBLY_COPY_BUFFER_SIZE];
+    let mut bytes_written: u64 = 0;
+
+    match file_hasher {
         Some(hasher) => {
             let mut hw = HashWriter {
                 inner: writer,
                 hasher,
             };
-            std::io::copy(&mut decoder, &mut hw)?
+            loop {
+                let n = decoder.read(&mut buffer)?;
+                if n == 0 {
+                    break;
+                }
+                hw.write_all(&buffer[..n])?;
+                bytes_written += n as u64;
+            }
         }
-        None => std::io::copy(&mut decoder, writer)?,
-    };
+        None => loop {
+            let n = decoder.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&buffer[..n])?;
+            bytes_written += n as u64;
+        },
+    }
 
     if bytes_written != expected_size {
         return Err(SophonError::SizeMismatch {

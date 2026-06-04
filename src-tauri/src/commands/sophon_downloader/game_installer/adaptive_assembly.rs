@@ -96,7 +96,35 @@ fn available_ram_mb() -> u64 {
     u64::MAX
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn available_ram_mb() -> u64 {
+    unsafe {
+        let mut vm_stats: libc::vm_statistics64 = std::mem::zeroed();
+        let mut count = (std::mem::size_of::<libc::vm_statistics64>()
+            / std::mem::size_of::<libc::natural_t>()) as u32;
+        let result = libc::host_statistics64(
+            libc::mach_host_self(),
+            libc::HOST_VM_INFO64,
+            &mut vm_stats as *mut _ as *mut i32,
+            &mut count,
+        );
+        if result != libc::KERN_SUCCESS {
+            return u64::MAX;
+        }
+        let page_size = libc::sysconf(libc::_SC_PAGESIZE) as u64;
+        let available_pages = (vm_stats.free_count as u64)
+            + (vm_stats.inactive_count as u64)
+            + (vm_stats.speculative_count as u64);
+        available_pages.saturating_mul(page_size) / (1024 * 1024)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn available_ram_mb() -> u64 {
+    u64::MAX
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 fn available_ram_mb() -> u64 {
     u64::MAX
 }
