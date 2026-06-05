@@ -205,6 +205,12 @@ pub async fn build_preinstall_plan(
         .collect();
     let patch_results = try_join_all(fetch_futures).await?;
 
+    let total_patch_assets: usize = patch_results
+        .iter()
+        .map(|r| r.patch_manifest.patch_assets.len())
+        .sum();
+    all_patch_assets.reserve(total_patch_assets);
+
     for result in patch_results {
         let patch_manifest = result.patch_manifest;
         let matching_field = result.matching_field;
