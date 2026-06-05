@@ -147,6 +147,7 @@ pub fn assemble_file(
         Some(Md5::new())
     };
 
+    let mut transfer_buffer = vec![0u8; 65536];
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
@@ -156,6 +157,7 @@ pub fn assemble_file(
             chunk.chunk_on_file_offset,
             chunk.chunk_size_decompressed,
             file_hasher.as_mut(),
+            &mut transfer_buffer,
         )?;
 
         total_written += bytes_written;
@@ -197,6 +199,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     offset: u64,
     expected_size: u64,
     file_hasher: Option<&mut Md5>,
+    buffer: &mut [u8],
 ) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
     let buf_reader = BufReader::with_capacity(64 * 1024, f);
@@ -204,8 +207,6 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
 
     writer.seek(SeekFrom::Start(offset))?;
 
-    const ASSEMBLY_COPY_BUFFER_SIZE: usize = 65536;
-    let mut buffer = vec![0u8; ASSEMBLY_COPY_BUFFER_SIZE];
     let mut bytes_written: u64 = 0;
 
     match file_hasher {
@@ -215,7 +216,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
                 hasher,
             };
             loop {
-                let n = decoder.read(&mut buffer)?;
+                let n = decoder.read(buffer)?;
                 if n == 0 {
                     break;
                 }
@@ -224,7 +225,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
             }
         }
         None => loop {
-            let n = decoder.read(&mut buffer)?;
+            let n = decoder.read(buffer)?;
             if n == 0 {
                 break;
             }

@@ -69,7 +69,13 @@ pub fn save_verification_cache(
         files: cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
-            .collect(),
+            .fold(
+                std::collections::HashMap::with_capacity(cache.len()),
+                |mut map, (k, v)| {
+                    map.insert(k, v);
+                    map
+                },
+            ),
     };
     {
         let f = File::create(&tmp_path)?;

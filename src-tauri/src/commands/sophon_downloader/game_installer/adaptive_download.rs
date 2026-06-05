@@ -63,7 +63,7 @@ impl AdaptiveSemaphore {
             }
             self.active.fetch_sub(1, Ordering::AcqRel);
             drop(permit);
-            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     }
 
