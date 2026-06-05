@@ -43,7 +43,21 @@ const BackgroundVideo = ({ src }: { src: string | null }) => {
 		};
 	}, [src]);
 
-	return <video ref={ref} class="background" autoPlay loop muted playsInline />;
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+
+		// Fixes an issue in webkit2gtk where videos loop prematurely after the first complete loop
+		const onEnded = () => {
+			el.currentTime = 0;
+			el.play().catch(() => {});
+		};
+
+		el.addEventListener("ended", onEnded);
+		return () => el.removeEventListener("ended", onEnded);
+	}, []);
+
+	return <video ref={ref} class="background" autoPlay muted playsInline />;
 };
 
 const BackgroundMedia = ({

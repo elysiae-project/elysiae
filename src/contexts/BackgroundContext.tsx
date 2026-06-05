@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { fetch } from "@tauri-apps/plugin-http";
 import { type ComponentChildren, createContext } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
 import { exists, getDirFileNames, mkdir, remove } from "../lib/Fs";
 import { getOption, setOption } from "../lib/Settings";
@@ -44,6 +44,8 @@ export const BackgroundProvider = ({
 	const [currentBackgroundIsVideo, setCurrentBackgroundIsVideo] =
 		useState(false);
 
+	const mediaServerPort = useRef<number | null>(null);
+
 	const { game } = useGame();
 
 	useEffect(() => {
@@ -66,7 +68,10 @@ export const BackgroundProvider = ({
 		const isVideo = mp4Index !== -1;
 
 		(async () => {
-			const port = await invoke<number>("media_server_port");
+			if (mediaServerPort.current === null) {
+				mediaServerPort.current = await invoke<number>("media_server_port");
+			}
+			const port = mediaServerPort.current;
 			const encoded = relativePath.split("/").map(encodeURIComponent).join("/");
 			setCurrentBackgroundSrc(`http://127.0.0.1:${port}/${encoded}`);
 			setCurrentBackgroundIsVideo(isVideo);

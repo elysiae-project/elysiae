@@ -1,3 +1,7 @@
+// This is the best solution I could come up with to address local media loading on tauri
+// Since this is a Webkit2gtk issue, it should hopefully be resolved and make this file entirely unnecessary once
+// Tauri switches from webkit to cef in the future
+// Until then, this will be needed
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
@@ -29,6 +33,11 @@ fn mime_from_path(path: &Path) -> &'static str {
     }
 }
 
+enum FileResult {
+  NotModified(String),
+  Range(FileRange),
+}
+
 struct FileRange {
     data: Vec<u8>,
     start: u64,
@@ -36,16 +45,33 @@ struct FileRange {
     total: u64,
     mime: &'static str,
     is_partial: bool,
+    etag: String,
 }
 
 fn read_file_range(
     path: PathBuf,
     range_header: Option<String>,
-) -> Result<FileRange, StatusCode> {
+    if_none_match: Option<String>,
+) -> Result<FileResult, StatusCode> {
     let mut file = File::open(&path).map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let file_len = metadata.len();
     let mime = mime_from_path(&path);
+    let modified = metadata.modified().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let etag = format!(
+        r#""{}-{}""#,
+        file_len,
+        modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .as_millis()
+    );
+
+    if let Some(inm) = &if_none_match {
+        if inm == &etag {
+            return Ok(FileResult::NotModified(etag));
+        }
+    }
 
     let (start, end, is_partial) = if let Some(range) = &range_header {
         if let Some(spec) = range.strip_prefix("bytes=") {
@@ -73,18 +99,19 @@ fn read_file_range(
     let mut buf = vec![0u8; content_len];
     file.read_exact(&mut buf).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(FileRange {
+    Ok(FileResult::Range(FileRange {
         data: buf,
         start,
         end,
         total: file_len,
         mime,
         is_partial,
-    })
+        etag,
+    }))
 }
 
-fn build_response(range: FileRange) -> Response<Full<Bytes>> {
-    let status = if range.is_partial {
+fn build_response(meta: FileRange) -> Response<Full<Bytes>> {
+    let status = if meta.is_partial {
         StatusCode::PARTIAL_CONTENT
     } else {
         StatusCode::OK
@@ -92,19 +119,29 @@ fn build_response(range: FileRange) -> Response<Full<Bytes>> {
 
     let mut builder = Response::builder()
         .status(status)
-        .header("Content-Type", range.mime)
-        .header("Content-Length", range.data.len())
+        .header("Content-Type", meta.mime)
+        .header("Content-Length", meta.data.len())
         .header("Accept-Ranges", "bytes")
-        .header("Cache-Control", "no-cache");
+        .header("ETag", meta.etag)
+        .header("Cache-Control", "max-age=31536000, immutable");
 
-    if range.is_partial {
+    if meta.is_partial {
         builder = builder.header(
             "Content-Range",
-            format!("bytes {}-{}/{}", range.start, range.end, range.total),
+            format!("bytes {}-{}/{}", meta.start, meta.end, meta.total),
         );
     }
 
-    builder.body(Full::new(Bytes::from(range.data))).unwrap()
+    builder.body(Full::new(Bytes::from(meta.data))).unwrap()
+}
+
+fn not_modified_response(etag: String) -> Response<Full<Bytes>> {
+    Response::builder()
+        .status(StatusCode::NOT_MODIFIED)
+        .header("ETag", etag)
+        .header("Cache-Control", "max-age=31536000, immutable")
+        .body(Full::new(Bytes::new()))
+        .unwrap()
 }
 
 fn error_response(status: StatusCode) -> Response<Full<Bytes>> {
@@ -133,13 +170,22 @@ async fn handle(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_owned());
 
+    let if_none_match = req
+        .headers()
+        .get("if-none-match")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned());
+
     let fp = file_path.clone();
-    let result = tokio::task::spawn_blocking(move || read_file_range(fp, range_header))
-        .await
-        .map_err(|e| -> BoxError { e.into() })?;
+    let result = tokio::task::spawn_blocking(move || {
+        read_file_range(fp, range_header, if_none_match)
+    })
+    .await
+    .map_err(|e| -> BoxError { e.into() })?;
 
     match result {
-        Ok(range) => Ok(build_response(range)),
+        Ok(FileResult::NotModified(etag)) => Ok(not_modified_response(etag)),
+        Ok(FileResult::Range(meta)) => Ok(build_response(meta)),
         Err(status) => Ok(error_response(status)),
     }
 }
