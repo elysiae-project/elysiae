@@ -50,20 +50,11 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
         return cache;
     }
 
-    // Prune stale entries where the file no longer exists
-    let before = cache.len();
-    cache.retain(|rel_path, _| {
-        let full_path = game_dir.join(rel_path);
-        full_path.exists()
-    });
-    let removed = before - cache.len();
-    if removed > 0 {
-        log::info!(
-            "Pruned {}/{} stale entries from verification cache",
-            removed,
-            before
-        );
-    }
+    // Stale entries (where the file no longer exists on disk) are not eagerly
+    // pruned here because doing so would require an O(n) filesystem stat storm on
+    // startup. Instead, stale entries are naturally handled lazily during the next
+    // `check_file_md5_cached` call, where `path.metadata()` returns `NotFound` for
+    // missing files, causing a cache miss and re-validation.
 
     cache
 }

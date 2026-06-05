@@ -202,7 +202,6 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     let buf_reader = BufReader::with_capacity(64 * 1024, f);
     let mut decoder = zstd::Decoder::new(buf_reader)?;
 
-    writer.flush()?;
     writer.seek(SeekFrom::Start(offset))?;
 
     const ASSEMBLY_COPY_BUFFER_SIZE: usize = 65536;
