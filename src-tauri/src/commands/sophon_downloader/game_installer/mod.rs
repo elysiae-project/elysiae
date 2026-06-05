@@ -31,8 +31,8 @@ pub const VERSION_FILE_NAME: &str = ".sophon_version";
 /// Filename for the MD5 verification cache.
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
-/// Buffer size for download stream writes.
-/// Not used for runtime allocation — kept for test compatibility only.
+/// Buffer size for file writes during assembly (256 KiB).
+#[allow(dead_code)]
 pub const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 256 * 1024;
 /// Buffer size for file writes during assembly (256 KiB).
 pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;

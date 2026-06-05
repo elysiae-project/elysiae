@@ -50,7 +50,7 @@ fn patch_loop(
     out: &mut dyn Write,
     mut cover_count: u64,
     step_buf: &mut Vec<u8>,
-    io_buf: &mut Vec<u8>,
+    io_buf: &mut [u8],
 ) -> std::io::Result<()> {
     let mut last_old_end = 0u64;
     let mut last_new_end = 0u64;

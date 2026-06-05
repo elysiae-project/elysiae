@@ -1,10 +1,8 @@
 use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
-use tauri::command;
 use std::env;
-use tauri::Manager;
-
+use tauri::command;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

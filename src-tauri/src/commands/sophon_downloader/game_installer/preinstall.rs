@@ -177,7 +177,7 @@ pub async fn build_preinstall_plan(
     let mut main_manifest_ids: Vec<(String, String)> = Vec::new();
     let mut main_chunk_download: Option<DownloadInfo> = None;
 
-    for (_field, meta) in &main_by_field {
+    for meta in main_by_field.values() {
         main_manifest_ids.push((meta.matching_field.clone(), meta.manifest.id.clone()));
         if main_chunk_download.is_none() && meta.matching_field == "game" {
             main_chunk_download = Some(meta.chunk_download.clone());
@@ -351,6 +351,7 @@ fn patching_chunk_dir(game_dir: &Path) -> PathBuf {
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn preinstall_download(
     client: &Client,
     plan: &PreinstallPlan,
@@ -510,10 +511,10 @@ pub async fn preinstall_download(
         .await;
 
     for result in &results {
-        if let Err(e) = result {
-            if matches!(e, SophonError::Cancelled) {
-                return Err(SophonError::Cancelled);
-            }
+        if let Err(e) = result
+            && matches!(e, SophonError::Cancelled)
+        {
+            return Err(SophonError::Cancelled);
         }
     }
     results.into_iter().find(|r| r.is_err()).transpose()?;
@@ -695,7 +696,7 @@ pub async fn apply_preinstall(
                         "CopyOver failed for {}: {e}, falling back to DownloadOver",
                         asset.target_file_path
                     );
-                    apply_download_over(client, game_dir, &state, &asset).await?;
+                    apply_download_over(client, game_dir, &state, asset).await?;
                 }
             }
             PatchMethod::Patch => {
@@ -719,7 +720,7 @@ pub async fn apply_preinstall(
                         "HDiff patch failed for {}: {e}, falling back to DownloadOver",
                         asset.target_file_path
                     );
-                    apply_download_over(client, game_dir, &state, &asset).await?;
+                    apply_download_over(client, game_dir, &state, asset).await?;
                 }
             }
             PatchMethod::DownloadOver => {
@@ -828,17 +829,11 @@ impl FilterCache {
                 .map(|content| {
                     content
                         .lines()
-                        .filter_map(|line| extract_blacklist_filename(line))
+                        .filter_map(extract_blacklist_filename)
                         .map(|name| name.to_lowercase())
                         .collect::<Vec<String>>()
                 })
-                .and_then(|entries| {
-                    if entries.is_empty() {
-                        None
-                    } else {
-                        Some(entries)
-                    }
-                })
+                .and_then(|entries| Some(entries).filter(|e| !e.is_empty()))
         } else {
             None
         };
@@ -927,17 +922,17 @@ fn read_genshin_installed_langs(persistent_dir: &Path) -> Vec<String> {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.starts_with("audio_lang_") {
-                if let Ok(content) = fs::read_to_string(entry.path()) {
-                    let langs: Vec<String> = content
-                        .lines()
-                        .map(|l| l.trim())
-                        .filter(|l| !l.is_empty())
-                        .map(|l| l.to_string())
-                        .collect();
-                    if !langs.is_empty() {
-                        return langs;
-                    }
+            if name_str.starts_with("audio_lang_")
+                && let Ok(content) = fs::read_to_string(entry.path())
+            {
+                let langs: Vec<String> = content
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty())
+                    .map(|l| l.to_string())
+                    .collect();
+                if !langs.is_empty() {
+                    return langs;
                 }
             }
         }
@@ -972,7 +967,7 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     if asset.patch_chunk_length >= HDIFF_MAGIC.len() as u64 {
         chunk_file.read_exact(&mut magic_buf)?;
     }
-    if &magic_buf == HDIFF_MAGIC.as_ref() {
+    if magic_buf == HDIFF_MAGIC.as_ref() {
         // Need full data in memory for HDiff patching
         let mut data = vec![0u8; asset.patch_chunk_length as usize];
         data[..HDIFF_MAGIC.len()].copy_from_slice(HDIFF_MAGIC.as_ref());
@@ -1030,42 +1025,48 @@ fn apply_hdiff_patch(
         ));
     }
 
-    if let Some(ref expected_size) = asset.original_file_size {
-        if original_path.exists() {
-            let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
-            if actual_size != *expected_size {
-                if is_filtered_asset(cache, asset) {
-                    log::warn!(
-                        "Original file size mismatch for filtered asset, skipping: {}",
-                        asset.target_file_path
-                    );
-                    return Ok(());
-                }
-                return Err(SophonError::OriginalFileMissing(format!(
-                    "Size mismatch for {}: expected {}, got {}",
-                    original_path.display(),
-                    expected_size,
-                    actual_size
-                )));
+    if let Some(ref expected_size) = asset.original_file_size
+        && original_path.exists()
+    {
+        let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
+        if actual_size != *expected_size {
+            if is_filtered_asset(cache, asset) {
+                log::warn!(
+                    "Original file size mismatch for filtered asset, skipping: {}",
+                    asset.target_file_path
+                );
+                return Ok(());
             }
+            return Err(SophonError::OriginalFileMissing(format!(
+                "Size mismatch for {}: expected {}, got {}",
+                original_path.display(),
+                expected_size,
+                actual_size
+            )));
         }
     }
-    if let Some(ref expected_md5) = asset.original_file_hash {
-        if original_path.exists() && !expected_md5.is_empty() {
-            if !verify_chunk_md5(&original_path, expected_md5) {
-                if is_filtered_asset(cache, asset) {
-                    log::warn!(
-                        "Original file MD5 mismatch for filtered asset, skipping: {}",
-                        asset.target_file_path
-                    );
-                    return Ok(());
-                }
-                return Err(SophonError::OriginalFileMissing(format!(
-                    "MD5 mismatch for {}",
-                    original_path.display()
-                )));
-            }
-        }
+    if let Some(ref expected_md5) = asset.original_file_hash
+        && original_path.exists()
+        && !expected_md5.is_empty()
+        && !verify_chunk_md5(&original_path, expected_md5)
+        && is_filtered_asset(cache, asset)
+    {
+        log::warn!(
+            "Original file MD5 mismatch for filtered asset, skipping: {}",
+            asset.target_file_path
+        );
+        return Ok(());
+    }
+    if let Some(ref expected_md5) = asset.original_file_hash
+        && original_path.exists()
+        && !expected_md5.is_empty()
+        && !verify_chunk_md5(&original_path, expected_md5)
+        && !is_filtered_asset(cache, asset)
+    {
+        return Err(SophonError::OriginalFileMissing(format!(
+            "MD5 mismatch for {}",
+            original_path.display()
+        )));
     }
 
     let chunk_path = chunks_dir.join(&asset.patch_name);

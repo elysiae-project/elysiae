@@ -93,6 +93,7 @@ fn write_cache_to_output(cache: &mut Cursor<Vec<u8>>, output: &mut dyn Write) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn tbytes_copy_old_clip_patch(
     out_cache: &mut Cursor<Vec<u8>>,
     input_stream: &mut dyn SeekableRead,
@@ -146,7 +147,7 @@ fn tbytes_copy_stream_inner(
             .read_exact(&mut shared_buffer[..to_read])
             .expect("failed to read in tbytes_copy_stream_inner");
         output
-            .write_all(&mut shared_buffer[..to_read])
+            .write_all(&shared_buffer[..to_read])
             .expect("failed to write in tbytes_copy_stream_inner");
         read_len -= to_read;
     }

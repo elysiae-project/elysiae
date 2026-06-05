@@ -399,10 +399,8 @@ fn register_chunks_for_file(
             }
             Entry::Occupied(mut occupied) => {
                 *occupied.get_mut() += 1;
-                if is_pre {
-                    if let Some(&idx) = download_items_index.get(&chunk.chunk_name) {
-                        download_items[idx].is_pre_downloaded = is_pre;
-                    }
+                if is_pre && let Some(&idx) = download_items_index.get(&chunk.chunk_name) {
+                    download_items[idx].is_pre_downloaded = is_pre;
                 }
             }
         }
@@ -747,32 +745,30 @@ async fn process_download_item(
         adaptive.record_bytes(item.chunk.chunk_size);
     }
 
+    if let Ok(mut lu) = ctx.last_update.try_lock()
+        && lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
     {
-        if let Ok(mut lu) = ctx.last_update.try_lock() {
-            if lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
-                let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
-                let speed_bps = if elapsed_secs > 0.0 {
-                    db as f64 / elapsed_secs
-                } else {
-                    0.0
-                };
-                let remaining_bytes = ctx
-                    .total_bytes
-                    .saturating_sub(db + ctx.resume_bytes_offset.load(Ordering::Relaxed));
-                let eta_seconds = if speed_bps > 0.0 {
-                    remaining_bytes as f64 / speed_bps
-                } else {
-                    0.0
-                };
-                (ctx.updater)(SophonProgress::Downloading {
-                    downloaded_bytes: db + ctx.resume_bytes_offset.load(Ordering::Relaxed),
-                    total_bytes: ctx.total_bytes,
-                    speed_bps,
-                    eta_seconds,
-                });
-                *lu = Instant::now();
-            }
-        }
+        let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
+        let speed_bps = if elapsed_secs > 0.0 {
+            db as f64 / elapsed_secs
+        } else {
+            0.0
+        };
+        let remaining_bytes = ctx
+            .total_bytes
+            .saturating_sub(db + ctx.resume_bytes_offset.load(Ordering::Relaxed));
+        let eta_seconds = if speed_bps > 0.0 {
+            remaining_bytes as f64 / speed_bps
+        } else {
+            0.0
+        };
+        (ctx.updater)(SophonProgress::Downloading {
+            downloaded_bytes: db + ctx.resume_bytes_offset.load(Ordering::Relaxed),
+            total_bytes: ctx.total_bytes,
+            speed_bps,
+            eta_seconds,
+        });
+        *lu = Instant::now();
     }
 
     notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx).await;
