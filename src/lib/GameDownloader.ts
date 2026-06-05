@@ -5,7 +5,11 @@ import { type GameData, type ResumeInfo, Variants } from "../types";
 import { broadcastNotification } from "./Desktop";
 import { exists } from "./Fs";
 import { getOption } from "./Settings";
-import { variantToExeName, variantToGameCode, variantToGameName } from "./VariantConverter";
+import {
+	variantToExeName,
+	variantToGameCode,
+	variantToGameName,
+} from "./VariantConverter";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 
 /**

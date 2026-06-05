@@ -24,21 +24,14 @@ const loadStore = async (): Promise<Store> => {
 	});
 };
 
-export const getOption = async <T = unknown>(key: AppOptions): Promise<T> => {
+export const getOption = async <T = unknown>(
+	key: AppOptions,
+): Promise<T | undefined> => {
 	if (!store) {
 		store = await loadStore();
 	}
 
-	return new Promise((resolve, reject) => {
-		store
-			?.get<{ value: T }>(key)
-			.then((res) => {
-				resolve(res as T);
-			})
-			.catch((e) => {
-				reject(`getOption: ${e}`);
-			});
-	});
+	return store?.get<T>(key);
 };
 
 export const setOption = async <T = unknown>(
@@ -52,4 +45,3 @@ export const setOption = async <T = unknown>(
 	await store.save();
 	await store.reload();
 };
-

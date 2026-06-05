@@ -119,10 +119,7 @@ export const Dropdown = ({
 		if (!open) return;
 
 		const handleOutsideClick = (e: MouseEvent) => {
-			if (
-				dialog.current &&
-				!dialog.current.contains(e.target as Node)
-			) {
+			if (dialog.current && !dialog.current.contains(e.target as Node)) {
 				setOpen(false);
 			}
 		};
@@ -173,6 +170,6 @@ export const Dropdown = ({
 			</div>
 		</dialog>
 	);
-}
+};
 
 export default Dropdown;
