@@ -26,6 +26,10 @@ pub async fn download_file(
         .unwrap();
 
     let response = client.get(&*url).send().await.map_err(|e| e.to_string())?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("download_file: HTTP {} for {}", status, url));
+    }
     let total = response.content_length().unwrap_or(0);
     let mut file = File::create(&full_path).map_err(|e| e.to_string())?;
     let mut downloaded_bytes: u64 = 0;
