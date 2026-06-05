@@ -5,7 +5,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bytes::BytesMut;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
@@ -90,18 +89,13 @@ async fn download_zip(
         .unwrap_or_else(|| "plugin".to_string());
 
     let name_clone = name.clone();
-    let mut buffer = BytesMut::with_capacity(super::DOWNLOAD_STREAM_BUFFER_SIZE);
     let mut last_emit = Instant::now();
     let throttle = Duration::from_secs(1);
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
         hasher.update(&bytes);
-        buffer.extend_from_slice(&bytes);
-        if buffer.len() >= super::DOWNLOAD_STREAM_BUFFER_SIZE {
-            file.write_all(&buffer).await?;
-            buffer.clear();
-        }
+        file.write_all(&bytes).await?;
         downloaded += bytes.len() as u64;
 
         if last_emit.elapsed() >= throttle {
@@ -121,9 +115,6 @@ async fn download_zip(
         total_bytes,
     });
 
-    if !buffer.is_empty() {
-        file.write_all(&buffer).await?;
-    }
     file.flush().await?;
 
     let actual_md5 = hex::encode(hasher.finalize());

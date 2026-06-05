@@ -178,7 +178,7 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         })
         .collect();
 
-    plugins.dedup_by_key(|p| p.plugin_id.clone());
+    plugins.dedup_by(|a, b| a.plugin_id == b.plugin_id);
     Ok(plugins)
 }
 

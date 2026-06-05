@@ -868,8 +868,6 @@ impl FilterCache {
 }
 
 fn is_filtered_asset(cache: &FilterCache, asset: &PatchAssetInfo) -> bool {
-    let asset_lower = asset.target_file_path.to_lowercase();
-
     if let Some(ref tokens) = cache.kdel_tokens {
         for token in tokens {
             if asset.matching_field.eq_ignore_ascii_case(token) {
@@ -877,6 +875,8 @@ fn is_filtered_asset(cache: &FilterCache, asset: &PatchAssetInfo) -> bool {
             }
         }
     }
+
+    let asset_lower = asset.target_file_path.to_lowercase();
 
     if let Some(ref entries) = cache.blacklist_entries {
         for entry in entries {
