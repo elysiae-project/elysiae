@@ -1,6 +1,10 @@
-use crate::commands::{app_functions, file_downloader, file_manager};
+use crate::commands::{file_downloader, file_manager, media_server};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
+use tauri::command;
+use std::env;
+
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,7 +22,7 @@ pub fn run() {
                 .pool_max_idle_per_host(64)
                 .build()
                 .unwrap(),
-        )) //  Required for sophon chunk downloading
+        )) // Required for sophon chunk downloading
         .manage(ActiveDownload(tokio::sync::Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -32,13 +36,28 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(disable_shortcuts())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match media_server::start_server(handle).await {
+                    Ok(port) => {
+                        tauri_plugin_log::log::info!(
+                            "Media server listening on 127.0.0.1:{}",
+                            port
+                        );
+                    }
+                    Err(e) => {
+                        tauri_plugin_log::log::error!("Failed to start media server: {}", e);
+                    }
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
             file_manager::get_dir_size,
-            file_manager::get_sha256_sum,
-            app_functions::in_dev_env,
-            app_functions::get_app_version,
             commands::sophon_downloader::sophon_download,
             commands::sophon_downloader::sophon_update,
             commands::sophon_downloader::sophon_preinstall,
@@ -51,6 +70,8 @@ pub fn run() {
             commands::sophon_downloader::sophon_resume,
             commands::sophon_downloader::sophon_cancel,
             commands::sophon_downloader::sophon_check_update,
+            media_server::media_server_port,
+            elysiae_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -88,4 +109,27 @@ fn is_wayland() -> bool {
         || std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")
             .unwrap_or(false)
+}
+
+#[cfg(debug_assertions)]
+fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::empty())
+        .build()
+}
+
+#[cfg(not(debug_assertions))]
+fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::all())
+        .build()
+}
+
+#[command]
+fn elysiae_version() -> String {
+    env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "Unknown App Version".to_string())
 }
