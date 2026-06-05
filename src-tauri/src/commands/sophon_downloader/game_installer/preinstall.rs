@@ -634,6 +634,21 @@ fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     actual == expected_md5
 }
 
+fn file_md5_hex(path: &Path) -> SophonResult<String> {
+    let file = fs::File::open(path)?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut hasher = Md5::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) => return Err(SophonError::Io(e)),
+        }
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
 pub async fn apply_preinstall(
     client: &Client,
     game_dir: &Path,
@@ -1043,12 +1058,12 @@ fn apply_hdiff_patch(
                 );
                 return Ok(());
             }
-            return Err(SophonError::OriginalFileMissing(format!(
-                "Size mismatch for {}: expected {}, got {}",
+            log::warn!(
+                "Original file size mismatch for {}: expected {}, got {} — proceeding with patch (reference does not pre-validate size)",
                 original_path.display(),
                 expected_size,
                 actual_size
-            )));
+            );
         }
     }
     if let Some(ref expected_md5) = asset.original_file_hash
@@ -1069,10 +1084,10 @@ fn apply_hdiff_patch(
         && !verify_chunk_md5(&original_path, expected_md5)
         && !is_filtered_asset(cache, asset)
     {
-        return Err(SophonError::OriginalFileMissing(format!(
-            "MD5 mismatch for {}",
+        log::warn!(
+            "Original file MD5 mismatch for {} — proceeding with patch (reference has this check commented out)",
             original_path.display()
-        )));
+        );
     }
 
     let chunk_path = chunks_dir.join(&asset.patch_name);
@@ -1116,6 +1131,17 @@ fn apply_hdiff_patch(
 
     match patch_result {
         Ok(true) => {
+            if !asset.target_file_hash.is_empty() {
+                let actual_hash = file_md5_hex(&temp_output)?;
+                if actual_hash != asset.target_file_hash {
+                    let _ = fs::remove_file(&temp_output);
+                    return Err(SophonError::Md5Mismatch {
+                        item: asset.target_file_path.clone(),
+                        expected: asset.target_file_hash.clone(),
+                        actual: actual_hash,
+                    });
+                }
+            }
             if target_path.exists() {
                 let _ = fs::remove_file(&target_path);
             }
@@ -1185,6 +1211,17 @@ fn apply_hdiff_patch_with_empty_original(
 
     match patch_result {
         Ok(true) => {
+            if !asset.target_file_hash.is_empty() {
+                let actual_hash = file_md5_hex(&temp_output)?;
+                if actual_hash != asset.target_file_hash {
+                    let _ = fs::remove_file(&temp_output);
+                    return Err(SophonError::Md5Mismatch {
+                        item: asset.target_file_path.clone(),
+                        expected: asset.target_file_hash.clone(),
+                        actual: actual_hash,
+                    });
+                }
+            }
             if target_path.exists() {
                 let _ = fs::remove_file(&target_path);
             }
