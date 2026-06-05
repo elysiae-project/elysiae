@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
+use std::io::{BufWriter, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
+
+use dashmap::DashMap;
+use std::sync::Mutex;
 
 use futures_util::StreamExt;
 use futures_util::future::try_join_all;
@@ -94,11 +97,12 @@ impl PreinstallState {
 pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> SophonResult<()> {
     let path = PreinstallState::state_file_path(game_dir, &state.tag);
     let tmp_path = path.with_extension("json.tmp");
-    let json = serde_json::to_string(state)
-        .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
     {
-        let mut f = fs::File::create(&tmp_path)?;
-        f.write_all(json.as_bytes())?;
+        let f = fs::File::create(&tmp_path)?;
+        let mut writer = BufWriter::new(f);
+        serde_json::to_writer(&mut writer, state)
+            .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
+        writer.flush()?;
     }
     fs::rename(&tmp_path, &path)?;
     Ok(())
@@ -379,10 +383,8 @@ pub async fn preinstall_download(
     };
 
     let already_downloaded: HashSet<String> = resume_chunks.keys().cloned().collect();
-    let downloaded_chunks: Arc<DashMap<String, ()>> = Arc::new(DashMap::new());
-    for k in already_downloaded.iter() {
-        downloaded_chunks.insert(k.clone(), ());
-    }
+    let downloaded_chunks: Arc<Mutex<HashSet<String>>> =
+        Arc::new(Mutex::new(already_downloaded.clone()));
     let chunk_bytes_map: Arc<DashMap<String, u64>> = Arc::new(DashMap::new());
     for (k, v) in resume_chunks {
         chunk_bytes_map.insert(k, v);
@@ -436,7 +438,10 @@ pub async fn preinstall_download(
                 {
                     downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
                     if !already_downloaded_chunk {
-                        downloaded_chunks.insert(chunk_info.patch_name.clone(), ());
+                        downloaded_chunks
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .insert(chunk_info.patch_name.clone());
                         chunk_bytes_map
                             .insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                     }
@@ -456,7 +461,10 @@ pub async fn preinstall_download(
                     .await?;
 
                     downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                    downloaded_chunks.insert(chunk_info.patch_name.clone(), ());
+                    downloaded_chunks
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(chunk_info.patch_name.clone());
                     chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                 }
 
@@ -520,8 +528,11 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
-    let downloaded_chunks: HashSet<String> =
-        downloaded_chunks.iter().map(|e| e.key().clone()).collect();
+    let downloaded_chunks: HashSet<String> = downloaded_chunks
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .drain()
+        .collect();
     let state = PreinstallState {
         tag: plan.tag.clone(),
         game_id: game_id.to_string(),
@@ -587,7 +598,8 @@ async fn download_patch_chunk_with_retries(
 async fn download_patch_chunk_inner(client: &Client, url: &str, dest: &Path) -> SophonResult<()> {
     let resp = client.get(url).send().await?.error_for_status()?;
     let mut stream = resp.bytes_stream();
-    let mut file = tokio::fs::File::create(dest).await?;
+    let file = tokio::fs::File::create(dest).await?;
+    let mut file = tokio::io::BufWriter::new(file);
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
@@ -603,7 +615,7 @@ fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     };
     let mut reader = std::io::BufReader::new(file);
     let mut hasher = Md5::new();
-    let mut buf = [0u8; 1024 * 1024];
+    let mut buf = [0u8; 64 * 1024];
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
@@ -974,15 +986,15 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
 
     let temp_path = target_path.with_extension("temp");
     {
-        let mut file = fs::File::create(&temp_path)?;
-        // Write the magic bytes we already read (non-HDIFF data)
-        file.write_all(&magic_buf)?;
-        // Stream the rest using a bounded buffer
+        let file = fs::File::create(&temp_path)?;
+        let mut writer = BufWriter::new(file);
+        writer.write_all(&magic_buf)?;
         if asset.patch_chunk_length > magic_buf.len() as u64 {
             let remaining = asset.patch_chunk_length - magic_buf.len() as u64;
             let mut limited = (&mut chunk_file).take(remaining);
-            std::io::copy(&mut limited, &mut file)?;
+            std::io::copy(&mut limited, &mut writer)?;
         }
+        writer.flush()?;
     }
     if target_path.exists() {
         let _ = fs::remove_file(&target_path);
@@ -1138,8 +1150,10 @@ fn apply_hdiff_patch_with_empty_original(
         if let Some(parent) = diff_temp.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut diff_file = fs::File::create(&diff_temp)?;
-        diff_file.write_all(diff_data)?;
+        let diff_file = fs::File::create(&diff_temp)?;
+        let mut writer = BufWriter::new(diff_file);
+        writer.write_all(diff_data)?;
+        writer.flush()?;
     }
 
     let temp_output = target_path.with_extension("temp");

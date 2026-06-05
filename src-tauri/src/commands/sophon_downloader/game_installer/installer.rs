@@ -1381,7 +1381,7 @@ async fn redownload_asset(
                 chunk.chunk_size,
                 &chunk.chunk_compressed_hash_md5,
                 game_dir,
-                &DashMap::new(),
+                verify_cache,
             )
             .unwrap_or(false);
 

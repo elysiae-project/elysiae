@@ -199,7 +199,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     file_hasher: Option<&mut Md5>,
 ) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
-    let buf_reader = BufReader::with_capacity(256 * 1024, f);
+    let buf_reader = BufReader::with_capacity(64 * 1024, f);
     let mut decoder = zstd::Decoder::new(buf_reader)?;
 
     writer.flush()?;

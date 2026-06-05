@@ -3,7 +3,7 @@ use std::path::Path;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
-use tokio::io::{AsyncWriteExt, BufWriter};
+use tokio::io::AsyncWriteExt;
 
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
@@ -28,12 +28,10 @@ pub async fn download_chunk(
         });
     }
 
-    let file = tokio::fs::File::create(dest).await?;
+    let mut file = tokio::fs::File::create(dest).await?;
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
-
-    let mut file = BufWriter::new(file);
 
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;

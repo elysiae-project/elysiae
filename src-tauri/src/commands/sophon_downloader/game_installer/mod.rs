@@ -31,12 +31,13 @@ pub const VERSION_FILE_NAME: &str = ".sophon_version";
 /// Filename for the MD5 verification cache.
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
-/// Buffer size for download stream writes (1 MiB).
-pub const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 1024 * 1024;
-/// Buffer size for file writes during assembly (1 MiB).
-pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
-/// Buffer size for MD5 hashing (1 MiB).
-pub const MD5_HASH_BUFFER_SIZE: usize = 1024 * 1024;
+/// Buffer size for download stream writes.
+/// Not used for runtime allocation — kept for test compatibility only.
+pub const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 256 * 1024;
+/// Buffer size for file writes during assembly (256 KiB).
+pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
+/// Buffer size for MD5 hashing (64 KiB — sufficient for sequential reads).
+pub const MD5_HASH_BUFFER_SIZE: usize = 64 * 1024;
 
 /// Minimum interval between progress updates (ms).
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
