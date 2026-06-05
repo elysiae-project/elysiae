@@ -248,7 +248,7 @@ async fn build_diff_installers(
         .map(|m| (m.matching_field.as_str(), m))
         .collect();
 
-    let mut installers = Vec::new();
+    let mut installers = Vec::with_capacity(new_build.manifests.len());
     let mut deleted_files: Vec<String> = Vec::new();
 
     for new_meta in &new_build.manifests {
@@ -1268,8 +1268,8 @@ pub async fn verify_integrity(
         return Err(SophonError::NoGameManifest);
     }
 
-    let mut manifest_results: Vec<SophonManifestProto> = Vec::new();
-    let mut chunk_downloads: Vec<&DownloadInfo> = Vec::new();
+    let mut manifest_results: Vec<SophonManifestProto> = Vec::with_capacity(qualifying.len());
+    let mut chunk_downloads: Vec<&DownloadInfo> = Vec::with_capacity(qualifying.len());
     for meta in &qualifying {
         let result =
             api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
