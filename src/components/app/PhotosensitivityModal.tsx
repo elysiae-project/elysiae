@@ -10,7 +10,7 @@ export const PhotosensitivityModal = () => {
 
 	useEffect(() => {
 		(async () => {
-			const firstLaunch = await getOption<boolean>("isFirstLaunch");
+			const firstLaunch = (await getOption<boolean>("isFirstLaunch")) ?? false;
 			setVisible(firstLaunch);
 			if (firstLaunch) {
 				modal.current?.open();

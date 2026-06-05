@@ -3,6 +3,49 @@ import { useApi } from "../../hooks/useApi";
 import { useBackground } from "../../hooks/useBackground";
 import { useGame } from "../../hooks/useGame";
 
+const BackgroundVideo = ({ src }: { src: string | null }) => {
+	const ref = useRef<HTMLVideoElement>(null);
+	const pendingSrc = useRef<string | null>(null);
+	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+
+		if (!src) {
+			el.removeAttribute("src");
+			el.load();
+			return;
+		}
+
+		if (!el.src || el.readyState === 0) {
+			el.src = src;
+			el.load();
+			return;
+		}
+
+		el.pause();
+		el.removeAttribute("src");
+		el.load();
+
+		pendingSrc.current = src;
+		if (timerRef.current) clearTimeout(timerRef.current);
+		timerRef.current = setTimeout(() => {
+			if (pendingSrc.current && ref.current) {
+				ref.current.src = pendingSrc.current;
+				ref.current.load();
+				pendingSrc.current = null;
+			}
+		}, 50);
+
+		return () => {
+			if (timerRef.current) clearTimeout(timerRef.current);
+		};
+	}, [src]);
+
+	return <video ref={ref} class="background" autoPlay loop muted playsInline />;
+};
+
 const BackgroundMedia = ({
 	src,
 	isVideo,
@@ -10,54 +53,27 @@ const BackgroundMedia = ({
 	src: string | null;
 	isVideo: boolean;
 }) => {
-	console.log(`Source: ${src}, is video? ${isVideo}`);
-	const video = useRef<HTMLVideoElement>(null);
-	const image = useRef<HTMLImageElement>(null);
-
-	if (!src && (!video || !image)) return null;
-	useEffect(() => {
-		if (isVideo) {
-			video.current?.load();
-		}
-	}, [src, isVideo]);
+	if (!src) return null;
 
 	return isVideo ? (
-		<video
-			ref={video}
-			class="background"
-			src={src as string}
-			autoplay
-			loop
-			muted
-			playsInline
-		/>
+		<BackgroundVideo src={src} />
 	) : (
-		<img class="background" src={src as string} alt="" />
+		<img class="background" src={src} alt="" />
 	);
 };
 
 export const Background = () => {
 	const { game } = useGame();
 	const { graphics } = useApi();
-	const { backgroundBlob, backgroundPath } = useBackground();
+	const { backgroundSrc, backgroundIsVideo } = useBackground();
 
-	if (!backgroundBlob || !backgroundPath || !graphics) return null;
+	if (!backgroundSrc || !graphics) return null;
 	const { backgroundVideoOverlay } = graphics[game];
-
-	const isVideo = backgroundPath.endsWith(".mp4");
 
 	return (
 		<div class="absolute inset-0 overflow-hidden">
-			<BackgroundMedia
-				key={`${game}-bg`}
-				src={backgroundBlob}
-				isVideo={isVideo}
-			/>
-			<BackgroundMedia
-				key={`${game}-overlay`}
-				src={backgroundVideoOverlay}
-				isVideo={false}
-			/>
+			<BackgroundMedia src={backgroundSrc} isVideo={backgroundIsVideo} />
+			<BackgroundMedia src={backgroundVideoOverlay} isVideo={false} />
 		</div>
 	);
 };

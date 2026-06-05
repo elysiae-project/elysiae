@@ -50,6 +50,6 @@ export const PreinstallButton = () => {
 			<Save className="-m-1 leading-0" />
 		</Button>
 	);
-}
+};
 
 export default PreinstallButton;

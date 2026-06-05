@@ -12,7 +12,7 @@ export const UpdateModal = () => {
 	useEffect(() => {
 		(async () => {
 			const lastUsedVersion = await getOption<string>("lastUsedVersion");
-			const currentVersion = await invoke<string>("get_app_version");
+			const currentVersion = await invoke<string>("elysiae_version");
 
 			if (currentVersion !== lastUsedVersion) {
 				setVisible(true);

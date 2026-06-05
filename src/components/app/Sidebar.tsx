@@ -31,6 +31,6 @@ export const Sidebar = () => {
 				))}
 		</motion.div>
 	);
-}
+};
 
 export default Sidebar;

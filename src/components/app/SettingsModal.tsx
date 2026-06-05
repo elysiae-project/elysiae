@@ -88,7 +88,7 @@ const options: Option[] = [
 		labels: ["English", "Chinese", "Japanese", "Korean"],
 		values: ["en", "cn", "jp", "kr"],
 		getValue: async (): Promise<string> => {
-			return await getOption<string>("voLanguage");
+			return (await getOption<string>("voLanguage")) ?? "en";
 		},
 		setValue: async (newLang: string): Promise<void> => {
 			await setOption("voLanguage", newLang);
@@ -251,54 +251,52 @@ const GameManagerButton = ({ gameOption }: { gameOption: GameOption }) => {
 	);
 };
 
-export const SettingsModal = forwardRef<ModalHandle>(
-	(_, ref) => {
-		const { branding } = useApi();
-		const { game } = useGame();
+export const SettingsModal = forwardRef<ModalHandle>((_, ref) => {
+	const { branding } = useApi();
+	const { game } = useGame();
 
-		return (
-			<Modal ref={ref} width={750} height={450}>
-				<div class="flex h-full w-full flex-col gap-y-5 overflow-y-scroll py-2.5">
-					<div class="flex flex-row justify-between">
-						<div class="flex flex-row gap-x-2.5">
-							<img
-								class="rounded-lg"
-								width={52}
-								height={52}
-								alt=""
-								src={branding?.[game].icon}
-							/>
-							<div class="flex flex-col text-left justify-center">
-								<h1>{variantToGameName[game]}</h1>
-								<DiskSize />
-							</div>
-						</div>
-						<div class="flex flex-row-reverse items-center gap-x-2.5">
-							{gameOptions.map((option) => (
-								<GameManagerButton gameOption={option} />
-							))}
+	return (
+		<Modal ref={ref} width={750} height={450}>
+			<div class="flex h-full w-full flex-col gap-y-5 overflow-y-scroll py-2.5">
+				<div class="flex flex-row justify-between">
+					<div class="flex flex-row gap-x-2.5">
+						<img
+							class="rounded-lg"
+							width={52}
+							height={52}
+							alt=""
+							src={branding?.[game].icon}
+						/>
+						<div class="flex flex-col text-left justify-center">
+							<h1>{variantToGameName[game]}</h1>
+							<DiskSize />
 						</div>
 					</div>
-					<div>
-						<h1 class="mb-2.5 text-xl">Options</h1>
-						<div class="flex flex-col gap-y-3">
-							{options.map((option) => (
-								<OptionRow option={option} />
-							))}
-						</div>
-					</div>
-					<div class="mb-2.5">
-						<h1 class="mb-2.5 text-xl">Modules</h1>
-						<div class="flex flex-col gap-y-3">
-							{["wine", "dxvk", "jadeite"].map((item) => (
-								<ComponentInfo componentName={item as AppModules} />
-							))}
-						</div>
+					<div class="flex flex-row-reverse items-center gap-x-2.5">
+						{gameOptions.map((option) => (
+							<GameManagerButton gameOption={option} />
+						))}
 					</div>
 				</div>
-			</Modal>
-		);
-	},
-);
+				<div>
+					<h1 class="mb-2.5 text-xl">Options</h1>
+					<div class="flex flex-col gap-y-3">
+						{options.map((option) => (
+							<OptionRow option={option} />
+						))}
+					</div>
+				</div>
+				<div class="mb-2.5">
+					<h1 class="mb-2.5 text-xl">Modules</h1>
+					<div class="flex flex-col gap-y-3">
+						{["wine", "dxvk", "jadeite"].map((item) => (
+							<ComponentInfo componentName={item as AppModules} />
+						))}
+					</div>
+				</div>
+			</div>
+		</Modal>
+	);
+});
 
 export default SettingsModal;
