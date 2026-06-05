@@ -389,9 +389,8 @@ pub async fn preinstall_download(
         existing
     };
 
-    let already_downloaded: HashSet<String> = resume_chunks.keys().cloned().collect();
     let downloaded_chunks: Arc<Mutex<HashSet<String>>> =
-        Arc::new(Mutex::new(already_downloaded.clone()));
+        Arc::new(Mutex::new(resume_chunks.keys().cloned().collect()));
     let chunk_bytes_map: Arc<DashMap<String, u64>> = Arc::new(DashMap::new());
     for (k, v) in resume_chunks {
         chunk_bytes_map.insert(k, v);
@@ -423,7 +422,7 @@ pub async fn preinstall_download(
             let state_saver = Arc::clone(&state_saver);
             let last_update = Arc::clone(&last_update);
             let chunks_since_save = Arc::clone(&chunks_since_save);
-            let already_downloaded_chunk = already_downloaded.contains(&chunk_info.patch_name);
+            let already_downloaded_chunk = chunk_bytes_map.contains_key(&chunk_info.patch_name);
 
             async move {
                 if handle.is_cancelled() {
@@ -591,7 +590,7 @@ async fn download_patch_chunk_with_retries(
                         attempt + 1,
                         max_retries
                     );
-                    let _ = fs::remove_file(dest);
+                    let _ = tokio::fs::remove_file(dest).await;
                 }
             }
         }
