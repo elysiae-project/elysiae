@@ -876,20 +876,22 @@ fn is_filtered_asset(cache: &FilterCache, asset: &PatchAssetInfo) -> bool {
         }
     }
 
-    let asset_lower = asset.target_file_path.to_lowercase();
+    if cache.blacklist_entries.is_some() || cache.ignored_lang_patterns.is_some() {
+        let asset_lower = asset.target_file_path.to_lowercase();
 
-    if let Some(ref entries) = cache.blacklist_entries {
-        for entry in entries {
-            if asset_lower.contains(entry.as_str()) {
-                return true;
+        if let Some(ref entries) = cache.blacklist_entries {
+            for entry in entries {
+                if asset_lower.contains(entry.as_str()) {
+                    return true;
+                }
             }
         }
-    }
 
-    if let Some(ref patterns) = cache.ignored_lang_patterns {
-        for pattern in patterns {
-            if asset_lower.contains(pattern.as_str()) {
-                return true;
+        if let Some(ref patterns) = cache.ignored_lang_patterns {
+            for pattern in patterns {
+                if asset_lower.contains(pattern.as_str()) {
+                    return true;
+                }
             }
         }
     }
