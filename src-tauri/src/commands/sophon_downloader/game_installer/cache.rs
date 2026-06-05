@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -26,8 +26,10 @@ struct VerificationCacheSerializable {
 pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationEntry> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
     let serializable: VerificationCacheSerializable = match File::open(&cache_path) {
-        Ok(f) => serde_json::from_reader(f).unwrap_or_else(|_| VerificationCacheSerializable {
-            files: HashMap::new(),
+        Ok(f) => serde_json::from_reader(std::io::BufReader::new(f)).unwrap_or_else(|_| {
+            VerificationCacheSerializable {
+                files: HashMap::new(),
+            }
         }),
         Err(_) => VerificationCacheSerializable {
             files: HashMap::new(),
@@ -69,17 +71,13 @@ pub fn save_verification_cache(
         files: cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
-            .fold(
-                std::collections::HashMap::with_capacity(cache.len()),
-                |mut map, (k, v)| {
-                    map.insert(k, v);
-                    map
-                },
-            ),
+            .collect::<std::collections::HashMap<_, _>>(),
     };
     {
         let f = File::create(&tmp_path)?;
-        serde_json::to_writer(f, &serializable)?;
+        let mut writer = std::io::BufWriter::new(f);
+        serde_json::to_writer(&mut writer, &serializable)?;
+        writer.flush()?;
     }
     fs::rename(&tmp_path, &cache_path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp_path);

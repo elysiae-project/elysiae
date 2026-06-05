@@ -12,14 +12,25 @@ use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
 fn get_available_space(path: &Path) -> Option<u64> {
     let disks = Disks::new_with_refreshed_list();
-    let path = path.to_path_buf();
     for disk in disks.iter() {
-        let dp = disk.mount_point();
-        if path.starts_with(dp) {
+        if path.starts_with(disk.mount_point()) {
             return Some(disk.available_space());
         }
     }
     None
+}
+
+pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError> {
+    if let Some(available) = get_available_space(dest)
+        && available < needed
+    {
+        return Err(SophonError::NoSpaceAvailable {
+            path: dest.display().to_string(),
+            needed,
+            available,
+        });
+    }
+    Ok(())
 }
 
 pub async fn download_chunk(
@@ -57,15 +68,7 @@ pub async fn download_chunk(
         });
     }
 
-    if let Some(available) = get_available_space(dest)
-        && available < chunk.chunk_size
-    {
-        return Err(SophonError::NoSpaceAvailable {
-            path: dest.display().to_string(),
-            needed: chunk.chunk_size,
-            available,
-        });
-    }
+    check_available_space(dest, chunk.chunk_size)?;
 
     let mut file = tokio::fs::File::create(dest).await?;
     let mut stream = resp.bytes_stream();
@@ -82,6 +85,7 @@ pub async fn download_chunk(
     file.flush().await?;
 
     if total_len != chunk.chunk_size {
+        let _ = tokio::fs::remove_file(dest).await;
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
             expected: chunk.chunk_size,
@@ -92,6 +96,7 @@ pub async fn download_chunk(
     if !chunk.chunk_compressed_hash_md5.is_empty() {
         let actual = hex::encode(hasher.finalize());
         if actual != chunk.chunk_compressed_hash_md5 {
+            let _ = tokio::fs::remove_file(dest).await;
             return Err(SophonError::Md5Mismatch {
                 item: chunk.chunk_name.clone(),
                 expected: chunk.chunk_compressed_hash_md5.clone(),

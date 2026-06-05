@@ -189,6 +189,9 @@ pub fn assemble_file(
         }
     }
 
+    if target_path.exists() {
+        let _ = fs::remove_file(&target_path);
+    }
     fs::rename(&tmp_path, &target_path)?;
     Ok(())
 }

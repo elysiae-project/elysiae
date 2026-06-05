@@ -463,6 +463,7 @@ pub async fn preinstall_download(
                         &diff_download,
                         &chunk_info.patch_name,
                         &chunk_path,
+                        &chunk_info.patch_md5,
                         4,
                     )
                     .await?;
@@ -572,13 +573,14 @@ async fn download_patch_chunk_with_retries(
     diff_download: &DownloadInfo,
     patch_name: &str,
     dest: &Path,
+    expected_md5: &str,
     max_retries: u32,
 ) -> SophonResult<()> {
     let url = diff_download.url_for(patch_name);
     let mut last_err = String::new();
 
     for attempt in 0..max_retries {
-        match download_patch_chunk_inner(client, &url, dest).await {
+        match download_patch_chunk_inner(client, &url, dest, expected_md5).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_err = e.to_string();
@@ -602,17 +604,35 @@ async fn download_patch_chunk_with_retries(
     })
 }
 
-async fn download_patch_chunk_inner(client: &Client, url: &str, dest: &Path) -> SophonResult<()> {
+async fn download_patch_chunk_inner(
+    client: &Client,
+    url: &str,
+    dest: &Path,
+    expected_md5: &str,
+) -> SophonResult<()> {
     let resp = client.get(url).send().await?.error_for_status()?;
     let mut stream = resp.bytes_stream();
-    let file = tokio::fs::File::create(dest).await?;
-    let mut file = tokio::io::BufWriter::new(file);
+    let mut file = tokio::fs::File::create(dest).await?;
+    let mut hasher = Md5::new();
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
+        hasher.update(&bytes);
         file.write_all(&bytes).await?;
     }
     file.flush().await?;
+
+    if !expected_md5.is_empty() {
+        let actual = hex::encode(hasher.finalize());
+        if actual != expected_md5 {
+            let _ = tokio::fs::remove_file(dest).await;
+            return Err(SophonError::Md5Mismatch {
+                item: dest.display().to_string(),
+                expected: expected_md5.to_string(),
+                actual,
+            });
+        }
+    }
     Ok(())
 }
 
@@ -790,6 +810,11 @@ pub async fn apply_preinstall(
 }
 
 fn validate_asset_path(game_dir: &Path, asset_path: &str) -> SophonResult<PathBuf> {
+    if asset_path.contains('\0') {
+        return Err(SophonError::InvalidAssetName(
+            "asset_path cannot contain null bytes".into(),
+        ));
+    }
     let path = game_dir.join(asset_path);
     if asset_path.starts_with('/') || asset_path.starts_with('\\') || asset_path.contains("..") {
         return Err(SophonError::PathTraversal(path));
@@ -989,11 +1014,20 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         chunk_file.read_exact(&mut magic_buf)?;
     }
     if magic_buf == HDIFF_MAGIC.as_ref() {
-        // Need full data in memory for HDiff patching
-        let mut data = vec![0u8; asset.patch_chunk_length as usize];
-        data[..HDIFF_MAGIC.len()].copy_from_slice(HDIFF_MAGIC.as_ref());
-        chunk_file.read_exact(&mut data[HDIFF_MAGIC.len()..])?;
-        return apply_hdiff_patch_with_empty_original(game_dir, &data, asset);
+        let diff_temp = game_dir.join(format!("patching/{}.diff", asset.patch_name));
+        {
+            if let Some(parent) = diff_temp.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let diff_file = fs::File::create(&diff_temp)?;
+            let mut writer = BufWriter::new(diff_file);
+            writer.write_all(HDIFF_MAGIC.as_ref())?;
+            let remaining = asset.patch_chunk_length - HDIFF_MAGIC.len() as u64;
+            let mut limited = (&mut chunk_file).take(remaining);
+            std::io::copy(&mut limited, &mut writer)?;
+            writer.flush()?;
+        }
+        return apply_hdiff_patch_from_files(game_dir, &diff_temp, asset);
     }
 
     // Stream copy: read from chunk file + write to target without loading all into
@@ -1165,9 +1199,9 @@ fn apply_hdiff_patch(
     }
 }
 
-fn apply_hdiff_patch_with_empty_original(
+fn apply_hdiff_patch_from_files(
     game_dir: &Path,
-    diff_data: &[u8],
+    diff_path: &Path,
     asset: &PatchAssetInfo,
 ) -> SophonResult<()> {
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
@@ -1180,24 +1214,13 @@ fn apply_hdiff_patch_with_empty_original(
         fs::File::create(&empty_original_path)?;
     }
 
-    let diff_temp = game_dir.join(format!("patching/{}.hdiff", asset.patch_name));
-    {
-        if let Some(parent) = diff_temp.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let diff_file = fs::File::create(&diff_temp)?;
-        let mut writer = BufWriter::new(diff_file);
-        writer.write_all(diff_data)?;
-        writer.flush()?;
-    }
-
     let temp_output = target_path.with_extension("temp");
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let op = empty_original_path.to_string_lossy().to_string();
-    let dp = diff_temp.to_string_lossy().to_string();
+    let dp = diff_path.to_string_lossy().to_string();
     let tp = temp_output.to_string_lossy().to_string();
 
     let patch_result = std::thread::spawn(move || {
@@ -1207,7 +1230,6 @@ fn apply_hdiff_patch_with_empty_original(
     .join();
 
     let _ = fs::remove_file(&empty_original_path);
-    let _ = fs::remove_file(&diff_temp);
 
     match patch_result {
         Ok(true) => {
@@ -1232,14 +1254,14 @@ fn apply_hdiff_patch_with_empty_original(
             let _ = fs::remove_file(&temp_output);
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff apply returned false (empty original)".to_string(),
+                error: "HDiff apply returned false (from files)".to_string(),
             })
         }
         Err(_) => {
             let _ = fs::remove_file(&temp_output);
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff thread panicked (empty original)".to_string(),
+                error: "HDiff thread panicked (from files)".to_string(),
             })
         }
     }
