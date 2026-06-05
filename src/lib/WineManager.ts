@@ -298,7 +298,9 @@ export const updateModuleTracker = async (
 	module: AppModules,
 	newVersion: string,
 ) => {
-	const current = await getOption<WineComponentData>("installedComponents");
+	const current =
+		(await getOption<WineComponentData>("installedComponents")) ??
+		({} as WineComponentData);
 	current[module] = newVersion;
 	await setOption("installedComponents", current);
 };
@@ -306,16 +308,13 @@ export const updateModuleTracker = async (
 export const getModuleVersion = async (
 	module: AppModules | undefined = undefined,
 ): Promise<WineComponentData | string | null> => {
-	return new Promise((resolve, reject) => {
-		getOption<WineComponentData>("installedComponents")
-			.then((data) => {
-				if (typeof module === "undefined") {
-					resolve(data);
-				}
-				resolve(data[module as AppModules]);
-			})
-			.catch(reject);
-	});
+	const data =
+		(await getOption<WineComponentData>("installedComponents")) ??
+		({} as WineComponentData);
+	if (typeof module === "undefined") {
+		return data;
+	}
+	return data[module as AppModules] ?? null;
 };
 
 export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {
