@@ -15,10 +15,21 @@ tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
 glib = "0.22.7"
-tokio = { version = "1.52.3", features = ["rt", "sync", "time", "macros"] }
+tokio = { version = "1.52.3", features = [
+    "rt",
+    "sync",
+    "time",
+    "macros",
+    "net",
+    "io-util",
+] }
 tokio-util = "0.7.18"
 futures = "0.3.32"
 futures-util = "0.3.32"
+
+hyper = { version = "1.10.1", features = ["http1", "server"] }
+hyper-util = { version = "0.1.20", features = ["http1", "server", "tokio"] }
+http-body-util = "0.1.3"
 
 tauri = { version = "2.11.2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2.5.4"
@@ -50,6 +61,7 @@ lru = "0.18.0"
 thiserror = "2.0.18"
 sha2 = "0.11.0"
 fs_extra = "1.3.0"
+tauri-plugin-prevent-default = "5.0.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.7.0"
