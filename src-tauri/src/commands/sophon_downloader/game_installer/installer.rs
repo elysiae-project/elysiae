@@ -1083,7 +1083,7 @@ pub async fn install(
                         let tp = target_path.clone();
                         let sz = file.asset_size;
                         let md5 = file.asset_hash_md5.clone();
-                        let vc = Arc::clone(&verify_cache);
+                        let vc = verify_cache.clone();
                         let gd = game_dir.to_path_buf();
                         tokio::task::spawn_blocking(move || {
                             cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc).unwrap_or(false)
@@ -1100,9 +1100,8 @@ pub async fn install(
                         }
                         pre_assembled += 1;
                     } else {
-                        let tp = target_path.clone();
                         tokio::task::spawn_blocking(move || {
-                            let _ = fs::remove_file(tp);
+                            let _ = fs::remove_file(target_path);
                         })
                         .await?;
                     }

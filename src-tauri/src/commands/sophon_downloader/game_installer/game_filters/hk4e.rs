@@ -102,12 +102,10 @@ pub fn write_pkg_version_from_manifest(
     for lang in vo_langs {
         if let Some(lang_name) = locale_code_to_audio_lang_name(lang) {
             let filename = format!("Audio_{lang_name}_pkg_version");
+            let pattern = format!("/{lang_name}/").to_lowercase();
             let filtered: Vec<SophonManifestAssetProperty> = assets
                 .iter()
-                .filter(|a| {
-                    let lower = a.asset_name.to_lowercase();
-                    lower.contains(&format!("/{lang_name}/").to_lowercase())
-                })
+                .filter(|a| a.asset_name.to_lowercase().contains(&pattern))
                 .cloned()
                 .collect();
             write_single_pkg_version(game_dir, &filename, &filtered)?;

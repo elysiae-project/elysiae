@@ -1093,9 +1093,9 @@ fn apply_hdiff_patch(
         fs::create_dir_all(parent)?;
     }
 
-    let op = original_path.to_string_lossy().to_string();
-    let dp = diff_temp.to_string_lossy().to_string();
-    let tp = temp_output.to_string_lossy().to_string();
+    let op = original_path.to_string_lossy().into_owned();
+    let dp = diff_temp.to_string_lossy().into_owned();
+    let tp = temp_output.to_string_lossy().into_owned();
 
     let patch_result = std::thread::spawn(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
