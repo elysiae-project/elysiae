@@ -49,7 +49,8 @@ flate2 = "1.1.9"
 zip = "8.6.0"
 tar = "0.4.46"
 md-5 = "0.11.0"
-dashmap = { version = "6.1.0", features = ["serde"] }
+sysinfo = "0.32"
+dashmap = { version = "6.2.1", features = ["serde"] }
 hex = "0.4.3"
 bytes = "1.11.1"
 prost = "0.14.4"

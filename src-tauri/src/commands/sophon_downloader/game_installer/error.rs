@@ -130,6 +130,13 @@ pub enum SophonError {
         length: u64,
         chunk_size: u64,
     },
+
+    #[error("No space available at {path}: need {needed}, have {available}")]
+    NoSpaceAvailable {
+        path: String,
+        needed: u64,
+        available: u64,
+    },
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {

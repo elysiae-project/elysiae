@@ -3,11 +3,24 @@ use std::path::Path;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
+use sysinfo::Disks;
 use tokio::io::AsyncWriteExt;
 
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
+
+fn get_available_space(path: &Path) -> Option<u64> {
+    let disks = Disks::new_with_refreshed_list();
+    let path = path.to_path_buf();
+    for disk in disks.iter() {
+        let dp = disk.mount_point();
+        if path.starts_with(dp) {
+            return Some(disk.available_space());
+        }
+    }
+    None
+}
 
 pub async fn download_chunk(
     client: &Client,
@@ -16,15 +29,41 @@ pub async fn download_chunk(
     dest: &Path,
 ) -> SophonResult<()> {
     let url = chunk_download.url_for(&chunk.chunk_name);
-    let resp = client.get(&url).send().await?.error_for_status()?;
+    let resp = client.get(&url).send().await?;
 
-    if let Some(len) = resp.content_length()
-        && len != chunk.chunk_size
-    {
+    if resp.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        return Ok(());
+    }
+
+    let resp = resp.error_for_status()?;
+
+    let len = match resp.content_length() {
+        Some(l) => l,
+        None => {
+            return Err(SophonError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!(
+                    "server did not send Content-Length for chunk '{}'",
+                    chunk.chunk_name
+                ),
+            )));
+        }
+    };
+    if len != chunk.chunk_size {
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
             expected: chunk.chunk_size,
             actual: len,
+        });
+    }
+
+    if let Some(available) = get_available_space(dest)
+        && available < chunk.chunk_size
+    {
+        return Err(SophonError::NoSpaceAvailable {
+            path: dest.display().to_string(),
+            needed: chunk.chunk_size,
+            available,
         });
     }
 
@@ -263,6 +302,24 @@ mod tests {
         let dest = dest_path();
         let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn download_chunk_416_range_not_satisfiable() {
+        let server = MockServer::start().await;
+        let chunk = make_chunk("test_chunk", 100, "");
+        let dl_info = make_download_info(&server);
+
+        Mock::given(method("GET"))
+            .and(path("chunks/test_chunk"))
+            .respond_with(ResponseTemplate::new(416).set_body_bytes("Range not satisfiable"))
+            .mount(&server)
+            .await;
+
+        let client = Client::new();
+        let dest = dest_path();
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        assert!(result.is_ok(), "416 should return Ok, got: {:?}", result);
     }
 
     #[tokio::test]
