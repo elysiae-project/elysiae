@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use bytes::BytesMut;
 use futures_util::StreamExt;
@@ -6,6 +7,7 @@ use md5::{Digest, Md5};
 use reqwest::Client;
 use sysinfo::Disks;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::time::timeout;
 
 use super::error::{SophonError, SophonResult};
 use super::{DOWNLOAD_STREAM_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE};
@@ -100,6 +102,7 @@ pub async fn download_chunk(
                     | SophonError::Md5Mismatch { .. }
                     | SophonError::PathTraversal(_)
                     | SophonError::InvalidAssetName(_)
+                    | SophonError::NoSpaceAvailable { .. }
                     | SophonError::Cancelled => {
                         return Err(e);
                     }
@@ -228,14 +231,20 @@ async fn download_full_file_with_response(
     let mut total_len = 0u64;
     let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
 
-    while let Some(chunk_bytes) = stream.next().await {
-        let bytes = chunk_bytes?;
-        total_len += bytes.len() as u64;
-        hasher.update(&bytes);
-        buffer.extend_from_slice(&bytes);
-        if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
-            file.write_all(&buffer).await?;
-            buffer.clear();
+    loop {
+        match timeout(Duration::from_millis(250), stream.next()).await {
+            Ok(Some(chunk_bytes)) => {
+                let bytes = chunk_bytes?;
+                total_len += bytes.len() as u64;
+                hasher.update(&bytes);
+                buffer.extend_from_slice(&bytes);
+                if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
+                    file.write_all(&buffer).await?;
+                    buffer.clear();
+                }
+            }
+            Ok(None) => break,
+            Err(_) => continue, // keep looping to allow cancellation or data arrival
         }
     }
     if !buffer.is_empty() {
@@ -308,10 +317,16 @@ async fn download_with_resume(
     let mut stream = resp.bytes_stream();
     let mut total_len = existing_size;
 
-    while let Some(chunk_bytes) = stream.next().await {
-        let bytes = chunk_bytes?;
-        file.write_all(&bytes).await?;
-        total_len += bytes.len() as u64;
+    loop {
+        match timeout(Duration::from_millis(250), stream.next()).await {
+            Ok(Some(chunk_bytes)) => {
+                let bytes = chunk_bytes?;
+                file.write_all(&bytes).await?;
+                total_len += bytes.len() as u64;
+            }
+            Ok(None) => break,
+            Err(_) => continue, // timeout: loop back, allows responsive cancellation
+        }
     }
 
     file.flush().await?;
