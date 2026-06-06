@@ -1238,11 +1238,18 @@ fn apply_hdiff_patch(
                 error: "HDiff apply returned false".to_string(),
             })
         }
-        Err(_) => {
+        Err(join_err) => {
             let _ = fs::remove_file(&temp_output);
+            let error_msg = if let Some(s) = join_err.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = join_err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown thread panic".to_string()
+            };
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff thread panicked".to_string(),
+                error: format!("HDiff thread panicked: {}", error_msg),
             })
         }
     }
@@ -1317,11 +1324,18 @@ fn apply_hdiff_patch_from_files(
                 error: "HDiff apply returned false (from files)".to_string(),
             })
         }
-        Err(_) => {
+        Err(join_err) => {
             let _ = fs::remove_file(&temp_output);
+            let error_msg = if let Some(s) = join_err.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = join_err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown thread panic".to_string()
+            };
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff thread panicked (from files)".to_string(),
+                error: format!("HDiff thread panicked (from files): {}", error_msg),
             })
         }
     }

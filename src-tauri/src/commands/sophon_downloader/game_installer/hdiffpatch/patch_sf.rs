@@ -167,6 +167,10 @@ impl<'a> Rle0Decoder<'a> {
                 let take = self.lenv.min(rem);
                 let end = self.pos.saturating_add(take).min(self.buf.len());
                 let actual_take = end - self.pos;
+                if actual_take == 0 {
+                    self.lenv = 0;
+                    continue;
+                }
                 let src = &self.buf[self.pos..end];
                 for i in 0..actual_take {
                     data[dp + i] = data[dp + i].wrapping_add(src[i]);

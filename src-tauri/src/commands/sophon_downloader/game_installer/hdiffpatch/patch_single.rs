@@ -93,7 +93,7 @@ impl PatchSingle {
             false,
         )?;
         let mut clips: [Box<dyn Read>; 4] = [clip0, clip1, clip2, clip3];
-        write_cover_stream_to_output(&mut clips, input_stream, output_stream, hi);
+        write_cover_stream_to_output(&mut clips, input_stream, output_stream, hi)?;
         Ok(())
     }
 }
