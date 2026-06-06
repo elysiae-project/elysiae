@@ -632,7 +632,10 @@ async fn download_chunk_with_retries(
                         ),
                     });
                 }
-                let _ = fs::remove_file(dest);
+                // Don't delete the partial file here - the inner layer
+                // (download.rs) can resume it on the next attempt via
+                // HTTP Range requests. Removing it now would destroy progress.
+                // let _ = fs::remove_file(dest);
             }
         }
     }

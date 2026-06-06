@@ -28,11 +28,13 @@ pub(crate) fn write_cover_stream_to_output(
     )?;
 
     for cover in &headers {
+        if cover.new_pos < new_pos_back {
+            return Err(std::io::Error::other(
+                "backward or overlapping covers in patch",
+            ));
+        }
         if new_pos_back < cover.new_pos {
             let copy_length = cover.new_pos - new_pos_back;
-            if copy_length < 0 {
-                return Err(std::io::Error::other("overlapping covers in patch"));
-            }
             tbytes_copy_stream_from_old_clip(
                 &mut cache,
                 &mut *right[1],
