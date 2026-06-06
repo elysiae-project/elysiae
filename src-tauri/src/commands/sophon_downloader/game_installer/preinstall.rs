@@ -15,7 +15,7 @@ use md5::{Digest as _, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter as TokioBufWriter};
 
 use super::api::{
     fetch_build, fetch_front_door, fetch_patch_build, fetch_patch_manifest, is_known_vo_locale,
@@ -437,6 +437,8 @@ pub async fn preinstall_download(
                     )
                     .await?;
 
+                validate_patch_name(&chunk_info.patch_name)?;
+
                 let chunk_path = chunks_dir.join(&chunk_info.patch_name);
 
                 let needs_download = if chunk_path.exists()
@@ -575,6 +577,7 @@ async fn download_patch_chunk_with_retries(
     expected_md5: &str,
     max_retries: u32,
 ) -> SophonResult<()> {
+    validate_patch_name(patch_name)?;
     let url = diff_download.url_for(patch_name);
     let mut last_err = String::new();
 
@@ -622,7 +625,8 @@ async fn download_patch_chunk_inner(
 ) -> SophonResult<()> {
     let resp = client.get(url).send().await?.error_for_status()?;
     let mut stream = resp.bytes_stream();
-    let mut file = tokio::fs::File::create(dest).await?;
+    let file = tokio::fs::File::create(dest).await?;
+    let mut file = TokioBufWriter::new(file);
     let mut hasher = Md5::new();
 
     while let Some(chunk) = stream.next().await {
@@ -657,7 +661,14 @@ fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => hasher.update(&buf[..n]),
-            Err(_) => return false,
+            Err(e) => {
+                log::warn!(
+                    "Failed to read file for MD5 verification: {}: {}",
+                    path.display(),
+                    e
+                );
+                return false;
+            }
         }
     }
     let actual = hex::encode(hasher.finalize());
@@ -832,11 +843,40 @@ fn validate_asset_path(game_dir: &Path, asset_path: &str) -> SophonResult<PathBu
             "asset_path cannot contain null bytes".into(),
         ));
     }
+    let mut chars = asset_path.chars();
+    if let (Some(first), Some(':')) = (chars.next(), chars.next())
+        && first.is_ascii_alphabetic()
+    {
+        return Err(SophonError::PathTraversal(game_dir.join(asset_path)));
+    }
     let path = game_dir.join(asset_path);
     if asset_path.starts_with('/') || asset_path.starts_with('\\') || asset_path.contains("..") {
         return Err(SophonError::PathTraversal(path));
     }
     Ok(path)
+}
+
+fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
+    if patch_name.is_empty() {
+        return Err(SophonError::InvalidAssetName(
+            "patch_name cannot be empty".into(),
+        ));
+    }
+    if patch_name.contains('\0') {
+        return Err(SophonError::InvalidAssetName(
+            "patch_name cannot contain null bytes".into(),
+        ));
+    }
+    let mut chars = patch_name.chars();
+    if let (Some(first), Some(':')) = (chars.next(), chars.next())
+        && first.is_ascii_alphabetic()
+    {
+        return Err(SophonError::PathTraversal(patch_name.into()));
+    }
+    if patch_name.starts_with('/') || patch_name.starts_with('\\') || patch_name.contains("..") {
+        return Err(SophonError::PathTraversal(patch_name.into()));
+    }
+    Ok(())
 }
 
 fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
@@ -1016,6 +1056,7 @@ fn filter_patch_assets_for_removed_features(cache: &FilterCache, assets: &mut [P
 }
 
 fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -> SophonResult<()> {
+    validate_patch_name(&asset.patch_name)?;
     let chunk_path = chunks_dir.join(&asset.patch_name);
     if !chunk_path.exists() {
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
@@ -1164,6 +1205,7 @@ fn apply_hdiff_patch(
     }
 
     let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+    validate_patch_name(&asset.patch_name)?;
     let chunk_path = chunks_dir.join(&asset.patch_name);
     if !chunk_path.exists() {
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
@@ -1184,8 +1226,9 @@ fn apply_hdiff_patch(
         writer.flush()?;
     }
 
-    let target_path = game_dir.join(&asset.target_file_path);
-    let temp_output = game_dir.join(format!("patching/{}.tmp.out", asset.target_file_hash));
+    let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
+    let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+    let temp_output = game_dir.join(format!("patching/{}.tmp.out", safe_hash));
 
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
@@ -1627,6 +1670,54 @@ mod tests {
     fn validate_asset_path_accepts_nested_relative() {
         let dir = tempfile::tempdir().unwrap();
         let result = validate_asset_path(dir.path(), "a/b/c/file.pkg");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_asset_path_rejects_windows_drive_letter() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "C:/Windows/System32");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_empty() {
+        let result = validate_patch_name("");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::InvalidAssetName(_)
+        ));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_null_byte() {
+        let result = validate_patch_name("file\0.txt");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::InvalidAssetName(_)
+        ));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_dotdot() {
+        let result = validate_patch_name("../../etc/passwd");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_drive_letter() {
+        let result = validate_patch_name("C:/path/to/chunk.bin");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_accepts_valid() {
+        let result = validate_patch_name("chunk_001.bin");
         assert!(result.is_ok());
     }
 

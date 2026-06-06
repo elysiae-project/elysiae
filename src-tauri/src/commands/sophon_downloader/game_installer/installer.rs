@@ -18,7 +18,9 @@ use tokio_util::sync::CancellationToken;
 use super::adaptive_assembly::AdaptiveAssembly;
 use super::adaptive_download::AdaptiveSemaphore;
 use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
-use super::assembly::{self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task};
+use super::assembly::{
+    self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task, validate_chunk_name,
+};
 use super::cache::{self, VerificationEntry};
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
@@ -968,6 +970,9 @@ pub async fn install(
             prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
                 let before = prev_downloaded_chunks.len();
                 prev_downloaded_chunks.retain(|chunk_name, _| {
+                    if !validate_chunk_name(chunk_name) {
+                        return false;
+                    }
                     chunks_dir_validate
                         .join(format!("{}.zstd", chunk_name))
                         .exists()

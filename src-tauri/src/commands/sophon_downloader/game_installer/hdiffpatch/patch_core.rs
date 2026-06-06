@@ -30,6 +30,9 @@ pub(crate) fn write_cover_stream_to_output(
     for cover in &headers {
         if new_pos_back < cover.new_pos {
             let copy_length = cover.new_pos - new_pos_back;
+            if copy_length < 0 {
+                return Err(std::io::Error::other("overlapping covers in patch"));
+            }
             tbytes_copy_stream_from_old_clip(
                 &mut cache,
                 &mut *right[1],
@@ -56,7 +59,10 @@ pub(crate) fn write_cover_stream_to_output(
             &mut *left[1],
             &mut *right[0],
         )?;
-        new_pos_back = cover.new_pos + cover.cover_length;
+        new_pos_back = cover
+            .new_pos
+            .checked_add(cover.cover_length)
+            .ok_or_else(|| std::io::Error::other("new_pos overflow in cover iteration"))?;
         if cache.get_ref().len() > MAX_MEM_BUFFER_LIMIT || cover.next_cover_index == 0 {
             write_cache_to_output(&mut cache, output_stream)?;
         }
@@ -64,6 +70,11 @@ pub(crate) fn write_cover_stream_to_output(
 
     if new_pos_back < header_info.new_data_size {
         let copy_length = header_info.new_data_size - new_pos_back;
+        if copy_length < 0 {
+            return Err(std::io::Error::other(
+                "tail copy length is negative; diff is malformed",
+            ));
+        }
         tbytes_copy_stream_from_old_clip(
             &mut cache,
             &mut *right[1],
@@ -107,6 +118,9 @@ fn tbytes_copy_old_clip_patch(
     rle_ctrl_stream: &mut dyn Read,
     rle_code_stream: &mut dyn Read,
 ) -> std::io::Result<()> {
+    if add_length < 0 {
+        return Err(std::io::Error::other("add_length is negative"));
+    }
     let last_pos = out_cache.position();
     input_stream.seek(SeekFrom::Start(old_pos as u64))?;
     tbytes_copy_stream_inner(input_stream, out_cache, shared_buffer, add_length as usize)?;
@@ -127,6 +141,9 @@ pub(crate) fn tbytes_copy_stream_from_old_clip(
     copy_length: i64,
     shared_buffer: &mut [u8],
 ) -> std::io::Result<()> {
+    if copy_length < 0 {
+        return Err(std::io::Error::other("copy_length is negative"));
+    }
     let last_pos = out_cache.position();
     tbytes_copy_stream_inner(copy_reader, out_cache, shared_buffer, copy_length as usize)?;
     out_cache.seek(SeekFrom::Start(last_pos))?;
@@ -170,8 +187,10 @@ fn tbytes_determine_rle_type(
         let p_sign = p_sign_buf[0];
 
         let rle_type = p_sign >> (8 - K_BYTE_RLE_TYPE);
-        let mut length = rle_ctrl_stream.read_long_7bit_tagged(K_BYTE_RLE_TYPE, p_sign)?;
-        length += 1;
+        let raw_length = rle_ctrl_stream.read_long_7bit_tagged(K_BYTE_RLE_TYPE, p_sign)?;
+        let length = raw_length
+            .checked_add(1)
+            .ok_or_else(|| std::io::Error::other("RLE length overflow after +1"))?;
 
         if rle_type == 3 {
             rle_loader.mem_copy_length = length;
@@ -297,6 +316,16 @@ fn enumerate_cover_headers(
     cover_size: i64,
     cover_count: i64,
 ) -> std::io::Result<Vec<CoverHeader>> {
+    if cover_count < 0 {
+        return Err(std::io::Error::other("cover_count is negative"));
+    }
+    if cover_size < 0 {
+        return Err(std::io::Error::other("cover_size is negative"));
+    }
+    const MAX_COVER_COUNT: i64 = 50_000_000;
+    if cover_count > MAX_COVER_COUNT {
+        return Err(std::io::Error::other("cover_count exceeds safe maximum"));
+    }
     let mut headers = Vec::with_capacity(cover_count as usize);
     let mut last_old_pos_back = 0i64;
     let mut last_new_pos_back = 0i64;
@@ -317,7 +346,7 @@ fn enumerate_cover_headers(
 
             let inc_old_pos_sign = p_sign >> (8 - K_SIGN_TAG_BIT);
             let inc_old_pos =
-                read_long_7bit_from_slice(&buffer, &mut offset, K_SIGN_TAG_BIT, p_sign);
+                read_long_7bit_from_slice(&buffer, &mut offset, K_SIGN_TAG_BIT, p_sign)?;
             let old_pos = if inc_old_pos_sign == 0 {
                 old_pos_back.checked_add(inc_old_pos).unwrap_or(i64::MAX)
             } else {
@@ -329,11 +358,22 @@ fn enumerate_cover_headers(
                 ));
             }
 
-            let copy_length = read_long_7bit_from_slice(&buffer, &mut offset, 0, 0);
-            let cover_length = read_long_7bit_from_slice(&buffer, &mut offset, 0, 0);
-            let new_pos_back = new_pos_back.saturating_add(copy_length);
-            last_old_pos_back = old_pos.saturating_add(cover_length);
-            last_new_pos_back = new_pos_back.saturating_add(cover_length);
+            let copy_length = read_long_7bit_from_slice(&buffer, &mut offset, 0, 0)?;
+            let cover_length = read_long_7bit_from_slice(&buffer, &mut offset, 0, 0)?;
+            if copy_length < 0 || cover_length < 0 {
+                return Err(std::io::Error::other(
+                    "invalid negative copy_length or cover_length in cover header",
+                ));
+            }
+            let new_pos_back = new_pos_back
+                .checked_add(copy_length)
+                .ok_or_else(|| std::io::Error::other("new_pos overflow in cover header"))?;
+            last_old_pos_back = old_pos
+                .checked_add(cover_length)
+                .ok_or_else(|| std::io::Error::other("old_pos overflow in cover header"))?;
+            last_new_pos_back = new_pos_back
+                .checked_add(cover_length)
+                .ok_or_else(|| std::io::Error::other("last_new_pos overflow in cover header"))?;
             headers.push(CoverHeader::new(
                 old_pos,
                 new_pos_back,
@@ -366,9 +406,20 @@ fn enumerate_cover_headers(
 
             let copy_length = cover_reader.read_long_7bit()?;
             let cover_length = cover_reader.read_long_7bit()?;
-            let new_pos_back = new_pos_back.saturating_add(copy_length);
-            last_old_pos_back = old_pos.saturating_add(cover_length);
-            last_new_pos_back = new_pos_back.saturating_add(cover_length);
+            if copy_length < 0 || cover_length < 0 {
+                return Err(std::io::Error::other(
+                    "invalid negative copy_length or cover_length in cover header",
+                ));
+            }
+            let new_pos_back = new_pos_back.checked_add(copy_length).ok_or_else(|| {
+                std::io::Error::other("new_pos overflow in cover header (stream)")
+            })?;
+            last_old_pos_back = old_pos.checked_add(cover_length).ok_or_else(|| {
+                std::io::Error::other("old_pos overflow in cover header (stream)")
+            })?;
+            last_new_pos_back = new_pos_back.checked_add(cover_length).ok_or_else(|| {
+                std::io::Error::other("last_new_pos overflow in cover header (stream)")
+            })?;
             headers.push(CoverHeader::new(
                 old_pos,
                 new_pos_back,

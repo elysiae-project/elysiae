@@ -1,5 +1,7 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
+use flate2::read::DeflateDecoder;
+
 use super::CompressionMode;
 
 pub(crate) fn get_clip_stream(
@@ -13,8 +15,15 @@ pub(crate) fn get_clip_stream(
     let file_bytes = if comp_length > 0 { comp_length } else { length };
     file.seek(SeekFrom::Start(start))?;
 
+    const MAX_BUFFERED_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
+
     if comp_mode == CompressionMode::Nocomp || comp_length == 0 {
         if is_buffered {
+            if length > MAX_BUFFERED_SIZE {
+                return Err(std::io::Error::other(
+                    "buffered stream exceeds maximum size",
+                ));
+            }
             let mut buf = vec![0u8; length as usize];
             file.read_exact(&mut buf)?;
             return Ok((Box::new(Cursor::new(buf)), file_bytes));
@@ -28,19 +37,24 @@ pub(crate) fn get_clip_stream(
 
     match comp_mode {
         CompressionMode::Zstd => {
-            let mut comp_buf = vec![0u8; comp_length as usize];
-            file.read_exact(&mut comp_buf)?;
-
             let window_log: u32 = if cfg!(target_pointer_width = "64") {
                 31
             } else {
                 30
             };
-            let cursor = Cursor::new(comp_buf);
-            let mut decoder = zstd::stream::read::Decoder::new(cursor)?;
+            let limited = LimitedFile {
+                file,
+                remaining: comp_length,
+            };
+            let mut decoder = zstd::stream::read::Decoder::new(limited)?;
             decoder.set_parameter(zstd::zstd_safe::DParameter::WindowLogMax(window_log))?;
 
             if is_buffered {
+                if length > MAX_BUFFERED_SIZE {
+                    return Err(std::io::Error::other(
+                        "buffered zstd stream exceeds maximum size",
+                    ));
+                }
                 let mut out = Vec::with_capacity(length as usize);
                 decoder.read_to_end(&mut out)?;
                 Ok((Box::new(Cursor::new(out)), file_bytes))
@@ -49,9 +63,24 @@ pub(crate) fn get_clip_stream(
             }
         }
         CompressionMode::Zlib => {
-            return Err(std::io::Error::other(
-                "zlib decompression not yet implemented",
-            ));
+            let limited = LimitedFile {
+                file,
+                remaining: comp_length,
+            };
+            let mut decoder = DeflateDecoder::new(limited);
+
+            if is_buffered {
+                if length > MAX_BUFFERED_SIZE {
+                    return Err(std::io::Error::other(
+                        "buffered zlib stream exceeds maximum size",
+                    ));
+                }
+                let mut out = Vec::with_capacity(length as usize);
+                decoder.read_to_end(&mut out)?;
+                Ok((Box::new(Cursor::new(out)), file_bytes))
+            } else {
+                Ok((Box::new(decoder), file_bytes))
+            }
         }
         CompressionMode::Nocomp => unreachable!("handled above"),
     }
@@ -67,7 +96,9 @@ impl Read for LimitedFile {
         if self.remaining == 0 {
             return Ok(0);
         }
-        let to_read = buf.len().min(self.remaining as usize);
+        let to_read = buf
+            .len()
+            .min(self.remaining.try_into().unwrap_or(usize::MAX));
         let n = self.file.read(&mut buf[..to_read])?;
         self.remaining -= n as u64;
         Ok(n)

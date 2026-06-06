@@ -2,13 +2,18 @@ use std::io::Read;
 
 #[allow(dead_code)]
 pub(crate) trait BinaryExtensions: Read {
-    fn read_string_to_null(&mut self, _buffer_size: usize) -> std::io::Result<String> {
-        let mut buf = Vec::with_capacity(64);
+    fn read_string_to_null(&mut self, buffer_size: usize) -> std::io::Result<String> {
+        let mut buf = Vec::with_capacity(buffer_size.min(64));
         let mut byte = [0u8; 1];
         loop {
             let n = self.read(&mut byte)?;
             if n == 0 || byte[0] == 0 {
                 break;
+            }
+            if buf.len() >= buffer_size {
+                return Err(std::io::Error::other(
+                    "null byte not found within buffer_size",
+                ));
             }
             buf.push(byte[0]);
         }
@@ -33,7 +38,7 @@ pub(crate) trait BinaryExtensions: Read {
             return Ok(value);
         }
         loop {
-            if (value >> (8 * 8 - 7)) != 0 {
+            if value > (i64::MAX >> 7) {
                 return Err(std::io::Error::other("varint overflow"));
             }
             let mut b = [0u8; 1];
@@ -65,7 +70,7 @@ pub(crate) trait BinaryExtensions: Read {
             return Ok(value);
         }
         loop {
-            if (value >> (4 * 4 - 7)) != 0 {
+            if value > (i32::MAX >> 7) {
                 return Err(std::io::Error::other("varint overflow"));
             }
             let mut b = [0u8; 1];
@@ -87,9 +92,9 @@ pub(crate) fn read_long_7bit_from_slice(
     offset: &mut usize,
     tag_bit: u8,
     prev_byte: u8,
-) -> i64 {
+) -> std::io::Result<i64> {
     if *offset >= buf.len() {
-        return 0;
+        return Err(std::io::Error::other("varint: buffer underflow"));
     }
     let code = if tag_bit != 0 {
         prev_byte
@@ -101,14 +106,16 @@ pub(crate) fn read_long_7bit_from_slice(
     let mask = (1u8 << (7 - tag_bit)).wrapping_sub(1);
     let mut value = (code & mask) as i64;
     if (code & (1 << (7 - tag_bit))) == 0 {
-        return value;
+        return Ok(value);
     }
     loop {
-        if (value >> (8 * 8 - 7)) != 0 {
-            return 0;
+        if value > (i64::MAX >> 7) {
+            return Err(std::io::Error::other("varint overflow in slice"));
         }
         if *offset >= buf.len() {
-            return 0;
+            return Err(std::io::Error::other(
+                "varint: buffer underflow mid-sequence",
+            ));
         }
         let code = buf[*offset];
         *offset += 1;
@@ -117,5 +124,5 @@ pub(crate) fn read_long_7bit_from_slice(
             break;
         }
     }
-    value
+    Ok(value)
 }

@@ -209,11 +209,26 @@ impl HDiff {
         header_info.single_chunk_info = DiffSingleChunkInfo::default();
         header_info.new_data_size = sr.read_long_7bit()?;
         header_info.old_data_size = sr.read_long_7bit()?;
+        if header_info.new_data_size < 0 || header_info.old_data_size < 0 {
+            return Err("new_data_size or old_data_size is negative".into());
+        }
 
         header_info.chunk_info.cover_count = sr.read_long_7bit()?;
         header_info.step_mem_size = sr.read_long_7bit()?;
+        if header_info.chunk_info.cover_count < 0 {
+            return Err("cover_count is negative".into());
+        }
+        if header_info.step_mem_size < 0 {
+            return Err("step_mem_size is negative".into());
+        }
         header_info.single_chunk_info.uncompressed_size = sr.read_long_7bit()?;
         header_info.single_chunk_info.compressed_size = sr.read_long_7bit()?;
+        if header_info.single_chunk_info.uncompressed_size < 0 {
+            return Err("uncompressed_size is negative".into());
+        }
+        if header_info.single_chunk_info.compressed_size < 0 {
+            return Err("compressed_size is negative".into());
+        }
 
         let pos = sr.stream_position()? as i64;
         header_info.single_chunk_info.diff_data_pos = pos;
@@ -232,6 +247,9 @@ impl HDiff {
         let type_end_pos = sr.stream_position()? as i64;
         header_info.new_data_size = sr.read_long_7bit()?;
         header_info.old_data_size = sr.read_long_7bit()?;
+        if header_info.new_data_size < 0 || header_info.old_data_size < 0 {
+            return Err("new_data_size or old_data_size is negative".into());
+        }
 
         Self::get_diff_chunk_info(sr, &mut header_info.chunk_info, type_end_pos)?;
         header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 0)
@@ -259,13 +277,45 @@ impl HDiff {
         chunk_info.new_data_diff_size = sr.read_long_7bit()?;
         chunk_info.compress_new_data_diff_size = sr.read_long_7bit()?;
 
+        let fields: &[(&str, i64)] = &[
+            ("cover_buf_size", chunk_info.cover_buf_size),
+            (
+                "compress_cover_buf_size",
+                chunk_info.compress_cover_buf_size,
+            ),
+            ("rle_ctrl_buf_size", chunk_info.rle_ctrl_buf_size),
+            (
+                "compress_rle_ctrl_buf_size",
+                chunk_info.compress_rle_ctrl_buf_size,
+            ),
+            ("rle_code_buf_size", chunk_info.rle_code_buf_size),
+            (
+                "compress_rle_code_buf_size",
+                chunk_info.compress_rle_code_buf_size,
+            ),
+            ("new_data_diff_size", chunk_info.new_data_diff_size),
+            (
+                "compress_new_data_diff_size",
+                chunk_info.compress_new_data_diff_size,
+            ),
+        ];
+        for (name, val) in fields {
+            if *val < 0 {
+                return Err(format!("{} is negative in diff chunk info", name).into());
+            }
+        }
+
         chunk_info.head_end_pos = sr.stream_position()? as i64;
-        chunk_info.cover_end_pos = chunk_info.head_end_pos
-            + if chunk_info.compress_cover_buf_size > 0 {
+        chunk_info.cover_end_pos = chunk_info
+            .head_end_pos
+            .checked_add(if chunk_info.compress_cover_buf_size > 0 {
                 chunk_info.compress_cover_buf_size
             } else {
                 chunk_info.cover_buf_size
-            };
+            })
+            .ok_or_else(|| -> Box<dyn std::error::Error> {
+                "cover_end_pos overflow in diff chunk info".into()
+            })?;
         Ok(())
     }
 }

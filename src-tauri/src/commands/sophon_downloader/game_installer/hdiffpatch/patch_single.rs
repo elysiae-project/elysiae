@@ -44,7 +44,7 @@ impl PatchSingle {
             offset + cover_padding,
             ci.cover_buf_size as u64,
             ci.compress_cover_buf_size as u64,
-            true,
+            false,
         )?;
         offset += len0;
 
@@ -59,7 +59,7 @@ impl PatchSingle {
             offset + rle_ctrl_padding,
             ci.rle_ctrl_buf_size as u64,
             ci.compress_rle_ctrl_buf_size as u64,
-            true,
+            false,
         )?;
         offset += len1;
 
@@ -74,7 +74,7 @@ impl PatchSingle {
             offset + rle_code_padding,
             ci.rle_code_buf_size as u64,
             ci.compress_rle_code_buf_size as u64,
-            true,
+            false,
         )?;
         offset += len2;
 

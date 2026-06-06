@@ -28,6 +28,9 @@ pub fn decrement_chunk_refcount(
     chunk_refcounts: &DashMap<String, usize>,
     chunks_dir: &Path,
 ) {
+    if !validate_chunk_name(chunk_name) {
+        return;
+    }
     if let Some(mut count) = chunk_refcounts.get_mut(chunk_name) {
         *count -= 1;
         if *count == 0 {
@@ -52,6 +55,29 @@ pub fn cleanup_tmp_files(dir: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+pub fn validate_chunk_name(chunk_name: &str) -> bool {
+    if chunk_name.is_empty() {
+        log::warn!("chunk_name is empty, skipping file operation");
+        return false;
+    }
+    if chunk_name.contains('\0') {
+        log::warn!("chunk_name contains null byte, skipping file operation");
+        return false;
+    }
+    let mut chars = chunk_name.chars();
+    if let (Some(first), Some(':')) = (chars.next(), chars.next())
+        && first.is_ascii_alphabetic()
+    {
+        log::warn!("chunk_name has drive letter, skipping file operation");
+        return false;
+    }
+    if chunk_name.starts_with('/') || chunk_name.starts_with('\\') || chunk_name.contains("..") {
+        log::warn!("chunk_name has path traversal pattern, skipping file operation");
+        return false;
+    }
+    true
 }
 
 pub fn validate_asset_name(name: &str) -> SophonResult<()> {

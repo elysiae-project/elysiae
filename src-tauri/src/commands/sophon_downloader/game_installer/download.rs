@@ -1,12 +1,14 @@
 use std::path::Path;
 
+use bytes::BytesMut;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use sysinfo::Disks;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 
 use super::error::{SophonError, SophonResult};
+use super::{DOWNLOAD_STREAM_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
@@ -35,12 +37,49 @@ pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError
 
 const MAX_DOWNLOAD_RETRIES: u32 = 4;
 
+async fn compute_file_md5(path: &Path) -> SophonResult<String> {
+    let mut file = tokio::io::BufReader::new(tokio::fs::File::open(path).await?);
+    let mut hasher = Md5::new();
+    let mut buf = vec![0u8; MD5_HASH_BUFFER_SIZE];
+    loop {
+        let n = file.read_buf(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
 pub async fn download_chunk(
     client: &Client,
     chunk_download: &DownloadInfo,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
 ) -> SophonResult<()> {
+    if chunk.chunk_name.is_empty() {
+        return Err(SophonError::InvalidAssetName(
+            "chunk_name cannot be empty".into(),
+        ));
+    }
+    if chunk.chunk_name.contains('\0') {
+        return Err(SophonError::InvalidAssetName(
+            "chunk_name cannot contain null bytes".into(),
+        ));
+    }
+    let mut chars = chunk.chunk_name.chars();
+    if let (Some(first), Some(':')) = (chars.next(), chars.next())
+        && first.is_ascii_alphabetic()
+    {
+        return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+    }
+    if chunk.chunk_name.starts_with('/')
+        || chunk.chunk_name.starts_with('\\')
+        || chunk.chunk_name.contains("..")
+    {
+        return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+    }
+
     let url = chunk_download.url_for(&chunk.chunk_name);
     let mut last_err = String::new();
 
@@ -55,12 +94,6 @@ pub async fn download_chunk(
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_err = e.to_string();
-
-                if let SophonError::Http(ref req_err) = e {
-                    if req_err.status() == Some(reqwest::StatusCode::RANGE_NOT_SATISFIABLE) {
-                        return Ok(());
-                    }
-                }
 
                 match e {
                     SophonError::SizeMismatch { .. }
@@ -79,7 +112,7 @@ pub async fn download_chunk(
                                 MAX_DOWNLOAD_RETRIES,
                                 last_err
                             );
-                            let _ = tokio::fs::remove_file(dest).await;
+                            // Don't remove the file on retry to allow resume
                             tokio::time::sleep(tokio::time::Duration::from_millis(
                                 100 * (1 << attempt).min(8),
                             ))
@@ -104,14 +137,61 @@ async fn do_download_chunk(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
 ) -> SophonResult<()> {
-    let resp = client.get(url).send().await?;
-
-    if resp.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
-        download_full_file(client, url, chunk, dest).await
+    // Check for partial download to resume
+    let existing_size = if dest.exists() {
+        match tokio::fs::metadata(dest).await {
+            Ok(meta) => meta.len(),
+            Err(_) => 0,
+        }
     } else {
-        let resp = resp.error_for_status()?;
-        download_full_file_with_response(resp, chunk, dest).await
+        0
+    };
+
+    if existing_size >= chunk.chunk_size {
+        // File is already complete (or larger than expected)
+        if existing_size > chunk.chunk_size {
+            let _ = tokio::fs::remove_file(dest).await;
+        } else {
+            // Verify MD5 of existing complete file
+            if !chunk.chunk_compressed_hash_md5.is_empty() {
+                let actual = compute_file_md5(dest).await?;
+                if actual == chunk.chunk_compressed_hash_md5 {
+                    return Ok(());
+                }
+                // MD5 mismatch - remove and re-download
+                let _ = tokio::fs::remove_file(dest).await;
+            } else {
+                return Ok(());
+            }
+        }
     }
+
+    if existing_size > 0 && existing_size < chunk.chunk_size {
+        // Try to resume with Range request
+        let range_header = format!("bytes={}-", existing_size);
+        let resp = client
+            .get(url)
+            .header(reqwest::header::RANGE, range_header)
+            .send()
+            .await?;
+
+        if resp.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+            // 416 with incomplete file - discard partial and re-download
+            let _ = tokio::fs::remove_file(dest).await;
+        } else if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+            let resp = resp.error_for_status()?;
+            return download_with_resume(resp, chunk, dest, existing_size).await;
+        } else {
+            // Server returned 200 OK (ignored Range header) — discard partial and
+            // re-download
+            let _ = tokio::fs::remove_file(dest).await;
+        }
+    }
+
+    // Fresh download
+    let resp = client.get(url).send().await?;
+    let resp = resp.error_for_status()?;
+    download_full_file_with_response(resp, chunk, dest).await
 }
 
 async fn download_full_file_with_response(
@@ -141,16 +221,25 @@ async fn download_full_file_with_response(
 
     check_available_space(dest, chunk.chunk_size)?;
 
-    let mut file = tokio::fs::File::create(dest).await?;
+    let file = tokio::fs::File::create(dest).await?;
+    let mut file = BufWriter::new(file);
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
+    let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
 
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;
-        hasher.update(&bytes);
-        file.write_all(&bytes).await?;
         total_len += bytes.len() as u64;
+        hasher.update(&bytes);
+        buffer.extend_from_slice(&bytes);
+        if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
+            file.write_all(&buffer).await?;
+            buffer.clear();
+        }
+    }
+    if !buffer.is_empty() {
+        file.write_all(&buffer).await?;
     }
 
     file.flush().await?;
@@ -179,13 +268,14 @@ async fn download_full_file_with_response(
     Ok(())
 }
 
-async fn download_full_file(
-    client: &Client,
-    url: &str,
+async fn download_with_resume(
+    resp: reqwest::Response,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
+    existing_size: u64,
 ) -> SophonResult<()> {
-    let resp = client.get(url).send().await?.error_for_status()?;
+    let expected_total = chunk.chunk_size;
+    let remaining = expected_total - existing_size;
 
     let len = match resp.content_length() {
         Some(l) => l,
@@ -193,47 +283,51 @@ async fn download_full_file(
             return Err(SophonError::Io(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 format!(
-                    "server did not send Content-Length for chunk '{}'",
+                    "server did not send Content-Length for chunk '{}' (resume)",
                     chunk.chunk_name
                 ),
             )));
         }
     };
-    if len != chunk.chunk_size {
+
+    if len != remaining {
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
-            expected: chunk.chunk_size,
+            expected: remaining,
             actual: len,
         });
     }
 
-    check_available_space(dest, chunk.chunk_size)?;
+    check_available_space(dest, remaining)?;
 
-    let mut file = tokio::fs::File::create(dest).await?;
+    let file = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(dest)
+        .await?;
+    let mut file = BufWriter::new(file);
     let mut stream = resp.bytes_stream();
-    let mut hasher = Md5::new();
-    let mut total_len = 0u64;
+    let mut total_len = existing_size;
 
     while let Some(chunk_bytes) = stream.next().await {
         let bytes = chunk_bytes?;
-        hasher.update(&bytes);
         file.write_all(&bytes).await?;
         total_len += bytes.len() as u64;
     }
 
     file.flush().await?;
 
-    if total_len != chunk.chunk_size {
+    if total_len != expected_total {
         let _ = tokio::fs::remove_file(dest).await;
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
-            expected: chunk.chunk_size,
+            expected: expected_total,
             actual: total_len,
         });
     }
 
+    // Verify MD5 of the complete file after resume
     if !chunk.chunk_compressed_hash_md5.is_empty() {
-        let actual = hex::encode(hasher.finalize());
+        let actual = compute_file_md5(dest).await?;
         if actual != chunk.chunk_compressed_hash_md5 {
             let _ = tokio::fs::remove_file(dest).await;
             return Err(SophonError::Md5Mismatch {
@@ -449,7 +543,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn download_chunk_416_range_not_satisfiable() {
+    async fn download_chunk_416_on_plain_get_is_error() {
+        // 416 on a plain GET is non-standard and should be treated as an error
         let server = MockServer::start().await;
         let chunk = make_chunk("test_chunk", 100, "");
         let dl_info = make_download_info(&server);
@@ -463,11 +558,7 @@ mod tests {
         let client = Client::new();
         let dest = dest_path();
         let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
-        assert!(
-            result.is_ok(),
-            "416 should return Ok(()) as file is already complete, got: {:?}",
-            result
-        );
+        assert!(result.is_err(), "416 on plain GET should be an error");
     }
 
     #[tokio::test]
