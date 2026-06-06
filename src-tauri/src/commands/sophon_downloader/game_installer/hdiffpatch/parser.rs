@@ -34,7 +34,7 @@ pub(crate) trait BinaryExtensions: Read {
         }
         loop {
             if (value >> (8 * 8 - 7)) != 0 {
-                return Ok(0);
+                return Err(std::io::Error::other("varint overflow"));
             }
             let mut b = [0u8; 1];
             self.read_exact(&mut b)?;
@@ -66,7 +66,7 @@ pub(crate) trait BinaryExtensions: Read {
         }
         loop {
             if (value >> (4 * 4 - 7)) != 0 {
-                return Ok(0);
+                return Err(std::io::Error::other("varint overflow"));
             }
             let mut b = [0u8; 1];
             self.read_exact(&mut b)?;

@@ -25,6 +25,7 @@ impl std::str::FromStr for CompressionMode {
         match s.to_lowercase().as_str() {
             "" | "nocomp" => Ok(CompressionMode::Nocomp),
             "zstd" => Ok(CompressionMode::Zstd),
+            "zlib" => Ok(CompressionMode::Zlib),
             _ => Err(format!("unsupported compression mode: {s}")),
         }
     }
@@ -233,11 +234,11 @@ impl HDiff {
         header_info.old_data_size = sr.read_long_7bit()?;
 
         Self::get_diff_chunk_info(sr, &mut header_info.chunk_info, type_end_pos)?;
-        header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 1)
+        header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 0)
             as i64)
-            + ((header_info.chunk_info.compress_rle_ctrl_buf_size > 1) as i64)
-            + ((header_info.chunk_info.compress_rle_code_buf_size > 1) as i64)
-            + ((header_info.chunk_info.compress_new_data_diff_size > 1) as i64);
+            + ((header_info.chunk_info.compress_rle_ctrl_buf_size > 0) as i64)
+            + ((header_info.chunk_info.compress_rle_code_buf_size > 0) as i64)
+            + ((header_info.chunk_info.compress_new_data_diff_size > 0) as i64);
         Ok(())
     }
 

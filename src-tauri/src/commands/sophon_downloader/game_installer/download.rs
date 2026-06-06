@@ -33,6 +33,8 @@ pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError
     Ok(())
 }
 
+const MAX_DOWNLOAD_RETRIES: u32 = 4;
+
 pub async fn download_chunk(
     client: &Client,
     chunk_download: &DownloadInfo,
@@ -40,13 +42,150 @@ pub async fn download_chunk(
     dest: &Path,
 ) -> SophonResult<()> {
     let url = chunk_download.url_for(&chunk.chunk_name);
-    let resp = client.get(&url).send().await?;
+    let mut last_err = String::new();
 
-    if resp.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
-        return Ok(());
+    for attempt in 0..MAX_DOWNLOAD_RETRIES {
+        if let Some(parent) = dest.parent()
+            && let Err(e) = tokio::fs::create_dir_all(parent).await
+        {
+            eprintln!("Failed to create parent directory: {}", e);
+        }
+
+        match do_download_chunk(client, &url, chunk, dest).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = e.to_string();
+
+                if let SophonError::Http(ref req_err) = e {
+                    if req_err.status() == Some(reqwest::StatusCode::RANGE_NOT_SATISFIABLE) {
+                        return Ok(());
+                    }
+                }
+
+                match e {
+                    SophonError::SizeMismatch { .. }
+                    | SophonError::Md5Mismatch { .. }
+                    | SophonError::PathTraversal(_)
+                    | SophonError::InvalidAssetName(_)
+                    | SophonError::Cancelled => {
+                        return Err(e);
+                    }
+                    _ => {
+                        if attempt < MAX_DOWNLOAD_RETRIES - 1 {
+                            eprintln!(
+                                "Chunk {} failed (attempt {}/{}): {}",
+                                chunk.chunk_name,
+                                attempt + 1,
+                                MAX_DOWNLOAD_RETRIES,
+                                last_err
+                            );
+                            let _ = tokio::fs::remove_file(dest).await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(
+                                100 * (1 << attempt).min(8),
+                            ))
+                            .await;
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    let resp = resp.error_for_status()?;
+    Err(SophonError::DownloadFailed {
+        chunk: chunk.chunk_name.clone(),
+        attempts: MAX_DOWNLOAD_RETRIES,
+        error: last_err,
+    })
+}
+
+async fn do_download_chunk(
+    client: &Client,
+    url: &str,
+    chunk: &SophonManifestAssetChunk,
+    dest: &Path,
+) -> SophonResult<()> {
+    let resp = client.get(url).send().await?;
+
+    if resp.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        download_full_file(client, url, chunk, dest).await
+    } else {
+        let resp = resp.error_for_status()?;
+        download_full_file_with_response(resp, chunk, dest).await
+    }
+}
+
+async fn download_full_file_with_response(
+    resp: reqwest::Response,
+    chunk: &SophonManifestAssetChunk,
+    dest: &Path,
+) -> SophonResult<()> {
+    let len = match resp.content_length() {
+        Some(l) => l,
+        None => {
+            return Err(SophonError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!(
+                    "server did not send Content-Length for chunk '{}'",
+                    chunk.chunk_name
+                ),
+            )));
+        }
+    };
+    if len != chunk.chunk_size {
+        return Err(SophonError::SizeMismatch {
+            item: chunk.chunk_name.clone(),
+            expected: chunk.chunk_size,
+            actual: len,
+        });
+    }
+
+    check_available_space(dest, chunk.chunk_size)?;
+
+    let mut file = tokio::fs::File::create(dest).await?;
+    let mut stream = resp.bytes_stream();
+    let mut hasher = Md5::new();
+    let mut total_len = 0u64;
+
+    while let Some(chunk_bytes) = stream.next().await {
+        let bytes = chunk_bytes?;
+        hasher.update(&bytes);
+        file.write_all(&bytes).await?;
+        total_len += bytes.len() as u64;
+    }
+
+    file.flush().await?;
+
+    if total_len != chunk.chunk_size {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(SophonError::SizeMismatch {
+            item: chunk.chunk_name.clone(),
+            expected: chunk.chunk_size,
+            actual: total_len,
+        });
+    }
+
+    if !chunk.chunk_compressed_hash_md5.is_empty() {
+        let actual = hex::encode(hasher.finalize());
+        if actual != chunk.chunk_compressed_hash_md5 {
+            let _ = tokio::fs::remove_file(dest).await;
+            return Err(SophonError::Md5Mismatch {
+                item: chunk.chunk_name.clone(),
+                expected: chunk.chunk_compressed_hash_md5.clone(),
+                actual,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+async fn download_full_file(
+    client: &Client,
+    url: &str,
+    chunk: &SophonManifestAssetChunk,
+    dest: &Path,
+) -> SophonResult<()> {
+    let resp = client.get(url).send().await?.error_for_status()?;
 
     let len = match resp.content_length() {
         Some(l) => l,
@@ -324,7 +463,11 @@ mod tests {
         let client = Client::new();
         let dest = dest_path();
         let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
-        assert!(result.is_ok(), "416 should return Ok, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "416 should return Ok(()) as file is already complete, got: {:?}",
+            result
+        );
     }
 
     #[tokio::test]

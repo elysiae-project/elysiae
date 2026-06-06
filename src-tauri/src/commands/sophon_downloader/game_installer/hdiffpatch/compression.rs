@@ -48,7 +48,12 @@ pub(crate) fn get_clip_stream(
                 Ok((Box::new(decoder), file_bytes))
             }
         }
-        CompressionMode::Zlib | CompressionMode::Nocomp => unreachable!(),
+        CompressionMode::Zlib => {
+            return Err(std::io::Error::other(
+                "zlib decompression not yet implemented",
+            ));
+        }
+        CompressionMode::Nocomp => unreachable!("handled above"),
     }
 }
 

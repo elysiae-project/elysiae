@@ -30,6 +30,7 @@ impl PatchSF {
             false,
         )?;
         let cover_count = self.header_info.chunk_info.cover_count as u64;
+        let new_data_size = self.header_info.new_data_size as u64;
         let step_mem_size = self.header_info.step_mem_size as usize;
         let mut step_buf = vec![0u8; step_mem_size];
         let mut io_buf = vec![0u8; step_mem_size];
@@ -38,6 +39,7 @@ impl PatchSF {
             input_stream,
             output_stream,
             cover_count,
+            new_data_size,
             &mut step_buf,
             &mut io_buf,
         )
@@ -49,6 +51,7 @@ fn patch_loop(
     old: &mut dyn SeekableRead,
     out: &mut dyn Write,
     mut cover_count: u64,
+    new_data_size: u64,
     step_buf: &mut Vec<u8>,
     io_buf: &mut [u8],
 ) -> std::io::Result<()> {
@@ -60,6 +63,12 @@ fn patch_loop(
         let buf_rle_size = diff.read_long_7bit()? as usize;
         let step_end = buf_cover_size + buf_rle_size;
 
+        const MAX_STEP_SIZE: usize = 16 * 1024 * 1024; // 16MB max step size
+        if step_end > MAX_STEP_SIZE {
+            return Err(std::io::Error::other(
+                "patch step size exceeds maximum allowed",
+            ));
+        }
         if step_end > step_buf.len() {
             step_buf.resize(step_end, 0);
         }
@@ -92,6 +101,9 @@ fn patch_loop(
             }
         }
     }
+    if last_new_end < new_data_size {
+        copy_n(&mut *diff, out, new_data_size - last_new_end, io_buf)?;
+    }
     Ok(())
 }
 
@@ -106,11 +118,17 @@ fn decode_cover(
     let sign = first >> 7;
     let delta = covers.read_long_7bit_tagged(1, first)? as u64;
     let old_pos = if sign == 0 {
-        last_old_end.wrapping_add(delta)
+        last_old_end
+            .checked_add(delta)
+            .ok_or_else(|| std::io::Error::other("old_pos overflow"))?
     } else {
-        last_old_end.wrapping_sub(delta)
+        last_old_end
+            .checked_sub(delta)
+            .ok_or_else(|| std::io::Error::other("old_pos underflow"))?
     };
-    let new_pos = last_new_end.wrapping_add(covers.read_long_7bit()? as u64);
+    let new_pos = last_new_end
+        .checked_add(covers.read_long_7bit()? as u64)
+        .ok_or_else(|| std::io::Error::other("new_pos overflow"))?;
     let length = covers.read_long_7bit()? as u64;
     *last_old_end = old_pos.wrapping_add(length);
     *last_new_end = new_pos.wrapping_add(length);
@@ -147,14 +165,16 @@ impl<'a> Rle0Decoder<'a> {
                 rem -= take;
             } else if self.lenv > 0 {
                 let take = self.lenv.min(rem);
-                let src = &self.buf[self.pos..self.pos + take];
-                for i in 0..take {
+                let end = self.pos.saturating_add(take).min(self.buf.len());
+                let actual_take = end - self.pos;
+                let src = &self.buf[self.pos..end];
+                for i in 0..actual_take {
                     data[dp + i] = data[dp + i].wrapping_add(src[i]);
                 }
-                self.pos += take;
-                self.lenv -= take;
-                dp += take;
-                rem -= take;
+                self.pos += actual_take;
+                self.lenv -= actual_take;
+                dp += actual_take;
+                rem -= actual_take;
             } else if self.need_decode0 {
                 self.need_decode0 = false;
                 self.len0 = rle_varint(self.buf, &mut self.pos);

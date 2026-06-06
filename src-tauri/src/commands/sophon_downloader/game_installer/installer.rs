@@ -1193,7 +1193,7 @@ pub async fn install(
     }
 
     let adaptive = Arc::new(AdaptiveSemaphore::new());
-    let _cancel_token = spawn_adaptive_adjuster(&adaptive);
+    let cancel_token = spawn_adaptive_adjuster(&adaptive);
 
     let results = run_downloads(
         Arc::clone(&ctx),
@@ -1204,6 +1204,8 @@ pub async fn install(
         Arc::clone(&adaptive),
     )
     .await;
+
+    cancel_token.cancel();
 
     {
         let handle = {

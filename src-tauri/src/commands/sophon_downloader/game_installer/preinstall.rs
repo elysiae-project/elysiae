@@ -591,6 +591,17 @@ async fn download_patch_chunk_with_retries(
                         max_retries
                     );
                     let _ = tokio::fs::remove_file(dest).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        100 * (1 << attempt).min(8),
+                    ))
+                    .await;
+                } else {
+                    log::warn!(
+                        "Patch chunk {} failed (final attempt {}/{}): {last_err}",
+                        patch_name,
+                        attempt + 1,
+                        max_retries
+                    );
                 }
             }
         }
@@ -781,6 +792,13 @@ pub async fn apply_preinstall(
         let df = state.deleted_files.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &df {
+                if rel.contains("..")
+                    || rel.starts_with('/')
+                    || rel.starts_with('\\')
+                    || rel.contains('\0')
+                {
+                    continue;
+                }
                 let path = gd.join(rel);
                 if path.exists() {
                     let _ = fs::remove_file(&path);
@@ -1013,7 +1031,8 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         chunk_file.read_exact(&mut magic_buf)?;
     }
     if magic_buf == HDIFF_MAGIC.as_ref() {
-        let diff_temp = game_dir.join(format!("patching/{}.diff", asset.patch_name));
+        let safe_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+        let diff_temp = game_dir.join(format!("patching/{}.diff", safe_name));
         {
             if let Some(parent) = diff_temp.parent() {
                 fs::create_dir_all(parent)?;
@@ -1035,7 +1054,8 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         fs::create_dir_all(parent)?;
     }
 
-    let temp_path = target_path.with_extension("temp");
+    let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+    let temp_path = game_dir.join(format!("patching/copyover_{}.tmp", safe_hash));
     {
         let file = fs::File::create(&temp_path)?;
         let mut writer = BufWriter::new(file);
@@ -1046,6 +1066,26 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             std::io::copy(&mut limited, &mut writer)?;
         }
         writer.flush()?;
+    }
+    let actual_size = fs::metadata(&temp_path)?.len();
+    if actual_size != asset.target_file_size {
+        let _ = fs::remove_file(&temp_path);
+        return Err(SophonError::SizeMismatch {
+            item: asset.target_file_path.clone(),
+            expected: asset.target_file_size,
+            actual: actual_size,
+        });
+    }
+    if !asset.target_file_hash.is_empty() {
+        let actual_hash = file_md5_hex(&temp_path)?;
+        if actual_hash != asset.target_file_hash {
+            let _ = fs::remove_file(&temp_path);
+            return Err(SophonError::Md5Mismatch {
+                item: asset.target_file_path.clone(),
+                expected: asset.target_file_hash.clone(),
+                actual: actual_hash,
+            });
+        }
     }
     if target_path.exists() {
         let _ = fs::remove_file(&target_path);
@@ -1123,12 +1163,13 @@ fn apply_hdiff_patch(
         );
     }
 
+    let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
     let chunk_path = chunks_dir.join(&asset.patch_name);
     if !chunk_path.exists() {
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
     }
 
-    let diff_temp = game_dir.join(format!("patching/{}.diff", asset.patch_name));
+    let diff_temp = game_dir.join(format!("patching/{}.diff", safe_patch_name));
     {
         let mut chunk_file = fs::File::open(&chunk_path)?;
         chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
@@ -1144,7 +1185,7 @@ fn apply_hdiff_patch(
     }
 
     let target_path = game_dir.join(&asset.target_file_path);
-    let temp_output = target_path.with_extension("temp");
+    let temp_output = game_dir.join(format!("patching/{}.tmp.out", asset.target_file_hash));
 
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
@@ -1164,6 +1205,15 @@ fn apply_hdiff_patch(
 
     match patch_result {
         Ok(true) => {
+            let actual_size = fs::metadata(&temp_output)?.len();
+            if actual_size != asset.target_file_size {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::SizeMismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_size,
+                    actual: actual_size,
+                });
+            }
             if !asset.target_file_hash.is_empty() {
                 let actual_hash = file_md5_hex(&temp_output)?;
                 if actual_hash != asset.target_file_hash {
@@ -1205,7 +1255,8 @@ fn apply_hdiff_patch_from_files(
 ) -> SophonResult<()> {
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
 
-    let empty_original_path = game_dir.join(format!("patching/{}.diff_ref", asset.patch_name));
+    let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+    let empty_original_path = game_dir.join(format!("patching/{}.diff_ref", safe_patch_name));
     {
         if let Some(parent) = empty_original_path.parent() {
             fs::create_dir_all(parent)?;
@@ -1213,7 +1264,8 @@ fn apply_hdiff_patch_from_files(
         fs::File::create(&empty_original_path)?;
     }
 
-    let temp_output = target_path.with_extension("temp");
+    let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+    let temp_output = game_dir.join(format!("patching/{}.tmp.out", safe_hash));
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1232,6 +1284,15 @@ fn apply_hdiff_patch_from_files(
 
     match patch_result {
         Ok(true) => {
+            let actual_size = fs::metadata(&temp_output)?.len();
+            if actual_size != asset.target_file_size {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::SizeMismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_size,
+                    actual: actual_size,
+                });
+            }
             if !asset.target_file_hash.is_empty() {
                 let actual_hash = file_md5_hex(&temp_output)?;
                 if actual_hash != asset.target_file_hash {
