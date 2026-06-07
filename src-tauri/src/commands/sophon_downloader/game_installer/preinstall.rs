@@ -378,7 +378,11 @@ pub async fn preinstall_download(
 
     let installed_tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
 
-    let total_bytes: u64 = plan.unique_chunks.iter().map(|c| c.patch_size).sum();
+    let total_bytes: u64 = plan
+        .unique_chunks
+        .iter()
+        .map(|c| c.patch_size)
+        .fold(0u64, |acc, x| acc.saturating_add(x));
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let resume_offset: u64 = {
         let existing: u64 = plan

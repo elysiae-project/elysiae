@@ -354,7 +354,7 @@ fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
         .flat_map(|f| f.asset_chunks.iter())
         .filter(|c| seen_chunks.insert(c.chunk_name.as_str()))
         .map(|c| c.chunk_size)
-        .sum();
+        .fold(0u64, |acc, x| acc.saturating_add(x));
 
     let total_files: u64 = installer_data.iter().map(|d| d.files.len() as u64).sum();
 
@@ -420,7 +420,7 @@ async fn build_download_state(
         .iter()
         .flat_map(|d| d.files.iter())
         .map(|f| f.asset_chunks.len())
-        .sum();
+        .fold(0usize, |acc, x| acc.saturating_add(x));
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
     let mut download_items_index: HashMap<String, usize> = HashMap::with_capacity(total_chunks);
@@ -517,7 +517,6 @@ async fn drain_join_set(
     }
     Ok(())
 }
-
 
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
@@ -751,7 +750,8 @@ async fn process_download_item(
     }
 
     let db = if was_actually_downloaded {
-        ctx.downloaded_bytes.fetch_add(item.chunk.chunk_size, Ordering::Relaxed);
+        ctx.downloaded_bytes
+            .fetch_add(item.chunk.chunk_size, Ordering::Relaxed);
         ctx.downloaded_bytes.load(Ordering::Relaxed)
     } else {
         ctx.downloaded_bytes.load(Ordering::Relaxed)
@@ -1107,9 +1107,12 @@ pub async fn install(
                     };
                     if valid {
                         indices.insert(file_idx);
-                        let file_chunk_size: u64 =
-                            file.asset_chunks.iter().map(|c| c.chunk_size).sum();
-                        resume_bytes_offset += file_chunk_size;
+                        let file_chunk_size: u64 = file
+                            .asset_chunks
+                            .iter()
+                            .map(|c| c.chunk_size)
+                            .fold(0u64, |acc, x| acc.saturating_add(x));
+                        resume_bytes_offset = resume_bytes_offset.saturating_add(file_chunk_size);
                         for c in &file.asset_chunks {
                             completed_chunk_names.insert(&c.chunk_name);
                         }
