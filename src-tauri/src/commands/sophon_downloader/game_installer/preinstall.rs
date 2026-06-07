@@ -659,7 +659,14 @@ async fn download_patch_chunk_inner(
                 file.write_all(&bytes).await?;
             }
             Ok(None) => break,
-            Err(_) => continue,
+            Err(_) => {
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(SophonError::DownloadFailed {
+                    chunk: dest.display().to_string(),
+                    attempts: 1,
+                    error: "Stream timed out while downloading chunk".to_string(),
+                });
+            }
         }
     }
     file.flush().await?;
