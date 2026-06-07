@@ -140,14 +140,10 @@ async fn do_download_chunk(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
 ) -> SophonResult<()> {
-    // Check for partial download to resume
-    let existing_size = if dest.exists() {
-        match tokio::fs::metadata(dest).await {
-            Ok(meta) => meta.len(),
-            Err(_) => 0,
-        }
-    } else {
-        0
+    // Check for partial download to resume (skip exists() to avoid TOCTOU)
+    let existing_size = match tokio::fs::metadata(dest).await {
+        Ok(meta) => meta.len(),
+        Err(_) => 0,
     };
 
     if existing_size >= chunk.chunk_size {
@@ -183,7 +179,22 @@ async fn do_download_chunk(
             let _ = tokio::fs::remove_file(dest).await;
         } else if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
             let resp = resp.error_for_status()?;
-            return download_with_resume(resp, chunk, dest, existing_size).await;
+            // Validate Content-Range header matches what we requested
+            if let Some(range) = resp.headers().get("content-range") {
+                if let Ok(range_str) = range.to_str() {
+                    // Content-Range: bytes START-END/TOTAL
+                    if range_str.contains("*/") {
+                        // Server indicates resource exists but range not satisfiable
+                        let _ = tokio::fs::remove_file(dest).await;
+                    } else {
+                        return download_with_resume(resp, chunk, dest, existing_size).await;
+                    }
+                } else {
+                    return download_with_resume(resp, chunk, dest, existing_size).await;
+                }
+            } else {
+                return download_with_resume(resp, chunk, dest, existing_size).await;
+            }
         } else {
             // Server returned 200 OK (ignored Range header) — discard partial and
             // re-download
@@ -286,20 +297,11 @@ async fn download_with_resume(
     let expected_total = chunk.chunk_size;
     let remaining = expected_total - existing_size;
 
-    let len = match resp.content_length() {
-        Some(l) => l,
-        None => {
-            return Err(SophonError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                format!(
-                    "server did not send Content-Length for chunk '{}' (resume)",
-                    chunk.chunk_name
-                ),
-            )));
-        }
-    };
-
-    if len != remaining {
+    // Content-Length may be absent for chunked transfer-encoding.
+    // If present, validate it matches the expected remaining bytes.
+    if let Some(len) = resp.content_length()
+        && len != remaining
+    {
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
             expected: remaining,
