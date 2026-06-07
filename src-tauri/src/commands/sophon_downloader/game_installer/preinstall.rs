@@ -804,7 +804,7 @@ pub async fn apply_preinstall(
                         "CopyOver failed for {}: {e}, falling back to DownloadOver",
                         asset.target_file_path
                     );
-                    apply_download_over(client, game_dir, &state, asset).await?;
+                    apply_download_over_with_retry(client, game_dir, &state, asset).await?;
                 }
             }
             PatchMethod::Patch => {
@@ -828,11 +828,11 @@ pub async fn apply_preinstall(
                         "HDiff patch failed for {}: {e}, falling back to DownloadOver",
                         asset.target_file_path
                     );
-                    apply_download_over(client, game_dir, &state, asset).await?;
+                    apply_download_over_with_retry(client, game_dir, &state, asset).await?;
                 }
             }
             PatchMethod::DownloadOver => {
-                apply_download_over(client, game_dir, &state, asset).await?;
+                apply_download_over_with_retry(client, game_dir, &state, asset).await?;
             }
             PatchMethod::Remove | PatchMethod::Skip => {}
         }
@@ -1430,6 +1430,46 @@ fn apply_hdiff_patch_from_files(
             })
         }
     }
+}
+
+async fn apply_download_over_with_retry(
+    client: &Client,
+    game_dir: &Path,
+    state: &PreinstallState,
+    asset: &PatchAssetInfo,
+) -> SophonResult<()> {
+    const MAX_RETRIES: u32 = 5;
+    const INITIAL_DELAY_MS: u64 = 1000;
+
+    let mut last_err = None;
+    for attempt in 0..MAX_RETRIES {
+        match apply_download_over(client, game_dir, state, asset).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                let err_msg = e.to_string();
+                last_err = Some(e);
+                let is_last = attempt == MAX_RETRIES - 1;
+                if is_last {
+                    break;
+                }
+                let delay = std::time::Duration::from_millis(INITIAL_DELAY_MS * (1 << attempt));
+                log::warn!(
+                    "DownloadOver failed for {} (attempt {}/{}), retrying in {}ms: {}",
+                    asset.target_file_path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    delay.as_millis(),
+                    err_msg
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| SophonError::DownloadFailed {
+        chunk: asset.target_file_path.clone(),
+        attempts: MAX_RETRIES,
+        error: "All retry attempts exhausted".to_string(),
+    }))
 }
 
 async fn apply_download_over(
