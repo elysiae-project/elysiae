@@ -502,10 +502,22 @@ async fn drain_join_set(
     join_set: &mut tokio::task::JoinSet<Result<SophonResult<()>, tokio::task::JoinError>>,
 ) -> SophonResult<()> {
     while let Some(res) = join_set.join_next().await {
-        let _ = res??;
+        match res {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(e))) => {
+                log::error!("Assembly task failed: {}", e);
+            }
+            Ok(Err(e)) => {
+                log::error!("Assembly task join error: {}", e);
+            }
+            Err(e) => {
+                log::error!("Assembly task join error: {}", e);
+            }
+        }
     }
     Ok(())
 }
+
 
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
