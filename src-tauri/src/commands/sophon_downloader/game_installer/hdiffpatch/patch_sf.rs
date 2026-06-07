@@ -243,7 +243,7 @@ fn rle_varint(buf: &[u8], pos: &mut usize) -> usize {
     let mut val = (first & 0x7F) as u64;
     if (first & 0x80) != 0 {
         loop {
-            if val > (u64::MAX >> 7) {
+            if val >= (u64::MAX >> 7) {
                 return val as usize;
             }
             if *pos >= buf.len() {
