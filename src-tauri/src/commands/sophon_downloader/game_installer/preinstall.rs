@@ -16,6 +16,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
 use tokio::io::{AsyncWriteExt, BufWriter as TokioBufWriter};
+use tokio::time::{Duration, timeout};
 
 use super::api::{
     fetch_build, fetch_front_door, fetch_patch_build, fetch_patch_manifest, is_known_vo_locale,
@@ -624,17 +625,51 @@ async fn download_patch_chunk_inner(
     expected_md5: &str,
 ) -> SophonResult<()> {
     let resp = client.get(url).send().await?.error_for_status()?;
+    let content_length: Option<u64> = resp
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
     let mut stream = resp.bytes_stream();
     let file = tokio::fs::File::create(dest).await?;
     let mut file = TokioBufWriter::new(file);
     let mut hasher = Md5::new();
+    let mut total_len = 0u64;
 
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk?;
-        hasher.update(&bytes);
-        file.write_all(&bytes).await?;
+    loop {
+        match timeout(Duration::from_millis(5000), stream.next()).await {
+            Ok(Some(chunk)) => {
+                let bytes = chunk?;
+                total_len += bytes.len() as u64;
+                if let Some(expected_len) = content_length
+                    && total_len > expected_len
+                {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::SizeMismatch {
+                        item: dest.display().to_string(),
+                        expected: expected_len,
+                        actual: total_len,
+                    });
+                }
+                hasher.update(&bytes);
+                file.write_all(&bytes).await?;
+            }
+            Ok(None) => break,
+            Err(_) => continue,
+        }
     }
     file.flush().await?;
+
+    if let Some(expected_len) = content_length
+        && total_len != expected_len
+    {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(SophonError::SizeMismatch {
+            item: dest.display().to_string(),
+            expected: expected_len,
+            actual: total_len,
+        });
+    }
 
     if !expected_md5.is_empty() {
         let actual = hex::encode(hasher.finalize());
