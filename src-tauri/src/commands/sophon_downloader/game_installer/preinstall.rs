@@ -1288,11 +1288,10 @@ fn apply_hdiff_patch(
     let dp = diff_temp.to_string_lossy().into_owned();
     let tp = temp_output.to_string_lossy().into_owned();
 
-    let patch_result = std::thread::spawn(move || {
+    let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
         hdiff.apply()
-    })
-    .join();
+    }));
 
     let _ = fs::remove_file(&diff_temp);
 
@@ -1374,11 +1373,10 @@ fn apply_hdiff_patch_from_files(
     let dp = diff_path.to_string_lossy().to_string();
     let tp = temp_output.to_string_lossy().to_string();
 
-    let patch_result = std::thread::spawn(move || {
+    let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
         hdiff.apply()
-    })
-    .join();
+    }));
 
     let _ = fs::remove_file(&empty_original_path);
 
