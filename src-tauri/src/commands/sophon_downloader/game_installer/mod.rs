@@ -53,7 +53,7 @@ pub const ADAPTIVE_WINDOW_SECS: u64 = 2;
 
 pub const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
-    "/hyp/hyp-connect/api/getGameBranches?&launcher_id=VYTpXlbWo8"
+    "/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8"
 );
 pub const SOPHON_BUILD_URL_BASE: &str = concat!(
     "https://sg-public-api.hoyoverse.com",

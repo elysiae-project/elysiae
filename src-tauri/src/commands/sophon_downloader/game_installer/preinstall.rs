@@ -1086,7 +1086,7 @@ fn filter_patch_assets_for_removed_features(cache: &FilterCache, assets: &mut [P
     for asset in assets.iter_mut() {
         if matches!(
             asset.patch_method,
-            PatchMethod::DownloadOver | PatchMethod::Patch
+            PatchMethod::CopyOver | PatchMethod::DownloadOver | PatchMethod::Patch
         ) && is_filtered_asset(cache, asset)
         {
             asset.patch_method = PatchMethod::Skip;

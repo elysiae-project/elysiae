@@ -117,13 +117,11 @@ pub async fn fetch_build(
     branch: &PackageBranch,
     tag: Option<&str>,
 ) -> SophonResult<SophonBuildData> {
-    let mut url = format!(
-        "{}?branch={}&package_id={}&password={}",
-        SOPHON_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password,
+    let tag_str = tag.unwrap_or(&branch.tag);
+    let url = format!(
+        "{}?branch={}&package_id={}&password={}&tag={}",
+        SOPHON_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password, tag_str,
     );
-    if let Some(t) = tag {
-        url.push_str(&format!("&tag={t}"));
-    }
 
     let resp: SophonBuildResponse = client
         .get(&url)
