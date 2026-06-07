@@ -37,8 +37,6 @@ pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError
     Ok(())
 }
 
-const MAX_DOWNLOAD_RETRIES: u32 = 4;
-
 /// Parse Content-Range header to extract start position.
 /// Returns Some(start) for "bytes START-END/TOTAL", None for unparseable.
 /// Example: "bytes 500-999/1000" -> Some(500)
@@ -97,55 +95,7 @@ pub async fn download_chunk(
     }
 
     let url = chunk_download.url_for(&chunk.chunk_name);
-    let mut last_err = String::new();
-
-    for attempt in 0..MAX_DOWNLOAD_RETRIES {
-        if let Some(parent) = dest.parent()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await
-        {
-            eprintln!("Failed to create parent directory: {}", e);
-        }
-
-        match do_download_chunk(client, &url, chunk, dest).await {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                last_err = e.to_string();
-
-                match e {
-                    SophonError::SizeMismatch { .. }
-                    | SophonError::Md5Mismatch { .. }
-                    | SophonError::PathTraversal(_)
-                    | SophonError::InvalidAssetName(_)
-                    | SophonError::NoSpaceAvailable { .. }
-                    | SophonError::Cancelled => {
-                        return Err(e);
-                    }
-                    _ => {
-                        if attempt < MAX_DOWNLOAD_RETRIES - 1 {
-                            eprintln!(
-                                "Chunk {} failed (attempt {}/{}): {}",
-                                chunk.chunk_name,
-                                attempt + 1,
-                                MAX_DOWNLOAD_RETRIES,
-                                last_err
-                            );
-                            // Don't remove the file on retry to allow resume
-                            tokio::time::sleep(tokio::time::Duration::from_millis(
-                                100 * (1 << attempt).min(8),
-                            ))
-                            .await;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Err(SophonError::DownloadFailed {
-        chunk: chunk.chunk_name.clone(),
-        attempts: MAX_DOWNLOAD_RETRIES,
-        error: last_err,
-    })
+    do_download_chunk(client, &url, chunk, dest).await
 }
 
 async fn do_download_chunk(
