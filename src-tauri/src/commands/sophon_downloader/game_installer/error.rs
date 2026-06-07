@@ -137,6 +137,9 @@ pub enum SophonError {
         needed: u64,
         available: u64,
     },
+
+    #[error("Resume failed: {message}")]
+    ResumeFailed { message: String },
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {

@@ -265,6 +265,13 @@ async fn download_with_resume(
     dest: &Path,
     existing_size: u64,
 ) -> SophonResult<()> {
+    if resp.status() == reqwest::StatusCode::OK {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(SophonError::ResumeFailed {
+            message: "Server returned 200 OK instead of 206 Partial Content".to_string(),
+        });
+    }
+
     let expected_total = chunk.chunk_size;
     let remaining = expected_total - existing_size;
 
