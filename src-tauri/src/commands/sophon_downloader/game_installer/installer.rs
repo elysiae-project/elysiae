@@ -738,7 +738,7 @@ async fn process_download_item(
         }
     }
 
-    let db = if was_actually_downloaded || !item.is_pre_downloaded {
+    let db = if was_actually_downloaded {
         ctx.downloaded_bytes
             .fetch_add(item.chunk.chunk_size, Ordering::Relaxed)
             + item.chunk.chunk_size
@@ -746,7 +746,7 @@ async fn process_download_item(
         ctx.downloaded_bytes.load(Ordering::Relaxed)
     };
 
-    if was_actually_downloaded || !item.is_pre_downloaded {
+    if was_actually_downloaded {
         adaptive.record_bytes(item.chunk.chunk_size);
     }
 
