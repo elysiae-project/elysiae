@@ -273,6 +273,7 @@ async fn download_with_resume(
     if let Some(len) = resp.content_length()
         && len != remaining
     {
+        let _ = tokio::fs::remove_file(dest).await;
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
             expected: remaining,
