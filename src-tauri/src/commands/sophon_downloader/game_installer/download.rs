@@ -39,6 +39,20 @@ pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError
 
 const MAX_DOWNLOAD_RETRIES: u32 = 4;
 
+/// Parse Content-Range header to extract start position.
+/// Returns Some(start) for "bytes START-END/TOTAL", None for unparseable.
+/// Example: "bytes 500-999/1000" -> Some(500)
+fn parse_content_range_start(range_str: &str) -> Option<u64> {
+    let prefix = "bytes ";
+    if !range_str.starts_with(prefix) {
+        return None;
+    }
+    let after_prefix = &range_str[prefix.len()..];
+    let dash_pos = after_prefix.find('-')?;
+    let start_str = &after_prefix[..dash_pos];
+    start_str.parse().ok()
+}
+
 async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     let mut file = tokio::io::BufReader::new(tokio::fs::File::open(path).await?);
     let mut hasher = Md5::new();
@@ -186,6 +200,13 @@ async fn do_download_chunk(
                     if range_str.contains("*/") {
                         // Server indicates resource exists but range not satisfiable
                         let _ = tokio::fs::remove_file(dest).await;
+                    } else if let Some(start) = parse_content_range_start(range_str) {
+                        if start != existing_size {
+                            // Server returned wrong range start - discard and re-download
+                            let _ = tokio::fs::remove_file(dest).await;
+                        } else {
+                            return download_with_resume(resp, chunk, dest, existing_size).await;
+                        }
                     } else {
                         return download_with_resume(resp, chunk, dest, existing_size).await;
                     }
@@ -243,7 +264,7 @@ async fn download_full_file_with_response(
     let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
 
     loop {
-        match timeout(Duration::from_millis(250), stream.next()).await {
+        match timeout(Duration::from_millis(5000), stream.next()).await {
             Ok(Some(chunk_bytes)) => {
                 let bytes = chunk_bytes?;
                 total_len += bytes.len() as u64;
@@ -320,7 +341,7 @@ async fn download_with_resume(
     let mut total_len = existing_size;
 
     loop {
-        match timeout(Duration::from_millis(250), stream.next()).await {
+        match timeout(Duration::from_millis(5000), stream.next()).await {
             Ok(Some(chunk_bytes)) => {
                 let bytes = chunk_bytes?;
                 file.write_all(&bytes).await?;
