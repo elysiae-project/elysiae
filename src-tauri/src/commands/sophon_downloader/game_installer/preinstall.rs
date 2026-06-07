@@ -1171,6 +1171,7 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     Ok(())
 }
 
+
 fn apply_hdiff_patch(
     game_dir: &Path,
     chunks_dir: &Path,
