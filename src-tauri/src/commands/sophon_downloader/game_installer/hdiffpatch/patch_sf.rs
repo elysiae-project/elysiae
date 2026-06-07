@@ -248,7 +248,7 @@ fn rle_varint(buf: &[u8], pos: &mut usize) -> Option<usize> {
     if (first & 0x80) != 0 {
         loop {
             if val >= (u64::MAX >> 7) {
-                break;
+                return None;
             }
             if *pos >= buf.len() {
                 return None;
@@ -260,6 +260,9 @@ fn rle_varint(buf: &[u8], pos: &mut usize) -> Option<usize> {
                 break;
             }
         }
+    }
+    if val > usize::MAX as u64 {
+        return None;
     }
     Some(val as usize)
 }
