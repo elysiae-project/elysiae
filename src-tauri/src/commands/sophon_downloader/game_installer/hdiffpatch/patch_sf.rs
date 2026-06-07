@@ -116,7 +116,7 @@ fn patch_loop(
                 while rem > 0 {
                     let take = (io_buf.len() as u64).min(rem) as usize;
                     old.read_exact(&mut io_buf[..take])?;
-                    rle0.add(&mut io_buf[..take]);
+                    rle0.add(&mut io_buf[..take])?;
                     out.write_all(&io_buf[..take])?;
                     rem -= take as u64;
                 }
@@ -192,7 +192,7 @@ impl<'a> Rle0Decoder<'a> {
         }
     }
 
-    fn add(&mut self, data: &mut [u8]) {
+    fn add(&mut self, data: &mut [u8]) -> std::io::Result<()> {
         let mut dp = 0usize;
         let mut rem = data.len();
         while rem > 0 {
@@ -218,24 +218,29 @@ impl<'a> Rle0Decoder<'a> {
                 rem -= to_read;
             } else if self.need_decode0 {
                 self.need_decode0 = false;
-                self.len0 = rle_varint(self.buf, &mut self.pos);
-                if self.len0 == 0 && self.pos >= self.buf.len() {
-                    break;
+                match rle_varint(self.buf, &mut self.pos) {
+                    Some(v) => self.len0 = v,
+                    None => {
+                        return Err(std::io::Error::other("truncated RLE varint in RLE0 (len0)"));
+                    }
                 }
             } else {
                 self.need_decode0 = true;
-                self.lenv = rle_varint(self.buf, &mut self.pos);
-                if self.lenv == 0 && self.pos >= self.buf.len() {
-                    break;
+                match rle_varint(self.buf, &mut self.pos) {
+                    Some(v) => self.lenv = v,
+                    None => {
+                        return Err(std::io::Error::other("truncated RLE varint in RLE0 (lenv)"));
+                    }
                 }
             }
         }
+        Ok(())
     }
 }
 
-fn rle_varint(buf: &[u8], pos: &mut usize) -> usize {
+fn rle_varint(buf: &[u8], pos: &mut usize) -> Option<usize> {
     if *pos >= buf.len() {
-        return 0;
+        return None;
     }
     let first = buf[*pos];
     *pos += 1;
@@ -243,10 +248,10 @@ fn rle_varint(buf: &[u8], pos: &mut usize) -> usize {
     if (first & 0x80) != 0 {
         loop {
             if val >= (u64::MAX >> 7) {
-                return val as usize;
+                break;
             }
             if *pos >= buf.len() {
-                return val as usize;
+                return None;
             }
             let b = buf[*pos];
             *pos += 1;
@@ -256,7 +261,7 @@ fn rle_varint(buf: &[u8], pos: &mut usize) -> usize {
             }
         }
     }
-    val as usize
+    Some(val as usize)
 }
 
 fn copy_n(
