@@ -424,14 +424,13 @@ async fn build_download_state(
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
     let mut download_items_index: HashMap<String, usize> = HashMap::with_capacity(total_chunks);
-    let mut file_idx = 0usize;
+
+    let mut all_files_index: usize = 0;
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
-        let needs_tmp_dir = data
-            .files
-            .iter()
-            .enumerate()
-            .any(|(i, _)| completed_indices.is_none_or(|set| !set.contains(&(file_idx + i))));
+        let needs_tmp_dir = data.files.iter().enumerate().any(|(i, _)| {
+            completed_indices.is_none_or(|set| !set.contains(&(all_files_index + i)))
+        });
         if needs_tmp_dir {
             let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
             let td = tmp_dir.clone();
@@ -441,22 +440,22 @@ async fn build_download_state(
         }
 
         for _ in 0..data.files.len() {
-            if completed_indices.is_some_and(|set| set.contains(&file_idx)) {
-                file_idx += 1;
+            if completed_indices.is_some_and(|set| set.contains(&all_files_index)) {
+                all_files_index += 1;
                 continue;
             }
 
-            let file = &ctx.all_files[file_idx];
+            let file = &ctx.all_files[all_files_index];
             let chunk_count = file.asset_chunks.len();
             if chunk_count == 0 {
-                let _ = assemble_tx.send((file_idx, tmp_dir_idx)).await;
-                file_idx += 1;
+                let _ = assemble_tx.send((all_files_index, tmp_dir_idx)).await;
+                all_files_index += 1;
                 continue;
             }
 
             register_chunks_for_file(
                 file,
-                file_idx,
+                all_files_index,
                 tmp_dir_idx,
                 ctx,
                 &chunk_to_files,
@@ -465,15 +464,15 @@ async fn build_download_state(
                 &data,
                 pre_downloaded,
             );
-            file_idx += 1;
+            all_files_index += 1;
         }
     }
 
     log::info!(
-        "build_download_state: {} download items, {} chunk->file mappings, file_idx={}",
+        "build_download_state: {} download items, {} chunk->file mappings, all_files_index={}",
         download_items.len(),
         chunk_to_files.len(),
-        file_idx,
+        all_files_index,
     );
     Ok((download_items, chunk_to_files))
 }
@@ -593,7 +592,7 @@ async fn check_needs_download(
     game_dir: &Path,
     verify_cache: &Arc<DashMap<String, VerificationEntry>>,
 ) -> SophonResult<bool> {
-    if !dest.exists() {
+    if tokio::fs::metadata(&dest).await.is_err() {
         return Ok(true);
     }
 

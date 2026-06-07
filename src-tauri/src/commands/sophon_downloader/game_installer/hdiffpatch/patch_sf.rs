@@ -202,21 +202,20 @@ impl<'a> Rle0Decoder<'a> {
                 dp += take;
                 rem -= take;
             } else if self.lenv > 0 {
-                let take = self.lenv.min(rem);
-                let end = self.pos.saturating_add(take).min(self.buf.len());
-                let actual_take = end - self.pos;
-                if actual_take == 0 {
+                let available = self.buf.len().saturating_sub(self.pos);
+                let to_read = self.lenv.min(available).min(rem);
+                if to_read == 0 {
                     self.lenv = 0;
                     continue;
                 }
-                let src = &self.buf[self.pos..end];
-                for i in 0..actual_take {
+                let src = &self.buf[self.pos..self.pos + to_read];
+                for i in 0..to_read {
                     data[dp + i] = data[dp + i].wrapping_add(src[i]);
                 }
-                self.pos += actual_take;
-                self.lenv -= actual_take;
-                dp += actual_take;
-                rem -= actual_take;
+                self.pos += to_read;
+                self.lenv -= to_read;
+                dp += to_read;
+                rem -= to_read;
             } else if self.need_decode0 {
                 self.need_decode0 = false;
                 self.len0 = rle_varint(self.buf, &mut self.pos);
