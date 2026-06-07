@@ -278,3 +278,89 @@ fn copy_n(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rle_varint_empty_buffer_returns_none() {
+        let mut pos = 0;
+        assert_eq!(rle_varint(&[], &mut pos), None);
+    }
+
+    #[test]
+    fn rle_varint_single_byte_ok() {
+        let buf = [0b00000010]; // value = 2
+        let mut pos = 0;
+        assert_eq!(rle_varint(&buf, &mut pos), Some(2));
+        assert_eq!(pos, 1);
+    }
+
+    #[test]
+    fn rle_varint_multi_byte_ok() {
+        // The encoding is big-endian 7-bit groups with continuation in MSB.
+        // Value 256 = 0x100 = (2 << 7) | 0
+        // First byte: 2 with continuation = 0x82
+        // Second byte: 0 with no continuation = 0x00
+        let buf = [0x82, 0x00];
+        let mut pos = 0;
+        assert_eq!(rle_varint(&buf, &mut pos), Some(256));
+        assert_eq!(pos, 2);
+    }
+
+    #[test]
+    fn rle_varint_truncated_multi_byte_returns_none() {
+        // Truncated multi-byte varint (continuation set on first byte but no second
+        // byte)
+        let buf = [0x80];
+        let mut pos = 0;
+        assert_eq!(rle_varint(&buf, &mut pos), None);
+    }
+
+    #[test]
+    fn rle0decoder_skip_all_bytes() {
+        // RLE stream: [3] -> skip 3 bytes
+        let rle_buf = [3u8];
+        let mut rle0 = Rle0Decoder::new(&rle_buf);
+        let mut data = [0xAAu8, 0xBB, 0xCC];
+        rle0.add(&mut data).unwrap();
+        // Should skip all three bytes without change
+        assert_eq!(data, [0xAA, 0xBB, 0xCC]);
+    }
+
+    #[test]
+    fn rle0decoder_xor_some_bytes() {
+        // RLE stream: skip 1 byte, then XOR 1 byte with 0x42
+        // varints: len0=1, lenv=1
+        // diff data after varints: 0x42
+        let rle_buf = [1u8, 1u8, 0x42u8];
+        let mut rle0 = Rle0Decoder::new(&rle_buf);
+        let mut data = [0x00u8, 0x00u8];
+        rle0.add(&mut data).unwrap();
+        // First byte skipped, second byte XORed with 0x42
+        assert_eq!(data, [0x00, 0x42]);
+    }
+
+    #[test]
+    fn rle0decoder_truncated_varint_fails() {
+        // Truncated rle0 stream: just continuation marker with no follow-up
+        let rle_buf = [0x80]; // continuation bit set, but no next byte
+        let mut rle0 = Rle0Decoder::new(&rle_buf);
+        let mut data = [0u8; 1];
+        let result = rle0.add(&mut data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rle_varint_0x3fff_ok() {
+        // 0x3FFF = 16383 = (127 << 7) | 127
+        // First byte: 127 with continuation = 0xFF
+        // Second byte: 127 without continuation = 0x7F
+        let buf = [0xFF, 0x7F];
+        let mut pos = 0;
+        let result = rle_varint(&buf, &mut pos);
+        assert_eq!(result, Some(0x3FFF));
+        assert_eq!(pos, 2);
+    }
+}
