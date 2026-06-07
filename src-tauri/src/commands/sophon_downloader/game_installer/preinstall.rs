@@ -1245,9 +1245,13 @@ fn apply_hdiff_patch(
         && !is_filtered_asset(cache, asset)
     {
         log::warn!(
-            "Original file MD5 mismatch for {} — proceeding with patch (reference has this check commented out)",
+            "Original file MD5 mismatch for {} — deleting and falling back to DownloadOver (matching reference behavior)",
             original_path.display()
         );
+        let _ = fs::remove_file(&original_path);
+        return Err(SophonError::OriginalFileMissing(
+            original_path.to_string_lossy().to_string(),
+        ));
     }
 
     let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
