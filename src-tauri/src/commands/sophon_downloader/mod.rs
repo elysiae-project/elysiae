@@ -317,8 +317,11 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
             Ok(f) => f,
             Err(_) => return,
         };
-        if serde_json::to_writer(file, &snapshot).is_ok() {
-            let _ = fs::rename(&tmp_path, &path);
+        if serde_json::to_writer(file, &snapshot).is_ok()
+            && let Err(e) = fs::rename(&tmp_path, &path)
+        {
+            let _ = fs::remove_file(&tmp_path);
+            log::error!("Failed to rename state file: {}", e);
         }
     })
 }
