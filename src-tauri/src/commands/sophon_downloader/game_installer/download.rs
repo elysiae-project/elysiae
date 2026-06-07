@@ -273,7 +273,7 @@ async fn download_with_resume(
     }
 
     let expected_total = chunk.chunk_size;
-    let remaining = expected_total - existing_size;
+    let remaining = expected_total.saturating_sub(existing_size);
 
     // Content-Length may be absent for chunked transfer-encoding.
     // If present, validate it matches the expected remaining bytes.
