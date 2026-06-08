@@ -873,24 +873,55 @@ pub async fn apply_preinstall(
 
         match asset.patch_method {
             PatchMethod::CopyOver => {
-                let gd = game_dir.to_path_buf();
-                let cd = chunks_dir.to_path_buf();
-                let a = asset.clone();
-                let result =
-                    tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await?;
-                if let Err(ref e) = result {
-                    if is_filtered {
-                        log::warn!(
-                            "CopyOver failed for filtered asset, skipping: {} ({e})",
-                            asset.target_file_path
-                        );
-                        applied_files.fetch_add(1, Ordering::Relaxed);
-                        continue;
+                const COPY_MAX_RETRIES: usize = 2;
+                let mut fallback_to_download = false;
+                let mut skip_progress = false;
+
+                for attempt in 0..=COPY_MAX_RETRIES {
+                    let gd = game_dir.to_path_buf();
+                    let cd = chunks_dir.to_path_buf();
+                    let a = asset.clone();
+                    let result =
+                        tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await?;
+
+                    match result {
+                        Ok(()) => break,
+                        Err(e) => {
+                            if is_filtered {
+                                log::warn!(
+                                    "CopyOver failed for filtered asset, skipping: {} ({e})",
+                                    asset.target_file_path
+                                );
+                                applied_files.fetch_add(1, Ordering::Relaxed);
+                                skip_progress = true;
+                                break;
+                            }
+                            if attempt == COPY_MAX_RETRIES {
+                                log::warn!(
+                                    "CopyOver failed for {} after {} attempts: {e}, falling back to DownloadOver",
+                                    asset.target_file_path,
+                                    COPY_MAX_RETRIES + 1
+                                );
+                                fallback_to_download = true;
+                            } else {
+                                let delay = Duration::from_millis(500 * (1u64 << (attempt as u64)));
+                                log::warn!(
+                                    "CopyOver failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
+                                    asset.target_file_path,
+                                    attempt + 1,
+                                    COPY_MAX_RETRIES + 1,
+                                    delay.as_millis()
+                                );
+                                tokio::time::sleep(delay).await;
+                            }
+                        }
                     }
-                    log::warn!(
-                        "CopyOver failed for {}: {e}, falling back to DownloadOver",
-                        asset.target_file_path
-                    );
+                }
+
+                if skip_progress {
+                    continue;
+                }
+                if fallback_to_download {
                     apply_download_over_with_retry(
                         client,
                         game_dir,
@@ -902,26 +933,57 @@ pub async fn apply_preinstall(
                 }
             }
             PatchMethod::Patch => {
-                let gd = game_dir.to_path_buf();
-                let cd = chunks_dir.to_path_buf();
-                let a = asset.clone();
-                let fc = filter_cache.clone();
-                let result =
-                    tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a, &fc))
-                        .await?;
-                if let Err(ref e) = result {
-                    if is_filtered {
-                        log::warn!(
-                            "HDiff patch failed for filtered asset, skipping: {} ({e})",
-                            asset.target_file_path
-                        );
-                        applied_files.fetch_add(1, Ordering::Relaxed);
-                        continue;
+                const PATCH_MAX_RETRIES: usize = 2;
+                let mut fallback_to_download = false;
+                let mut skip_progress = false;
+
+                for attempt in 0..=PATCH_MAX_RETRIES {
+                    let gd = game_dir.to_path_buf();
+                    let cd = chunks_dir.to_path_buf();
+                    let a = asset.clone();
+                    let fc = filter_cache.clone();
+                    let result =
+                        tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a, &fc))
+                            .await?;
+
+                    match result {
+                        Ok(()) => break,
+                        Err(e) => {
+                            if is_filtered {
+                                log::warn!(
+                                    "HDiff patch failed for filtered asset, skipping: {} ({e})",
+                                    asset.target_file_path
+                                );
+                                applied_files.fetch_add(1, Ordering::Relaxed);
+                                skip_progress = true;
+                                break;
+                            }
+                            if attempt == PATCH_MAX_RETRIES {
+                                log::warn!(
+                                    "HDiff patch failed for {} after {} attempts: {e}, falling back to DownloadOver",
+                                    asset.target_file_path,
+                                    PATCH_MAX_RETRIES + 1
+                                );
+                                fallback_to_download = true;
+                            } else {
+                                let delay = Duration::from_millis(500 * (1u64 << (attempt as u64)));
+                                log::warn!(
+                                    "HDiff patch failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
+                                    asset.target_file_path,
+                                    attempt + 1,
+                                    PATCH_MAX_RETRIES + 1,
+                                    delay.as_millis()
+                                );
+                                tokio::time::sleep(delay).await;
+                            }
+                        }
                     }
-                    log::warn!(
-                        "HDiff patch failed for {}: {e}, falling back to DownloadOver",
-                        asset.target_file_path
-                    );
+                }
+
+                if skip_progress {
+                    continue;
+                }
+                if fallback_to_download {
                     apply_download_over_with_retry(
                         client,
                         game_dir,
