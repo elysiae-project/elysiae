@@ -184,6 +184,7 @@ pub fn assemble_file(
             chunk.chunk_size_decompressed,
             file_hasher.as_mut(),
             &mut transfer_buffer,
+            &chunk.chunk_decompressed_hash_md5,
         )?;
 
         total_written += bytes_written;
@@ -229,6 +230,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     expected_size: u64,
     file_hasher: Option<&mut Md5>,
     buffer: &mut [u8],
+    chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
     let buf_reader = BufReader::with_capacity(64 * 1024, f);
@@ -237,6 +239,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     writer.seek(SeekFrom::Start(offset))?;
 
     let mut bytes_written: u64 = 0;
+    let mut chunk_hasher = Md5::new();
 
     match file_hasher {
         Some(hasher) => {
@@ -249,6 +252,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
                 if n == 0 {
                     break;
                 }
+                chunk_hasher.update(&buffer[..n]);
                 hw.write_all(&buffer[..n])?;
                 bytes_written += n as u64;
             }
@@ -258,6 +262,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
             if n == 0 {
                 break;
             }
+            chunk_hasher.update(&buffer[..n]);
             writer.write_all(&buffer[..n])?;
             bytes_written += n as u64;
         },
@@ -269,6 +274,19 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
             expected: expected_size,
             actual: bytes_written,
         });
+    }
+
+    if !chunk_decompressed_hash_md5.is_empty()
+        && !chunk_decompressed_hash_md5.chars().all(|c| c == '0')
+    {
+        let actual = hex::encode(chunk_hasher.finalize());
+        if actual != chunk_decompressed_hash_md5 {
+            return Err(SophonError::Md5Mismatch {
+                item: chunk_path.display().to_string(),
+                expected: chunk_decompressed_hash_md5.to_string(),
+                actual,
+            });
+        }
     }
 
     Ok(bytes_written)
@@ -761,6 +779,109 @@ mod tests {
         assert!(matches!(
             result.unwrap_err(),
             SophonError::IndexOutOfBounds { kind: "file", .. }
+        ));
+    }
+
+    #[test]
+    fn assemble_file_chunk_md5_passes() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let data = b"chunk with md5 check";
+        make_chunk_file(&chunks_dir, "ck0", data);
+        let chunk_md5 = compute_md5_hex(data);
+        let file_md5 = compute_md5_hex(data);
+
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "ck0".to_string(),
+            chunk_decompressed_hash_md5: chunk_md5,
+            chunk_on_file_offset: 0,
+            chunk_size: 0,
+            chunk_size_decompressed: data.len() as u64,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        };
+
+        let file = SophonManifestAssetProperty {
+            asset_name: "verified.bin".to_string(),
+            asset_chunks: vec![chunk],
+            asset_type: 0,
+            asset_size: data.len() as u64,
+            asset_hash_md5: file_md5,
+        };
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("ck0".to_string(), 1);
+        let verify_cache = DashMap::new();
+
+        assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        )
+        .unwrap();
+
+        let result = fs::read(game_dir.join("verified.bin")).unwrap();
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn assemble_file_chunk_md5_mismatch_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let data = b"real chunk data here";
+        make_chunk_file(&chunks_dir, "ck1", data);
+        let file_md5 = compute_md5_hex(data);
+
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "ck1".to_string(),
+            chunk_decompressed_hash_md5: "deadbeefdeadbeefdeadbeefdeadbeef".to_string(),
+            chunk_on_file_offset: 0,
+            chunk_size: 0,
+            chunk_size_decompressed: data.len() as u64,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        };
+
+        let file = SophonManifestAssetProperty {
+            asset_name: "bad.bin".to_string(),
+            asset_chunks: vec![chunk],
+            asset_type: 0,
+            asset_size: data.len() as u64,
+            asset_hash_md5: file_md5,
+        };
+
+        let chunk_refcounts = DashMap::new();
+        chunk_refcounts.insert("ck1".to_string(), 1);
+        let verify_cache = DashMap::new();
+
+        let result = assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::Md5Mismatch { .. }
         ));
     }
 
