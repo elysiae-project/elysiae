@@ -1785,6 +1785,24 @@ mod tests {
     }
 
     #[test]
+    fn verify_file_hash_empty_returns_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_empty");
+        fs::write(&path, b"some data").unwrap();
+        assert!(verify_file_hash(&path, ""));
+    }
+
+    #[test]
+    fn verify_file_hash_whitespace_only_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_whitespace");
+        fs::write(&path, b"some data").unwrap();
+        assert!(!verify_file_hash(&path, "   "));
+        assert!(!verify_file_hash(&path, "\t"));
+        assert!(!verify_file_hash(&path, "\n"));
+    }
+
+    #[test]
     fn delete_preinstall_state_cleans_up() {
         let dir = tempfile::tempdir().unwrap();
         let state_path = PreinstallState::state_file_path(dir.path(), "5.0.0");
