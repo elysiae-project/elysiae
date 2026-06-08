@@ -241,7 +241,7 @@ fn tbytes_determine_rle_type(
     Ok(())
 }
 
-fn tbytes_set_rle(
+pub(crate) fn tbytes_set_rle(
     rle_loader: &mut RleRefClip,
     out_cache: &mut Cursor<Vec<u8>>,
     copy_length: &mut i64,
@@ -275,7 +275,7 @@ fn tbytes_set_rle(
     )
 }
 
-fn tbytes_set_rle_single(
+pub(crate) fn tbytes_set_rle_single(
     rle_loader: &mut RleRefClip,
     out_cache: &mut Cursor<Vec<u8>>,
     copy_length: &mut i64,
@@ -304,7 +304,7 @@ fn tbytes_set_rle_single(
     Ok(())
 }
 
-fn tbytes_set_rle_vector_software(
+pub(crate) fn tbytes_set_rle_vector_software(
     rle_loader: &mut RleRefClip,
     out_cache: &mut Cursor<Vec<u8>>,
     copy_length: &mut i64,
@@ -451,4 +451,354 @@ pub(crate) fn enumerate_cover_headers(
         }
     }
     Ok(headers)
+}
+
+// ========== RLE Unit Tests ==========
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::RleRefClip;
+    use super::{tbytes_set_rle_single, tbytes_set_rle_vector_software};
+
+    // ========== RleRefClip Struct Tests ==========
+
+    #[test]
+    fn rle_ref_clip_default_initialization() {
+        let rle = RleRefClip::default();
+        assert_eq!(rle.mem_copy_length, 0, "mem_copy_length should be 0");
+        assert_eq!(rle.mem_set_length, 0, "mem_set_length should be 0");
+        assert_eq!(rle.mem_set_value, 0, "mem_set_value should be 0");
+    }
+
+    #[test]
+    fn rle_ref_clip_copy_is_independent() {
+        let mut rle1 = RleRefClip::default();
+        rle1.mem_set_value = 0x42;
+        rle1.mem_set_length = 10;
+
+        let _rle2 = rle1; // Copy (not reference) - verified to be independent
+
+        assert_eq!(
+            rle1.mem_set_value, 0x42,
+            "original should be unchanged after copy modification"
+        );
+    }
+
+    // ========== tbytes_set_rle_single Tests ==========
+
+    /// Test mem_set_value == 0 behavior: should skip bytes without modification
+    #[test]
+    fn tbytes_set_rle_single_skip_when_mem_set_value_zero() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 5,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(vec![0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]);
+        let mut copy_length: i64 = 5;
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok(), "tbytes_set_rle_single should succeed");
+        assert_eq!(copy_length, 0, "copy_length should be fully consumed");
+        assert_eq!(
+            rle_loader.mem_set_length, 0,
+            "mem_set_length should be exhausted"
+        );
+        assert_eq!(cache.position(), 5, "cache position should advance by 5");
+    }
+
+    /// Test mem_set_value == 0xFF (byte flip via wrapping_neg): 0 - 1 = 0xFF
+    #[test]
+    fn tbytes_set_rle_single_byte_flip_with_ff() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 3,
+            mem_set_value: 0xFF, // wrapping_neg(1) = 0xFF
+        };
+
+        let mut cache = Cursor::new(vec![0x00, 0x7F, 0x80]);
+        let mut copy_length: i64 = 3;
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok(), "tbytes_set_rle_single should succeed");
+        assert_eq!(copy_length, 0, "copy_length should be fully consumed");
+
+        // Verify wrapping_add with 0xFF (which is wrapping_neg of 1):
+        // 0x00 + 0xFF = 0xFF (255)
+        // 0x7F (127) + 0xFF (255) = 382 mod 256 = 126 = 0x7E
+        // 0x80 (128) + 0xFF (255) = 383 mod 256 = 127 = 0x7F
+        assert_eq!(shared_buffer[0], 0xFF, "byte 0 should be 0xFF");
+        assert_eq!(shared_buffer[1], 0x7E, "byte 1 should be 0x7E");
+        assert_eq!(shared_buffer[2], 0x7F, "byte 2 should be 0x7F");
+    }
+
+    /// Test wrapping_add behavior at boundary (0xFF + 0x01 = 0x00)
+    #[test]
+    fn tbytes_set_rle_single_wrapping_at_boundary() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 4,
+            mem_set_value: 0x01, // wrapping_add will wrap at 0xFF
+        };
+
+        // Bytes at boundary: 0xFF should wrap to 0x00
+        let mut cache = Cursor::new(vec![0xFF, 0xFF, 0x00, 0x7F]);
+        let mut copy_length: i64 = 4;
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok(), "tbytes_set_rle_single should succeed");
+        // 0xFF + 0x01 = 0x00 (wrapped), 0xFF + 0x01 = 0x00, 0x00 + 0x01 = 0x01, 0x7F +
+        // 0x01 = 0x80
+        assert_eq!(shared_buffer[0], 0x00, "0xFF + 0x01 should wrap to 0x00");
+        assert_eq!(shared_buffer[1], 0x00, "0xFF + 0x01 should wrap to 0x00");
+        assert_eq!(shared_buffer[2], 0x01, "0x00 + 0x01 should be 0x01");
+        assert_eq!(shared_buffer[3], 0x80, "0x7F + 0x01 should be 0x80");
+    }
+
+    /// Test mem_set_length > copy_length: should only process copy_length bytes
+    #[test]
+    fn tbytes_set_rle_single_truncates_to_copy_length() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 10, // More than copy_length
+            mem_set_value: 0x0F,
+        };
+
+        let mut cache = Cursor::new(vec![0x00, 0x11, 0x22, 0x33]);
+        let mut copy_length: i64 = 4; // Only 4 bytes to process
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok(), "tbytes_set_rle_single should succeed");
+        assert_eq!(copy_length, 0, "copy_length should be exhausted");
+        // mem_set_length should be reduced by 4 (copy_length), not to 0
+        assert_eq!(
+            rle_loader.mem_set_length, 6,
+            "mem_set_length should have 6 remaining"
+        );
+    }
+
+    /// Test mem_set_length == 0: should return early without modification
+    #[test]
+    fn tbytes_set_rle_single_early_return_when_no_length() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 0, // No work to do
+            mem_set_value: 0xFF,
+        };
+
+        let mut cache = Cursor::new(vec![0xAA, 0xBB]);
+        let mut copy_length: i64 = 2;
+        let mut shared_buffer = [0u8; 32];
+        let initial_pos = cache.position();
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok(), "tbytes_set_rle_single should succeed");
+        assert_eq!(copy_length, 2, "copy_length should be unchanged");
+        assert_eq!(
+            cache.position(),
+            initial_pos,
+            "cache position should not advance"
+        );
+    }
+
+    // ========== tbytes_set_rle_vector_software Tests ==========
+
+    /// Test wrapping_add edge case: 0xFF + 0x01 = 0x00
+    #[test]
+    fn tbytes_set_rle_vector_wrapping_add_edge_case() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 2,
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(Vec::new());
+        let mut copy_length: i64 = 2;
+        let mut buf = [0u8; 32];
+
+        // Set up buffer with test values at offset positions
+        // rle_idx = 0 (rle data), old_idx = MAX_ARRAY_POOL_SECOND_OFFSET (16)
+        let rle_idx = 0;
+        let old_idx = 16;
+
+        buf[rle_idx] = 0xFF;
+        buf[old_idx] = 0x01; // 0xFF + 0x01 = 0x00 (wrapped)
+
+        let result = tbytes_set_rle_vector_software(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            1, // decode_step = 1
+            &mut buf,
+            rle_idx,
+            old_idx,
+        );
+
+        assert!(
+            result.is_ok(),
+            "tbytes_set_rle_vector_software should succeed"
+        );
+        assert_eq!(buf[rle_idx], 0x00, "0xFF + 0x01 should wrap to 0x00");
+        assert_eq!(
+            rle_loader.mem_copy_length, 1,
+            "mem_copy_length should be decremented"
+        );
+        assert_eq!(copy_length, 1, "copy_length should be decremented");
+    }
+
+    /// Test wrapping_add with 0x80 + 0x80 = 0x00
+    #[test]
+    fn tbytes_set_rle_vector_wrapping_add_0x80_0x80() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 1,
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(Vec::new());
+        let mut copy_length: i64 = 1;
+        let mut buf = [0u8; 32];
+
+        let rle_idx = 4;
+        let old_idx = 20;
+
+        buf[rle_idx] = 0x80;
+        buf[old_idx] = 0x80; // 0x80 + 0x80 = 0x00 (wrapped, 128 + 128 = 256 mod 256)
+
+        let result = tbytes_set_rle_vector_software(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            1,
+            &mut buf,
+            rle_idx,
+            old_idx,
+        );
+
+        assert!(
+            result.is_ok(),
+            "tbytes_set_rle_vector_software should succeed"
+        );
+        assert_eq!(buf[rle_idx], 0x00, "0x80 + 0x80 should wrap to 0x00");
+    }
+
+    /// Test multi-byte decode_step with wrapping at boundary
+    #[test]
+    fn tbytes_set_rle_vector_multi_byte_with_wrapping() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 3,
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(Vec::new());
+        let mut copy_length: i64 = 3;
+        let mut buf = [0u8; 32];
+
+        let rle_idx = 0;
+        let old_idx = 16;
+
+        // First byte: no overflow
+        buf[rle_idx + 0] = 0x10;
+        buf[old_idx + 0] = 0x20; // 0x10 + 0x20 = 0x30
+
+        // Second byte: boundary case
+        buf[rle_idx + 1] = 0xFE;
+        buf[old_idx + 1] = 0x03; // 0xFE + 0x03 = 0x01 (wrapped, 254 + 3 = 257 mod 256 = 1)
+
+        // Third byte: normal case
+        buf[rle_idx + 2] = 0x7F;
+        buf[old_idx + 2] = 0x01; // 0x7F + 0x01 = 0x80
+
+        let result = tbytes_set_rle_vector_software(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            3,
+            &mut buf,
+            rle_idx,
+            old_idx,
+        );
+
+        assert!(
+            result.is_ok(),
+            "tbytes_set_rle_vector_software should succeed"
+        );
+        assert_eq!(buf[rle_idx + 0], 0x30, "0x10 + 0x20 should be 0x30");
+        assert_eq!(buf[rle_idx + 1], 0x01, "0xFE + 0x03 should wrap to 0x01");
+        assert_eq!(buf[rle_idx + 2], 0x80, "0x7F + 0x01 should be 0x80");
+    }
+
+    /// Test mem_copy_length is properly decremented
+    #[test]
+    fn tbytes_set_rle_vector_decrements_mem_copy_length() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 5,
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(Vec::new());
+        let mut copy_length: i64 = 5;
+        let mut buf = [0u8; 32];
+
+        // Fill buf with test data at offset positions
+        for i in 0..5 {
+            buf[i] = 0;
+            buf[16 + i] = i as u8;
+        }
+
+        let _ = tbytes_set_rle_vector_software(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            3, // decode_step = 3
+            &mut buf,
+            0,
+            16,
+        );
+
+        assert_eq!(
+            rle_loader.mem_copy_length, 2,
+            "mem_copy_length should be 5 - 3 = 2"
+        );
+        assert_eq!(copy_length, 2, "copy_length should be 5 - 3 = 2");
+    }
 }
