@@ -769,17 +769,21 @@ fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
 }
 
 fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
-    if expected_hash.len() == 32 {
-        verify_chunk_md5(path, expected_hash)
-    } else if expected_hash.len() == 16 {
-        verify_chunk_xxh64(path, expected_hash)
-    } else {
-        log::warn!(
-            "Unknown hash format (length={}): {}",
-            expected_hash.len(),
-            expected_hash
-        );
-        false
+    if expected_hash.is_empty() {
+        return true;
+    }
+    let normalized = expected_hash.to_ascii_lowercase();
+    match normalized.len() {
+        32 => verify_chunk_md5(path, &normalized),
+        16 => verify_chunk_xxh64(path, &normalized),
+        _ => {
+            log::warn!(
+                "Unknown hash format (length={}): {}",
+                expected_hash.len(),
+                expected_hash
+            );
+            false
+        }
     }
 }
 pub async fn apply_preinstall(
