@@ -475,7 +475,7 @@ pub async fn preinstall_download(
                         &chunk_info.patch_name,
                         &chunk_path,
                         &chunk_info.patch_md5,
-                        4,
+                        10,
                     )
                     .await?;
 
@@ -603,7 +603,6 @@ async fn download_patch_chunk_with_retries(
                         attempt + 1,
                         max_retries
                     );
-                    let _ = tokio::fs::remove_file(dest).await;
                     tokio::time::sleep(tokio::time::Duration::from_millis(
                         100 * (1 << attempt).min(8),
                     ))
@@ -627,7 +626,7 @@ async fn download_patch_chunk_with_retries(
     })
 }
 
-const MAX_CHUNK_RETRIES: u32 = 4;
+const MAX_CHUNK_RETRIES: u32 = 10;
 
 async fn download_chunk_with_retries(
     client: &Client,
@@ -649,7 +648,6 @@ async fn download_chunk_with_retries(
                         attempt + 1,
                         MAX_CHUNK_RETRIES
                     );
-                    let _ = tokio::fs::remove_file(dest).await;
                     tokio::time::sleep(tokio::time::Duration::from_millis(
                         100 * (1 << attempt).min(8),
                     ))
@@ -692,7 +690,7 @@ async fn download_patch_chunk_inner(
     let mut total_len = 0u64;
 
     loop {
-        match timeout(Duration::from_millis(5000), stream.next()).await {
+        match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk)) => {
                 let bytes = chunk?;
                 total_len += bytes.len() as u64;
@@ -1601,7 +1599,7 @@ async fn apply_download_over_with_retry(
     asset: &PatchAssetInfo,
     context: &DownloadOverContext,
 ) -> SophonResult<()> {
-    const MAX_RETRIES: u32 = 5;
+    const MAX_RETRIES: u32 = 10;
     const INITIAL_DELAY_MS: u64 = 1000;
 
     let mut last_err = None;
