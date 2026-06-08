@@ -38,58 +38,61 @@ impl PatchSingle {
         } else {
             0
         };
+        let cover_start = offset.wrapping_add(cover_padding);
         let (clip0, len0) = get_clip_stream(
             f0,
             hi.comp_mode,
-            offset + cover_padding,
+            cover_start,
             ci.cover_buf_size as u64,
             ci.compress_cover_buf_size as u64,
             false,
         )?;
-        offset += len0;
+        offset = cover_start.wrapping_add(len0);
 
         let rle_ctrl_padding = if ci.compress_rle_ctrl_buf_size > 0 {
             padding
         } else {
             0
         };
+        let rle_ctrl_start = offset.wrapping_add(rle_ctrl_padding);
         let (clip1, len1) = get_clip_stream(
             f1,
             hi.comp_mode,
-            offset + rle_ctrl_padding,
+            rle_ctrl_start,
             ci.rle_ctrl_buf_size as u64,
             ci.compress_rle_ctrl_buf_size as u64,
             false,
         )?;
-        offset += len1;
+        offset = rle_ctrl_start.wrapping_add(len1);
 
         let rle_code_padding = if ci.compress_rle_code_buf_size > 0 {
             padding
         } else {
             0
         };
+        let rle_code_start = offset.wrapping_add(rle_code_padding);
         let (clip2, len2) = get_clip_stream(
             f2,
             hi.comp_mode,
-            offset + rle_code_padding,
+            rle_code_start,
             ci.rle_code_buf_size as u64,
             ci.compress_rle_code_buf_size as u64,
             false,
         )?;
-        offset += len2;
+        offset = rle_code_start.wrapping_add(len2);
 
         let new_data_diff_padding = if ci.compress_new_data_diff_size > 0 {
             padding
         } else {
             0
         };
-        let comp_diff_size = (ci.compress_new_data_diff_size as u64).saturating_sub(padding);
+        let new_data_diff_start = offset.wrapping_add(new_data_diff_padding);
         let (clip3, _) = get_clip_stream(
             f3,
             hi.comp_mode,
-            offset + new_data_diff_padding,
+            new_data_diff_start,
             ci.new_data_diff_size as u64,
-            comp_diff_size,
+            ci.compress_new_data_diff_size as u64,
             false,
         )?;
         let mut clips: [Box<dyn Read>; 4] = [clip0, clip1, clip2, clip3];
