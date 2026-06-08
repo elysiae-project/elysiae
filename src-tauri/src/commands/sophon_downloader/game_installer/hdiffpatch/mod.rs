@@ -12,7 +12,7 @@ use parser::BinaryExtensions;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum CompressionMode {
+pub(crate) enum CompressionMode {
     #[default]
     Nocomp,
     Zstd,

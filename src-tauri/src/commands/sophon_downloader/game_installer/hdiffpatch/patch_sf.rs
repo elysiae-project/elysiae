@@ -366,4 +366,79 @@ mod tests {
         assert_eq!(result, Some(0x3FFF));
         assert_eq!(pos, 2);
     }
+
+    #[test]
+    fn rle_varint_single_byte_max_value() {
+        // Single byte with no continuation: max value is 0x7F = 127
+        let buf = [0x7F];
+        let mut pos = 0;
+        assert_eq!(rle_varint(&buf, &mut pos), Some(127));
+        assert_eq!(pos, 1);
+    }
+
+    #[test]
+    fn rle_varint_single_byte_with_continuation() {
+        // Single byte with continuation set: 0x81 = value 1 with more bytes
+        // Next byte: 0x00 with no continuation = end
+        // Value = (1 << 7) | 0 = 128
+        let buf = [0x81, 0x00];
+        let mut pos = 0;
+        assert_eq!(rle_varint(&buf, &mut pos), Some(128));
+        assert_eq!(pos, 2);
+    }
+
+    #[test]
+    fn rle_varint_value_16384_overflow() {
+        // 16384 = 0x4000 = (128 << 7) | 0
+        // First byte: 128 with continuation = 0x80 (bit 7 set, lower 7 bits = 0)
+        // Second byte: 0 with no continuation = 0x00
+        // But 128 doesn't fit in 7 bits! The continuation bit is set.
+        // Actually 128 in 7 bits is: 128 = 0x80, which has bit 7 set (continuation)
+        // So 128 needs 2 bytes: first byte 0x80 (continuation), second byte 0x00 (value
+        // 0) Result: (0 << 7) | 0 = 0, which is wrong...
+        // Actually for value 128: high 7 bits of 128 = 1, low 7 bits = 0
+        // byte0: (1 & 0x7F) | 0x80 = 0x81
+        // byte1: (0 & 0x7F) = 0x00
+        // Value = (1 << 7) | 0 = 128
+        let buf = [0x81, 0x00];
+        let mut pos = 0;
+        assert_eq!(rle_varint(&buf, &mut pos), Some(128));
+    }
+
+    #[test]
+    fn rle0decoder_alternating_skip_xor() {
+        // Pattern: skip 1, xor 1, skip 1, xor 1
+        // RLE stream: skip=1 (varint), xor_val=1 (varint), then 0xAA
+        //            skip=1 (varint), xor_val=1 (varint), then 0xBB
+        let rle_buf = [1u8, 1u8, 0xAAu8, 1u8, 1u8, 0xBBu8];
+        let mut rle0 = Rle0Decoder::new(&rle_buf);
+        let mut data = [0x00u8, 0x00u8, 0x00u8, 0x00u8];
+        rle0.add(&mut data).unwrap();
+        // Skip 1 (keep 0x00), XOR 1 with 0xAA -> 0xAA
+        // Skip 1 (keep 0x00), XOR 1 with 0xBB -> 0xBB
+        assert_eq!(data, [0x00, 0xAA, 0x00, 0xBB]);
+    }
+
+    #[test]
+    fn rle0decoder_large_skip() {
+        // Skip 10 bytes, then XOR 2 bytes
+        // RLE stream: skip=10, len=2, xor_val=0x11, xor_val=0x22
+        // Skip 10 bytes means copy 10 bytes unchanged, then apply XOR
+        let mut rle_buf = Vec::new();
+        // skip=10 encoded as rle varint
+        rle_buf.push(10u8);
+        // len=2
+        rle_buf.push(2u8);
+        // XOR values
+        rle_buf.push(0x11u8);
+        rle_buf.push(0x22u8);
+
+        let mut rle0 = Rle0Decoder::new(&rle_buf);
+        let mut data = [0x00u8; 12];
+        rle0.add(&mut data).unwrap();
+        // First 10 bytes unchanged (0x00), last 2 XORed
+        assert_eq!(data[..10], [0x00u8; 10]);
+        assert_eq!(data[10], 0x11);
+        assert_eq!(data[11], 0x22);
+    }
 }
