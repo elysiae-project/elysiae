@@ -404,6 +404,8 @@ pub async fn preinstall_download(
         chunk_bytes_map.insert(k, v);
     }
 
+    super::download::check_available_space(&chunks_dir, total_bytes)?;
+
     updater(SophonProgress::Downloading {
         downloaded_bytes: resume_offset,
         total_bytes,
