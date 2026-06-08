@@ -52,6 +52,7 @@ md-5 = "0.11.0"
 sysinfo = "0.32"
 dashmap = { version = "6.2.1", features = ["serde"] }
 hex = "0.4.3"
+twox-hash = "1.6"
 bytes = "1.11.1"
 prost = "0.14.4"
 lru = "0.18.0"
