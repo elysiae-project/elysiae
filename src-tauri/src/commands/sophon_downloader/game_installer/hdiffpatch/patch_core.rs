@@ -337,6 +337,9 @@ fn enumerate_cover_headers(
     if cover_count > MAX_COVER_COUNT {
         return Err(std::io::Error::other("cover_count exceeds safe maximum"));
     }
+    if cover_count > 0 && cover_size == 0 {
+        return Err(std::io::Error::other("cover_count > 0 but cover_size is 0"));
+    }
     let mut headers = Vec::with_capacity(cover_count as usize);
     let mut last_old_pos_back = 0i64;
     let mut last_new_pos_back = 0i64;
@@ -359,9 +362,13 @@ fn enumerate_cover_headers(
             let inc_old_pos =
                 read_long_7bit_from_slice(&buffer, &mut offset, K_SIGN_TAG_BIT, p_sign)?;
             let old_pos = if inc_old_pos_sign == 0 {
-                old_pos_back.checked_add(inc_old_pos).unwrap_or(i64::MAX)
+                old_pos_back
+                    .checked_add(inc_old_pos)
+                    .ok_or_else(|| std::io::Error::other("old_pos overflow in cover header"))?
             } else {
-                old_pos_back.checked_sub(inc_old_pos).unwrap_or(i64::MIN)
+                old_pos_back
+                    .checked_sub(inc_old_pos)
+                    .ok_or_else(|| std::io::Error::other("old_pos underflow in cover header"))?
             };
             if old_pos < 0 {
                 return Err(std::io::Error::other(
@@ -405,9 +412,13 @@ fn enumerate_cover_headers(
             let inc_old_pos_sign = p_sign >> (8 - K_SIGN_TAG_BIT);
             let inc_old_pos = cover_reader.read_long_7bit_tagged(K_SIGN_TAG_BIT, p_sign)?;
             let old_pos = if inc_old_pos_sign == 0 {
-                old_pos_back.checked_add(inc_old_pos).unwrap_or(i64::MAX)
+                old_pos_back.checked_add(inc_old_pos).ok_or_else(|| {
+                    std::io::Error::other("old_pos overflow in cover header (stream)")
+                })?
             } else {
-                old_pos_back.checked_sub(inc_old_pos).unwrap_or(i64::MIN)
+                old_pos_back.checked_sub(inc_old_pos).ok_or_else(|| {
+                    std::io::Error::other("old_pos underflow in cover header (stream)")
+                })?
             };
             if old_pos < 0 {
                 return Err(std::io::Error::other(
