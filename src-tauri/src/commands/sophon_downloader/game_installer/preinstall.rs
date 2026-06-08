@@ -1803,6 +1803,26 @@ mod tests {
     }
 
     #[test]
+    fn verify_file_hash_unknown_length_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_unknown");
+        fs::write(&path, b"some data").unwrap();
+        assert!(!verify_file_hash(&path, "short"));
+        assert!(!verify_file_hash(
+            &path,
+            "1234567890abcdef1234567890abcdef1234567890abcdef"
+        ));
+    }
+
+    #[test]
+    fn verify_file_hash_missing_file_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent_file");
+        assert!(!verify_file_hash(&path, "0123456789abcdef0123456789abcdef"));
+        assert!(!verify_file_hash(&path, "0123456789abcdef"));
+    }
+
+    #[test]
     fn delete_preinstall_state_cleans_up() {
         let dir = tempfile::tempdir().unwrap();
         let state_path = PreinstallState::state_file_path(dir.path(), "5.0.0");
