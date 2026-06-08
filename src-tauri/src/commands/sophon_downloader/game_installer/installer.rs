@@ -809,7 +809,7 @@ async fn run_downloads(
 
             process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
         })
-        .buffer_unordered(ADAPTIVE_MAX_CONCURRENCY)
+        .buffer_unordered(adaptive_max_concurrency())
         .collect()
         .await
 }

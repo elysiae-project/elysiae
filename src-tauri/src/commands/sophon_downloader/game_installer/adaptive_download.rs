@@ -139,19 +139,19 @@ impl AdaptiveSemaphore {
 
     fn calculate_new_target(current: usize, ewma: f64, prev_ewma: f64, best: f64) -> usize {
         if best > 0.0 && ewma >= best * 0.8 {
-            if current < ADAPTIVE_MAX_CONCURRENCY * 3 / 4 {
+            if current < adaptive_max_concurrency() * 3 / 4 {
                 let increase = (current / 4).max(4);
-                (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+                (current + increase).min(adaptive_max_concurrency())
             } else {
                 let increase = (current / 16).max(1);
-                (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+                (current + increase).min(adaptive_max_concurrency())
             }
         } else if best == 0.0 && prev_ewma == 0.0 && ewma > 0.0 {
             let increase = (current / 2).max(4);
-            (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+            (current + increase).min(adaptive_max_concurrency())
         } else if prev_ewma > 0.0 && ewma >= prev_ewma * 0.9 {
             let increase = (current / 16).max(1);
-            (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+            (current + increase).min(adaptive_max_concurrency())
         } else if prev_ewma > 0.0 && ewma < prev_ewma * 0.7 {
             let decreased = (current * 7) / 10;
             decreased.max(ADAPTIVE_MIN_CONCURRENCY)
@@ -179,22 +179,37 @@ mod tests {
     }
 
     #[test]
-    fn calculate_new_target_ramp_up_aggressive() {
-        let target = AdaptiveSemaphore::calculate_new_target(16, 100.0, 80.0, 100.0);
-        assert_eq!(target, 20); // 16 + max(4, 4) = 20
+    fn calculate_new_target_ramp_up_near_max() {
+        // Pick a current at or above 3/4 of the adaptive max to trigger gentle ramp-up
+        let max = super::adaptive_max_concurrency();
+        let current = if max > 1 { (max * 3 / 4).max(1) } else { 1 };
+        let increase = (current / 16).max(1);
+        let expected = (current + increase).min(max);
+        let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
+        assert_eq!(target, expected);
     }
 
     #[test]
-    fn calculate_new_target_ramp_up_near_max() {
-        let target = AdaptiveSemaphore::calculate_new_target(56, 100.0, 80.0, 100.0);
-        assert_eq!(target, 59); // 56 >= 48 (3/4 of 64), gentle: 56 + max(1, 3) = 59
+    fn calculate_new_target_ramp_up_aggressive() {
+        // Pick a current well below 3/4 of the adaptive max to trigger aggressive
+        // ramp-up
+        let max = super::adaptive_max_concurrency();
+        let current = if max > 2 { max / 2 } else { 1 };
+        let increase = (current / 4).max(4);
+        let expected = (current + increase).min(max);
+        let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
+        assert_eq!(target, expected);
     }
 
     #[test]
     fn calculate_new_target_stable_gentle_increase() {
-        let target = AdaptiveSemaphore::calculate_new_target(20, 45.0, 50.0, 100.0);
+        let max = super::adaptive_max_concurrency();
+        let current = if max > 2 { max / 2 } else { 1 };
         // ewma (45) >= prev_ewma * 0.9 (45) → stable, gentle increase
-        assert_eq!(target, 21); // 20 + max(1, 1) = 21
+        let increase = (current / 16).max(1);
+        let expected = (current + increase).min(max);
+        let target = AdaptiveSemaphore::calculate_new_target(current, 45.0, 50.0, 100.0);
+        assert_eq!(target, expected);
     }
 
     #[test]
@@ -214,7 +229,7 @@ mod tests {
     #[test]
     fn calculate_new_target_respects_max() {
         let target = AdaptiveSemaphore::calculate_new_target(63, 100.0, 80.0, 100.0);
-        assert_eq!(target, ADAPTIVE_MAX_CONCURRENCY); // capped at 64
+        assert_eq!(target, super::adaptive_max_concurrency()); // capped at adaptive max
     }
 
     #[test]
@@ -233,9 +248,18 @@ mod tests {
 
     #[test]
     fn calculate_new_target_zero_best_explores() {
-        let target = AdaptiveSemaphore::calculate_new_target(16, 50.0, 0.0, 0.0);
+        let max = super::adaptive_max_concurrency();
+        // Use a current strictly below the max so there is always room to increase
+        let current = if max > 1 { max / 2 } else { 1 };
+        let target = AdaptiveSemaphore::calculate_new_target(current, 50.0, 0.0, 0.0);
         // best=0, so ewma >= 0.8*best (0) is true → ramp-up
-        assert!(target > 16);
+        let increase = (current / 4).max(4); // aggressive since current < max*3/4
+        let expected = (current + increase).min(max);
+        assert!(
+            target > current,
+            "expected {target} > {current} with max={max}"
+        );
+        assert_eq!(target, expected);
     }
 
     #[test]
@@ -379,11 +403,17 @@ mod tests {
 
     #[test]
     fn aimd_increase_at_exactly_80_percent_of_best() {
+        let max = super::adaptive_max_concurrency();
         let best = 100.0;
         let ewma = best * 0.8;
         let prev_ewma = 90.0;
-        let target = AdaptiveSemaphore::calculate_new_target(16, ewma, prev_ewma, best);
-        assert!(target > 16);
+        // Use a current strictly below max so there is room to increase
+        let current = if max > 1 { max / 2 } else { 1 };
+        let target = AdaptiveSemaphore::calculate_new_target(current, ewma, prev_ewma, best);
+        assert!(
+            target > current,
+            "expected {target} > {current} with max={max}"
+        );
     }
 
     #[test]
@@ -401,9 +431,13 @@ mod tests {
 
     #[test]
     fn calculate_new_target_at_exact_max_boundary() {
-        let target =
-            AdaptiveSemaphore::calculate_new_target(ADAPTIVE_MAX_CONCURRENCY, 100.0, 80.0, 100.0);
-        assert_eq!(target, ADAPTIVE_MAX_CONCURRENCY);
+        let target = AdaptiveSemaphore::calculate_new_target(
+            super::adaptive_max_concurrency(),
+            100.0,
+            80.0,
+            100.0,
+        );
+        assert_eq!(target, super::adaptive_max_concurrency());
     }
 
     #[tokio::test]

@@ -45,7 +45,13 @@ pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
 /// Minimum concurrent downloads in adaptive mode.
 pub const ADAPTIVE_MIN_CONCURRENCY: usize = 8;
 /// Maximum concurrent downloads in adaptive mode.
-pub const ADAPTIVE_MAX_CONCURRENCY: usize = 64;
+/// Computed as sqrt(available_cpu_cores) clamped to [2, 32].
+pub fn adaptive_max_concurrency() -> usize {
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    (cpus as f64).sqrt().clamp(2.0, 32.0) as usize
+}
 /// Initial concurrent downloads in adaptive mode.
 pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 16;
 /// Time window for throughput measurement (seconds).
