@@ -28,7 +28,9 @@ use super::read_installed_tag;
 use crate::commands::sophon_downloader::api_scrape::{
     DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
 };
-use crate::commands::sophon_downloader::proto_parse::SophonManifestProto;
+use crate::commands::sophon_downloader::proto_parse::{
+    SophonManifestAssetChunk, SophonManifestProto,
+};
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
 const PREINSTALL_STATE_FILE_EXT: &str = ".json";
@@ -619,6 +621,52 @@ async fn download_patch_chunk_with_retries(
     Err(SophonError::DownloadFailed {
         chunk: patch_name.to_string(),
         attempts: max_retries,
+        error: last_err,
+    })
+}
+
+const MAX_CHUNK_RETRIES: u32 = 4;
+
+async fn download_chunk_with_retries(
+    client: &Client,
+    chunk_download: &DownloadInfo,
+    chunk: &SophonManifestAssetChunk,
+    dest: &Path,
+) -> SophonResult<()> {
+    let mut last_err = String::new();
+
+    for attempt in 0..MAX_CHUNK_RETRIES {
+        match super::download::download_chunk(client, chunk_download, chunk, dest).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = e.to_string();
+                if attempt < MAX_CHUNK_RETRIES - 1 {
+                    log::warn!(
+                        "Chunk {} failed (attempt {}/{}): {last_err}",
+                        chunk.chunk_name,
+                        attempt + 1,
+                        MAX_CHUNK_RETRIES
+                    );
+                    let _ = tokio::fs::remove_file(dest).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                        100 * (1 << attempt).min(8),
+                    ))
+                    .await;
+                } else {
+                    log::warn!(
+                        "Chunk {} failed (final attempt {}/{}): {last_err}",
+                        chunk.chunk_name,
+                        attempt + 1,
+                        MAX_CHUNK_RETRIES
+                    );
+                }
+            }
+        }
+    }
+
+    Err(SophonError::DownloadFailed {
+        chunk: chunk.chunk_name.clone(),
+        attempts: MAX_CHUNK_RETRIES,
         error: last_err,
     })
 }
@@ -1609,7 +1657,7 @@ async fn apply_download_over(
 
     for chunk in &file_entry.asset_chunks {
         let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
-        super::download::download_chunk(client, chunk_download, chunk, &chunk_path).await?;
+        download_chunk_with_retries(client, chunk_download, chunk, &chunk_path).await?;
     }
 
     {
