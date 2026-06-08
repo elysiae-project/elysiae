@@ -721,21 +721,6 @@ fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     actual == expected_md5
 }
 
-fn file_md5_hex(path: &Path) -> SophonResult<String> {
-    let file = fs::File::open(path)?;
-    let mut reader = std::io::BufReader::new(file);
-    let mut hasher = Md5::new();
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => hasher.update(&buf[..n]),
-            Err(e) => return Err(SophonError::Io(e)),
-        }
-    }
-    Ok(hex::encode(hasher.finalize()))
-}
-
 fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
     let Ok(file) = fs::File::open(path) else {
         log::warn!(
@@ -1575,27 +1560,16 @@ async fn apply_download_over(
 
     for chunk in &file_entry.asset_chunks {
         let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
-        if !chunk_path.exists() {
-            super::download::download_chunk(
-                client,
-                &matching_meta.chunk_download,
-                chunk,
-                &chunk_path,
-            )
+        super::download::download_chunk(client, &matching_meta.chunk_download, chunk, &chunk_path)
             .await?;
-        }
     }
 
     {
         let gd = game_dir.to_path_buf();
         let file_entry = file_entry.clone();
         let cd = chunks_dir.clone();
-        let target = target_path.clone();
         let vc = Arc::new(dashmap::DashMap::new());
         tokio::task::spawn_blocking(move || {
-            if target.exists() {
-                let _ = fs::remove_file(&target);
-            }
             let tmp_dir = gd.join("tmp-patch-downloadover");
             fs::create_dir_all(&tmp_dir)?;
             let result = super::assembly::assemble_file(
