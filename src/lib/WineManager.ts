@@ -242,11 +242,17 @@ export const wineCommand = async (
 	const appData = await appDataDir();
 	const wineLib = await join(appData, "wine", "lib");
 	const wineLib64 = await join(appData, "wine", "lib64");
+	const shaderCache = await join(appData, "shaders");
 
 	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
 		WINEARCH: "win64",
 		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
+		__GL_THREADED_OPTIMIZATIONS: "0",
+		DXVK_STATE_CACHE: "1",
+		DXVK_STATE_CACHE_PATH: `${shaderCache}`,
+		MESA_SHADER_CACHE: "true",
+		__NV_DISABLE_EXPLICIT_SYNC: "1",
 	});
 };
 

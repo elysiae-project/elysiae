@@ -1,4 +1,4 @@
-use crate::commands::{file_downloader, file_manager, media_server};
+use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
 use tauri::command;
@@ -37,21 +37,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(disable_shortcuts())
-        .setup(|app| {
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                match media_server::start_server(handle).await {
-                    Ok(port) => {
-                        tauri_plugin_log::log::info!(
-                            "Media server listening on 127.0.0.1:{}",
-                            port
-                        );
-                    }
-                    Err(e) => {
-                        tauri_plugin_log::log::error!("Failed to start media server: {}", e);
-                    }
-                }
-            });
+        .setup(|_app| {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -70,7 +56,6 @@ pub fn run() {
             commands::sophon_downloader::sophon_resume,
             commands::sophon_downloader::sophon_cancel,
             commands::sophon_downloader::sophon_check_update,
-            media_server::media_server_port,
             elysiae_version,
         ])
         .run(tauri::generate_context!())
@@ -87,12 +72,14 @@ fn apply_webkit_memory_improvements() {
 
 #[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
-    // Webkit2Gtk has a longstanding bug that prevents NVIDIA systems using wayland
-    // from running tauri apps. This env var is the least destructive way to solve
-    // until it is fixed
     if is_nvidia() && is_wayland() {
         println!("Elysiae: Applying NVIDIA Wayland Workaround");
-        unsafe { std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1") };
+        unsafe {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+            std::env::set_var("WEBKIT_DISABLE_GPU_COMPOSITING", "1");
+            std::env::set_var("WEBKIT_DISABLE_VAAPI", "1");
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        };
     }
 }
 

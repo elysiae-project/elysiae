@@ -1,63 +1,54 @@
-import { useEffect, useRef } from "preact/hooks";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useApi } from "../../hooks/useApi";
 import { useBackground } from "../../hooks/useBackground";
 import { useGame } from "../../hooks/useGame";
 
 const BackgroundVideo = ({ src }: { src: string | null }) => {
 	const ref = useRef<HTMLVideoElement>(null);
-	const pendingSrc = useRef<string | null>(null);
-	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [visible, setVisible] = useState(false);
 
 	useEffect(() => {
-		const el = ref.current;
-		if (!el) return;
-
-		if (!src) {
-			el.removeAttribute("src");
-			el.load();
-			return;
-		}
-
-		if (!el.src || el.readyState === 0) {
-			el.src = src;
-			el.load();
-			return;
-		}
-
-		el.pause();
-		el.removeAttribute("src");
-		el.load();
-
-		pendingSrc.current = src;
-		if (timerRef.current) clearTimeout(timerRef.current);
-		timerRef.current = setTimeout(() => {
-			if (pendingSrc.current && ref.current) {
-				ref.current.src = pendingSrc.current;
-				ref.current.load();
-				pendingSrc.current = null;
-			}
-		}, 50);
-
-		return () => {
-			if (timerRef.current) clearTimeout(timerRef.current);
-		};
+		setVisible(false);
 	}, [src]);
 
 	useEffect(() => {
 		const el = ref.current;
-		if (!el) return;
+		if (!el || !src) return;
 
-		// Fixes an issue in webkit2gtk where videos loop prematurely after the first complete loop
-		const onEnded = () => {
-			el.currentTime = 0;
+		const onCanPlay = () => {
 			el.play().catch(() => {});
+			setVisible(true);
 		};
 
-		el.addEventListener("ended", onEnded);
-		return () => el.removeEventListener("ended", onEnded);
-	}, []);
+		el.addEventListener("canplay", onCanPlay);
+		el.src = src;
+		el.load();
 
-	return <video ref={ref} class="background" autoPlay muted playsInline />;
+		return () => {
+			el.removeEventListener("canplay", onCanPlay);
+			el.pause();
+			el.removeAttribute("src");
+			el.load();
+		};
+	}, [src]);
+
+	return (
+		<motion.div
+			class="absolute inset-0"
+			animate={{ opacity: visible ? 1 : 0 }}
+			transition={{ duration: 0.4 }}
+		>
+			<video
+				ref={ref}
+				class="background"
+				autoPlay
+				muted
+				playsInline
+				loop
+			/>
+		</motion.div>
+	);
 };
 
 const BackgroundMedia = ({
@@ -69,10 +60,22 @@ const BackgroundMedia = ({
 }) => {
 	if (!src) return null;
 
-	return isVideo ? (
-		<BackgroundVideo src={src} />
-	) : (
-		<img class="background" src={src} alt="" />
+	return (
+		<AnimatePresence mode="wait" initial={false}>
+			{isVideo ? (
+				<BackgroundVideo key={src} src={src} />
+			) : (
+				<motion.img
+					key={src}
+					src={src}
+					class="background"
+					initial={{ opacity: 0 }}
+					animate={{ opacity: 1 }}
+					exit={{ opacity: 0 }}
+					transition={{ duration: 0.4 }}
+				/>
+			)}
+		</AnimatePresence>
 	);
 };
 

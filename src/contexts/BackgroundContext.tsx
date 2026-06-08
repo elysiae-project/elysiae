@@ -1,10 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { fetch } from "@tauri-apps/plugin-http";
 import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
-import { exists, getDirFileNames, mkdir, remove } from "../lib/Fs";
+import { exists, getDirFileNames, mkdir, readFile, remove } from "../lib/Fs";
 import { getOption, setOption } from "../lib/Settings";
 import { variantToGameCode } from "../lib/VariantConverter";
 import { downloadFileNoProgress } from "../lib/Web";
@@ -29,6 +28,22 @@ export const BackgroundContext = createContext<BackgroundContextType>({
 	backgroundIsVideo: false,
 });
 
+const MIME_TYPES: Record<string, string> = {
+	mp4: "video/mp4",
+	webm: "video/webm",
+	webp: "image/webp",
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	svg: "image/svg+xml",
+};
+
+function getMimeType(path: string): string {
+	const ext = path.split(".").pop()?.toLowerCase() ?? "";
+	return MIME_TYPES[ext] ?? "application/octet-stream";
+}
+
 export const BackgroundProvider = ({
 	children,
 }: {
@@ -44,8 +59,7 @@ export const BackgroundProvider = ({
 	const [currentBackgroundIsVideo, setCurrentBackgroundIsVideo] =
 		useState(false);
 
-	const mediaServerPort = useRef<number | null>(null);
-
+	const blobUrlRef = useRef<string | null>(null);
 	const { game } = useGame();
 
 	useEffect(() => {
@@ -54,6 +68,15 @@ export const BackgroundProvider = ({
 				await getOption<CachedBackgrounds>("cachedBackgrounds");
 			setCachedBackgroundData(cachedBackgrounds ?? null);
 		})();
+	}, []);
+
+	useEffect(() => {
+		return () => {
+			if (blobUrlRef.current) {
+				URL.revokeObjectURL(blobUrlRef.current);
+				blobUrlRef.current = null;
+			}
+		};
 	}, []);
 
 	useEffect(() => {
@@ -68,13 +91,22 @@ export const BackgroundProvider = ({
 		const isVideo = mp4Index !== -1;
 
 		(async () => {
-			if (mediaServerPort.current === null) {
-				mediaServerPort.current = await invoke<number>("media_server_port");
+			if (blobUrlRef.current) {
+				URL.revokeObjectURL(blobUrlRef.current);
+				blobUrlRef.current = null;
 			}
-			const port = mediaServerPort.current;
-			const encoded = relativePath.split("/").map(encodeURIComponent).join("/");
-			setCurrentBackgroundSrc(`http://127.0.0.1:${port}/${encoded}`);
-			setCurrentBackgroundIsVideo(isVideo);
+
+			try {
+				const fileData = await readFile(relativePath);
+				const mimeType = getMimeType(relativePath);
+				const blob = new Blob([fileData], { type: mimeType });
+				const blobUrl = URL.createObjectURL(blob);
+				blobUrlRef.current = blobUrl;
+				setCurrentBackgroundSrc(blobUrl);
+				setCurrentBackgroundIsVideo(isVideo);
+			} catch (e) {
+				console.error("Failed to load background as blob:", e);
+			}
 		})();
 	}, [cachedBackgroundData, game]);
 
