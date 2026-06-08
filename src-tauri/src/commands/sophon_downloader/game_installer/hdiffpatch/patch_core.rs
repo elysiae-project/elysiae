@@ -33,6 +33,15 @@ pub(crate) fn write_cover_stream_to_output(
                 "backward or overlapping covers in patch",
             ));
         }
+        let cover_end = cover
+            .new_pos
+            .checked_add(cover.cover_length)
+            .ok_or_else(|| std::io::Error::other("cover length overflow"))?;
+        if cover_end > header_info.new_data_size {
+            return Err(std::io::Error::other(
+                "cover extends past expected output size",
+            ));
+        }
         if new_pos_back < cover.new_pos {
             let copy_length = cover.new_pos - new_pos_back;
             tbytes_copy_stream_from_old_clip(
