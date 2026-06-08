@@ -82,6 +82,26 @@ pub(crate) fn get_clip_stream(
                 Ok((Box::new(decoder), file_bytes))
             }
         }
+        CompressionMode::Lz4 => {
+            let limited = LimitedFile {
+                file,
+                remaining: comp_length,
+            };
+            let mut decoder = lz4::Decoder::new(limited)?;
+
+            if is_buffered {
+                if length > MAX_BUFFERED_SIZE {
+                    return Err(std::io::Error::other(
+                        "buffered lz4 stream exceeds maximum size",
+                    ));
+                }
+                let mut out = Vec::with_capacity(length as usize);
+                decoder.read_to_end(&mut out)?;
+                Ok((Box::new(Cursor::new(out)), file_bytes))
+            } else {
+                Ok((Box::new(decoder), file_bytes))
+            }
+        }
         CompressionMode::Nocomp => unreachable!("handled above"),
     }
 }

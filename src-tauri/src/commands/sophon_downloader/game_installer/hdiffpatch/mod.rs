@@ -17,6 +17,7 @@ enum CompressionMode {
     Nocomp,
     Zstd,
     Zlib,
+    Lz4,
 }
 
 impl std::str::FromStr for CompressionMode {
@@ -26,6 +27,7 @@ impl std::str::FromStr for CompressionMode {
             "" | "nocomp" => Ok(CompressionMode::Nocomp),
             "zstd" => Ok(CompressionMode::Zstd),
             "zlib" => Ok(CompressionMode::Zlib),
+            "lz4" => Ok(CompressionMode::Lz4),
             _ => Err(format!("unsupported compression mode: {s}")),
         }
     }

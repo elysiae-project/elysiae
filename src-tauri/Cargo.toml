@@ -44,6 +44,7 @@ tauri-plugin-store = "2.4.3"
 reqwest = { version = "0.13.4", features = ["stream", "blocking", "json"] }
 
 zstd = "0.13.3"
+lz4 = "1.23"
 xz = "0.1.0"
 flate2 = "1.1.9"
 zip = "8.6.0"
