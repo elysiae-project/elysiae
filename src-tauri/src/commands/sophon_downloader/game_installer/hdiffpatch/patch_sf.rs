@@ -388,18 +388,12 @@ mod tests {
     }
 
     #[test]
-    fn rle_varint_value_16384_overflow() {
-        // 16384 = 0x4000 = (128 << 7) | 0
-        // First byte: 128 with continuation = 0x80 (bit 7 set, lower 7 bits = 0)
-        // Second byte: 0 with no continuation = 0x00
-        // But 128 doesn't fit in 7 bits! The continuation bit is set.
-        // Actually 128 in 7 bits is: 128 = 0x80, which has bit 7 set (continuation)
-        // So 128 needs 2 bytes: first byte 0x80 (continuation), second byte 0x00 (value
-        // 0) Result: (0 << 7) | 0 = 0, which is wrong...
-        // Actually for value 128: high 7 bits of 128 = 1, low 7 bits = 0
-        // byte0: (1 & 0x7F) | 0x80 = 0x81
-        // byte1: (0 & 0x7F) = 0x00
-        // Value = (1 << 7) | 0 = 128
+    fn rle_varint_value_128_two_byte_encoding() {
+        // Value 128 = (1 << 7) | 0
+        // Needs 2 bytes because 128 requires 8 bits but only 7 per byte
+        // First byte: (1 & 0x7F) | 0x80 = 0x81 (continuation set, value 1)
+        // Second byte: (0 & 0x7F) = 0x00 (no continuation, value 0)
+        // Combined: (1 << 7) | 0 = 128
         let buf = [0x81, 0x00];
         let mut pos = 0;
         assert_eq!(rle_varint(&buf, &mut pos), Some(128));
