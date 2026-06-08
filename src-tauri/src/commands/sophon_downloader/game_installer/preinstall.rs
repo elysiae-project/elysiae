@@ -19,15 +19,16 @@ use tokio::io::{AsyncWriteExt, BufWriter as TokioBufWriter};
 use tokio::time::{Duration, timeout};
 
 use super::api::{
-    fetch_build, fetch_front_door, fetch_patch_build, fetch_patch_manifest, is_known_vo_locale,
-    vo_lang_matches,
+    fetch_build, fetch_front_door, fetch_manifest, fetch_patch_build, fetch_patch_manifest,
+    is_known_vo_locale, vo_lang_matches,
 };
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::read_installed_tag;
 use crate::commands::sophon_downloader::api_scrape::{
-    DownloadInfo, SophonManifestMeta, SophonPatchManifestMeta,
+    DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
 };
+use crate::commands::sophon_downloader::proto_parse::SophonManifestProto;
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
 const PREINSTALL_STATE_FILE_EXT: &str = ".json";
@@ -795,6 +796,9 @@ pub async fn apply_preinstall(
     let filter_cache = FilterCache::new(game_dir);
     filter_patch_assets_for_removed_features(&filter_cache, &mut state.patch_assets);
 
+    let download_over_context =
+        fetch_download_over_context(client, &state.game_id, &state.vo_lang).await?;
+
     for asset in &state.patch_assets {
         if asset.patch_method == PatchMethod::Skip {
             applied_files.fetch_add(1, Ordering::Relaxed);
@@ -839,7 +843,14 @@ pub async fn apply_preinstall(
                         "CopyOver failed for {}: {e}, falling back to DownloadOver",
                         asset.target_file_path
                     );
-                    apply_download_over_with_retry(client, game_dir, &state, asset).await?;
+                    apply_download_over_with_retry(
+                        client,
+                        game_dir,
+                        &state,
+                        asset,
+                        &download_over_context,
+                    )
+                    .await?;
                 }
             }
             PatchMethod::Patch => {
@@ -863,11 +874,25 @@ pub async fn apply_preinstall(
                         "HDiff patch failed for {}: {e}, falling back to DownloadOver",
                         asset.target_file_path
                     );
-                    apply_download_over_with_retry(client, game_dir, &state, asset).await?;
+                    apply_download_over_with_retry(
+                        client,
+                        game_dir,
+                        &state,
+                        asset,
+                        &download_over_context,
+                    )
+                    .await?;
                 }
             }
             PatchMethod::DownloadOver => {
-                apply_download_over_with_retry(client, game_dir, &state, asset).await?;
+                apply_download_over_with_retry(
+                    client,
+                    game_dir,
+                    &state,
+                    asset,
+                    &download_over_context,
+                )
+                .await?;
             }
             PatchMethod::Remove | PatchMethod::Skip => {}
         }
@@ -1471,18 +1496,56 @@ fn apply_hdiff_patch_from_files(
     }
 }
 
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct DownloadOverContext {
+    pub build: SophonBuildData,
+    pub manifests: HashMap<String, (DownloadInfo, SophonManifestProto)>,
+}
+
+pub async fn fetch_download_over_context(
+    client: &Client,
+    game_id: &str,
+    vo_lang: &str,
+) -> SophonResult<DownloadOverContext> {
+    let (_, pre_branch) = fetch_front_door(client, game_id).await?;
+    let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
+    let build = fetch_build(client, &pre_branch, None).await?;
+
+    let mut manifests = HashMap::new();
+    for meta in &build.manifests {
+        let should_fetch = meta.matching_field == "game"
+            || vo_lang_matches(&meta.matching_field, vo_lang)
+            || !is_known_vo_locale(&meta.matching_field);
+
+        if !should_fetch {
+            continue;
+        }
+
+        let manifest_result =
+            fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        manifests.insert(
+            meta.matching_field.clone(),
+            (meta.chunk_download.clone(), manifest_result.manifest),
+        );
+    }
+
+    Ok(DownloadOverContext { build, manifests })
+}
+
 async fn apply_download_over_with_retry(
     client: &Client,
     game_dir: &Path,
     state: &PreinstallState,
     asset: &PatchAssetInfo,
+    context: &DownloadOverContext,
 ) -> SophonResult<()> {
     const MAX_RETRIES: u32 = 5;
     const INITIAL_DELAY_MS: u64 = 1000;
 
     let mut last_err = None;
     for attempt in 0..MAX_RETRIES {
-        match apply_download_over(client, game_dir, state, asset).await {
+        match apply_download_over(client, game_dir, state, asset, context).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 let err_msg = e.to_string();
@@ -1514,8 +1577,9 @@ async fn apply_download_over_with_retry(
 async fn apply_download_over(
     client: &Client,
     game_dir: &Path,
-    state: &PreinstallState,
+    _state: &PreinstallState,
     asset: &PatchAssetInfo,
+    context: &DownloadOverContext,
 ) -> SophonResult<()> {
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
 
@@ -1523,27 +1587,12 @@ async fn apply_download_over(
         fs::create_dir_all(parent)?;
     }
 
-    let build = {
-        let (_, pre_branch) = fetch_front_door(client, &state.game_id).await?;
-        let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
-        fetch_build(client, &pre_branch, None).await?
-    };
-
-    let matching_meta = build
+    let (chunk_download, manifest) = context
         .manifests
-        .iter()
-        .find(|m| m.matching_field == asset.matching_field)
+        .get(&asset.matching_field)
         .ok_or_else(|| SophonError::NoVoiceManifest(asset.matching_field.clone()))?;
 
-    let manifest_result = super::api::fetch_manifest(
-        client,
-        &matching_meta.manifest_download,
-        &matching_meta.manifest.id,
-    )
-    .await?;
-
-    let file_entry = manifest_result
-        .manifest
+    let file_entry = manifest
         .assets
         .iter()
         .find(|a| a.asset_name == asset.target_file_path)
@@ -1560,8 +1609,7 @@ async fn apply_download_over(
 
     for chunk in &file_entry.asset_chunks {
         let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
-        super::download::download_chunk(client, &matching_meta.chunk_download, chunk, &chunk_path)
-            .await?;
+        super::download::download_chunk(client, chunk_download, chunk, &chunk_path).await?;
     }
 
     {
