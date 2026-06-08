@@ -1762,6 +1762,29 @@ mod tests {
     }
 
     #[test]
+    fn verify_file_hash_md5_uppercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_md5_file");
+        let data = b"hello world";
+        let md5_hex_lower = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+        assert!(verify_file_hash(&path, &md5_hex_lower.to_uppercase()));
+    }
+
+    #[test]
+    fn verify_file_hash_xxh64_uppercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_xxh64_file");
+        let data = b"hello world";
+        fs::write(&path, data).unwrap();
+        let mut hasher = twox_hash::XxHash64::default();
+        use std::hash::Hasher;
+        hasher.write(data);
+        let xxh64_lower = format!("{:016x}", hasher.finish());
+        assert!(verify_file_hash(&path, &xxh64_lower.to_uppercase()));
+    }
+
+    #[test]
     fn delete_preinstall_state_cleans_up() {
         let dir = tempfile::tempdir().unwrap();
         let state_path = PreinstallState::state_file_path(dir.path(), "5.0.0");
