@@ -1,6 +1,6 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use flate2::read::DeflateDecoder;
+use flate2::read::ZlibDecoder;
 
 use super::CompressionMode;
 
@@ -67,7 +67,7 @@ pub(crate) fn get_clip_stream(
                 file,
                 remaining: comp_length,
             };
-            let mut decoder = DeflateDecoder::new(limited);
+            let mut decoder = ZlibDecoder::new(limited);
 
             if is_buffered {
                 if length > MAX_BUFFERED_SIZE {
