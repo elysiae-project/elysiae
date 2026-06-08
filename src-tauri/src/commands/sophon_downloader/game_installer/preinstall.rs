@@ -1477,7 +1477,7 @@ fn apply_hdiff_patch(
 
     let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
-        hdiff.apply()
+        hdiff.apply(None)
     }));
 
     let _ = fs::remove_file(&diff_temp);
@@ -1561,7 +1561,7 @@ fn apply_hdiff_patch_from_files(
 
     let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
-        hdiff.apply()
+        hdiff.apply(None)
     }));
 
     let _ = fs::remove_file(&empty_original_path);

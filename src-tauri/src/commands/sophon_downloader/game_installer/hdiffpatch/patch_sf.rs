@@ -21,6 +21,7 @@ impl PatchSF {
         input_stream: &mut dyn SeekableRead,
         output_stream: &mut dyn Write,
         patch_path: &str,
+        on_progress: Option<&dyn Fn(u64)>,
     ) -> std::io::Result<()> {
         let sci = &self.header_info.single_chunk_info;
         let (mut diff, _) = get_clip_stream(
@@ -53,6 +54,7 @@ impl PatchSF {
             new_data_size,
             &mut step_buf,
             &mut io_buf,
+            on_progress,
         )
     }
 }
@@ -65,9 +67,11 @@ fn patch_loop(
     new_data_size: u64,
     step_buf: &mut Vec<u8>,
     io_buf: &mut [u8],
+    on_progress: Option<&dyn Fn(u64)>,
 ) -> std::io::Result<()> {
     let mut last_old_end = 0u64;
     let mut last_new_end = 0u64;
+    let mut total_written: u64 = 0;
 
     while cover_count > 0 {
         let buf_cover_size_raw = diff.read_long_7bit()?;
@@ -106,7 +110,12 @@ fn patch_loop(
                 ));
             }
             if new_pos > prev_new_end {
-                copy_n(&mut *diff, out, new_pos - prev_new_end, io_buf)?;
+                let gap = new_pos - prev_new_end;
+                copy_n(&mut *diff, out, gap, io_buf)?;
+                total_written += gap;
+                if let Some(ref cb) = on_progress {
+                    cb(total_written);
+                }
             }
             cover_count -= 1;
 
@@ -120,11 +129,20 @@ fn patch_loop(
                     out.write_all(&io_buf[..take])?;
                     rem -= take as u64;
                 }
+                total_written += length;
+                if let Some(ref cb) = on_progress {
+                    cb(total_written);
+                }
             }
         }
     }
     if last_new_end < new_data_size {
-        copy_n(&mut *diff, out, new_data_size - last_new_end, io_buf)?;
+        let tail = new_data_size - last_new_end;
+        copy_n(&mut *diff, out, tail, io_buf)?;
+        total_written += tail;
+        if let Some(ref cb) = on_progress {
+            cb(total_written);
+        }
     }
     Ok(())
 }

@@ -19,6 +19,7 @@ impl PatchSingle {
         input_stream: &mut dyn SeekableRead,
         output_stream: &mut dyn Write,
         patch_path: &str,
+        on_progress: Option<&dyn Fn(u64)>,
     ) -> std::io::Result<()> {
         let padding: u64 = match self.header_info.comp_mode {
             CompressionMode::Zlib => 1,
@@ -96,7 +97,7 @@ impl PatchSingle {
             false,
         )?;
         let mut clips: [Box<dyn Read>; 4] = [clip0, clip1, clip2, clip3];
-        write_cover_stream_to_output(&mut clips, input_stream, output_stream, hi)?;
+        write_cover_stream_to_output(&mut clips, input_stream, output_stream, hi, on_progress)?;
         Ok(())
     }
 }

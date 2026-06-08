@@ -117,8 +117,8 @@ impl HDiff {
         }
     }
 
-    pub fn apply(&mut self) -> bool {
-        match self.apply_inner() {
+    pub fn apply(&mut self, on_progress: Option<Box<dyn Fn(u64)>>) -> bool {
+        match self.apply_inner(on_progress.as_ref().map(|cb| cb.as_ref())) {
             Ok(()) => true,
             Err(e) => {
                 tauri_plugin_log::log::error!("[HDiff::apply] Error: {e}");
@@ -127,7 +127,10 @@ impl HDiff {
         }
     }
 
-    fn apply_inner(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn apply_inner(
+        &self,
+        on_progress: Option<&dyn Fn(u64)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut diff_file = File::open(&self.diff_path)?;
         let mut header_info = HeaderInfo::default();
         let header_info_line = diff_file.read_string_to_null(512)?;
@@ -189,12 +192,14 @@ impl HDiff {
                 &mut old_file,
                 &mut out_writer,
                 &self.diff_path,
+                on_progress,
             )?;
         } else {
             patch_single::PatchSingle::new(header_info).patch(
                 &mut old_file,
                 &mut out_writer,
                 &self.diff_path,
+                on_progress,
             )?;
         }
         out_writer.flush()?;
@@ -380,7 +385,7 @@ mod tests {
         let tp = out_path.to_string_lossy().to_string();
 
         let mut hdiff = HDiff::new(op, dp, tp);
-        if !hdiff.apply() {
+        if !hdiff.apply(None) {
             return false;
         }
 
@@ -417,7 +422,7 @@ mod tests {
         }
 
         let mut hdiff = HDiff::new(old_path, diff_path, out_path.clone());
-        assert!(hdiff.apply(), "large binary patch apply failed");
+        assert!(hdiff.apply(None), "large binary patch apply failed");
 
         let result = fs::read(&out_path).unwrap();
         let expected = fs::read(format!("{}/new_large.bin", fixture_dir)).unwrap();
@@ -449,7 +454,7 @@ mod tests {
 
         let mut hdiff = HDiff::new(op, dp, tp);
         assert!(
-            !hdiff.apply(),
+            !hdiff.apply(None),
             "should fail when old file size doesn't match"
         );
     }
@@ -469,7 +474,7 @@ mod tests {
         let tp = out_path.to_string_lossy().to_string();
 
         let mut hdiff = HDiff::new(op, dp, tp);
-        assert!(!hdiff.apply(), "should fail for invalid diff file");
+        assert!(!hdiff.apply(None), "should fail for invalid diff file");
     }
 
     #[test]
@@ -497,7 +502,10 @@ mod tests {
         let tp = out_path.to_string_lossy().to_string();
 
         let mut hdiff = HDiff::new(op, dp, tp);
-        assert!(!hdiff.apply(), "should fail for nonexistent source file");
+        assert!(
+            !hdiff.apply(None),
+            "should fail for nonexistent source file"
+        );
     }
 
     #[test]
@@ -517,7 +525,7 @@ mod tests {
         let tp = out_path.to_string_lossy().to_string();
 
         let mut hdiff = HDiff::new(op, dp, tp);
-        assert!(!hdiff.apply(), "should fail for nonexistent diff file");
+        assert!(!hdiff.apply(None), "should fail for nonexistent diff file");
     }
 
     // ========== Bounds Check Tests ==========

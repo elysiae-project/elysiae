@@ -14,11 +14,13 @@ pub(crate) fn write_cover_stream_to_output(
     input_stream: &mut dyn SeekableRead,
     output_stream: &mut dyn Write,
     header_info: &HeaderInfo,
+    on_progress: Option<&dyn Fn(u64)>,
 ) -> std::io::Result<()> {
     let mut shared_buffer = vec![0u8; MAX_ARRAY_POOL_LEN];
     let mut cache = Cursor::new(Vec::<u8>::new());
 
     let mut new_pos_back = 0i64;
+    let mut total_written: u64 = 0;
     let mut rle_struct = RleRefClip::default();
     let (left, right) = clips.split_at_mut(2);
     let headers = enumerate_cover_headers(
@@ -75,7 +77,12 @@ pub(crate) fn write_cover_stream_to_output(
             .checked_add(cover.cover_length)
             .ok_or_else(|| std::io::Error::other("new_pos overflow in cover iteration"))?;
         if cache.get_ref().len() > MAX_MEM_BUFFER_LIMIT || cover.next_cover_index == 0 {
+            let cache_len = cache.get_ref().len() as u64;
             write_cache_to_output(&mut cache, output_stream)?;
+            total_written += cache_len;
+            if let Some(ref cb) = on_progress {
+                cb(total_written);
+            }
         }
     }
 
@@ -100,7 +107,12 @@ pub(crate) fn write_cover_stream_to_output(
             &mut *left[1],
             &mut *right[0],
         )?;
+        let cache_len = cache.get_ref().len() as u64;
         write_cache_to_output(&mut cache, output_stream)?;
+        total_written += cache_len;
+        if let Some(ref cb) = on_progress {
+            cb(total_written);
+        }
     }
     Ok(())
 }
