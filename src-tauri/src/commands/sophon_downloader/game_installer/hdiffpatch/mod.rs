@@ -136,9 +136,9 @@ impl HDiff {
             return Err("not a HDiff file format".into());
         }
         let h_info_arr: Vec<&str> = header_info_line.split('&').collect();
-        if h_info_arr.len() != 2 {
+        if h_info_arr.len() < 2 || h_info_arr.len() > 3 {
             return Err(format!(
-                "unsupported HDiff header format: expected 2 parts, got {} (raw: {})",
+                "unsupported HDiff header format: expected 2 or 3 parts, got {} (raw: {})",
                 h_info_arr.len(),
                 header_info_line
             )
@@ -146,12 +146,19 @@ impl HDiff {
         }
 
         let p_file_ver = Self::try_get_version(h_info_arr[0])?;
-        if p_file_ver != 13 && p_file_ver != 20 {
+        if p_file_ver != 13 && p_file_ver != 19 && p_file_ver != 20 {
             return Err(format!(
-                "unsupported HDiff version {p_file_ver} (only 13 and 20 supported)"
+                "unsupported HDiff version {p_file_ver} (only 13, 19, and 20 supported)"
             )
             .into());
         }
+
+        // 3-part header: "HDIFF19&zstd&fadler64" — checksum mode is the third field
+        let _checksum_mode = if h_info_arr.len() == 3 {
+            Some(h_info_arr[2].to_string())
+        } else {
+            None
+        };
 
         header_info.comp_mode = h_info_arr[1].parse()?;
         header_info.is_single_compressed_diff = p_file_ver == 20;
