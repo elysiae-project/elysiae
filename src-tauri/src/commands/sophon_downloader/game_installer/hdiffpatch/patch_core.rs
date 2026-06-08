@@ -322,7 +322,7 @@ fn tbytes_set_rle_vector_software(
     Ok(())
 }
 
-fn enumerate_cover_headers(
+pub(crate) fn enumerate_cover_headers(
     mut cover_reader: &mut dyn Read,
     cover_size: i64,
     cover_count: i64,
