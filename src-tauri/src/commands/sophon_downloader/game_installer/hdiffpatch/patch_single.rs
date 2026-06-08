@@ -33,7 +33,7 @@ impl PatchSingle {
         let f3 = File::open(patch_path)?;
 
         let mut offset = ci.head_end_pos as u64;
-        let cover_padding = if ci.compress_cover_buf_size > 1 {
+        let cover_padding = if ci.compress_cover_buf_size > 0 {
             padding
         } else {
             0
