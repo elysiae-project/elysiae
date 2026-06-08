@@ -1153,6 +1153,13 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     if !chunk_path.exists() {
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
     }
+    if !asset.patch_hash.is_empty() && !verify_file_hash(&chunk_path, &asset.patch_hash) {
+        return Err(SophonError::Md5Mismatch {
+            item: asset.patch_name.clone(),
+            expected: asset.patch_hash.clone(),
+            actual: "(computed)".to_string(),
+        });
+    }
 
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
     let mut chunk_file = fs::File::open(&chunk_path)?;
