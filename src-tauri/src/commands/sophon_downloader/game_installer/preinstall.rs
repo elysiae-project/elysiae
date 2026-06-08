@@ -1082,11 +1082,26 @@ impl FilterCache {
             fs::read_to_string(&blacklist_path)
                 .ok()
                 .map(|content| {
-                    content
+                    let mut entries: Vec<String> = content
                         .lines()
                         .filter_map(extract_blacklist_filename)
                         .map(|name| name.to_lowercase())
-                        .collect::<Vec<String>>()
+                        .collect();
+                    // Generate cross-path variants (Persistent ↔ StreamingAssets)
+                    let variants: Vec<String> = entries
+                        .iter()
+                        .flat_map(|entry| {
+                            if entry.contains("persistent/") {
+                                vec![entry.replace("persistent/", "streamingassets/")]
+                            } else if entry.contains("streamingassets/") {
+                                vec![entry.replace("streamingassets/", "persistent/")]
+                            } else {
+                                vec![]
+                            }
+                        })
+                        .collect();
+                    entries.extend(variants);
+                    entries
                 })
                 .and_then(|entries| Some(entries).filter(|e| !e.is_empty()))
         } else {
