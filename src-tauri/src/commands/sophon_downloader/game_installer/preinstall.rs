@@ -416,7 +416,7 @@ pub async fn preinstall_download(
     let start = Instant::now();
     let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
     let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
-    let max_concurrency = super::ADAPTIVE_MAX_CONCURRENCY;
+    let max_concurrency = super::adaptive_max_concurrency();
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
@@ -1063,12 +1063,8 @@ impl FilterCache {
             fs::read_to_string(&kdel_path).ok().and_then(|content| {
                 let first_line = content.lines().next()?;
                 let tokens: Vec<String> = first_line
-                    .split(&['|', ';', ',', '$', '#', '@', '+', ' '][..])
-                    .map(|token| {
-                        token
-                            .trim_matches(&['|', ';', ',', '$', '#', '@', '+', ' '][..])
-                            .to_string()
-                    })
+                    .split('|')
+                    .map(|token| token.trim_matches('|').to_string())
                     .filter(|t| !t.is_empty())
                     .collect();
                 if tokens.is_empty() {
