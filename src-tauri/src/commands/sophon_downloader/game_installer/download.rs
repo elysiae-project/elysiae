@@ -54,9 +54,9 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
 async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     let mut file = tokio::io::BufReader::new(tokio::fs::File::open(path).await?);
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; MD5_HASH_BUFFER_SIZE];
+    let mut buf = [0u8; MD5_HASH_BUFFER_SIZE];
     loop {
-        let n = file.read_buf(&mut buf).await?;
+        let n = file.read(&mut buf).await?;
         if n == 0 {
             break;
         }
