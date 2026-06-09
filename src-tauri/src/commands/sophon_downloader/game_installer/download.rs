@@ -338,6 +338,7 @@ mod tests {
     use super::super::DOWNLOAD_STREAM_BUFFER_SIZE;
     use super::super::error::SophonError;
     use super::download_chunk;
+    use super::parse_content_range_start;
     use crate::commands::sophon_downloader::api_scrape::{Compression, DownloadInfo};
     use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
@@ -601,5 +602,40 @@ mod tests {
         let written = tokio::fs::read(&dest).await.unwrap();
         assert_eq!(written.len(), data.len());
         assert_eq!(written, data);
+    }
+
+    #[test]
+    fn parse_content_range_start_standard() {
+        assert_eq!(parse_content_range_start("bytes 500-999/1000"), Some(500));
+    }
+
+    #[test]
+    fn parse_content_range_start_zero_start() {
+        assert_eq!(parse_content_range_start("bytes 0-999/1000"), Some(0));
+    }
+
+    #[test]
+    fn parse_content_range_start_no_prefix() {
+        assert_eq!(parse_content_range_start("500-999/1000"), None);
+    }
+
+    #[test]
+    fn parse_content_range_start_empty() {
+        assert_eq!(parse_content_range_start(""), None);
+    }
+
+    #[test]
+    fn parse_content_range_start_invalid() {
+        assert_eq!(parse_content_range_start("bytes abc-999/1000"), None);
+    }
+
+    #[test]
+    fn parse_content_range_start_large_values() {
+        assert_eq!(
+            parse_content_range_start(
+                "bytes 18446744073709551615-18446744073709551615/18446744073709551615"
+            ),
+            Some(18446744073709551615)
+        );
     }
 }
