@@ -221,11 +221,12 @@ impl<'a> Rle0Decoder<'a> {
                 rem -= take;
             } else if self.lenv > 0 {
                 let available = self.buf.len().saturating_sub(self.pos);
-                let to_read = self.lenv.min(available).min(rem);
-                if to_read == 0 {
-                    self.lenv = 0;
-                    continue;
+                if self.lenv > available {
+                    return Err(std::io::Error::other(
+                        "RLE0 diff data exceeds remaining code buffer",
+                    ));
                 }
+                let to_read = self.lenv.min(rem);
                 let src = &self.buf[self.pos..self.pos + to_read];
                 for i in 0..to_read {
                     data[dp + i] = data[dp + i].wrapping_add(src[i]);
