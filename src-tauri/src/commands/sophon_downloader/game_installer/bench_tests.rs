@@ -14,8 +14,8 @@ use std::time::Instant;
 use bytes::BytesMut;
 use md5::{Digest, Md5};
 
+use super::MD5_HASH_BUFFER_SIZE;
 use super::cache::VerificationEntry;
-use super::{DOWNLOAD_STREAM_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE};
 
 // ---------------------------------------------------------------------------
 // Helper: format duration with appropriate unit
@@ -161,7 +161,7 @@ fn bench_download_stream_write() {
     let data = vec![0xCD_u8; network_chunk_size];
 
     let mut file = fs::File::create(&dest).expect("create");
-    let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
+    let mut buffer = BytesMut::with_capacity(MD5_HASH_BUFFER_SIZE);
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
@@ -170,7 +170,7 @@ fn bench_download_stream_write() {
         let bytes = &data;
         hasher.update(bytes);
         buffer.extend_from_slice(bytes);
-        if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
+        if buffer.len() >= MD5_HASH_BUFFER_SIZE {
             file.write_all(&buffer).expect("write");
             buffer.clear();
         }
@@ -189,7 +189,7 @@ fn bench_download_stream_write() {
         fmt_dur(elapsed)
     );
     println!("  throughput: {throughput_mb:.1} MiB/s");
-    println!("  buffer size: {} KiB", DOWNLOAD_STREAM_BUFFER_SIZE / 1024);
+    println!("  buffer size: {} KiB", MD5_HASH_BUFFER_SIZE / 1024);
     println!("  peak buffer memory: {} KiB", buffer.capacity() / 1024);
 }
 

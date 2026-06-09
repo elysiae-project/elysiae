@@ -335,7 +335,7 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::super::DOWNLOAD_STREAM_BUFFER_SIZE;
+    use super::super::MD5_HASH_BUFFER_SIZE;
     use super::super::error::SophonError;
     use super::download_chunk;
     use super::parse_content_range_start;
@@ -578,7 +578,7 @@ mod tests {
     #[tokio::test]
     async fn download_chunk_large_content() {
         let server = MockServer::start().await;
-        let data = vec![0xAB_u8; DOWNLOAD_STREAM_BUFFER_SIZE * 3 + 512];
+        let data = vec![0xAB_u8; MD5_HASH_BUFFER_SIZE * 3 + 512];
         let expected_md5 = hex::encode(Md5::digest(&data));
         let chunk = make_chunk("large_chunk", data.len() as u64, &expected_md5);
         let dl_info = make_download_info(&server);

@@ -32,9 +32,6 @@ pub const VERSION_FILE_NAME: &str = ".sophon_version";
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
 /// Buffer size for file writes during assembly (256 KiB).
-#[allow(dead_code)]
-pub const DOWNLOAD_STREAM_BUFFER_SIZE: usize = 256 * 1024;
-/// Buffer size for file writes during assembly (256 KiB).
 pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
 /// Buffer size for MD5 hashing (256 KiB — optimized for sequential reads).
 pub const MD5_HASH_BUFFER_SIZE: usize = 256 * 1024;
