@@ -501,21 +501,34 @@ fn make_assembly_params(
 async fn drain_join_set(
     join_set: &mut tokio::task::JoinSet<Result<SophonResult<()>, tokio::task::JoinError>>,
 ) -> SophonResult<()> {
+    let mut first_error: Option<SophonError> = None;
     while let Some(res) = join_set.join_next().await {
         match res {
             Ok(Ok(Ok(()))) => {}
             Ok(Ok(Err(e))) => {
                 log::error!("Assembly task failed: {}", e);
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
             }
             Ok(Err(e)) => {
                 log::error!("Assembly task join error: {}", e);
+                if first_error.is_none() {
+                    first_error = Some(SophonError::JoinError(e));
+                }
             }
             Err(e) => {
                 log::error!("Assembly task join error: {}", e);
+                if first_error.is_none() {
+                    first_error = Some(SophonError::JoinError(e));
+                }
             }
         }
     }
-    Ok(())
+    match first_error {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 fn spawn_assembly_coordinator(
@@ -558,7 +571,21 @@ fn spawn_assembly_coordinator(
                     None => return drain_join_set(&mut join_set).await,
                 }
             } else if let Some(res) = join_set.join_next().await {
-                let _ = res??;
+                match res {
+                    Ok(Ok(Ok(()))) => {}
+                    Ok(Ok(Err(e))) => {
+                        log::error!("Assembly task failed: {}", e);
+                        return Err(e);
+                    }
+                    Ok(Err(e)) => {
+                        log::error!("Assembly task join error: {}", e);
+                        return Err(SophonError::JoinError(e));
+                    }
+                    Err(e) => {
+                        log::error!("Assembly task join error: {}", e);
+                        return Err(SophonError::JoinError(e));
+                    }
+                }
             }
         }
     });
