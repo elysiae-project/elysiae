@@ -124,7 +124,16 @@ async fn do_download_chunk(
                 // MD5 mismatch - remove and re-download
                 let _ = tokio::fs::remove_file(dest).await;
             } else {
-                return Ok(());
+                // Fall back to decompressed hash verification
+                if !chunk.chunk_decompressed_hash_md5.is_empty() {
+                    let actual = compute_file_md5(dest).await?;
+                    if actual == chunk.chunk_decompressed_hash_md5 {
+                        return Ok(());
+                    }
+                    let _ = tokio::fs::remove_file(dest).await;
+                } else {
+                    return Ok(());
+                }
             }
         }
     }
