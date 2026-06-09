@@ -1135,8 +1135,30 @@ impl FilterCache {
             fs::read_to_string(&kdel_path).ok().and_then(|content| {
                 let first_line = content.lines().next()?;
                 let tokens: Vec<String> = first_line
-                    .split('|')
-                    .map(|token| token.trim_matches('|').to_string())
+                    .split(|c: char| {
+                        c == '|'
+                            || c == ';'
+                            || c == ','
+                            || c == '$'
+                            || c == '#'
+                            || c == '@'
+                            || c == '+'
+                            || c == ' '
+                    })
+                    .map(|token| {
+                        token
+                            .trim_matches(|c: char| {
+                                c == '|'
+                                    || c == ';'
+                                    || c == ','
+                                    || c == '$'
+                                    || c == '#'
+                                    || c == '@'
+                                    || c == '+'
+                                    || c == ' '
+                            })
+                            .to_string()
+                    })
                     .filter(|t| !t.is_empty())
                     .collect();
                 if tokens.is_empty() {
