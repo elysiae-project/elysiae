@@ -642,6 +642,7 @@ async fn download_chunk_with_retries(
                             MAX_RETRIES
                         ),
                     });
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
                 // Don't delete the partial file here - the inner layer
                 // (download.rs) can resume it on the next attempt via
