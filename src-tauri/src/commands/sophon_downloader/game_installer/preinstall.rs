@@ -413,10 +413,11 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
-    let start = Instant::now();
     let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
     let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
     let max_concurrency = super::adaptive_max_concurrency();
+    let last_speed_bytes = Arc::new(AtomicU64::new(0));
+    let last_speed_time = Arc::new(std::sync::Mutex::new(Instant::now()));
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
@@ -432,6 +433,8 @@ pub async fn preinstall_download(
             let state_saver = Arc::clone(&state_saver);
             let last_update = Arc::clone(&last_update);
             let chunks_since_save = Arc::clone(&chunks_since_save);
+            let last_speed_bytes = Arc::clone(&last_speed_bytes);
+            let last_speed_time = Arc::clone(&last_speed_time);
             let already_downloaded_chunk = chunk_bytes_map.contains_key(&chunk_info.patch_name);
 
             async move {
@@ -493,9 +496,18 @@ pub async fn preinstall_download(
                         && lu.elapsed()
                             >= std::time::Duration::from_millis(super::PROGRESS_UPDATE_INTERVAL_MS)
                     {
-                        let total_elapsed = start.elapsed().as_secs_f64();
-                        let speed_bps = if total_elapsed > 0.0 {
-                            db as f64 / total_elapsed
+                        let speed_bps = if let Ok(mut lst) = last_speed_time.try_lock() {
+                            let window_elapsed = lst.elapsed().as_secs_f64();
+                            if window_elapsed >= 1.0 {
+                                let window_bytes =
+                                    db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
+                                let window_speed = window_bytes as f64 / window_elapsed;
+                                last_speed_bytes.store(db, Ordering::Relaxed);
+                                *lst = Instant::now();
+                                window_speed
+                            } else {
+                                0.0
+                            }
                         } else {
                             0.0
                         };
