@@ -21,7 +21,7 @@ mod bench_tests;
 mod integration_tests;
 
 /// Maximum retry attempts for failed chunk downloads.
-pub const MAX_RETRIES: u32 = 4;
+pub const MAX_RETRIES: u32 = 10;
 /// Maximum concurrent file assembly tasks.
 pub const ASSEMBLY_CONCURRENCY: usize = 8;
 /// Size of the channel buffer for assembly task scheduling.
