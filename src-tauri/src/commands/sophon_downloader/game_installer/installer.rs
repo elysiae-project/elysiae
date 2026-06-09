@@ -55,7 +55,8 @@ struct InstallContext {
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<Mutex<Instant>>,
-    download_start: Instant,
+    last_speed_bytes: Arc<AtomicU64>,
+    last_speed_time: Arc<Mutex<Instant>>,
     updater: ProgressUpdater,
     downloaded_chunks: Arc<DashMap<String, u64>>,
     chunks_since_save: Arc<AtomicU64>,
@@ -763,9 +764,18 @@ async fn process_download_item(
     if let Ok(mut lu) = ctx.last_update.try_lock()
         && lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
     {
-        let elapsed_secs = ctx.download_start.elapsed().as_secs_f64();
-        let speed_bps = if elapsed_secs > 0.0 {
-            db as f64 / elapsed_secs
+        let speed_bps = if let Ok(mut lst) = ctx.last_speed_time.try_lock() {
+            let window_elapsed = lst.elapsed().as_secs_f64();
+            if window_elapsed >= 1.0 {
+                let last_db = ctx.last_speed_bytes.load(Ordering::Relaxed);
+                let window_bytes = db.saturating_sub(last_db);
+                let window_speed = window_bytes as f64 / window_elapsed;
+                ctx.last_speed_bytes.store(db, Ordering::Relaxed);
+                *lst = Instant::now();
+                window_speed
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
@@ -809,7 +819,7 @@ async fn run_downloads(
 
             process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
         })
-        .buffer_unordered(adaptive_max_concurrency())
+        .buffer_unordered(256) // High ceiling, adaptive semaphore controls actual concurrency
         .collect()
         .await
 }
@@ -1178,7 +1188,8 @@ pub async fn install(
         chunk_refcounts: Arc::new(DashMap::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
         last_update: Arc::new(Mutex::new(Instant::now())),
-        download_start: Instant::now(),
+        last_speed_bytes: Arc::new(AtomicU64::new(0)),
+        last_speed_time: Arc::new(Mutex::new(Instant::now())),
         updater: Arc::clone(&callbacks.updater),
         downloaded_chunks: Arc::new(initial_dashmap),
         chunks_since_save: Arc::new(AtomicU64::new(0)),
@@ -1868,7 +1879,8 @@ mod tests {
             chunk_refcounts: Arc::new(DashMap::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(Mutex::new(Instant::now())),
-            download_start: Instant::now(),
+            last_speed_bytes: Arc::new(AtomicU64::new(0)),
+            last_speed_time: Arc::new(Mutex::new(Instant::now())),
             updater: Arc::new(|_| {}),
             downloaded_chunks: Arc::new(DashMap::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
