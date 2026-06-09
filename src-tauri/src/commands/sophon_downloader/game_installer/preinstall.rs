@@ -529,7 +529,9 @@ pub async fn preinstall_download(
                 }
 
                 let save_count = chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
-                if save_count.is_multiple_of(25) {
+                if save_count.is_multiple_of(
+                    crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL as usize,
+                ) {
                     state_saver(&chunk_bytes_map);
                 }
 
@@ -1694,7 +1696,9 @@ async fn apply_download_over_with_retry(
                 if is_last {
                     break;
                 }
-                let delay = std::time::Duration::from_millis(INITIAL_DELAY_MS * (1 << attempt));
+                let delay = std::time::Duration::from_millis(
+                    (INITIAL_DELAY_MS * (1 << attempt)).min(30_000),
+                );
                 log::warn!(
                     "DownloadOver failed for {} (attempt {}/{}), retrying in {}ms: {}",
                     asset.target_file_path,
