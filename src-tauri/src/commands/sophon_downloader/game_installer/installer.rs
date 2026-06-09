@@ -575,14 +575,17 @@ fn spawn_assembly_coordinator(
                     Ok(Ok(Ok(()))) => {}
                     Ok(Ok(Err(e))) => {
                         log::error!("Assembly task failed: {}", e);
+                        drain_join_set(&mut join_set).await?;
                         return Err(e);
                     }
                     Ok(Err(e)) => {
                         log::error!("Assembly task join error: {}", e);
+                        drain_join_set(&mut join_set).await?;
                         return Err(SophonError::JoinError(e));
                     }
                     Err(e) => {
                         log::error!("Assembly task join error: {}", e);
+                        drain_join_set(&mut join_set).await?;
                         return Err(SophonError::JoinError(e));
                     }
                 }
