@@ -1,27 +1,27 @@
 use std::path::Path;
 use std::time::Duration;
 
-use bytes::BytesMut;
 use futures_util::StreamExt;
+use libc;
 use md5::{Digest, Md5};
 use reqwest::Client;
-use sysinfo::Disks;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
+use super::MD5_HASH_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
-use super::{DOWNLOAD_STREAM_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
 fn get_available_space(path: &Path) -> Option<u64> {
-    let disks = Disks::new_with_refreshed_list();
-    for disk in disks.iter() {
-        if path.starts_with(disk.mount_point()) {
-            return Some(disk.available_space());
-        }
+    use std::os::unix::ffi::OsStrExt;
+    let cpath = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    let ret = unsafe { libc::statvfs(cpath.as_ptr(), &mut stat) };
+    if ret != 0 {
+        return None;
     }
-    None
+    Some(stat.f_bavail as u64 * stat.f_frsize as u64)
 }
 
 pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError> {
@@ -208,7 +208,6 @@ async fn download_full_file_with_response(
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
-    let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
 
     loop {
         match timeout(Duration::from_millis(20000), stream.next()).await {
@@ -216,18 +215,11 @@ async fn download_full_file_with_response(
                 let bytes = chunk_bytes?;
                 total_len += bytes.len() as u64;
                 hasher.update(&bytes);
-                buffer.extend_from_slice(&bytes);
-                if buffer.len() >= DOWNLOAD_STREAM_BUFFER_SIZE {
-                    file.write_all(&buffer).await?;
-                    buffer.clear();
-                }
+                file.write_all(&bytes).await?;
             }
             Ok(None) => break,
             Err(_) => continue, // keep looping to allow cancellation or data arrival
         }
-    }
-    if !buffer.is_empty() {
-        file.write_all(&buffer).await?;
     }
 
     file.flush().await?;
