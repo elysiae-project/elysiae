@@ -87,13 +87,18 @@ impl PatchSingle {
         } else {
             0
         };
+        let comp_diff_size = if hi.comp_mode == CompressionMode::Zlib {
+            (ci.compress_new_data_diff_size as u64).saturating_sub(padding)
+        } else {
+            ci.compress_new_data_diff_size as u64
+        };
         let new_data_diff_start = offset.wrapping_add(new_data_diff_padding);
         let (clip3, _) = get_clip_stream(
             f3,
             hi.comp_mode,
             new_data_diff_start,
             ci.new_data_diff_size as u64,
-            ci.compress_new_data_diff_size as u64,
+            comp_diff_size,
             false,
         )?;
         let mut clips: [Box<dyn Read>; 4] = [clip0, clip1, clip2, clip3];
