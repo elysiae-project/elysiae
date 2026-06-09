@@ -144,28 +144,25 @@ async fn do_download_chunk(
         } else if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
             let resp = resp.error_for_status()?;
             // Validate Content-Range header matches what we requested
-            if let Some(range) = resp.headers().get("content-range") {
-                if let Ok(range_str) = range.to_str() {
-                    // Content-Range: bytes START-END/TOTAL
+            let range_header_valid = resp
+                .headers()
+                .get("content-range")
+                .and_then(|v| v.to_str().ok())
+                .map(|range_str| {
                     if range_str.contains("*/") {
                         // Server indicates resource exists but range not satisfiable
-                        let _ = tokio::fs::remove_file(dest).await;
-                    } else if let Some(start) = parse_content_range_start(range_str) {
-                        if start != existing_size {
-                            // Server returned wrong range start - discard and re-download
-                            let _ = tokio::fs::remove_file(dest).await;
-                        } else {
-                            return download_with_resume(resp, chunk, dest, existing_size).await;
-                        }
-                    } else {
-                        return download_with_resume(resp, chunk, dest, existing_size).await;
+                        return false;
                     }
-                } else {
-                    return download_with_resume(resp, chunk, dest, existing_size).await;
-                }
-            } else {
+                    parse_content_range_start(range_str)
+                        .map(|start| start == existing_size)
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if range_header_valid {
                 return download_with_resume(resp, chunk, dest, existing_size).await;
             }
+            // Can't validate Content-Range - discard partial and re-download fresh
+            let _ = tokio::fs::remove_file(dest).await;
         } else {
             // Server returned 200 OK (ignored Range header) — discard partial and
             // re-download
