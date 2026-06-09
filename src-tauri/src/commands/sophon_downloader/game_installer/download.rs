@@ -214,7 +214,7 @@ async fn download_full_file_with_response(
     let mut buffer = BytesMut::with_capacity(DOWNLOAD_STREAM_BUFFER_SIZE);
 
     loop {
-        match timeout(Duration::from_millis(5000), stream.next()).await {
+        match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk_bytes)) => {
                 let bytes = chunk_bytes?;
                 total_len += bytes.len() as u64;
@@ -299,7 +299,7 @@ async fn download_with_resume(
     let mut total_len = existing_size;
 
     loop {
-        match timeout(Duration::from_millis(5000), stream.next()).await {
+        match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk_bytes)) => {
                 let bytes = chunk_bytes?;
                 file.write_all(&bytes).await?;
