@@ -45,17 +45,17 @@ pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
 /// Minimum concurrent downloads in adaptive mode.
 pub const ADAPTIVE_MIN_CONCURRENCY: usize = 8;
 /// Maximum concurrent downloads in adaptive mode.
-/// Computed as sqrt(available_cpu_cores) clamped to [2, 32].
+/// Computed as (cores * 3) clamped to [8, 64].
 pub fn adaptive_max_concurrency() -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    (cpus as f64).sqrt().clamp(2.0, 32.0) as usize
+    (cpus * 3).clamp(8, 64)
 }
 /// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 16;
+pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 32;
 /// Time window for throughput measurement (seconds).
-pub const ADAPTIVE_WINDOW_SECS: u64 = 2;
+pub const ADAPTIVE_WINDOW_SECS: u64 = 5;
 
 pub const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
