@@ -1227,7 +1227,7 @@ pub async fn install(
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
-    let (assembly_task, _assembly_cancel_token) = spawn_assembly_coordinator(&ctx, assemble_rx);
+    let (assembly_task, assembly_cancel_token) = spawn_assembly_coordinator(&ctx, assemble_rx);
 
     let (download_items, chunk_to_files) = build_download_state(
         installer_data,
@@ -1281,7 +1281,7 @@ pub async fn install(
     }
 
     drop(assemble_tx);
-    finalize_install(
+    let result = finalize_install(
         &ctx,
         results,
         deleted_files,
@@ -1291,7 +1291,9 @@ pub async fn install(
         game_code,
         vo_langs,
     )
-    .await
+    .await;
+    assembly_cancel_token.cancel();
+    result
 }
 
 pub async fn verify_integrity(
