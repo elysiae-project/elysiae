@@ -240,7 +240,7 @@ pub async fn build_preinstall_plan(
                             if has_main_entry {
                                 all_patch_assets.push(PatchAssetInfo {
                                     target_file_path: asset_prop.asset_name.clone(),
-                                    target_file_size: asset_prop.asset_size,
+                                    target_file_size: asset_prop.asset_size as u64,
                                     target_file_hash: asset_prop.asset_hash_md5.clone(),
                                     patch_method: PatchMethod::DownloadOver,
                                     patch_name: String::new(),
@@ -286,7 +286,7 @@ pub async fn build_preinstall_plan(
 
                     all_patch_assets.push(PatchAssetInfo {
                         target_file_path: asset_prop.asset_name.clone(),
-                        target_file_size: asset_prop.asset_size,
+                        target_file_size: asset_prop.asset_size as u64,
                         target_file_hash: asset_prop.asset_hash_md5.clone(),
                         patch_method: method,
                         patch_name: chunk.patch_name.clone(),
@@ -304,7 +304,7 @@ pub async fn build_preinstall_plan(
                     seen_patch_targets.insert(asset_prop.asset_name.clone());
                     all_patch_assets.push(PatchAssetInfo {
                         target_file_path: asset_prop.asset_name.clone(),
-                        target_file_size: asset_prop.asset_size,
+                        target_file_size: asset_prop.asset_size as u64,
                         target_file_hash: asset_prop.asset_hash_md5.clone(),
                         patch_method: PatchMethod::DownloadOver,
                         patch_name: String::new(),

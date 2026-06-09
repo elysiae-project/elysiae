@@ -94,8 +94,8 @@ pub struct SophonPatchAssetProperty {
     #[prost(string, tag = "1")]
     pub asset_name: String,
 
-    #[prost(uint64, tag = "2")]
-    pub asset_size: u64,
+    #[prost(int64, tag = "2")]
+    pub asset_size: i64,
 
     #[prost(string, tag = "3")]
     pub asset_hash_md5: String,
