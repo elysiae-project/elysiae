@@ -183,9 +183,13 @@ impl HDiff {
             .into());
         }
 
+        let expected_size = header_info.new_data_size;
+        if expected_size < 0 {
+            return Err(std::io::Error::other("new_data_size is negative").into());
+        }
+
         let out_file = File::create(&self.dest_path)?;
         let mut out_writer = BufWriter::new(out_file);
-        let expected_size = header_info.new_data_size;
 
         if header_info.is_single_compressed_diff {
             patch_sf::PatchSF::new(header_info).patch(
@@ -204,9 +208,6 @@ impl HDiff {
         }
         out_writer.flush()?;
 
-        if expected_size < 0 {
-            return Err("new_data_size is negative".into());
-        }
         let actual_size = std::fs::metadata(&self.dest_path)?.len() as i64;
         if actual_size != expected_size {
             return Err(format!(
