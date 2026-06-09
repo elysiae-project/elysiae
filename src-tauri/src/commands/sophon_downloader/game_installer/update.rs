@@ -46,9 +46,7 @@ pub async fn check_update(
 
     let (update_compressed_size, update_decompressed_size) = if update_available {
         if let Some(ref installed) = current_tag {
-            fetch_diff_sizes(client, &branch.main, installed, &remote_tag, vo_lang)
-                .await
-                .unwrap_or_default()
+            fetch_diff_sizes(client, &branch.main, installed, &remote_tag, vo_lang).await?
         } else {
             (0, 0)
         }
