@@ -743,7 +743,10 @@ async fn process_download_item(
 
     if was_actually_downloaded && item.is_pre_downloaded {
         ctx.resume_bytes_offset
-            .fetch_sub(item.chunk.chunk_size, Ordering::Relaxed);
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(item.chunk.chunk_size))
+            })
+            .ok();
     }
 
     ctx.downloaded_chunks
