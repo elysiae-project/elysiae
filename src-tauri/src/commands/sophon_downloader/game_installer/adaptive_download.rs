@@ -35,9 +35,10 @@ pub struct AdaptiveSemaphore {
 
 impl AdaptiveSemaphore {
     pub fn new() -> Self {
+        let initial = adaptive_max_concurrency().min(ADAPTIVE_INITIAL_CONCURRENCY);
         Self {
-            semaphore: Semaphore::new(ADAPTIVE_INITIAL_CONCURRENCY),
-            target: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
+            semaphore: Semaphore::new(initial),
+            target: AtomicUsize::new(initial),
             active: AtomicUsize::new(0),
             total_bytes: AtomicU64::new(0),
             ewma_throughput_mbps: AtomicU64::new(0),
@@ -178,7 +179,8 @@ mod tests {
     #[test]
     fn new_semaphore_has_initial_target() {
         let sem = AdaptiveSemaphore::new();
-        assert_eq!(sem.current_target(), ADAPTIVE_INITIAL_CONCURRENCY);
+        let expected = adaptive_max_concurrency().min(ADAPTIVE_INITIAL_CONCURRENCY);
+        assert_eq!(sem.current_target(), expected);
         assert_eq!(sem.current_active(), 0);
     }
 
