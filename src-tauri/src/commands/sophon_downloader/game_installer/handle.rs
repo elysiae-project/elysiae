@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use tauri_plugin_log::log;
 use tokio::sync::Notify;
 
 use super::error::{SophonError, SophonResult};
@@ -54,7 +55,10 @@ impl DownloadHandle {
             STATE_RUNNING => ControlState::Running,
             STATE_PAUSED => ControlState::Paused,
             STATE_CANCELLED => ControlState::Cancelled,
-            _ => ControlState::Running,
+            raw => {
+                log::error!("DownloadHandle in invalid state: {}", raw);
+                ControlState::Cancelled
+            }
         }
     }
 
