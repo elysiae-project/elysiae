@@ -281,11 +281,11 @@ impl HDiff {
         }
 
         Self::get_diff_chunk_info(sr, &mut header_info.chunk_info, type_end_pos)?;
-        header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 0)
+        header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 1)
             as i64)
-            + ((header_info.chunk_info.compress_rle_ctrl_buf_size > 0) as i64)
-            + ((header_info.chunk_info.compress_rle_code_buf_size > 0) as i64)
-            + ((header_info.chunk_info.compress_new_data_diff_size > 0) as i64);
+            + ((header_info.chunk_info.compress_rle_ctrl_buf_size > 1) as i64)
+            + ((header_info.chunk_info.compress_rle_code_buf_size > 1) as i64)
+            + ((header_info.chunk_info.compress_new_data_diff_size > 1) as i64);
         Ok(())
     }
 
