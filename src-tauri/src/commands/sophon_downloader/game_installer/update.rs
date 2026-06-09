@@ -141,29 +141,32 @@ pub async fn fetch_diff_sizes(
             continue;
         }
 
-        let new_manifest =
-            super::api::fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id)
-                .await?
-                .manifest;
+        let matching_field = new_meta.matching_field.clone();
 
-        let old_files: HashMap<String, String> = match old_map.get(&new_meta.matching_field) {
-            Some(old_meta) => {
-                let old_manifest = super::api::fetch_manifest(
-                    client,
-                    &old_meta.manifest_download,
-                    &old_meta.manifest.id,
-                )
-                .await?
-                .manifest;
-                old_manifest
-                    .assets
-                    .into_iter()
-                    .filter(|f| !f.is_directory())
-                    .map(|f| (f.asset_name, f.asset_hash_md5))
-                    .collect()
+        let (new_manifest_response, old_files) = tokio::try_join!(
+            super::api::fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id),
+            async {
+                match old_map.get(&matching_field) {
+                    Some(old_meta) => {
+                        let old_manifest = super::api::fetch_manifest(
+                            client,
+                            &old_meta.manifest_download,
+                            &old_meta.manifest.id,
+                        )
+                        .await?
+                        .manifest;
+                        Ok(old_manifest
+                            .assets
+                            .into_iter()
+                            .filter(|f| !f.is_directory())
+                            .map(|f| (f.asset_name, f.asset_hash_md5))
+                            .collect::<HashMap<String, String>>())
+                    }
+                    None => Ok(HashMap::new()),
+                }
             }
-            None => HashMap::new(),
-        };
+        )?;
+        let new_manifest = new_manifest_response.manifest;
 
         for file in &new_manifest.assets {
             if file.is_directory() {
