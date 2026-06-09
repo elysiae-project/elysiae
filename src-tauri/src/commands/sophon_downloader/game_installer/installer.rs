@@ -89,8 +89,6 @@ pub struct SophonInstaller {
     pub chunk_download: DownloadInfo,
     pub label: String,
     pub matching_field: String,
-    #[allow(dead_code)]
-    pub tag: String,
     pub manifest_hash: String,
 }
 
@@ -98,7 +96,6 @@ impl SophonInstaller {
     pub async fn from_manifest_meta(
         client: &Client,
         meta: &SophonManifestMeta,
-        tag: &str,
     ) -> SophonResult<Self> {
         let result =
             super::api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
@@ -112,7 +109,6 @@ impl SophonInstaller {
                 .trim_matches('/')
                 .replace('/', "-"),
             matching_field: meta.matching_field.clone(),
-            tag: tag.to_owned(),
             manifest_hash: result.hash,
         })
     }
@@ -128,7 +124,7 @@ pub async fn build_installers(
     let build = fetch_build(client, &branch.main, None).await?;
     let tag = build.tag.clone();
 
-    let installers = build_installers_from_data(client, &build, vo_lang, &tag).await?;
+    let installers = build_installers_from_data(client, &build, vo_lang).await?;
     let manifest_hash = combine_manifest_hashes(&installers);
     Ok((installers, tag, manifest_hash))
 }
@@ -148,7 +144,7 @@ pub async fn build_update_installers(
 
     let new_tag = new_build.tag.clone();
     let (installers, deleted_files) =
-        build_diff_installers(client, &old_build, &new_build, vo_lang, &new_tag).await?;
+        build_diff_installers(client, &old_build, &new_build, vo_lang).await?;
     let manifest_hash = combine_manifest_hashes(&installers);
     Ok((installers, deleted_files, new_tag, manifest_hash))
 }
@@ -157,7 +153,6 @@ async fn build_installers_from_data(
     client: &Client,
     build: &SophonBuildData,
     vo_lang: &str,
-    tag: &str,
 ) -> SophonResult<Vec<SophonInstaller>> {
     let qualifying: Vec<&SophonManifestMeta> = build
         .manifests
@@ -175,7 +170,7 @@ async fn build_installers_from_data(
 
     let futures: Vec<_> = qualifying
         .iter()
-        .map(|meta| SophonInstaller::from_manifest_meta(client, meta, tag))
+        .map(|meta| SophonInstaller::from_manifest_meta(client, meta))
         .collect();
     let installers = try_join_all(futures).await?;
 
@@ -243,7 +238,6 @@ async fn build_diff_installers(
     old_build: &SophonBuildData,
     new_build: &SophonBuildData,
     vo_lang: &str,
-    tag: &str,
 ) -> SophonResult<(Vec<SophonInstaller>, Vec<String>)> {
     let old_by_field: HashMap<&str, &SophonManifestMeta> = old_build
         .manifests
@@ -307,7 +301,6 @@ async fn build_diff_installers(
                 .trim_matches('/')
                 .replace('/', "-"),
             matching_field: new_meta.matching_field.clone(),
-            tag: tag.to_owned(),
             manifest_hash: new_manifest_hash,
         });
     }
@@ -1550,7 +1543,6 @@ mod tests {
             chunk_download: make_download_info(),
             label: "test".into(),
             matching_field: "game".into(),
-            tag: "1.0".into(),
             manifest_hash: hash.into(),
         }
     }
@@ -1951,7 +1943,6 @@ mod tests {
             chunk_download: make_download_info(),
             label: "test".into(),
             matching_field: "game".into(),
-            tag: "1.0".into(),
             manifest_hash: "abc".into(),
         };
 
