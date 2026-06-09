@@ -1205,7 +1205,7 @@ impl FilterCache {
         let ignored_lang_patterns = if game_dir.join("GenshinImpact_Data").exists()
             || game_dir.join("YuanShen_Data").exists()
         {
-            let persistent_dir = find_genshin_persistent_dir(game_dir);
+            let persistent_dir = super::game_filters::find_genshin_persistent_dir(game_dir);
             let installed = read_genshin_installed_langs(&persistent_dir);
             let all_langs: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
             let ignored: Vec<String> = all_langs
@@ -1264,21 +1264,6 @@ fn extract_blacklist_filename(line: &str) -> Option<String> {
     let rest = &line[start..];
     let end = rest.find('"')?;
     Some(rest[..end].replace('\\', "/"))
-}
-
-fn find_genshin_persistent_dir(game_dir: &Path) -> PathBuf {
-    if let Ok(entries) = fs::read_dir(game_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if (name_str == "GenshinImpact_Data" || name_str == "YuanShen_Data")
-                && entry.path().is_dir()
-            {
-                return entry.path().join("Persistent");
-            }
-        }
-    }
-    game_dir.join("GenshinImpact_Data/Persistent")
 }
 
 fn read_genshin_installed_langs(persistent_dir: &Path) -> Vec<String> {

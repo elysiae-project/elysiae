@@ -18,7 +18,7 @@ pub fn filter_hk4e_asset_list(
     assets: &mut Vec<SophonManifestAssetProperty>,
     vo_langs: &[String],
 ) {
-    let persistent_dir = find_hk4e_persistent_dir(game_dir);
+    let persistent_dir = super::find_genshin_persistent_dir(game_dir);
 
     let installed_langs = read_installed_audio_langs(&persistent_dir, vo_langs);
 
@@ -63,7 +63,7 @@ pub fn filter_hk4e_asset_list(
 }
 
 pub fn write_audio_lang_record(game_dir: &Path, vo_langs: &[String]) -> std::io::Result<()> {
-    let persistent_dir = find_hk4e_persistent_dir(game_dir);
+    let persistent_dir = super::find_genshin_persistent_dir(game_dir);
     fs::create_dir_all(&persistent_dir)?;
 
     write_lang_file(
@@ -113,21 +113,6 @@ pub fn write_pkg_version_from_manifest(
     }
 
     Ok(())
-}
-
-fn find_hk4e_persistent_dir(game_dir: &Path) -> std::path::PathBuf {
-    if let Ok(entries) = fs::read_dir(game_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if (name_str == "GenshinImpact_Data" || name_str == "YuanShen_Data")
-                && entry.path().is_dir()
-            {
-                return entry.path().join("Persistent");
-            }
-        }
-    }
-    game_dir.join("GenshinImpact_Data/Persistent")
 }
 
 fn read_installed_audio_langs(persistent_dir: &Path, vo_langs: &[String]) -> Vec<String> {

@@ -17,6 +17,21 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
+pub(crate) fn find_genshin_persistent_dir(game_dir: &Path) -> std::path::PathBuf {
+    if let Ok(entries) = fs::read_dir(game_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if (name_str == "GenshinImpact_Data" || name_str == "YuanShen_Data")
+                && entry.path().is_dir()
+            {
+                return entry.path().join("Persistent");
+            }
+        }
+    }
+    game_dir.join("GenshinImpact_Data/Persistent")
+}
+
 pub(crate) fn write_lang_file(
     path: &Path,
     vo_langs: &[String],
