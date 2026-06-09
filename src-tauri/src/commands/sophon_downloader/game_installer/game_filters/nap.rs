@@ -13,6 +13,9 @@ const AUDIO_LANG_FILE: &str = "audio_lang";
 const KDEL_RESOURCE_FILE: &str = "KDelResource";
 const KDEL_SEPARATORS: &[char] = &['|', ';', ',', '$', '#', '@', '+', ' '];
 
+/// ZZZ does not currently require asset-level filtering.
+/// Audio language filtering is handled at the installer level
+/// via `filter_nap_installers` and `write_nap_audio_lang_records`.
 pub fn filter_nap_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAssetProperty>) {
     let _ = (game_dir, assets);
 }
