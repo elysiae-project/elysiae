@@ -919,4 +919,24 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn validate_chunk_name_valid() {
+        assert!(validate_chunk_name("abc123"));
+    }
+
+    #[test]
+    fn validate_chunk_name_empty() {
+        assert!(!validate_chunk_name(""));
+    }
+
+    #[test]
+    fn validate_chunk_name_null_byte() {
+        assert!(!validate_chunk_name("abc\0def"));
+    }
+
+    #[test]
+    fn validate_chunk_name_absolute_path() {
+        assert!(!validate_chunk_name("/etc/passwd"));
+    }
 }
