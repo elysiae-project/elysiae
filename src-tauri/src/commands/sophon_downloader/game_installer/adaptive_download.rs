@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
+use tauri_plugin_log::log;
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use super::*;
@@ -48,11 +49,14 @@ impl AdaptiveSemaphore {
 
     pub async fn acquire(&self) -> AdaptivePermit<'_> {
         loop {
-            let permit = self
-                .semaphore
-                .acquire()
-                .await
-                .expect("adaptive semaphore closed unexpectedly");
+            let permit = match self.semaphore.acquire().await {
+                Ok(p) => p,
+                Err(_) => {
+                    log::error!("adaptive semaphore closed unexpectedly");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
             let active = self.active.fetch_add(1, Ordering::AcqRel) + 1;
             let target = self.target.load(Ordering::Acquire);
             if active <= target {
