@@ -163,33 +163,9 @@ pub struct SophonPatchManifestMeta {
     pub stats: std::collections::HashMap<String, Stats>,
 }
 
-#[inline]
-pub fn front_door_game_index(game_id: &str) -> Option<usize> {
-    match game_id.to_lowercase().as_str() {
-        "bh3" => Some(3),
-        "hk4e" => Some(2),
-        "hkrpg" => Some(1),
-        "nap" => Some(0),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn front_door_game_index_known() {
-        assert_eq!(front_door_game_index("nap"), Some(0));
-        assert_eq!(front_door_game_index("hkrpg"), Some(1));
-        assert_eq!(front_door_game_index("hk4e"), Some(2));
-        assert_eq!(front_door_game_index("bh3"), Some(3));
-    }
-
-    #[test]
-    fn front_door_game_index_unknown() {
-        assert_eq!(front_door_game_index("unknown"), None);
-    }
 
     #[test]
     fn compression_try_from_valid() {

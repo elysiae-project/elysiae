@@ -98,9 +98,6 @@ pub enum SophonError {
         serde_json::Error,
     ),
 
-    #[error("Front-door branch index out of range")]
-    BranchIndexOutOfRange,
-
     #[error("{kind} index {index} out of bounds")]
     IndexOutOfBounds { kind: &'static str, index: usize },
 

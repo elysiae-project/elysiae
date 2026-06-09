@@ -6,7 +6,7 @@ use reqwest::Client;
 
 use crate::commands::sophon_downloader::api_scrape::{
     FrontDoorResponse, GameBranch, PackageBranch, SophonBuildData, SophonBuildResponse,
-    SophonPatchBuildData, SophonPatchBuildResponse, SophonPatchManifestMeta, front_door_game_index,
+    SophonPatchBuildData, SophonPatchBuildResponse, SophonPatchManifestMeta,
 };
 use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestProto, SophonPatchProto, decode_manifest, decode_patch_manifest,
@@ -34,15 +34,12 @@ pub async fn fetch_front_door(
         .json()
         .await?;
 
-    let idx =
-        front_door_game_index(game_id).ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
-
     let branch = resp
         .data
         .game_branches
         .into_iter()
-        .nth(idx)
-        .ok_or(SophonError::BranchIndexOutOfRange)?;
+        .find(|b| b.game.id.eq_ignore_ascii_case(game_id))
+        .ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
 
     let pre = branch.pre_download.clone();
     Ok((branch, pre))
