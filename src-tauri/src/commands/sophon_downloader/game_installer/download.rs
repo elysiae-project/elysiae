@@ -144,6 +144,7 @@ async fn do_download_chunk(
         let resp = client
             .get(url)
             .header(reqwest::header::RANGE, range_header)
+            .timeout(Duration::from_secs(20))
             .send()
             .await?;
 
@@ -180,7 +181,11 @@ async fn do_download_chunk(
     }
 
     // Fresh download
-    let resp = client.get(url).send().await?;
+    let resp = client
+        .get(url)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?;
     let resp = resp.error_for_status()?;
     download_full_file_with_response(resp, chunk, dest).await
 }
