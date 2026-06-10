@@ -222,6 +222,13 @@ pub fn assemble_file(
         }
     }
 
+    if target_path.exists() {
+        let _ = fs::metadata(&target_path).ok().and_then(|m| {
+            let mut perms = m.permissions();
+            perms.set_readonly(false);
+            fs::set_permissions(&target_path, perms).ok()
+        });
+    }
     fs::rename(&tmp_path, &target_path)?;
 
     for chunk_name in consumed_chunks {
