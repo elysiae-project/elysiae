@@ -34,10 +34,10 @@ pub struct SophonManifestAssetProperty {
 
 impl SophonManifestAssetProperty {
     /// Returns true if this entry represents a directory (not a data file).
-    /// Per the proto definition, type 64 indicates a directory.
+    /// Matches Collapse logic: asset_type != 0 OR empty MD5 hash.
     #[inline]
     pub fn is_directory(&self) -> bool {
-        self.asset_type == 64
+        self.asset_type != 0 || self.asset_hash_md5.is_empty()
     }
 }
 
@@ -183,7 +183,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_directory_type_1_is_file() {
+    fn is_directory_type_nonzero_is_dir() {
         let prop = SophonManifestAssetProperty {
             asset_name: String::new(),
             asset_chunks: vec![],
@@ -191,7 +191,7 @@ mod tests {
             asset_size: 0,
             asset_hash_md5: "abc".into(),
         };
-        assert!(!prop.is_directory());
+        assert!(prop.is_directory());
     }
 
     #[test]
@@ -207,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn is_directory_type_0_with_empty_hash_is_file() {
+    fn is_directory_empty_hash_is_dir() {
         let prop = SophonManifestAssetProperty {
             asset_name: String::new(),
             asset_chunks: vec![],
@@ -215,7 +215,7 @@ mod tests {
             asset_size: 0,
             asset_hash_md5: String::new(),
         };
-        assert!(!prop.is_directory());
+        assert!(prop.is_directory());
     }
 
     #[test]
