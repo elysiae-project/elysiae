@@ -2457,6 +2457,57 @@ mod tests {
     }
 
     #[test]
+    fn apply_hdiff_patch_size_mismatch_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create an original file with the wrong size
+        let original_path = dir.path().join("original.bin");
+        fs::write(&original_path, b"short data that has wrong size").unwrap();
+        let actual_size = fs::metadata(&original_path).unwrap().len();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk.bin"), b"dummy chunk data").unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "original.bin".to_string(),
+            target_file_size: 100,
+            target_file_hash: "target_hash".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("original.bin".to_string()),
+            original_file_hash: Some("original_hash".to_string()),
+            original_file_size: Some(999), // Expected size is 999, but actual is different
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SophonError::OriginalFileMissing(_)),
+            "Expected OriginalFileMissing, got: {err:?}"
+        );
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("Size mismatch"),
+            "Error should mention 'Size mismatch': {err_str}"
+        );
+        // Also verify the error message includes expected and actual sizes
+        assert!(
+            err_str.contains("999") && err_str.contains(&actual_size.to_string()),
+            "Error should include expected and actual sizes: {err_str}"
+        );
+    }
+
+    #[test]
     fn load_preinstall_state_missing_file() {
         let dir = tempfile::tempdir().unwrap();
         let result = load_preinstall_state(dir.path(), "nonexistent");
