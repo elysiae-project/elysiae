@@ -9,7 +9,9 @@ use crate::commands::sophon_downloader::SophonProgress;
 
 const STATE_RUNNING: u8 = 0;
 const STATE_PAUSED: u8 = 1;
-const STATE_CANCELLED: u8 = 2;
+/// Terminal cancelled state — cannot be undone by resume().
+/// Uses value 3 to avoid collision with future intermediate states.
+const STATE_CANCELLED: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlState {
@@ -37,7 +39,17 @@ impl DownloadHandle {
     }
 
     pub fn resume(&self) {
-        self.state.store(STATE_RUNNING, Ordering::Release);
+        // Never resume a cancelled download — cancellation is terminal
+        if self.state.load(Ordering::Acquire) == STATE_CANCELLED {
+            return;
+        }
+        // Only transition from PAUSED to RUNNING
+        let _ = self.state.compare_exchange(
+            STATE_PAUSED,
+            STATE_RUNNING,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
         self.pause_notify.notify_waiters();
     }
 
