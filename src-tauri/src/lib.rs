@@ -18,6 +18,11 @@ pub fn run() {
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(64)
+                .user_agent(format!(
+                    "{}/{}",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION")
+                ))
                 .build()
                 .unwrap(),
         )) // Required for sophon chunk downloading
