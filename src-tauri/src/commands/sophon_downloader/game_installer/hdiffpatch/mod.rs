@@ -149,9 +149,9 @@ impl HDiff {
         }
 
         let p_file_ver = Self::try_get_version(h_info_arr[0])?;
-        if p_file_ver != 13 && p_file_ver != 19 && p_file_ver != 20 {
+        if p_file_ver != 13 && p_file_ver != 20 {
             return Err(format!(
-                "unsupported HDiff version {p_file_ver} (only 13, 19, and 20 supported)"
+                "unsupported HDiff version {p_file_ver} (only 13 and 20 supported)"
             )
             .into());
         }
