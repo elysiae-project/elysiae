@@ -65,6 +65,8 @@ pub struct SophonManifestMeta {
     pub chunk_download: DownloadInfo,
     pub manifest_download: DownloadInfo,
     pub stats: Stats,
+    #[serde(default)]
+    pub deduplicated_stats: Option<Stats>,
 }
 
 #[allow(dead_code)]
