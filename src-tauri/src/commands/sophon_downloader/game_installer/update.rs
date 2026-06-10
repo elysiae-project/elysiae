@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tauri_plugin_log::log;
 
-use super::api::{fetch_build, vo_lang_matches};
+use super::api::{fetch_build, is_known_vo_locale, vo_lang_matches};
 use super::error::{SophonError, SophonResult};
 use super::read_installed_tag;
 
@@ -62,10 +63,13 @@ pub async fn check_update(
     ) = match pre_download_branch {
         Some(ref pre) => {
             let tag = pre.tag.clone();
-            let (cs, ds) = fetch_build_sizes(client, pre, vo_lang)
-                .await
-                .unwrap_or_default();
-            (true, Some(tag), cs, ds)
+            match fetch_build_sizes(client, pre, vo_lang).await {
+                Ok((cs, ds)) => (true, Some(tag), cs, ds),
+                Err(e) => {
+                    log::warn!("Failed to fetch preinstall sizes: {}", e);
+                    (true, Some(tag), 0, 0)
+                }
+            }
         }
         None => (false, None, 0, 0),
     };
@@ -126,6 +130,7 @@ pub async fn fetch_diff_sizes(
 
     let mut cs = 0u64;
     let mut ds = 0u64;
+    let mut seen_chunks: HashSet<String> = HashSet::new();
 
     let old_map: HashMap<String, &SophonManifestMeta> = old_build
         .manifests
@@ -134,7 +139,9 @@ pub async fn fetch_diff_sizes(
         .collect();
 
     for new_meta in &new_build.manifests {
-        if new_meta.matching_field != "game" && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+        if new_meta.matching_field != "game"
+            && !vo_lang_matches(&new_meta.matching_field, vo_lang)
+            && is_known_vo_locale(&new_meta.matching_field)
         {
             continue;
         }
@@ -176,8 +183,10 @@ pub async fn fetch_diff_sizes(
             };
             if needs_download {
                 for chunk in &file.asset_chunks {
-                    cs += chunk.chunk_size;
-                    ds += chunk.chunk_size_decompressed;
+                    if seen_chunks.insert(chunk.chunk_name.clone()) {
+                        cs += chunk.chunk_size;
+                        ds += chunk.chunk_size_decompressed;
+                    }
                 }
             }
         }
