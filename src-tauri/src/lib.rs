@@ -1,8 +1,11 @@
-use crate::commands::{file_downloader, file_manager};
+use std::env;
+use std::time::Duration;
+
+use tauri::command;
+
+use crate::commands::{file_downloader, file_manager, media_server};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
-use std::env;
-use tauri::command;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,6 +21,7 @@ pub fn run() {
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(64)
+                .connect_timeout(Duration::from_secs(15))
                 .user_agent(format!(
                     "{}/{}",
                     env!("CARGO_PKG_NAME"),
