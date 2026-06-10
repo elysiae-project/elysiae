@@ -173,6 +173,7 @@ pub fn assemble_file(
         Some(Md5::new())
     };
 
+    let mut consumed_chunks: Vec<&str> = Vec::new();
     let mut transfer_buffer = vec![0u8; 65536];
     for chunk in &file.asset_chunks {
         let chunk_path = chunks_dir.join(chunk_filename(chunk));
@@ -185,19 +186,27 @@ pub fn assemble_file(
             file_hasher.as_mut(),
             &mut transfer_buffer,
             &chunk.chunk_decompressed_hash_md5,
-        )?;
+        )
+        .map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            e
+        })?;
 
         total_written += bytes_written;
-
-        decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
+        consumed_chunks.push(&chunk.chunk_name);
     }
 
-    buf_writer.flush()?;
-    let _out_file = buf_writer
-        .into_inner()
-        .map_err(|e| SophonError::Io(e.into_error()))?;
+    buf_writer.flush().map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        SophonError::Io(e)
+    })?;
+    let _out_file = buf_writer.into_inner().map_err(|e| {
+        let _ = fs::remove_file(&tmp_path);
+        SophonError::Io(e.into_error())
+    })?;
 
     if total_written != file.asset_size {
+        let _ = fs::remove_file(&tmp_path);
         return Err(SophonError::SizeMismatch {
             item: file.asset_name.clone(),
             expected: file.asset_size,
@@ -208,6 +217,7 @@ pub fn assemble_file(
     if let Some(hasher) = file_hasher {
         let actual = hex::encode(hasher.finalize());
         if actual != file.asset_hash_md5 {
+            let _ = fs::remove_file(&tmp_path);
             return Err(SophonError::Md5Mismatch {
                 item: file.asset_name.clone(),
                 expected: file.asset_hash_md5.clone(),
@@ -220,6 +230,11 @@ pub fn assemble_file(
         let _ = fs::remove_file(&target_path);
     }
     fs::rename(&tmp_path, &target_path)?;
+
+    for chunk_name in consumed_chunks {
+        decrement_chunk_refcount(chunk_name, chunk_refcounts, chunks_dir);
+    }
+
     Ok(())
 }
 
