@@ -670,7 +670,19 @@ async fn download_chunk_with_retries(
                     hash_failures,
                     MAX_HASH_RETRIES
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                    () = async {
+                        loop {
+                            if handle.is_cancelled() {
+                                return;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                    } => {
+                        return Err(SophonError::Cancelled);
+                    }
+                }
                 // Don't count against network retries — corrupted data is
                 // not a network error. Continue to re-download the chunk.
                 // Don't delete the partial file here — the inner layer
@@ -687,7 +699,19 @@ async fn download_chunk_with_retries(
                             item.chunk.chunk_name, network_attempts, MAX_RETRIES
                         ),
                     });
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tokio::select! {
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                        () = async {
+                            loop {
+                                if handle.is_cancelled() {
+                                    return;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            }
+                        } => {
+                            return Err(SophonError::Cancelled);
+                        }
+                    }
                 } else {
                     return Err(SophonError::DownloadFailed {
                         chunk: item.chunk.chunk_name.clone(),
