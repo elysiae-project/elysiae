@@ -1,3 +1,4 @@
+use serde::de::{self, Unexpected};
 use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
@@ -88,9 +89,8 @@ pub struct DownloadInfo {
 }
 
 /// Compression format for downloaded content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
-#[serde(try_from = "i32", into = "i32")]
 pub enum Compression {
     None = 0,
     Zstd = 1,
@@ -111,6 +111,66 @@ impl TryFrom<i32> for Compression {
             1 => Ok(Compression::Zstd),
             _ => Err(format!("Invalid compression value: {value}")),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Compression {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct CompressionVisitor;
+        impl<'de> de::Visitor<'de> for CompressionVisitor {
+            type Value = Compression;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("0, 1, false, or true")
+            }
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(if v {
+                    Compression::Zstd
+                } else {
+                    Compression::None
+                })
+            }
+            fn visit_i32<E: de::Error>(self, v: i32) -> Result<Self::Value, E> {
+                match v {
+                    0 => Ok(Compression::None),
+                    1 => Ok(Compression::Zstd),
+                    _ => Err(de::Error::invalid_value(
+                        Unexpected::Signed(v as i64),
+                        &self,
+                    )),
+                }
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                match v {
+                    0 => Ok(Compression::None),
+                    1 => Ok(Compression::Zstd),
+                    _ => Err(de::Error::invalid_value(Unexpected::Signed(v), &self)),
+                }
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                match v {
+                    0 => Ok(Compression::None),
+                    1 => Ok(Compression::Zstd),
+                    _ => Err(de::Error::invalid_value(Unexpected::Unsigned(v), &self)),
+                }
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                match v {
+                    "true" => Ok(Compression::Zstd),
+                    "false" => Ok(Compression::None),
+                    _ => Err(de::Error::invalid_value(Unexpected::Str(v), &self)),
+                }
+            }
+        }
+        deserializer.deserialize_any(CompressionVisitor)
+    }
+}
+
+impl Serialize for Compression {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i32(*self as i32)
     }
 }
 
