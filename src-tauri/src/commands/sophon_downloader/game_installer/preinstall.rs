@@ -2508,6 +2508,53 @@ mod tests {
     }
 
     #[test]
+    fn apply_hdiff_patch_from_files_blank_diff_ref_hash_matches() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a mock diff file
+        let diff_path = dir.path().join("patching/mock.diff");
+        fs::create_dir_all(diff_path.parent().unwrap()).unwrap();
+        fs::write(&diff_path, b"mock hdiff data").unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/output.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "blank_verify_patch".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        // This will fail because the diff data is invalid, but the blank diff_ref
+        // hash verification should pass (not fail with hash mismatch) before
+        // getting to the hdiff application step.
+        let result = apply_hdiff_patch_from_files(dir.path(), &diff_path, &asset);
+
+        // Verify that we did not fail on the blank diff_ref hash verification step
+        if let Err(SophonError::HDiffPatchFailed { error, .. }) = &result {
+            assert!(
+                !error.contains("hash mismatch"),
+                "Should not fail on blank diff_ref hash mismatch. Error: {error}"
+            );
+        }
+
+        // Directly verify that BLANK_FILE_MD5 is the hash of an empty file
+        let empty_path = dir.path().join("empty_file.txt");
+        fs::write(&empty_path, b"").unwrap();
+        assert!(
+            verify_file_hash(&empty_path, BLANK_FILE_MD5),
+            "BLANK_FILE_MD5 should match the hash of an empty file"
+        );
+    }
+
+    #[test]
     fn load_preinstall_state_missing_file() {
         let dir = tempfile::tempdir().unwrap();
         let result = load_preinstall_state(dir.path(), "nonexistent");
