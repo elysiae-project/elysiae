@@ -2418,6 +2418,45 @@ mod tests {
     }
 
     #[test]
+    fn apply_copy_over_cleans_up_diff_temp_on_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a chunk with HDIFF magic but invalid hdiff data
+        let hdiff_data = b"HDIFFinvalid_data_that_cannot_be_patched";
+        fs::write(chunks_dir.join("patch_hdiff_fail"), hdiff_data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/hdiff_fail.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "patch_hdiff_fail".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: hdiff_data.len() as u64,
+            patch_chunk_length: hdiff_data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        let result = apply_copy_over(dir.path(), &chunks_dir, &asset);
+
+        // Should fail because the hdiff data is invalid
+        assert!(result.is_err());
+
+        // The diff_temp file should have been cleaned up
+        let diff_temp = dir.path().join("patching/patch_hdiff_fail.diff");
+        assert!(
+            !diff_temp.exists(),
+            "diff_temp file should have been cleaned up after apply_hdiff_patch_from_files fails"
+        );
+    }
+
+    #[test]
     fn load_preinstall_state_missing_file() {
         let dir = tempfile::tempdir().unwrap();
         let result = load_preinstall_state(dir.path(), "nonexistent");
