@@ -877,6 +877,7 @@ async fn finalize_install(
     tag: &str,
     is_preinstall: bool,
     assembly_task: tokio::task::JoinHandle<SophonResult<()>>,
+    assembly_cancel_token: CancellationToken,
     game_code: &str,
     vo_langs: &[String],
 ) -> SophonResult<()> {
@@ -884,12 +885,13 @@ async fn finalize_install(
         .iter()
         .any(|r| matches!(r, Err(SophonError::Cancelled)));
     if cancelled {
+        assembly_cancel_token.cancel(); // stop assembly before deleting chunks
+        let _ = assembly_task.await; // drain before cleanup
         let cd = Arc::clone(&ctx.chunks_dir);
         let _ = tokio::task::spawn_blocking(move || {
             let _ = fs::remove_dir_all(&*cd);
         })
         .await;
-        let _ = assembly_task.await;
         return Err(SophonError::Cancelled);
     }
 
@@ -1305,6 +1307,7 @@ pub async fn install(
         tag,
         options.is_preinstall,
         assembly_task,
+        assembly_cancel_token.clone(),
         game_code,
         vo_langs,
     )
