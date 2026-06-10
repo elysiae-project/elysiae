@@ -33,6 +33,7 @@ use crate::commands::sophon_downloader::proto_parse::{
 };
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
+const BLANK_FILE_MD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
 const PREINSTALL_STATE_FILE_EXT: &str = ".json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1341,7 +1342,9 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             std::io::copy(&mut limited, &mut writer)?;
             writer.flush()?;
         }
-        return apply_hdiff_patch_from_files(game_dir, &diff_temp, asset);
+        let result = apply_hdiff_patch_from_files(game_dir, &diff_temp, asset);
+        let _ = fs::remove_file(&diff_temp);
+        return result;
     }
 
     // Stream copy: read from chunk file + write to target without loading all into
@@ -1426,12 +1429,18 @@ fn apply_hdiff_patch(
                 );
                 return Ok(());
             }
+            // Collapse treats size mismatch as "needs complete download" — match that
+            // behavior
             log::warn!(
-                "Original file size mismatch for {}: expected {}, got {} — proceeding with patch (reference does not pre-validate size)",
+                "Original file size mismatch for {}: expected {}, got {} — falling back to DownloadOver",
                 original_path.display(),
                 expected_size,
                 actual_size
             );
+            return Err(SophonError::OriginalFileMissing(format!(
+                "{} (Size mismatch: expected {expected_size}, got {actual_size})",
+                original_path.display()
+            )));
         }
     }
     if let Some(ref expected_md5) = asset.original_file_hash
@@ -1568,6 +1577,16 @@ fn apply_hdiff_patch_from_files(
             fs::create_dir_all(parent)?;
         }
         fs::File::create(&empty_original_path)?;
+        // Collapse uses BlankFileMd5Hash to represent an empty original file.
+        // Verify our freshly-created diff_ref is actually empty before proceeding.
+        if !verify_file_hash(&empty_original_path, BLANK_FILE_MD5) {
+            return Err(SophonError::HDiffPatchFailed {
+                file: asset.target_file_path.clone(),
+                error: format!(
+                    "Blank diff_ref file hash mismatch for created empty file at {empty_original_path:?}"
+                ),
+            });
+        }
     }
 
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
