@@ -137,6 +137,9 @@ pub enum SophonError {
 
     #[error("Resume failed: {message}")]
     ResumeFailed { message: String },
+
+    #[error("Invalid size string: {0}")]
+    InvalidSizeString(String),
 }
 
 impl From<tokio::sync::AcquireError> for SophonError {

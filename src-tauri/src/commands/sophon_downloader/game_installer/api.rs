@@ -234,8 +234,9 @@ pub fn is_known_vo_locale(matching_field: &str) -> bool {
 }
 
 #[inline]
-pub fn parse_size(s: &str) -> u64 {
-    s.parse().unwrap_or(0)
+pub fn parse_size(s: &str) -> SophonResult<u64> {
+    s.parse()
+        .map_err(|_| SophonError::InvalidSizeString(s.to_string()))
 }
 
 #[cfg(test)]
@@ -289,11 +290,11 @@ mod tests {
 
     #[test]
     fn parse_size_valid() {
-        assert_eq!(parse_size("1024"), 1024);
+        assert_eq!(parse_size("1024").unwrap(), 1024);
     }
 
     #[test]
     fn parse_size_invalid() {
-        assert_eq!(parse_size("abc"), 0);
+        assert!(parse_size("abc").is_err());
     }
 }

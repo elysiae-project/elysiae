@@ -105,10 +105,10 @@ pub async fn fetch_build_sizes(
         .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
         .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
 
-    let cs = super::api::parse_size(&game_meta.stats.compressed_size)
-        + super::api::parse_size(&vo_meta.stats.compressed_size);
-    let ds = super::api::parse_size(&game_meta.stats.uncompressed_size)
-        + super::api::parse_size(&vo_meta.stats.uncompressed_size);
+    let cs = super::api::parse_size(&game_meta.stats.compressed_size)?
+        + super::api::parse_size(&vo_meta.stats.compressed_size)?;
+    let ds = super::api::parse_size(&game_meta.stats.uncompressed_size)?
+        + super::api::parse_size(&vo_meta.stats.uncompressed_size)?;
     Ok((cs, ds))
 }
 
