@@ -148,10 +148,6 @@ pub fn assemble_file(
         );
     }
 
-    if tmp_path.exists() {
-        fs::remove_file(&tmp_path)?;
-    }
-
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -160,7 +156,7 @@ pub fn assemble_file(
         .read(true)
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .open(&tmp_path)?;
 
     out_file.set_len(file.asset_size)?;
