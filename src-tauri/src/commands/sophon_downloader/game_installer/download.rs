@@ -227,7 +227,12 @@ async fn download_full_file_with_response(
                 file.write_all(&bytes).await?;
             }
             Ok(None) => break,
-            Err(_) => continue, // keep looping to allow cancellation or data arrival
+            Err(_) => {
+                return Err(SophonError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "stream read timed out after 20s",
+                )));
+            }
         }
     }
 
@@ -304,7 +309,12 @@ async fn download_with_resume(
                 total_len += bytes.len() as u64;
             }
             Ok(None) => break,
-            Err(_) => continue, // timeout: loop back, allows responsive cancellation
+            Err(_) => {
+                return Err(SophonError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "stream read timed out after 20s",
+                )));
+            }
         }
     }
 

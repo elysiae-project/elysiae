@@ -31,6 +31,7 @@ pub async fn fetch_front_door(
         .timeout(Duration::from_secs(30))
         .send()
         .await?
+        .error_for_status()?
         .json()
         .await?;
 
@@ -125,6 +126,7 @@ pub async fn fetch_build(
         .timeout(Duration::from_secs(30))
         .send()
         .await?
+        .error_for_status()?
         .json()
         .await?;
     if resp.data.manifests.is_empty() {
@@ -152,6 +154,7 @@ pub async fn fetch_patch_build(
         .timeout(Duration::from_secs(30))
         .send()
         .await?
+        .error_for_status()?
         .json()
         .await?;
     if resp.data.manifests.is_empty() {
