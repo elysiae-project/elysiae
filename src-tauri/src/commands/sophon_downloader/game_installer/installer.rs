@@ -639,10 +639,11 @@ async fn download_chunk_with_retries(
     ctx: &InstallContext,
     handle: &DownloadHandle,
 ) -> SophonResult<()> {
-    let mut last_err = String::new();
-    let mut success = false;
+    const MAX_HASH_RETRIES: u32 = 5;
+    let mut network_attempts: u32 = 0;
+    let mut hash_failures: u32 = 0;
 
-    for attempt in 0..MAX_RETRIES {
+    loop {
         if handle.is_cancelled() {
             return Err(SophonError::Cancelled);
         }
@@ -650,22 +651,49 @@ async fn download_chunk_with_retries(
         match super::download::download_chunk(&item.client, &item.chunk_download, &item.chunk, dest)
             .await
         {
-            Ok(()) => {
-                success = true;
-                break;
+            Ok(()) => return Ok(()),
+            Err(SophonError::Md5Mismatch { .. }) => {
+                hash_failures += 1;
+                if hash_failures > MAX_HASH_RETRIES {
+                    return Err(SophonError::DownloadFailed {
+                        chunk: item.chunk.chunk_name.clone(),
+                        attempts: hash_failures as u32,
+                        error: format!(
+                            "hash verification failed after {} retries",
+                            MAX_HASH_RETRIES
+                        ),
+                    });
+                }
+                log::warn!(
+                    "MD5 mismatch for {} (hash retry {}/{}), re-downloading",
+                    item.chunk.chunk_name,
+                    hash_failures,
+                    MAX_HASH_RETRIES
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                // Don't count against network retries — corrupted data is
+                // not a network error. Continue to re-download the chunk.
+                // Don't delete the partial file here — the inner layer
+                // (download.rs) can resume it on the next attempt via
+                // HTTP Range requests.
             }
             Err(e) => {
-                last_err = e.to_string();
-                if attempt < MAX_RETRIES - 1 {
+                network_attempts += 1;
+                if network_attempts < MAX_RETRIES {
+                    let err_msg = e.to_string();
                     (ctx.updater)(SophonProgress::Warning {
                         message: format!(
-                            "Chunk {} failed (attempt {}/{}): {last_err}",
-                            item.chunk.chunk_name,
-                            attempt + 1,
-                            MAX_RETRIES
+                            "Chunk {} failed (attempt {}/{}): {err_msg}",
+                            item.chunk.chunk_name, network_attempts, MAX_RETRIES
                         ),
                     });
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                } else {
+                    return Err(SophonError::DownloadFailed {
+                        chunk: item.chunk.chunk_name.clone(),
+                        attempts: MAX_RETRIES,
+                        error: e.to_string(),
+                    });
                 }
                 // Don't delete the partial file here - the inner layer
                 // (download.rs) can resume it on the next attempt via
@@ -674,16 +702,6 @@ async fn download_chunk_with_retries(
             }
         }
     }
-
-    if !success {
-        return Err(SophonError::DownloadFailed {
-            chunk: item.chunk.chunk_name.clone(),
-            attempts: MAX_RETRIES,
-            error: last_err,
-        });
-    }
-
-    Ok(())
 }
 
 async fn notify_assembly_ready(
