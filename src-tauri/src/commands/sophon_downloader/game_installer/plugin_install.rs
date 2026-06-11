@@ -136,6 +136,10 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
     let mut archive =
         ZipArchive::new(reader).map_err(|e| SophonError::Decompression(e.to_string()))?;
 
+    // Canonicalize game_dir once to prevent time-of-check-time-of-use issues
+    // and provide a stable base for symlink-traversal detection.
+    let canonical_game = game_dir.canonicalize()?;
+
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
@@ -147,9 +151,22 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
 
         if entry.is_dir() {
             fs::create_dir_all(&out_path)?;
+            // Resolve symlinks in the created path; if the resolved path
+            // escapes game_dir, this is a symlink-traversal attack.
+            if !out_path.canonicalize()?.starts_with(&canonical_game) {
+                log::warn!("Skipping path traversal attempt: {:?}", out_path);
+                let _ = fs::remove_dir_all(&out_path);
+                continue;
+            }
         } else {
             if let Some(parent) = out_path.parent() {
                 fs::create_dir_all(parent)?;
+                // Canonicalize the parent directory to detect if any component
+                // is a symlink pointing outside game_dir.
+                if !parent.canonicalize()?.starts_with(&canonical_game) {
+                    log::warn!("Skipping path traversal attempt: {:?}", out_path);
+                    continue;
+                }
             }
             let mut out_file = File::create(&out_path)?;
             std::io::copy(&mut entry, &mut out_file)?;
