@@ -152,7 +152,6 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
         return Ok(());
     }
 
-    // Collapse: Span<byte> bufferSpan = buffer.AsSpan()[..^3];
     let data = &buf[..buf.len().saturating_sub(3)];
     if data.len() < 40 {
         log::warn!(
@@ -162,15 +161,12 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
         return Ok(());
     }
 
-    // Collapse: Span<byte> hashSpan = bufferSpan[^36..^4];
     let hash_end = data.len().saturating_sub(4);
     let hash_start = hash_end.saturating_sub(36);
     let hash_str = std::str::from_utf8(&data[hash_start..hash_end])
         .unwrap_or("")
         .to_string();
 
-    // Collapse: GetVersionNumber reads BigEndian uint16 str_len, skips (2+str_len),
-    // then patch(u32), major(u32), minor(u32)
     let (major, minor, patch) = if data.len() > 2 {
         let str_len = u16::from_be_bytes([data[0], data[1]]) as usize;
         let version_start = 2 + str_len;
