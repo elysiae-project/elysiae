@@ -385,9 +385,9 @@ pub async fn install_channel_sdks(
     let updater: ProgressFn = Arc::new(updater);
     let total = sdks.len();
     for sdk in sdks.iter() {
-        updater(SophonProgress::InstallingPlugins {
-            current_plugin: format!("sdk_{}", sdk.game.id),
-            total_plugins: total,
+        updater(SophonProgress::InstallingSdks {
+            current_sdk: format!("sdk_{}", sdk.game.id),
+            total_sdks: total,
         });
 
         if let Err(e) = install_single_sdk(client, game_dir, sdk, &updater).await {

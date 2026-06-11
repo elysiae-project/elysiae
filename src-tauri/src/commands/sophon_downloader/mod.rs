@@ -244,10 +244,15 @@ pub enum SophonProgress {
     Warning { message: String },
     /// Fatal error occurred.
     Error { message: String },
-    /// Installing plugins/SDKs into the game directory.
+    /// Installing plugins into the game directory.
     InstallingPlugins {
         current_plugin: String,
         total_plugins: usize,
+    },
+    /// Installing channel SDKs into the game directory.
+    InstallingSdks {
+        current_sdk: String,
+        total_sdks: usize,
     },
     /// Downloading a plugin/SDK ZIP package.
     DownloadingPlugin {
