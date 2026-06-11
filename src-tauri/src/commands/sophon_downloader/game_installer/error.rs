@@ -101,6 +101,9 @@ pub enum SophonError {
     #[error("{kind} index {index} out of bounds")]
     IndexOutOfBounds { kind: &'static str, index: usize },
 
+    #[error("API returned error (retcode={0}): {1}")]
+    ApiError(i32, String),
+
     #[error("Plugin validation failed: {0}")]
     PluginValidationFailed(String),
 

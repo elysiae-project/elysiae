@@ -3,7 +3,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde::Deserialize;
 
-use super::error::SophonResult;
+use super::error::{SophonError, SophonResult};
 
 const LAUNCHER_ID: &str = "VYTpXlbWo8";
 const PLUGIN_URL: &str = concat!(
@@ -161,6 +161,13 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         .json()
         .await?;
 
+    // Validate API response code before processing data.
+    // A non-zero retcode indicates an upstream error (e.g. invalid game ID, auth
+    // failure) and the response data should not be trusted.
+    if resp.retcode != 0 {
+        return Err(SophonError::ApiError(resp.retcode, resp.message));
+    }
+
     let mut plugins: Vec<PluginPackageInfo> = resp
         .data
         .plugin_releases
@@ -198,6 +205,11 @@ pub async fn fetch_channel_sdks(
         .await?
         .json()
         .await?;
+
+    // Validate API response code before processing data.
+    if resp.retcode != 0 {
+        return Err(SophonError::ApiError(resp.retcode, resp.message));
+    }
 
     let sdks: Vec<ChannelSdkData> = resp
         .data
