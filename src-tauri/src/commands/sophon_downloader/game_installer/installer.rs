@@ -864,9 +864,10 @@ async fn process_download_item(
     }
 
     let db = if was_actually_downloaded {
-        ctx.downloaded_bytes
+        let old = ctx
+            .downloaded_bytes
             .fetch_add(item.chunk.chunk_size, Ordering::Relaxed);
-        ctx.downloaded_bytes.load(Ordering::Relaxed)
+        old + item.chunk.chunk_size
     } else {
         ctx.downloaded_bytes.load(Ordering::Relaxed)
     };
