@@ -821,28 +821,28 @@ pub async fn sophon_get_resume_info(app_handle: AppHandle) -> Option<ResumeInfo>
 
 /// Pauses the active download.
 #[command]
-pub async fn sophon_pause(active: State<'_, ActiveDownload>) -> Result<(), ()> {
-    if let Some(h) = active.0.lock().await.as_ref() {
-        h.pause();
-    }
+pub async fn sophon_pause(active: State<'_, ActiveDownload>) -> Result<(), String> {
+    let guard = active.0.lock().await;
+    let h = guard.as_ref().ok_or("No active download")?;
+    h.pause();
     Ok(())
 }
 
 /// Resumes a paused download.
 #[command]
-pub async fn sophon_resume(active: State<'_, ActiveDownload>) -> Result<(), ()> {
-    if let Some(h) = active.0.lock().await.as_ref() {
-        h.resume();
-    }
+pub async fn sophon_resume(active: State<'_, ActiveDownload>) -> Result<(), String> {
+    let guard = active.0.lock().await;
+    let h = guard.as_ref().ok_or("No active download")?;
+    h.resume();
     Ok(())
 }
 
 /// Cancels the active download.
 #[command]
-pub async fn sophon_cancel(active: State<'_, ActiveDownload>) -> Result<(), ()> {
-    if let Some(h) = active.0.lock().await.as_ref() {
-        h.cancel();
-    }
+pub async fn sophon_cancel(active: State<'_, ActiveDownload>) -> Result<(), String> {
+    let guard = active.0.lock().await;
+    let h = guard.as_ref().ok_or("No active download")?;
+    h.cancel();
     Ok(())
 }
 
