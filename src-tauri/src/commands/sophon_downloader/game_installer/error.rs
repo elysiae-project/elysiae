@@ -126,6 +126,8 @@ pub enum SophonError {
     InvalidSizeString(String),
 }
 
+/// Converts SophonError to a plain string for the Tauri IPC boundary.
+/// Structured error handling should match on SophonError before calling this.
 impl From<SophonError> for String {
     fn from(err: SophonError) -> Self {
         err.to_string()
