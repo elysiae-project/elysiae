@@ -126,14 +126,6 @@ pub enum SophonError {
     InvalidSizeString(String),
 }
 
-/// Converts SophonError to a plain string for the Tauri IPC boundary.
-/// Structured error handling should match on SophonError before calling this.
-impl From<SophonError> for String {
-    fn from(err: SophonError) -> Self {
-        err.to_string()
-    }
-}
-
 pub type SophonResult<T> = Result<T, SophonError>;
 
 #[cfg(test)]
@@ -193,12 +185,12 @@ mod tests {
     }
 
     #[test]
-    fn error_into_string() {
-        let s: String = SophonError::Cancelled.into();
+    fn error_to_string() {
+        let s = SophonError::Cancelled.to_string();
         assert_eq!(s, "Download cancelled");
-        let s: String = SophonError::PathTraversal(PathBuf::from("/bad/path")).into();
+        let s = SophonError::PathTraversal(PathBuf::from("/bad/path")).to_string();
         assert!(s.contains("/bad/path"));
-        let s: String = SophonError::NoManifests.into();
+        let s = SophonError::NoManifests.to_string();
         assert!(!s.is_empty());
     }
 }
