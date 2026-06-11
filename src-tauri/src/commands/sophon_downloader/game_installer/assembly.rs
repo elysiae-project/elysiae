@@ -483,16 +483,6 @@ pub fn run_assembly_task(
 
     let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
 
-    if count % 50 == 0 {
-        let gd = game_dir.clone();
-        let vc = verify_cache.clone();
-        std::thread::spawn(move || {
-            if let Err(e) = super::cache::save_verification_cache(&gd, &vc) {
-                log::error!("Periodic verification cache save failed: {}", e);
-            }
-        });
-    }
-
     {
         if let Ok(mut lu) = last_assembly_update.try_lock()
             && lu.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
