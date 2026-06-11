@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -224,12 +224,14 @@ async fn install_single_plugin(
         return Ok(());
     }
 
-    let filename = pkg
-        .url
-        .rsplit('/')
-        .next()
-        .unwrap_or("plugin.zip")
-        .to_string();
+    let raw_filename = pkg.url.rsplit('/').next().unwrap_or("plugin.zip");
+    let filename = raw_filename
+        .split(['/', '\\'])
+        .last()
+        .unwrap_or("plugin.zip");
+    if filename.contains("..") || filename.is_empty() {
+        return Err(SophonError::PathTraversal(PathBuf::from(filename)));
+    }
     let zip_path = game_dir.join(&filename);
 
     download_zip(client, &pkg.url, &zip_path, &pkg.md5, updater).await?;
@@ -308,13 +310,16 @@ async fn install_single_sdk(
         return Ok(());
     }
 
-    let filename = sdk
+    let raw_filename = sdk
         .channel_sdk_pkg
         .url
         .rsplit('/')
         .next()
-        .unwrap_or("sdk.zip")
-        .to_string();
+        .unwrap_or("sdk.zip");
+    let filename = raw_filename.split(['/', '\\']).last().unwrap_or("sdk.zip");
+    if filename.contains("..") || filename.is_empty() {
+        return Err(SophonError::PathTraversal(PathBuf::from(filename)));
+    }
     let zip_path = game_dir.join(&filename);
 
     download_zip(
