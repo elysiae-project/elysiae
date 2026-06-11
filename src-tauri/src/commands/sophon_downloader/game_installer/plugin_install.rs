@@ -253,6 +253,9 @@ async fn install_single_plugin(
 
     if !verify_validation(game_dir, &pkg.validation) {
         let _ = fs::remove_file(&zip_path);
+        for entry in &pkg.validation {
+            let _ = fs::remove_file(game_dir.join(&entry.path));
+        }
         return Err(SophonError::PluginValidationFailed(
             plugin.plugin_id.clone(),
         ));
@@ -348,6 +351,9 @@ async fn install_single_sdk(
 
     if !verify_validation(game_dir, &sdk.channel_sdk_pkg.validation) {
         let _ = fs::remove_file(&zip_path);
+        for entry in &sdk.channel_sdk_pkg.validation {
+            let _ = fs::remove_file(game_dir.join(&entry.path));
+        }
         return Err(SophonError::PluginValidationFailed(sdk.game.id.clone()));
     }
 
