@@ -90,11 +90,7 @@ pub use installer::{
     build_update_installers, install, verify_integrity,
 };
 pub use plugin_install::{install_channel_sdks, install_plugins};
-#[allow(unused_imports)]
-pub use preinstall::{
-    PatchAssetInfo, PatchMethod, PreinstallState, apply_preinstall, build_preinstall_plan,
-    preinstall_download,
-};
+pub use preinstall::{apply_preinstall, build_preinstall_plan, preinstall_download};
 pub use update::{UpdateInfo, check_update};
 
 #[cfg(test)]
