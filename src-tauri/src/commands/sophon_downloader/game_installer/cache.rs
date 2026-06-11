@@ -92,10 +92,11 @@ pub fn check_file_md5_cached(
     game_dir: &Path,
     cache: &DashMap<String, VerificationEntry>,
 ) -> io::Result<bool> {
-    let cache_key_cow = path
+    let cache_key = path
         .strip_prefix(game_dir)
         .unwrap_or(path)
-        .to_string_lossy();
+        .to_string_lossy()
+        .to_string();
     let metadata = match path.metadata() {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -107,7 +108,7 @@ pub fn check_file_md5_cached(
         .unwrap_or_default()
         .as_secs();
 
-    if let Some(entry) = cache.get(cache_key_cow.as_ref())
+    if let Some(entry) = cache.get(&cache_key)
         && entry.size == expected_size
         && entry.md5 == expected_md5
         && entry.mtime_secs == mtime
@@ -123,7 +124,6 @@ pub fn check_file_md5_cached(
     let matches = actual == expected_md5;
 
     if matches {
-        let cache_key = cache_key_cow.into_owned();
         cache.insert(
             cache_key,
             VerificationEntry {
