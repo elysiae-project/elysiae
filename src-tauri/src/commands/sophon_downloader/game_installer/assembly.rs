@@ -172,24 +172,46 @@ pub fn assemble_file(
     let mut consumed_chunks: Vec<&str> = Vec::new();
     let mut transfer_buffer = vec![0u8; 65536];
     for chunk in &file.asset_chunks {
-        let chunk_path = chunks_dir.join(chunk_filename(chunk));
+        if chunk.chunk_old_offset >= 0 {
+            // Chunk-level reuse: read decompressed data from the existing game
+            // file at the old offset instead of downloading & decompressing.
+            let bytes_written = write_from_old_file(
+                &target_path,
+                &mut buf_writer,
+                chunk.chunk_on_file_offset,
+                chunk.chunk_old_offset as u64,
+                chunk.chunk_size_decompressed,
+                file_hasher.as_mut(),
+                &mut transfer_buffer,
+                &chunk.chunk_decompressed_hash_md5,
+            )
+            .map_err(|e| {
+                let _ = fs::remove_file(&tmp_path);
+                e
+            })?;
+            total_written += bytes_written;
+            // No refcount to decrement — old-source chunks were never
+            // downloaded.
+        } else {
+            let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
-        let bytes_written = write_decompressed_chunk_at(
-            &chunk_path,
-            &mut buf_writer,
-            chunk.chunk_on_file_offset,
-            chunk.chunk_size_decompressed,
-            file_hasher.as_mut(),
-            &mut transfer_buffer,
-            &chunk.chunk_decompressed_hash_md5,
-        )
-        .map_err(|e| {
-            let _ = fs::remove_file(&tmp_path);
-            e
-        })?;
+            let bytes_written = write_decompressed_chunk_at(
+                &chunk_path,
+                &mut buf_writer,
+                chunk.chunk_on_file_offset,
+                chunk.chunk_size_decompressed,
+                file_hasher.as_mut(),
+                &mut transfer_buffer,
+                &chunk.chunk_decompressed_hash_md5,
+            )
+            .map_err(|e| {
+                let _ = fs::remove_file(&tmp_path);
+                e
+            })?;
 
-        total_written += bytes_written;
-        consumed_chunks.push(&chunk.chunk_name);
+            total_written += bytes_written;
+            consumed_chunks.push(&chunk.chunk_name);
+        }
     }
 
     buf_writer.flush().map_err(|e| {
@@ -298,6 +320,81 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
         if actual != chunk_decompressed_hash_md5 {
             return Err(SophonError::Md5Mismatch {
                 item: chunk_path.display().to_string(),
+                expected: chunk_decompressed_hash_md5.to_string(),
+                actual,
+            });
+        }
+    }
+
+    Ok(bytes_written)
+}
+
+/// Read decompressed bytes directly from an existing game file (old file) at
+/// the given old offset, verify the chunk's decompressed MD5, and write to the
+/// output writer at the new file offset. Used for chunk-level reuse during
+/// updates.
+fn write_from_old_file<W: Write + Seek>(
+    old_file_path: &Path,
+    writer: &mut W,
+    new_offset: u64,
+    old_offset: u64,
+    expected_size: u64,
+    file_hasher: Option<&mut Md5>,
+    buffer: &mut [u8],
+    chunk_decompressed_hash_md5: &str,
+) -> SophonResult<u64> {
+    let f = File::open(old_file_path).map_err(|e| SophonError::Io(e))?;
+    let mut reader = BufReader::with_capacity(64 * 1024, f);
+    reader.seek(SeekFrom::Start(old_offset))?;
+
+    writer.seek(SeekFrom::Start(new_offset))?;
+
+    let mut bytes_written: u64 = 0;
+    let mut chunk_hasher = Md5::new();
+    let mut remaining = expected_size;
+
+    match file_hasher {
+        Some(hasher) => {
+            let mut hw = HashWriter {
+                inner: writer,
+                hasher,
+            };
+            while remaining > 0 {
+                let to_read = remaining.min(buffer.len() as u64) as usize;
+                reader.read_exact(&mut buffer[..to_read])?;
+                chunk_hasher.update(&buffer[..to_read]);
+                hw.write_all(&buffer[..to_read])?;
+                bytes_written += to_read as u64;
+                remaining = remaining.saturating_sub(to_read as u64);
+            }
+        }
+        None => {
+            while remaining > 0 {
+                let to_read = remaining.min(buffer.len() as u64) as usize;
+                reader.read_exact(&mut buffer[..to_read])?;
+                chunk_hasher.update(&buffer[..to_read]);
+                writer.write_all(&buffer[..to_read])?;
+                bytes_written += to_read as u64;
+                remaining = remaining.saturating_sub(to_read as u64);
+            }
+        }
+    }
+
+    if bytes_written != expected_size {
+        return Err(SophonError::SizeMismatch {
+            item: old_file_path.display().to_string(),
+            expected: expected_size,
+            actual: bytes_written,
+        });
+    }
+
+    if !chunk_decompressed_hash_md5.is_empty()
+        && !chunk_decompressed_hash_md5.chars().all(|c| c == '0')
+    {
+        let actual = hex::encode(chunk_hasher.finalize());
+        if actual != chunk_decompressed_hash_md5 {
+            return Err(SophonError::Md5Mismatch {
+                item: old_file_path.display().to_string(),
                 expected: chunk_decompressed_hash_md5.to_string(),
                 actual,
             });
@@ -490,6 +587,7 @@ mod tests {
             chunk_size_decompressed: 0,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: String::new(),
+            chunk_old_offset: -1,
         };
         assert_eq!(chunk_filename(&chunk), "abc123.zstd");
     }
@@ -514,6 +612,7 @@ mod tests {
             chunk_size_decompressed: decompressed_size,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: String::new(),
+            chunk_old_offset: -1,
         }
     }
 
@@ -820,6 +919,7 @@ mod tests {
             chunk_size_decompressed: data.len() as u64,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: String::new(),
+            chunk_old_offset: -1,
         };
 
         let file = SophonManifestAssetProperty {
@@ -870,6 +970,7 @@ mod tests {
             chunk_size_decompressed: data.len() as u64,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: String::new(),
+            chunk_old_offset: -1,
         };
 
         let file = SophonManifestAssetProperty {

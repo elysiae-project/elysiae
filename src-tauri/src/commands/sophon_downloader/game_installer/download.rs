@@ -385,6 +385,7 @@ mod tests {
             chunk_size_decompressed: chunk_size,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: md5.to_string(),
+            chunk_old_offset: -1,
         }
     }
 

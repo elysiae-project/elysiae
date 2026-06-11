@@ -99,9 +99,16 @@ impl SophonInstaller {
     ) -> SophonResult<Self> {
         let result =
             super::api::fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        let mut manifest = result.manifest;
+        // Fresh install: all chunks must be downloaded (no old-file reuse)
+        for asset in &mut manifest.assets {
+            for chunk in &mut asset.asset_chunks {
+                chunk.chunk_old_offset = -1;
+            }
+        }
         Ok(Self {
             client: client.clone(),
-            manifest: result.manifest,
+            manifest,
             chunk_download: meta.chunk_download.clone(),
             label: meta
                 .chunk_download
@@ -268,7 +275,7 @@ async fn build_diff_installers(
             .map(|f| f.asset_name.as_str())
             .collect();
 
-        let old_md5_map: HashMap<String, String> =
+        let (old_md5_map, old_chunk_offsets): (HashMap<String, String>, HashMap<String, u64>) =
             match old_by_field.get(new_meta.matching_field.as_str()) {
                 Some(old_meta) => {
                     let old_result = super::api::fetch_manifest(
@@ -280,12 +287,39 @@ async fn build_diff_installers(
 
                     deleted_files.extend(collect_deleted_files(&old_result.manifest, &new_names));
 
-                    build_old_md5_map(old_result.manifest)
+                    // Build old-chunk hash→offset map BEFORE consuming old_result.manifest
+                    let old_chunk_offsets: HashMap<String, u64> = old_result
+                        .manifest
+                        .assets
+                        .iter()
+                        .filter(|f| !f.is_directory())
+                        .flat_map(|f| f.asset_chunks.iter())
+                        .map(|c| {
+                            (
+                                c.chunk_decompressed_hash_md5.clone(),
+                                c.chunk_on_file_offset,
+                            )
+                        })
+                        .collect();
+
+                    let old_md5_map = build_old_md5_map(old_result.manifest);
+                    (old_md5_map, old_chunk_offsets)
                 }
-                None => HashMap::new(),
+                None => (HashMap::new(), HashMap::new()),
             };
 
-        let diff_files = compute_diff_files(new_result.manifest, &old_md5_map);
+        let mut diff_files = compute_diff_files(new_result.manifest, &old_md5_map);
+
+        // Chunk-level diff: annotate each chunk with old-file offset if its
+        // decompressed hash matches an old chunk, or -1 for new data.
+        for file in &mut diff_files {
+            for chunk in &mut file.asset_chunks {
+                chunk.chunk_old_offset = old_chunk_offsets
+                    .get(&chunk.chunk_decompressed_hash_md5)
+                    .map(|&off| off as i64)
+                    .unwrap_or(-1);
+            }
+        }
 
         if diff_files.is_empty() {
             continue;
@@ -346,6 +380,8 @@ fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
         .iter()
         .flat_map(|d| d.files.iter())
         .flat_map(|f| f.asset_chunks.iter())
+        // Only count chunks that need downloading (exclude old-source reuse)
+        .filter(|c| c.chunk_old_offset < 0)
         .filter(|c| seen_chunks.insert(c.chunk_name.as_str()))
         .map(|c| c.chunk_size)
         .fold(0u64, |acc, x| acc.saturating_add(x));
@@ -368,13 +404,20 @@ fn register_chunks_for_file(
     data: &InstallerData,
     pre_downloaded: &HashSet<String>,
 ) {
-    let chunk_count = file.asset_chunks.len();
+    // Only count chunks that need downloading (exclude old-source reuse)
+    let downloadable: Vec<&SophonManifestAssetChunk> = file
+        .asset_chunks
+        .iter()
+        .filter(|c| c.chunk_old_offset < 0)
+        .collect();
+
+    let chunk_count = downloadable.len();
     if chunk_count == 0 {
         return;
     }
 
     let pending = Arc::new(AtomicUsize::new(chunk_count));
-    for chunk in &file.asset_chunks {
+    for chunk in downloadable {
         chunk_to_files
             .entry(chunk.chunk_name.clone())
             .or_default()
@@ -440,8 +483,10 @@ async fn build_download_state(
             }
 
             let file = &ctx.all_files[all_files_index];
-            let chunk_count = file.asset_chunks.len();
-            if chunk_count == 0 {
+            let has_downloadable = file.asset_chunks.iter().any(|c| c.chunk_old_offset < 0);
+
+            if !has_downloadable {
+                // All chunks are old-source (or no chunks) — assemble immediately
                 let _ = assemble_tx.send((all_files_index, tmp_dir_idx)).await;
                 all_files_index += 1;
                 continue;
@@ -1213,10 +1258,16 @@ pub async fn install(
                         }
                         pre_assembled += 1;
                     } else {
-                        tokio::task::spawn_blocking(move || {
-                            let _ = fs::remove_file(target_path);
-                        })
-                        .await?;
+                        // Keep the old file if any chunk can be sourced from it
+                        // (chunk-level reuse). Assembly will read from it directly.
+                        let needs_old_file =
+                            file.asset_chunks.iter().any(|c| c.chunk_old_offset >= 0);
+                        if !needs_old_file {
+                            tokio::task::spawn_blocking(move || {
+                                let _ = fs::remove_file(target_path);
+                            })
+                            .await?;
+                        }
                     }
                 }
             }
@@ -1551,6 +1602,7 @@ mod tests {
             chunk_size_decompressed: size,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: String::new(),
+            chunk_old_offset: -1,
         }
     }
 
@@ -1926,6 +1978,7 @@ mod tests {
             chunk_size_decompressed: data.len() as u64,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: expected_md5,
+            chunk_old_offset: -1,
         };
 
         let dl_info = Arc::new(DownloadInfo {

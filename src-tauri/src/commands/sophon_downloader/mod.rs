@@ -917,6 +917,7 @@ mod tests {
                 chunk_size_decompressed: size,
                 chunk_compressed_hash_xxh: xxh,
                 chunk_compressed_hash_md5: "comp_md5".into(),
+                chunk_old_offset: -1,
             }],
             asset_type: 0,
             asset_size: size,

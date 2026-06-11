@@ -73,6 +73,12 @@ pub struct SophonManifestAssetChunk {
     /// MD5 of the **compressed** chunk bytes as served by the CDN.
     #[prost(string, tag = "7")]
     pub chunk_compressed_hash_md5: String,
+
+    /// Runtime-only field (not from CDN proto). -1 = new data, >= 0 = offset
+    /// in the old game file where this chunk's decompressed data can be
+    /// sourced for reuse during updates (chunk-level diff detection).
+    #[prost(int64, tag = "8")]
+    pub chunk_old_offset: i64,
 }
 
 #[inline]
@@ -246,6 +252,7 @@ mod tests {
             chunk_size_decompressed: 2048,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: "eeff0011".into(),
+            chunk_old_offset: -1,
         };
         let original = SophonManifestProto {
             assets: vec![SophonManifestAssetProperty {

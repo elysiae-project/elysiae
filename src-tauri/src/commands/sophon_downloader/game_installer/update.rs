@@ -150,7 +150,7 @@ pub async fn fetch_diff_sizes(
 
         let matching_field = new_meta.matching_field.clone();
 
-        let (new_manifest_response, old_files) = tokio::try_join!(
+        let (new_response, old_data) = tokio::try_join!(
             super::api::fetch_manifest(client, &new_meta.manifest_download, &new_meta.manifest.id),
             async {
                 match old_map.get(&matching_field) {
@@ -162,29 +162,50 @@ pub async fn fetch_diff_sizes(
                         )
                         .await?
                         .manifest;
-                        Ok(old_manifest
+                        // Build both file-MD5 map and chunk-decompressed-hash set
+                        let old_files_md5 = old_manifest
                             .assets
-                            .into_iter()
+                            .iter()
                             .filter(|f| !f.is_directory())
-                            .map(|f| (f.asset_name, f.asset_hash_md5))
-                            .collect::<HashMap<String, String>>())
+                            .map(|f| (f.asset_name.clone(), f.asset_hash_md5.clone()))
+                            .collect::<HashMap<String, String>>();
+                        let old_chunks: HashSet<String> = old_manifest
+                            .assets
+                            .iter()
+                            .filter(|f| !f.is_directory())
+                            .flat_map(|f| f.asset_chunks.iter())
+                            .map(|c| c.chunk_decompressed_hash_md5.clone())
+                            .collect();
+                        Ok(Some((old_files_md5, old_chunks)))
                     }
-                    None => Ok(HashMap::new()),
+                    None => {
+                        Ok::<Option<(HashMap<String, String>, HashSet<String>)>, SophonError>(None)
+                    }
                 }
             }
         )?;
-        let new_manifest = new_manifest_response.manifest;
+        let new_manifest = new_response.manifest;
+
+        let (old_files_md5, old_chunks): (HashMap<String, String>, HashSet<String>) = match old_data
+        {
+            Some((md5, chunks)) => (md5, chunks),
+            None => (HashMap::new(), HashSet::new()),
+        };
 
         for file in &new_manifest.assets {
             if file.is_directory() {
                 continue;
             }
-            let needs_download = match old_files.get(&file.asset_name) {
+            let needs_download = match old_files_md5.get(&file.asset_name) {
                 Some(old_md5) => old_md5 != &file.asset_hash_md5,
                 None => true,
             };
             if needs_download {
                 for chunk in &file.asset_chunks {
+                    // Skip chunks whose decompressed content already exists in an old file
+                    if old_chunks.contains(&chunk.chunk_decompressed_hash_md5) {
+                        continue;
+                    }
                     if seen_chunks.insert(chunk.chunk_name.clone()) {
                         cs += chunk.chunk_size;
                         ds += chunk.chunk_size_decompressed;
