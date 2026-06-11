@@ -1429,14 +1429,13 @@ fn apply_hdiff_patch(
                 );
                 return Ok(());
             }
-            // Collapse treats size mismatch as "needs complete download" — match that
-            // behavior
             log::warn!(
-                "Original file size mismatch for {}: expected {}, got {} — falling back to DownloadOver",
+                "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
                 original_path.display(),
                 expected_size,
                 actual_size
             );
+            let _ = fs::remove_file(&original_path);
             return Err(SophonError::OriginalFileMissing(format!(
                 "{} (Size mismatch: expected {expected_size}, got {actual_size})",
                 original_path.display()
