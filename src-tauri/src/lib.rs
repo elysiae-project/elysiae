@@ -21,7 +21,10 @@ pub fn run() {
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(64)
+                .http2_adaptive_window(true)
+                .tcp_keepalive(Duration::from_secs(60))
                 .connect_timeout(Duration::from_secs(15))
+                .read_timeout(Duration::from_secs(30))
                 .user_agent(format!(
                     "{}/{}",
                     env!("CARGO_PKG_NAME"),
