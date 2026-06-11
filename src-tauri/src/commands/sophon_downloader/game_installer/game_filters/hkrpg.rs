@@ -100,13 +100,26 @@ fn extract_filename(line: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
+/// Case-insensitive version of `str::strip_prefix`.
+/// Converts both the string and prefix to lowercase for comparison, but
+/// returns the original string slice (preserving case) on match.
+fn strip_prefix_case_insensitive<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
+    let prefix = prefix.to_lowercase();
+    let lower_s = s.to_lowercase();
+    if lower_s.starts_with(&prefix) {
+        Some(&s[prefix.len()..])
+    } else {
+        None
+    }
+}
+
 fn add_both_persistent_or_streaming_assets(path: &str, blacklist: &mut Vec<String>) {
     let streaming_prefix = "StarRail_Data/StreamingAssets/";
     let persistent_prefix = "StarRail_Data/Persistent/";
 
-    if let Some(rest) = path.strip_prefix(streaming_prefix) {
+    if let Some(rest) = strip_prefix_case_insensitive(path, streaming_prefix) {
         blacklist.push(format!("{}{}", persistent_prefix, rest));
-    } else if let Some(rest) = path.strip_prefix(persistent_prefix) {
+    } else if let Some(rest) = strip_prefix_case_insensitive(path, persistent_prefix) {
         blacklist.push(format!("{}{}", streaming_prefix, rest));
     }
 }
@@ -122,8 +135,11 @@ pub fn write_app_info(game_dir: &Path) -> std::io::Result<()> {
 pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
     let bv_path = game_dir.join("StarRail_Data/StreamingAssets/BinaryVersion.bytes");
     if !bv_path.exists() {
-        log::warn!("write_binary_version_files: BinaryVersion.bytes not found, skipping");
-        return Ok(());
+        log::error!("write_binary_version_files: BinaryVersion.bytes not found");
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "BinaryVersion.bytes not found",
+        ));
     }
 
     let mut buf = Vec::new();
