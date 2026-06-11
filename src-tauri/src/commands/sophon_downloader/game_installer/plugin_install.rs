@@ -23,6 +23,10 @@ type ProgressFn = Arc<dyn Fn(SophonProgress) + Send + Sync>;
 
 const PLUGIN_VERSIONS_FILE: &str = "plugin_versions.json";
 
+/// Serialises concurrent access to plugin_versions.json so that
+/// read-modify-write does not race.
+static PLUGIN_VERSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn read_plugin_versions(game_dir: &Path) -> HashMap<String, String> {
     let path = game_dir.join(PLUGIN_VERSIONS_FILE);
     let Ok(content) = fs::read_to_string(&path) else {
@@ -32,6 +36,12 @@ fn read_plugin_versions(game_dir: &Path) -> HashMap<String, String> {
 }
 
 fn write_plugin_version(game_dir: &Path, key: &str, value: &str) -> std::io::Result<()> {
+    // Acquire the global lock so that concurrent calls do not race on the
+    // read-modify-write of plugin_versions.json. The lock is held only during
+    // the synchronous I/O section; no await points exist inside this function.
+    let _lock = PLUGIN_VERSION_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let path = game_dir.join(PLUGIN_VERSIONS_FILE);
     let mut versions = read_plugin_versions(game_dir);
     versions.insert(key.to_string(), value.to_string());
