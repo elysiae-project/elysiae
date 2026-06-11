@@ -52,21 +52,39 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
             files: HashMap::new(),
         },
     };
+    // Size cap: if cache is excessively large, evict oldest entries rather than
+    // clearing everything. Trims down to half the maximum to avoid immediate
+    // re-trimming. Collect keys to remove BEFORE consuming serializable.files.
+    const MAX_CACHE_ENTRIES: usize = 200_000;
+    let trim_keys: Vec<String> = if serializable.files.len() > MAX_CACHE_ENTRIES {
+        let count = serializable.files.len();
+        let to_trim: Vec<_> = serializable
+            .files
+            .keys()
+            .take(count - MAX_CACHE_ENTRIES / 2)
+            .cloned()
+            .collect();
+        log::warn!(
+            "Verification cache has {} entries (max {}), trimming {} entries",
+            count,
+            MAX_CACHE_ENTRIES,
+            to_trim.len(),
+        );
+        to_trim
+    } else {
+        Vec::new()
+    };
+
     let cache: DashMap<String, VerificationEntry> = DashMap::new();
     for (k, v) in serializable.files {
         cache.insert(k, v);
     }
 
-    // Size cap: if cache is excessively large, clear it entirely
-    const MAX_CACHE_ENTRIES: usize = 200_000;
-    if cache.len() > MAX_CACHE_ENTRIES {
-        log::warn!(
-            "Verification cache has {} entries (max {}), clearing",
-            cache.len(),
-            MAX_CACHE_ENTRIES
-        );
-        cache.clear();
-        return cache;
+    for key in &trim_keys {
+        cache.remove(key);
+    }
+    if !trim_keys.is_empty() {
+        log::debug!("Trimmed verification cache to {} entries", cache.len());
     }
 
     // Stale entries (where the file no longer exists on disk) are not eagerly
