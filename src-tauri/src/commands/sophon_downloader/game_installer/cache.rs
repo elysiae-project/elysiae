@@ -25,6 +25,23 @@ struct VerificationCacheSerializable {
 
 pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationEntry> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+
+    // Clean up any leftover .tmp files from a previous crash (the
+    // atomic-write pattern in save_verification_cache writes to a .tmp
+    // before rename; if the process crashed during rename, the .tmp lingers).
+    if let Some(parent) = cache_path.parent() {
+        if let Ok(entries) = parent.read_dir() {
+            let cache_stem = cache_path.file_stem();
+            for entry in entries.flatten() {
+                if entry.path().extension().map_or(false, |e| e == "tmp")
+                    && cache_stem == entry.path().file_stem()
+                {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
     let serializable: VerificationCacheSerializable = match File::open(&cache_path) {
         Ok(f) => serde_json::from_reader(std::io::BufReader::new(f)).unwrap_or_else(|_| {
             VerificationCacheSerializable {
