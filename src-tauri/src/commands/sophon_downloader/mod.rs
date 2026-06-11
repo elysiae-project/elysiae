@@ -8,7 +8,7 @@ pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
 use dashmap::DashMap;
-use game_installer::{DownloadHandle, UpdateInfo, read_installed_tag};
+use game_installer::{DownloadHandle, SophonError, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -269,6 +269,171 @@ pub enum SophonProgress {
     Finished,
 }
 
+/// Structured error payload for the Tauri IPC boundary.
+/// Allows the frontend to programmatically distinguish error types
+/// rather than parsing flat error strings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum CommandError {
+    Cancelled,
+    NoSpaceAvailable {
+        path: String,
+        needed: u64,
+        available: u64,
+    },
+    Md5Mismatch {
+        item: String,
+    },
+    SizeMismatch {
+        item: String,
+        expected: u64,
+        actual: u64,
+    },
+    OriginalFileMissing {
+        path: String,
+    },
+    DownloadFailed {
+        chunk: String,
+        attempts: u32,
+    },
+    HdiffPatchFailed {
+        file: String,
+    },
+    AssemblyFailed {
+        file: String,
+    },
+    NoGameManifest,
+    NoVoiceManifest {
+        locale: String,
+    },
+    InvalidAssetName {
+        name: String,
+    },
+    PathTraversal {
+        path: String,
+    },
+    ApiError {
+        retcode: i32,
+        message: String,
+    },
+    PluginValidationFailed {
+        name: String,
+    },
+    Generic {
+        message: String,
+    },
+}
+
+impl From<SophonError> for CommandError {
+    fn from(e: SophonError) -> Self {
+        match e {
+            SophonError::Cancelled => CommandError::Cancelled,
+            SophonError::NoSpaceAvailable {
+                path,
+                needed,
+                available,
+            } => CommandError::NoSpaceAvailable {
+                path,
+                needed,
+                available,
+            },
+            SophonError::Md5Mismatch { item, .. } => CommandError::Md5Mismatch { item },
+            SophonError::SizeMismatch {
+                item,
+                expected,
+                actual,
+            } => CommandError::SizeMismatch {
+                item,
+                expected,
+                actual,
+            },
+            SophonError::OriginalFileMissing(path) => CommandError::OriginalFileMissing { path },
+            SophonError::DownloadFailed {
+                chunk, attempts, ..
+            } => CommandError::DownloadFailed { chunk, attempts },
+            SophonError::HDiffPatchFailed { file, .. } => CommandError::HdiffPatchFailed { file },
+            SophonError::AssemblyFailed { file, .. } => CommandError::AssemblyFailed { file },
+            SophonError::NoGameManifest => CommandError::NoGameManifest,
+            SophonError::NoVoiceManifest(locale) => CommandError::NoVoiceManifest { locale },
+            SophonError::InvalidAssetName(name) => CommandError::InvalidAssetName { name },
+            SophonError::PathTraversal(path) => CommandError::PathTraversal {
+                path: path.to_string_lossy().to_string(),
+            },
+            SophonError::ApiError(retcode, message) => CommandError::ApiError { retcode, message },
+            SophonError::PluginValidationFailed(name) => {
+                CommandError::PluginValidationFailed { name }
+            }
+            _ => CommandError::Generic {
+                message: e.to_string(),
+            },
+        }
+    }
+}
+
+impl From<&SophonError> for CommandError {
+    fn from(e: &SophonError) -> Self {
+        match e {
+            SophonError::Cancelled => CommandError::Cancelled,
+            SophonError::NoSpaceAvailable {
+                path,
+                needed,
+                available,
+            } => CommandError::NoSpaceAvailable {
+                path: path.clone(),
+                needed: *needed,
+                available: *available,
+            },
+            SophonError::Md5Mismatch { item, .. } => {
+                CommandError::Md5Mismatch { item: item.clone() }
+            }
+            SophonError::SizeMismatch {
+                item,
+                expected,
+                actual,
+            } => CommandError::SizeMismatch {
+                item: item.clone(),
+                expected: *expected,
+                actual: *actual,
+            },
+            SophonError::OriginalFileMissing(path) => {
+                CommandError::OriginalFileMissing { path: path.clone() }
+            }
+            SophonError::DownloadFailed {
+                chunk, attempts, ..
+            } => CommandError::DownloadFailed {
+                chunk: chunk.clone(),
+                attempts: *attempts,
+            },
+            SophonError::HDiffPatchFailed { file, .. } => {
+                CommandError::HdiffPatchFailed { file: file.clone() }
+            }
+            SophonError::AssemblyFailed { file, .. } => {
+                CommandError::AssemblyFailed { file: file.clone() }
+            }
+            SophonError::NoGameManifest => CommandError::NoGameManifest,
+            SophonError::NoVoiceManifest(locale) => CommandError::NoVoiceManifest {
+                locale: locale.clone(),
+            },
+            SophonError::InvalidAssetName(name) => {
+                CommandError::InvalidAssetName { name: name.clone() }
+            }
+            SophonError::PathTraversal(path) => CommandError::PathTraversal {
+                path: path.to_string_lossy().to_string(),
+            },
+            SophonError::ApiError(retcode, message) => CommandError::ApiError {
+                retcode: *retcode,
+                message: message.clone(),
+            },
+            SophonError::PluginValidationFailed(name) => {
+                CommandError::PluginValidationFailed { name: name.clone() }
+            }
+            other => CommandError::Generic {
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
 struct StateMeta {
     game_id: String,
     vo_lang: String,
@@ -351,7 +516,10 @@ pub async fn sophon_download(
     let (installers, tag, manifest_hash) =
         game_installer::build_installers(&client.0, &game_id, &vo_lang)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                emit_error(&app_handle, &e);
+                e.to_string()
+            })?;
 
     let state = DownloadState {
         game_id: game_id.clone(),
@@ -408,6 +576,7 @@ pub async fn sophon_download(
             .await
             {
                 log::warn!("Plugin installation failed: {}", e);
+                emit_error(&app_handle, &e);
             }
             if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
                 let u = plugin_updater.clone();
@@ -416,12 +585,12 @@ pub async fn sophon_download(
             .await
             {
                 log::warn!("Channel SDK installation failed: {}", e);
+                emit_error(&app_handle, &e);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(game_installer::SophonError::Cancelled) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => install_result(Err(e), &app_handle),
     }
 }
 
@@ -448,7 +617,10 @@ pub async fn sophon_update(
     let (installers, deleted_files, new_tag, manifest_hash) =
         game_installer::build_update_installers(&client.0, &game_id, &vo_lang, &current_tag)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                emit_error(&app_handle, &e);
+                e.to_string()
+            })?;
 
     let state = DownloadState {
         game_id: game_id.clone(),
@@ -505,6 +677,7 @@ pub async fn sophon_update(
             .await
             {
                 log::warn!("Plugin installation failed: {}", e);
+                emit_error(&app_handle, &e);
             }
             if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
                 let u = plugin_updater.clone();
@@ -513,12 +686,12 @@ pub async fn sophon_update(
             .await
             {
                 log::warn!("Channel SDK installation failed: {}", e);
+                emit_error(&app_handle, &e);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(game_installer::SophonError::Cancelled) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => install_result(Err(e), &app_handle),
     }
 }
 
@@ -541,7 +714,10 @@ pub async fn sophon_preinstall(
 
     let plan = game_installer::build_preinstall_plan(&client.0, &game_id, &vo_lang, &game_dir)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            emit_error(&app_handle, &e);
+            e.to_string()
+        })?;
 
     let tag = plan.tag.clone();
 
@@ -585,12 +761,10 @@ pub async fn sophon_preinstall(
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(game_installer::SophonError::Cancelled) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => install_result(Err(e), &app_handle),
     }
 }
 
-/// Applies a pre-downloaded game version.
 #[command]
 pub async fn sophon_apply_preinstall(
     preinstall_tag: String,
@@ -611,8 +785,11 @@ pub async fn sophon_apply_preinstall(
     game_installer::apply_preinstall(&client.0, &game_dir, &preinstall_tag, updater)
         .await
         .or_else(|e| match e {
-            game_installer::SophonError::Cancelled => Ok(()),
-            other => Err(other.to_string()),
+            SophonError::Cancelled => Ok(()),
+            other => {
+                emit_error(&app_handle, &other);
+                Err(other.to_string())
+            }
         })
 }
 
@@ -654,7 +831,10 @@ pub async fn sophon_resume_download(
             &game_dir,
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            emit_error(&app_handle, &e);
+            e.to_string()
+        })?;
 
         let resumed_state = DownloadState {
             game_id: state.game_id.clone(),
@@ -692,8 +872,7 @@ pub async fn sophon_resume_download(
                 emit(&app_handle, SophonProgress::Finished);
                 Ok(())
             }
-            Err(game_installer::SophonError::Cancelled) => Ok(()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => install_result(Err(e), &app_handle),
         };
     }
 
@@ -702,7 +881,10 @@ pub async fn sophon_resume_download(
             let (installers, tag, new_manifest_hash) =
                 game_installer::build_installers(&client.0, &state.game_id, &state.vo_lang)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| {
+                        emit_error(&app_handle, &e);
+                        e.to_string()
+                    })?;
             (installers, vec![], tag, new_manifest_hash)
         }
         DownloadType::Update => {
@@ -717,7 +899,10 @@ pub async fn sophon_resume_download(
                     &ct,
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| {
+                    emit_error(&app_handle, &e);
+                    e.to_string()
+                })?;
             (installers, deleted_files, tag, new_manifest_hash)
         }
         DownloadType::Preinstall => unreachable!(),
@@ -787,6 +972,7 @@ pub async fn sophon_resume_download(
             .await
             {
                 log::warn!("Plugin installation failed: {}", e);
+                emit_error(&app_handle, &e);
             }
             if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
                 let u = plugin_updater.clone();
@@ -795,12 +981,12 @@ pub async fn sophon_resume_download(
             .await
             {
                 log::warn!("Channel SDK installation failed: {}", e);
+                emit_error(&app_handle, &e);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(game_installer::SophonError::Cancelled) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => install_result(Err(e), &app_handle),
     }
 }
 
@@ -860,9 +1046,10 @@ pub async fn sophon_check_update(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
-    game_installer::check_update(&client.0, &game_id, &vo_lang, &game_dir)
-        .await
-        .map_err(|e| e.to_string())
+    map_sophon_error(
+        game_installer::check_update(&client.0, &game_id, &vo_lang, &game_dir).await,
+        &app_handle,
+    )
 }
 
 /// Verifies the integrity of installed game files and re-downloads any
@@ -881,17 +1068,49 @@ pub async fn sophon_verify_integrity(
         .map_err(|e| e.to_string())?;
 
     let app_clone = app_handle.clone();
-    game_installer::verify_integrity(&client.0, &game_id, &vo_lang, &game_dir, move |p| {
-        emit(&app_clone, p)
-    })
-    .await
-    .map_err(|e| e.to_string())
+    map_sophon_error(
+        game_installer::verify_integrity(&client.0, &game_id, &vo_lang, &game_dir, move |p| {
+            emit(&app_clone, p)
+        })
+        .await,
+        &app_handle,
+    )
 }
 
 fn emit(app: &AppHandle, progress: SophonProgress) {
     if let Err(e) = app.emit("sophon://progress", progress) {
         log::error!("Failed to emit progress event: {}", e);
     }
+}
+
+/// Emits a structured error event across the Tauri IPC boundary.
+fn emit_error(app: &AppHandle, error: &SophonError) {
+    let _ = app.emit("sophon://error", CommandError::from(error));
+}
+
+/// Handles the final install result:
+/// - `Ok(())` → propagates success
+/// - `Cancelled` → silently returns `Ok(())` (download was intentionally
+///   cancelled)
+/// - Other errors → emits a structured error event and returns `Err(string)`
+fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<(), String> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(SophonError::Cancelled) => Ok(()),
+        Err(e) => {
+            emit_error(app, &e);
+            Err(e.to_string())
+        }
+    }
+}
+
+/// Maps a `SophonResult<T>` to `Result<T, String>` while emitting a structured
+/// error event for the frontend. Useful for intermediate non-terminal errors.
+fn map_sophon_error<T>(result: Result<T, SophonError>, app: &AppHandle) -> Result<T, String> {
+    result.map_err(|e| {
+        emit_error(app, &e);
+        e.to_string()
+    })
 }
 
 #[cfg(test)]
