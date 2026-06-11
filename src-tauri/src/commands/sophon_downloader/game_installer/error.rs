@@ -126,12 +126,6 @@ pub enum SophonError {
     InvalidSizeString(String),
 }
 
-impl From<tokio::sync::AcquireError> for SophonError {
-    fn from(err: tokio::sync::AcquireError) -> Self {
-        SophonError::Semaphore(err.to_string())
-    }
-}
-
 impl From<SophonError> for String {
     fn from(err: SophonError) -> Self {
         err.to_string()
