@@ -75,9 +75,6 @@ pub enum SophonError {
     #[error("No preinstall available")]
     NoPreinstallAvailable,
 
-    #[error("Preinstall marker not found for tag: {0}")]
-    PreinstallMarkerNotFound(String),
-
     #[error("Download cancelled")]
     Cancelled,
 
@@ -90,13 +87,6 @@ pub enum SophonError {
 
     #[error("Failed to assemble file {file}: {error}")]
     AssemblyFailed { file: String, error: String },
-
-    #[error("JSON error")]
-    Json(
-        #[from]
-        #[source]
-        serde_json::Error,
-    ),
 
     #[error("{kind} index {index} out of bounds")]
     IndexOutOfBounds { kind: &'static str, index: usize },
@@ -121,15 +111,6 @@ pub enum SophonError {
 
     #[error("Preinstall state file corrupted or missing: {0}")]
     PreinstallStateInvalid(String),
-
-    #[error(
-        "Patch data out of bounds: offset {offset} + length {length} exceeds chunk size {chunk_size}"
-    )]
-    PatchDataOutOfBounds {
-        offset: u64,
-        length: u64,
-        chunk_size: u64,
-    },
 
     #[error("No space available at {path}: need {needed}, have {available}")]
     NoSpaceAvailable {
