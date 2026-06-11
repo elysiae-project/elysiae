@@ -106,7 +106,9 @@ pub async fn fetch_build_sizes(
     let vo_meta = build
         .manifests
         .iter()
-        .find(|m| vo_lang_matches(&m.matching_field, vo_lang))
+        .find(|m| {
+            is_known_vo_locale(&m.matching_field) && vo_lang_matches(&m.matching_field, vo_lang)
+        })
         .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
 
     let cs = super::api::parse_size(&game_meta.stats.compressed_size)?
