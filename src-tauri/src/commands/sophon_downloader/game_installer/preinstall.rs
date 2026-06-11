@@ -840,6 +840,7 @@ pub async fn apply_preinstall(
     game_dir: &Path,
     preinstall_tag: &str,
     updater: ProgressUpdater,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     let mut state = load_preinstall_state(game_dir, preinstall_tag)?;
 
@@ -919,7 +920,12 @@ pub async fn apply_preinstall(
                                 );
                                 fallback_to_download = true;
                             } else {
-                                let delay = Duration::from_millis(500 * (1u64 << (attempt as u64)));
+                                if handle.is_cancelled() {
+                                    return Err(SophonError::Cancelled);
+                                }
+                                let delay = Duration::from_millis(
+                                    (1000u64 * (1u64 << (attempt as u64).min(4))).min(30_000),
+                                );
                                 log::warn!(
                                     "CopyOver failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
                                     asset.target_file_path,
@@ -981,7 +987,12 @@ pub async fn apply_preinstall(
                                 );
                                 fallback_to_download = true;
                             } else {
-                                let delay = Duration::from_millis(500 * (1u64 << (attempt as u64)));
+                                if handle.is_cancelled() {
+                                    return Err(SophonError::Cancelled);
+                                }
+                                let delay = Duration::from_millis(
+                                    (1000u64 * (1u64 << (attempt as u64).min(4))).min(30_000),
+                                );
                                 log::warn!(
                                     "HDiff patch failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
                                     asset.target_file_path,

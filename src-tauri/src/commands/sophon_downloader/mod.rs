@@ -782,15 +782,22 @@ pub async fn sophon_apply_preinstall(
         move |p| emit(&app, p)
     });
 
-    game_installer::apply_preinstall(&client.0, &game_dir, &preinstall_tag, updater)
-        .await
-        .or_else(|e| match e {
-            SophonError::Cancelled => Ok(()),
-            other => {
-                emit_error(&app_handle, &other);
-                Err(other.to_string())
-            }
-        })
+    let apply_handle = DownloadHandle::new();
+    game_installer::apply_preinstall(
+        &client.0,
+        &game_dir,
+        &preinstall_tag,
+        updater,
+        &apply_handle,
+    )
+    .await
+    .or_else(|e| match e {
+        SophonError::Cancelled => Ok(()),
+        other => {
+            emit_error(&app_handle, &other);
+            Err(other.to_string())
+        }
+    })
 }
 
 /// Resumes a download that was interrupted (e.g., by app close/crash).
