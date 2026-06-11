@@ -223,7 +223,7 @@ fn compute_diff_files(
         .into_iter()
         .filter(|f| {
             if f.is_directory() {
-                return false;
+                return true;
             }
             match old_md5_map.get(&f.asset_name) {
                 Some(old_md5) => old_md5 != &f.asset_hash_md5,
@@ -1050,6 +1050,21 @@ pub async fn install(
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
 
+    // Create all new directories from asset manifests before they are
+    // filtered out by `build_installer_data`. This ensures that new
+    // directories introduced in updates actually exist on disk.
+    for installer in &installers {
+        for asset in &installer.manifest.assets {
+            if asset.is_directory() {
+                let dir_path = game_dir.join(&asset.asset_name);
+                let dp = dir_path.clone();
+                tokio::task::spawn_blocking(move || fs::create_dir_all(&dp))
+                    .await?
+                    .map_err(SophonError::from)?;
+            }
+        }
+    }
+
     let ResumeContext {
         prev_manifest_hash,
         mut prev_downloaded_chunks,
@@ -1693,13 +1708,15 @@ mod tests {
     }
 
     #[test]
-    fn compute_diff_files_dirs_filtered() {
+    fn compute_diff_files_dirs_included() {
         let new_manifest = SophonManifestProto {
             assets: vec![make_dir("GameData"), make_file("a.pak", "aa", vec![])],
         };
         let diff = compute_diff_files(new_manifest, &HashMap::new());
-        assert_eq!(diff.len(), 1);
-        assert_eq!(diff[0].asset_name, "a.pak");
+        assert_eq!(diff.len(), 2);
+        let names: Vec<&str> = diff.iter().map(|f| f.asset_name.as_str()).collect();
+        assert!(names.contains(&"GameData"));
+        assert!(names.contains(&"a.pak"));
     }
 
     #[test]
@@ -1716,10 +1733,11 @@ mod tests {
         old_md5_map.insert("changed.pak".to_string(), "old_md5".to_string());
         old_md5_map.insert("unchanged.pak".to_string(), "same".to_string());
         let diff = compute_diff_files(new_manifest, &old_md5_map);
-        assert_eq!(diff.len(), 2);
+        assert_eq!(diff.len(), 3);
         let names: Vec<&str> = diff.iter().map(|f| f.asset_name.as_str()).collect();
         assert!(names.contains(&"new.pak"));
         assert!(names.contains(&"changed.pak"));
+        assert!(names.contains(&"somedir")); // directories are included in diff
     }
 
     #[test]
