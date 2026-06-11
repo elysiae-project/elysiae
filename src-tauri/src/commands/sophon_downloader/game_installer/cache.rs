@@ -112,7 +112,7 @@ pub fn check_file_md5_cached(
     let cache_key = path
         .strip_prefix(game_dir)
         .unwrap_or(path)
-        .to_string_lossy()
+        .display()
         .to_string();
     let metadata = match path.metadata() {
         Ok(m) => m,
