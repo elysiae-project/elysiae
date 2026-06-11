@@ -19,7 +19,10 @@ use crate::commands::sophon_downloader::proto_parse::{
 
 #[inline]
 pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
-    format!("{}.zstd", chunk.chunk_name)
+    let mut s = String::with_capacity(chunk.chunk_name.len() + 5);
+    s.push_str(&chunk.chunk_name);
+    s.push_str(".zstd");
+    s
 }
 
 #[inline]
