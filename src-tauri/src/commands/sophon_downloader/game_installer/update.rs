@@ -217,3 +217,27 @@ pub async fn fetch_diff_sizes(
 
     Ok((cs, ds))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::sophon_downloader::game_installer::api;
+
+    #[test]
+    fn parse_size_returns_correct_values() {
+        assert_eq!(api::parse_size("0").unwrap(), 0);
+        assert_eq!(api::parse_size("1024").unwrap(), 1024);
+        assert_eq!(api::parse_size("2048").unwrap(), 2048);
+        assert_eq!(api::parse_size("999999").unwrap(), 999999);
+    }
+
+    #[test]
+    fn is_known_vo_locale_identifies_known_and_unknown() {
+        assert!(is_known_vo_locale("en-us"));
+        assert!(is_known_vo_locale("ja-jp"));
+        assert!(is_known_vo_locale("zh-cn"));
+        assert!(!is_known_vo_locale("game"));
+        assert!(!is_known_vo_locale("cutscenes"));
+        assert!(!is_known_vo_locale(""));
+    }
+}
