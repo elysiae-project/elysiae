@@ -117,4 +117,20 @@ mod tests {
         write_installed_tag(dir.path(), "2.0.0").unwrap();
         assert_eq!(read_installed_tag(dir.path()), Some("2.0.0".to_string()));
     }
+
+    #[test]
+    fn adaptive_max_concurrency_bounds() {
+        let c = adaptive_max_concurrency();
+        assert!(c >= 8, "concurrency {c} < 8");
+        assert!(c <= 128, "concurrency {c} > 128");
+    }
+
+    #[test]
+    fn adaptive_max_concurrency_formula() {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let expected = (cpus * 4).clamp(8, 128);
+        assert_eq!(adaptive_max_concurrency(), expected);
+    }
 }
