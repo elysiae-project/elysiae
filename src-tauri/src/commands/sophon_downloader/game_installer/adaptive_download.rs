@@ -9,7 +9,7 @@ use super::*;
 
 const EWMA_ALPHA: f64 = 0.25;
 const THROUGHPUT_SCALE: f64 = 1000.0;
-const BEST_DECAY: f64 = 0.95;
+const BEST_DECAY: f64 = 0.99;
 
 pub struct AdaptivePermit<'a> {
     _permit: SemaphorePermit<'a>,
