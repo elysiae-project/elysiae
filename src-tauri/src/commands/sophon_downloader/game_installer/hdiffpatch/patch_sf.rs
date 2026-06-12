@@ -44,16 +44,17 @@ impl PatchSF {
         let cover_count = self.header_info.chunk_info.cover_count as u64;
         let new_data_size = self.header_info.new_data_size as u64;
         let step_mem_size = (self.header_info.step_mem_size as usize).min(MAX_STEP_SIZE);
-        let mut step_buf = vec![0u8; step_mem_size];
-        let mut io_buf = vec![0u8; step_mem_size];
+        let total_size = step_mem_size + step_mem_size;
+        let mut work_buf = vec![0u8; total_size];
+        let (step_buf, io_buf) = work_buf.split_at_mut(step_mem_size);
         patch_loop(
             &mut diff,
             input_stream,
             output_stream,
             cover_count,
             new_data_size,
-            &mut step_buf,
-            &mut io_buf,
+            step_buf,
+            io_buf,
             on_progress,
         )
     }
@@ -65,7 +66,7 @@ fn patch_loop(
     out: &mut dyn Write,
     mut cover_count: u64,
     new_data_size: u64,
-    step_buf: &mut Vec<u8>,
+    step_buf: &mut [u8],
     io_buf: &mut [u8],
     on_progress: Option<&dyn Fn(u64)>,
 ) -> std::io::Result<()> {
@@ -91,7 +92,9 @@ fn patch_loop(
             ));
         }
         if step_end > step_buf.len() {
-            step_buf.resize(step_end, 0);
+            return Err(std::io::Error::other(
+                "patch step size exceeds allocated buffer capacity",
+            ));
         }
         diff.read_exact(&mut step_buf[..step_end])?;
 
