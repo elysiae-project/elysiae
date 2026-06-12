@@ -51,10 +51,24 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
     start_str.parse().ok()
 }
 
+// Thread-local buffer reused across `compute_file_md5` calls to avoid
+// allocating + zeroing 256 KiB on every invocation. For 5000 chunks verified
+// on resume, this eliminates ~1.28 GB of cumulative allocation churn.
+std::thread_local! {
+    static MD5_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     let mut file = tokio::io::BufReader::new(tokio::fs::File::open(path).await?);
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; MD5_HASH_BUFFER_SIZE];
+
+    // Take buffer from thread_local (or get empty default) and ensure capacity
+    let mut buf = MD5_BUF.with(std::cell::RefCell::take);
+    if buf.capacity() < MD5_HASH_BUFFER_SIZE {
+        buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
+    }
+    buf.resize(MD5_HASH_BUFFER_SIZE, 0);
+
     loop {
         let n = file.read(&mut buf).await?;
         if n == 0 {
@@ -62,6 +76,11 @@ async fn compute_file_md5(path: &Path) -> SophonResult<String> {
         }
         hasher.update(&buf[..n]);
     }
+
+    // Return buffer to thread_local for reuse on next call
+    buf.clear();
+    MD5_BUF.with(|cell| cell.replace(buf));
+
     Ok(hex::encode(hasher.finalize()))
 }
 
