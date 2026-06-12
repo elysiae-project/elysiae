@@ -216,3 +216,416 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // -----------------------------------------------------------------------
+    // strip_prefix_case_insensitive
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_strip_prefix_case_insensitive_matching() {
+        let result = strip_prefix_case_insensitive(
+            "StarRail_Data/StreamingAssets/foo/bar",
+            "StarRail_Data/StreamingAssets/",
+        );
+        assert_eq!(result, Some("foo/bar"));
+    }
+
+    #[test]
+    fn test_strip_prefix_case_insensitive_case_insensitive() {
+        let result = strip_prefix_case_insensitive(
+            "STARRAIL_DATA/STREAMINGASSETS/foo",
+            "StarRail_Data/StreamingAssets/",
+        );
+        assert_eq!(result, Some("foo"));
+    }
+
+    #[test]
+    fn test_strip_prefix_case_insensitive_no_match() {
+        let result = strip_prefix_case_insensitive("Other_Data/foo", "StarRail_Data/");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_strip_prefix_case_insensitive_empty_prefix() {
+        let result = strip_prefix_case_insensitive("hello/world", "");
+        assert_eq!(result, Some("hello/world"));
+    }
+
+    #[test]
+    fn test_strip_prefix_case_insensitive_empty_string() {
+        let result = strip_prefix_case_insensitive("", "StarRail_Data/");
+        assert_eq!(result, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_filename
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_extract_filename_backslash() {
+        let line = r#"{"fileName":"audio\voice\file.pck"}"#;
+        assert_eq!(
+            extract_filename(line),
+            Some(r#"audio\voice\file.pck"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_filename_no_marker() {
+        let line = r#"{"otherField":"value"}"#;
+        assert_eq!(extract_filename(line), None);
+    }
+
+    #[test]
+    fn test_extract_filename_empty() {
+        assert_eq!(extract_filename(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // add_both_persistent_or_streaming_assets
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_add_both_persistent_or_streaming_streaming_to_persistent() {
+        let mut blacklist = vec![];
+        add_both_persistent_or_streaming_assets(
+            "StarRail_Data/StreamingAssets/audio/voice.pck",
+            &mut blacklist,
+        );
+        assert_eq!(blacklist, vec!["StarRail_Data/Persistent/audio/voice.pck"]);
+    }
+
+    #[test]
+    fn test_add_both_persistent_or_streaming_persistent_to_streaming() {
+        let mut blacklist = vec![];
+        add_both_persistent_or_streaming_assets(
+            "StarRail_Data/Persistent/audio/voice.pck",
+            &mut blacklist,
+        );
+        assert_eq!(
+            blacklist,
+            vec!["StarRail_Data/StreamingAssets/audio/voice.pck"]
+        );
+    }
+
+    #[test]
+    fn test_add_both_persistent_or_streaming_unrelated() {
+        let mut blacklist = vec![];
+        add_both_persistent_or_streaming_assets("Other_Data/file.bin", &mut blacklist);
+        assert!(blacklist.is_empty());
+    }
+
+    #[test]
+    fn test_add_both_persistent_or_streaming_case_insensitive() {
+        let mut blacklist = vec![];
+        add_both_persistent_or_streaming_assets(
+            "STARRAIL_DATA/STREAMINGASSETS/audio/voice.pck",
+            &mut blacklist,
+        );
+        assert_eq!(blacklist, vec!["StarRail_Data/Persistent/audio/voice.pck"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // locale_code_to_audio_lang_name (tested via super::)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_zh_cn() {
+        assert_eq!(locale_code_to_audio_lang_name("zh-cn"), Some("Chinese"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_zh_tw() {
+        assert_eq!(locale_code_to_audio_lang_name("zh-tw"), Some("Chinese"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_cn() {
+        assert_eq!(locale_code_to_audio_lang_name("cn"), Some("Chinese"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_en_us() {
+        assert_eq!(locale_code_to_audio_lang_name("en-us"), Some("English(US)"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_en() {
+        assert_eq!(locale_code_to_audio_lang_name("en"), Some("English(US)"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_ja_jp() {
+        assert_eq!(locale_code_to_audio_lang_name("ja-jp"), Some("Japanese"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_jp() {
+        assert_eq!(locale_code_to_audio_lang_name("jp"), Some("Japanese"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_ko_kr() {
+        assert_eq!(locale_code_to_audio_lang_name("ko-kr"), Some("Korean"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_kr() {
+        assert_eq!(locale_code_to_audio_lang_name("kr"), Some("Korean"));
+    }
+
+    #[test]
+    fn test_hkrpg_locale_code_to_audio_lang_name_unknown() {
+        assert_eq!(locale_code_to_audio_lang_name("fr-fr"), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // filter_hkrpg_asset_list
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_filter_hkrpg_asset_list_missing_blacklist_no_filtering() {
+        let dir = tempfile::tempdir().unwrap();
+        // No DownloadBlacklist.json created
+
+        let mut assets = vec![SophonManifestAssetProperty {
+            asset_name: "StarRail_Data/StreamingAssets/audio/voice.pck".into(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: 100,
+            asset_hash_md5: "abc".into(),
+        }];
+
+        filter_hkrpg_asset_list(dir.path(), &mut assets);
+        assert_eq!(assets.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_hkrpg_asset_list_blacklist_filters_asset() {
+        let dir = tempfile::tempdir().unwrap();
+        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        fs::create_dir_all(&blacklist_dir).unwrap();
+        fs::write(
+            blacklist_dir.join("DownloadBlacklist.json"),
+            r#"{"fileName":"StarRail_Data/StreamingAssets/audio/voice_bad.pck"}"#,
+        )
+        .unwrap();
+
+        let mut assets = vec![
+            SophonManifestAssetProperty {
+                asset_name: "StarRail_Data/StreamingAssets/audio/voice_good.pck".into(),
+                asset_chunks: vec![],
+                asset_type: 0,
+                asset_size: 100,
+                asset_hash_md5: "abc".into(),
+            },
+            SophonManifestAssetProperty {
+                asset_name: "StarRail_Data/StreamingAssets/audio/voice_bad.pck".into(),
+                asset_chunks: vec![],
+                asset_type: 0,
+                asset_size: 200,
+                asset_hash_md5: "def".into(),
+            },
+        ];
+
+        filter_hkrpg_asset_list(dir.path(), &mut assets);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(
+            assets[0].asset_name,
+            "StarRail_Data/StreamingAssets/audio/voice_good.pck"
+        );
+    }
+
+    #[test]
+    fn test_filter_hkrpg_asset_list_blacklist_backslash_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        fs::create_dir_all(&blacklist_dir).unwrap();
+        fs::write(
+            blacklist_dir.join("DownloadBlacklist.json"),
+            r#"{"fileName":"StarRail_Data\StreamingAssets\audio\voice.pck"}"#,
+        )
+        .unwrap();
+
+        let mut assets = vec![SophonManifestAssetProperty {
+            asset_name: "StarRail_Data/StreamingAssets/audio/voice.pck".into(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: 100,
+            asset_hash_md5: "abc".into(),
+        }];
+
+        filter_hkrpg_asset_list(dir.path(), &mut assets);
+        assert!(assets.is_empty());
+    }
+
+    #[test]
+    fn test_filter_hkrpg_asset_list_empty_blacklist_no_filtering() {
+        let dir = tempfile::tempdir().unwrap();
+        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        fs::create_dir_all(&blacklist_dir).unwrap();
+        fs::write(blacklist_dir.join("DownloadBlacklist.json"), "").unwrap();
+
+        let mut assets = vec![SophonManifestAssetProperty {
+            asset_name: "StarRail_Data/StreamingAssets/audio/voice.pck".into(),
+            asset_chunks: vec![],
+            asset_type: 0,
+            asset_size: 100,
+            asset_hash_md5: "abc".into(),
+        }];
+
+        filter_hkrpg_asset_list(dir.path(), &mut assets);
+        assert_eq!(assets.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_hkrpg_asset_list_malformed_line_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        fs::create_dir_all(&blacklist_dir).unwrap();
+        fs::write(
+            blacklist_dir.join("DownloadBlacklist.json"),
+            "not a json line\n{\"fileName\":\"audio/bad.pck\"}",
+        )
+        .unwrap();
+
+        let mut assets = vec![
+            SophonManifestAssetProperty {
+                asset_name: "audio/bad.pck".into(),
+                asset_chunks: vec![],
+                asset_type: 0,
+                asset_size: 100,
+                asset_hash_md5: "abc".into(),
+            },
+            SophonManifestAssetProperty {
+                asset_name: "audio/good.pck".into(),
+                asset_chunks: vec![],
+                asset_type: 0,
+                asset_size: 200,
+                asset_hash_md5: "def".into(),
+            },
+        ];
+
+        filter_hkrpg_asset_list(dir.path(), &mut assets);
+        // The malformed line is skipped, but the valid one filters "audio/bad.pck"
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].asset_name, "audio/good.pck");
+    }
+
+    // -----------------------------------------------------------------------
+    // write_audio_lang_record
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_hkrpg_write_audio_lang_record_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let vo_langs = vec!["zh-cn".to_string(), "en-us".to_string()];
+        write_audio_lang_record(dir.path(), &vo_langs).unwrap();
+
+        let record_path = dir
+            .path()
+            .join("StarRail_Data/Persistent/AudioLaucherRecord.txt");
+        assert!(record_path.exists());
+
+        let content = fs::read_to_string(&record_path).unwrap();
+        assert_eq!(content, "Chinese\nEnglish(US)\n");
+    }
+
+    // -----------------------------------------------------------------------
+    // write_app_info
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_write_app_info_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        write_app_info(dir.path()).unwrap();
+
+        let app_info_path = dir.path().join("StarRail_Data/app.info");
+        assert!(app_info_path.exists());
+
+        let content = fs::read_to_string(&app_info_path).unwrap();
+        assert_eq!(content, "Cognosphere\nhkrpg_global\n");
+    }
+
+    // -----------------------------------------------------------------------
+    // write_binary_version_files
+    // -----------------------------------------------------------------------
+    fn make_valid_binary_version_bytes() -> Vec<u8> {
+        let hash = "abcdef0123456789abcdef0123456789abcd";
+        let version_str = "OSRelWin64";
+        let mut buf: Vec<u8> = Vec::new();
+
+        // String length as u16 BE
+        buf.extend_from_slice(&(version_str.len() as u16).to_be_bytes());
+        // Version string bytes
+        buf.extend_from_slice(version_str.as_bytes());
+        // Patch, Major, Minor as u32 BE
+        buf.extend_from_slice(&5u32.to_be_bytes());
+        buf.extend_from_slice(&3u32.to_be_bytes());
+        buf.extend_from_slice(&2u32.to_be_bytes());
+
+        // Padding to push hash to correct position
+        // data = buf[..buf.len()-3]; data.len() needs to have hash at data.len()-40
+        // Current buf = 2 + 11 + 12 = 25 bytes
+        // We want data.len() - 40 = 25, so data.len() = 65, buf.len() = 68
+        let padding = 65 - buf.len();
+        buf.resize(buf.len() + padding, 0xFF);
+
+        // Hash at position 65-40=25 in data = position 25 in buf before trailing trim
+        buf.extend_from_slice(hash.as_bytes());
+
+        // 4 bytes after hash (before trailing trim)
+        buf.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+
+        // 3 trailing bytes that will be trimmed
+        buf.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
+
+        buf
+    }
+
+    #[test]
+    fn test_write_binary_version_files_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let bv_dir = dir.path().join("StarRail_Data/StreamingAssets");
+        fs::create_dir_all(&bv_dir).unwrap();
+
+        let bytes = make_valid_binary_version_bytes();
+        fs::write(bv_dir.join("BinaryVersion.bytes"), &bytes).unwrap();
+
+        write_binary_version_files(dir.path()).unwrap();
+
+        let persistent_dir = dir.path().join("StarRail_Data/Persistent");
+
+        let app_id = fs::read_to_string(persistent_dir.join("AppIdentity.txt")).unwrap();
+        assert_eq!(app_id, "abcdef0123456789abcdef0123456789abcd");
+
+        let full_assets =
+            fs::read_to_string(persistent_dir.join("DownloadedFullAssets.txt")).unwrap();
+        assert_eq!(full_assets, "abcdef0123456789abcdef0123456789abcd");
+
+        let install_ver = fs::read_to_string(persistent_dir.join("InstallVersion.bin")).unwrap();
+        assert_eq!(install_ver, "abcdef0123456789abcdef0123456789abcd,3.2.5");
+    }
+
+    #[test]
+    fn test_write_binary_version_files_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        // No BinaryVersion.bytes created
+
+        let result = write_binary_version_files(dir.path());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn test_write_binary_version_files_too_short() {
+        let dir = tempfile::tempdir().unwrap();
+        let bv_dir = dir.path().join("StarRail_Data/StreamingAssets");
+        fs::create_dir_all(&bv_dir).unwrap();
+        // Write fewer than 16 bytes
+        fs::write(bv_dir.join("BinaryVersion.bytes"), b"too short").unwrap();
+
+        let result = write_binary_version_files(dir.path());
+        assert!(result.is_ok());
+    }
+}
