@@ -397,6 +397,7 @@ mod tests {
 
     use super::super::MD5_HASH_BUFFER_SIZE;
     use super::super::error::SophonError;
+    use super::check_available_space;
     use super::download_chunk;
     use super::parse_content_range_start;
     use crate::commands::sophon_downloader::api_scrape::{Compression, DownloadInfo};
@@ -698,5 +699,35 @@ mod tests {
             ),
             Some(18446744073709551615)
         );
+    }
+
+    #[test]
+    fn check_available_space_zero_needed() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(check_available_space(dir.path(), 0).is_ok());
+    }
+
+    #[test]
+    fn check_available_space_small_needed() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(check_available_space(dir.path(), 1).is_ok());
+    }
+
+    #[test]
+    fn check_available_space_ludicrous_needed() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = check_available_space(dir.path(), u64::MAX);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SophonError::NoSpaceAvailable { .. } => {}
+            other => panic!("expected NoSpaceAvailable, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_available_space_nonexistent_path() {
+        let bad_path = std::path::PathBuf::from("/nonexistent_path_xyzzy_42");
+        assert!(check_available_space(&bad_path, 0).is_ok());
+        assert!(check_available_space(&bad_path, u64::MAX).is_ok());
     }
 }
