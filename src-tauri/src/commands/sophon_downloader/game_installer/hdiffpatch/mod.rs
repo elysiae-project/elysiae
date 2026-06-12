@@ -757,4 +757,186 @@ mod tests {
         };
         assert_eq!(zlib_padding, 1, "zlib mode should have padding of 1");
     }
+
+    use super::{
+        CompressionMode, CoverHeader, DiffChunkInfo, DiffSingleChunkInfo, HeaderInfo,
+        MAX_ARRAY_POOL_LEN, MAX_ARRAY_POOL_SECOND_OFFSET, MAX_MEM_BUFFER_LEN, MAX_MEM_BUFFER_LIMIT,
+        RleRefClip,
+    };
+
+    #[test]
+    fn cover_header_new_and_fields() {
+        let ch = CoverHeader::new(1, 2, 3, 4);
+        assert_eq!(ch.old_pos, 1);
+        assert_eq!(ch.new_pos, 2);
+        assert_eq!(ch.cover_length, 3);
+        assert_eq!(ch.next_cover_index, 4);
+    }
+
+    #[test]
+    fn cover_header_debug_and_clone() {
+        let ch = CoverHeader::new(10, 20, 30, 40);
+        let _ = format!("{:?}", ch);
+        let cloned = ch.clone();
+        assert_eq!(ch.old_pos, cloned.old_pos);
+        assert_eq!(ch.new_pos, cloned.new_pos);
+        assert_eq!(ch.cover_length, cloned.cover_length);
+        assert_eq!(ch.next_cover_index, cloned.next_cover_index);
+    }
+
+    #[test]
+    fn rle_ref_clip_default_all_zeros() {
+        let clip = RleRefClip::default();
+        assert_eq!(clip.mem_copy_length, 0);
+        assert_eq!(clip.mem_set_length, 0);
+        assert_eq!(clip.mem_set_value, 0);
+    }
+
+    #[test]
+    fn rle_ref_clip_custom_values() {
+        let clip = RleRefClip {
+            mem_copy_length: 42,
+            mem_set_length: 7,
+            mem_set_value: 255,
+        };
+        assert_eq!(clip.mem_copy_length, 42);
+        assert_eq!(clip.mem_set_length, 7);
+        assert_eq!(clip.mem_set_value, 255);
+    }
+
+    #[test]
+    fn rle_ref_clip_copy_behavior() {
+        let original = RleRefClip {
+            mem_copy_length: 100,
+            mem_set_length: 200,
+            mem_set_value: 50,
+        };
+        let mut copy = original;
+        copy.mem_copy_length = 999;
+        copy.mem_set_value = 77;
+        assert_eq!(original.mem_copy_length, 100);
+        assert_eq!(original.mem_set_value, 50);
+        assert_eq!(copy.mem_copy_length, 999);
+        assert_eq!(copy.mem_set_value, 77);
+    }
+
+    #[test]
+    fn compression_mode_from_str_mixed_case() {
+        assert_eq!(
+            "Zstd".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Zstd
+        );
+        assert_eq!(
+            "ZSTD".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Zstd
+        );
+        assert_eq!(
+            "Zlib".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Zlib
+        );
+        assert_eq!(
+            "ZLIB".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Zlib
+        );
+        assert_eq!(
+            "Lz4".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Lz4
+        );
+        assert_eq!(
+            "LZ4".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Lz4
+        );
+        assert_eq!(
+            "Nocomp".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Nocomp
+        );
+        assert_eq!(
+            "NOCOMP".parse::<CompressionMode>().unwrap(),
+            CompressionMode::Nocomp
+        );
+    }
+
+    #[test]
+    fn compression_mode_from_str_whitespace_fails() {
+        assert!(" nocomp".parse::<CompressionMode>().is_err());
+        assert!("nocomp ".parse::<CompressionMode>().is_err());
+        assert!("  nocomp ".parse::<CompressionMode>().is_err());
+        assert!("\tnocomp".parse::<CompressionMode>().is_err());
+    }
+
+    #[test]
+    fn compression_mode_debug_format() {
+        assert_eq!(format!("{:?}", CompressionMode::Nocomp), "Nocomp");
+        assert_eq!(format!("{:?}", CompressionMode::Zstd), "Zstd");
+        assert_eq!(format!("{:?}", CompressionMode::Zlib), "Zlib");
+        assert_eq!(format!("{:?}", CompressionMode::Lz4), "Lz4");
+    }
+
+    #[test]
+    fn compression_mode_default_equals_nocomp() {
+        assert_eq!(CompressionMode::default(), CompressionMode::Nocomp);
+    }
+
+    #[test]
+    fn constants_correct_values() {
+        assert_eq!(MAX_MEM_BUFFER_LEN, 7 << 20);
+        assert_eq!(MAX_MEM_BUFFER_LIMIT, 10 << 20);
+        assert_eq!(MAX_ARRAY_POOL_LEN, 4 << 20);
+        assert_eq!(MAX_ARRAY_POOL_SECOND_OFFSET, MAX_ARRAY_POOL_LEN / 2);
+    }
+
+    #[test]
+    fn diff_chunk_info_default_all_zeros() {
+        let info = DiffChunkInfo::default();
+        assert_eq!(info.types_end_pos, 0);
+        assert_eq!(info.cover_count, 0);
+        assert_eq!(info.cover_buf_size, 0);
+        assert_eq!(info.compress_cover_buf_size, 0);
+        assert_eq!(info.rle_ctrl_buf_size, 0);
+        assert_eq!(info.compress_rle_ctrl_buf_size, 0);
+        assert_eq!(info.rle_code_buf_size, 0);
+        assert_eq!(info.compress_rle_code_buf_size, 0);
+        assert_eq!(info.new_data_diff_size, 0);
+        assert_eq!(info.compress_new_data_diff_size, 0);
+        assert_eq!(info.head_end_pos, 0);
+        assert_eq!(info.cover_end_pos, 0);
+    }
+
+    #[test]
+    fn diff_single_chunk_info_default_all_zeros() {
+        let info = DiffSingleChunkInfo::default();
+        assert_eq!(info.uncompressed_size, 0);
+        assert_eq!(info.compressed_size, 0);
+        assert_eq!(info.diff_data_pos, 0);
+    }
+
+    #[test]
+    fn header_info_default_values() {
+        let info = HeaderInfo::default();
+        assert_eq!(info.comp_mode, CompressionMode::Nocomp);
+        assert!(!info.is_single_compressed_diff);
+        assert_eq!(info.patch_path, "");
+        assert_eq!(info.step_mem_size, 0);
+        assert_eq!(info.old_data_size, 0);
+        assert_eq!(info.new_data_size, 0);
+        assert_eq!(info.compressed_count, 0);
+        assert_eq!(info.single_chunk_info.uncompressed_size, 0);
+        assert_eq!(info.chunk_info.types_end_pos, 0);
+    }
+
+    #[test]
+    fn hdiff_new_stores_paths() {
+        let hd = HDiff::new("src".into(), "diff".into(), "dst".into());
+        assert_eq!(hd.source_path, "src");
+        assert_eq!(hd.diff_path, "diff");
+        assert_eq!(hd.dest_path, "dst");
+    }
+
+    #[test]
+    fn hdiff_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<HDiff>();
+        assert_sync::<HDiff>();
+    }
 }
