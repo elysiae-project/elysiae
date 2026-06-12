@@ -287,7 +287,7 @@ mod tests {
 
         let ewma_raw = sem.ewma_throughput_mbps.load(Ordering::Relaxed);
         let ewma = ewma_raw as f64 / THROUGHPUT_SCALE;
-        assert!(ewma > 36.0 && ewma < 44.0); // ~40 MiB/s: 200MB / 5s
+        assert!(ewma > 60.0 && ewma < 74.0); // ~66.7 MiB/s: 200MB / 3s
     }
 
     #[test]
@@ -314,8 +314,9 @@ mod tests {
 
         let ewma_raw = sem.ewma_throughput_mbps.load(Ordering::Relaxed);
         let ewma = ewma_raw as f64 / THROUGHPUT_SCALE;
-        // First: 100 MiB/s. Second: 50 MiB/s. EWMA = 0.3*50 + 0.7*100 = 85
-        assert!(ewma > 31.0 && ewma < 39.0); // EWMA = 0.25*20 + 0.75*40 = 35 MiB/s
+        // First: ~66.7 MiB/s. Second: ~33.3 MiB/s. EWMA = 0.25*33.3 + 0.75*66.7 = 58.3
+        // MiB/s
+        assert!(ewma > 52.0 && ewma < 65.0);
     }
 
     #[test]

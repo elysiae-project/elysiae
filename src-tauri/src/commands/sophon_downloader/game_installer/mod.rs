@@ -52,7 +52,7 @@ pub fn adaptive_max_concurrency() -> usize {
 /// Initial concurrent downloads in adaptive mode.
 pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 32;
 /// Time window for throughput measurement (seconds).
-pub const ADAPTIVE_WINDOW_SECS: u64 = 5;
+pub const ADAPTIVE_WINDOW_SECS: u64 = 3;
 
 pub const FRONT_DOOR_URL: &str = concat!(
     "https://sg-hyp-api.hoyoverse.com",
