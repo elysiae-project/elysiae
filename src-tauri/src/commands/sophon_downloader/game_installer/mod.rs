@@ -42,12 +42,12 @@ pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
 /// Minimum concurrent downloads in adaptive mode.
 pub const ADAPTIVE_MIN_CONCURRENCY: usize = 8;
 /// Maximum concurrent downloads in adaptive mode.
-/// Computed as (cores * 3) clamped to [8, 64].
+/// Computed as (cores * 4) clamped to [8, 128].
 pub fn adaptive_max_concurrency() -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    (cpus * 3).clamp(8, 64)
+    (cpus * 4).clamp(8, 128)
 }
 /// Initial concurrent downloads in adaptive mode.
 pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 32;

@@ -22,6 +22,8 @@ pub fn run() {
             reqwest::Client::builder()
                 .pool_max_idle_per_host(4)
                 .http2_adaptive_window(true)
+                .http2_keep_alive_interval(Duration::from_secs(30))
+                .http2_keep_alive_timeout(Duration::from_secs(20))
                 .tcp_keepalive(Duration::from_secs(60))
                 .connect_timeout(Duration::from_secs(15))
                 .read_timeout(Duration::from_secs(30))
