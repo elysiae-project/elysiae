@@ -68,3 +68,160 @@ pub(crate) fn write_lang_file(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // -----------------------------------------------------------------------
+    // find_genshin_persistent_dir
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_find_genshin_persistent_dir_with_genshin_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let genshin_data = dir.path().join("GenshinImpact_Data");
+        fs::create_dir(&genshin_data).unwrap();
+
+        let result = find_genshin_persistent_dir(dir.path());
+        assert_eq!(result, genshin_data.join("Persistent"));
+    }
+
+    #[test]
+    fn test_find_genshin_persistent_dir_with_yuanshen_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let yuanshen_data = dir.path().join("YuanShen_Data");
+        fs::create_dir(&yuanshen_data).unwrap();
+
+        let result = find_genshin_persistent_dir(dir.path());
+        assert_eq!(result, yuanshen_data.join("Persistent"));
+    }
+
+    #[test]
+    fn test_find_genshin_persistent_dir_with_neither() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a random dir that doesn't match
+        let other_data = dir.path().join("Other_Data");
+        fs::create_dir(&other_data).unwrap();
+
+        let result = find_genshin_persistent_dir(dir.path());
+        assert_eq!(result, dir.path().join("GenshinImpact_Data/Persistent"));
+    }
+
+    #[test]
+    fn test_find_genshin_persistent_dir_empty_directory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let result = find_genshin_persistent_dir(dir.path());
+        assert_eq!(result, dir.path().join("GenshinImpact_Data/Persistent"));
+    }
+
+    // -----------------------------------------------------------------------
+    // write_lang_file
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_write_lang_file_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        let vo_langs = vec!["en-us".to_string(), "ja-jp".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            "ja-jp" => Some("Japanese"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\nJapanese\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_append_to_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+        fs::write(&path, "Chinese\n").unwrap();
+
+        let vo_langs = vec!["en-us".to_string(), "ja-jp".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            "ja-jp" => Some("Japanese"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "Chinese\nEnglish(US)\nJapanese\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_does_not_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+        fs::write(&path, "English(US)\n").unwrap();
+
+        let vo_langs = vec!["en-us".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_empty_vo_langs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        write_lang_file(&path, &[], |_| -> Option<&'static str> { None }).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_write_lang_file_skips_none_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        let vo_langs = vec![
+            "en-us".to_string(),
+            "unknown".to_string(),
+            "ja-jp".to_string(),
+        ];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            "ja-jp" => Some("Japanese"),
+            "unknown" => None,
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\nJapanese\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_mapper_en_us() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        let vo_langs = vec!["en-us".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\n");
+    }
+}
