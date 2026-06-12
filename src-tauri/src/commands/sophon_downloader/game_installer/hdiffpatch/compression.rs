@@ -124,3 +124,173 @@ impl Read for LimitedFile {
         Ok(n)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::CompressionMode;
+    use super::{LimitedFile, get_clip_stream};
+    use std::io::Read;
+
+    #[test]
+    fn limited_file_read_normal_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"Hello World!").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let mut limited = LimitedFile { file, remaining: 5 };
+        let mut buf = [0u8; 10];
+        let n = limited.read(&mut buf).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(&buf[..5], b"Hello");
+    }
+
+    #[test]
+    fn limited_file_read_at_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"ABCDE").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let mut limited = LimitedFile { file, remaining: 5 };
+        let mut buf = [0u8; 5];
+        let n = limited.read(&mut buf).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(&buf, b"ABCDE");
+        // remaining should be 0 after reading exactly
+    }
+
+    #[test]
+    fn limited_file_read_past_remaining_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"Hello World!").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let mut limited = LimitedFile { file, remaining: 0 };
+        let mut buf = [0u8; 10];
+        let n = limited.read(&mut buf).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn get_clip_stream_nocomp_unbuffered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"Hello World!").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let (mut reader, file_bytes) =
+            get_clip_stream(file, CompressionMode::Nocomp, 0, 5, 5, false).unwrap();
+        assert_eq!(file_bytes, 5);
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        assert_eq!(output, b"Hello");
+    }
+
+    #[test]
+    fn get_clip_stream_nocomp_buffered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"Hello World!").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let (mut reader, file_bytes) =
+            get_clip_stream(file, CompressionMode::Nocomp, 0, 5, 5, true).unwrap();
+        assert_eq!(file_bytes, 5);
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        assert_eq!(output, b"Hello");
+    }
+
+    #[test]
+    fn get_clip_stream_comp_length_zero_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"Hello World!").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let (mut reader, file_bytes) =
+            get_clip_stream(file, CompressionMode::Zstd, 0, 5, 0, false).unwrap();
+        assert_eq!(file_bytes, 5);
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        assert_eq!(output, b"Hello");
+    }
+
+    #[test]
+    fn get_clip_stream_nocomp_buffered_exceeds_max_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"x").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let max = 512u64 * 1024 * 1024;
+        let result = get_clip_stream(file, CompressionMode::Nocomp, 0, max + 1, max + 1, true);
+        assert!(result.is_err());
+        let msg = result.err().unwrap().to_string();
+        assert!(
+            msg.contains("exceeds maximum size"),
+            "should report exceeding max buffered size, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn get_clip_stream_zstd_buffered_exceeds_max_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"x").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let max = 512u64 * 1024 * 1024;
+        let result = get_clip_stream(file, CompressionMode::Zstd, 0, max + 1, 100, true);
+        assert!(result.is_err());
+        let msg = result.err().unwrap().to_string();
+        assert!(
+            msg.contains("exceeds maximum size"),
+            "should report exceeding max buffered size, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn get_clip_stream_zstd_roundtrip() {
+        let original = b"Hello World from zstd roundtrip test!";
+        let compressed = zstd::encode_all(std::io::Cursor::new(&original[..]), 3).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.zst");
+        std::fs::write(&path, &compressed).unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let (mut reader, file_bytes) = get_clip_stream(
+            file,
+            CompressionMode::Zstd,
+            0,
+            original.len() as u64,
+            compressed.len() as u64,
+            true,
+        )
+        .unwrap();
+        assert_eq!(file_bytes, compressed.len() as u64);
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        assert_eq!(output, original);
+    }
+
+    #[test]
+    fn get_clip_stream_zstd_unbuffered_roundtrip() {
+        let original = b"Unbuffered zstd roundtrip test data.";
+        let compressed = zstd::encode_all(std::io::Cursor::new(&original[..]), 3).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_unbuf.zst");
+        std::fs::write(&path, &compressed).unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let (mut reader, file_bytes) = get_clip_stream(
+            file,
+            CompressionMode::Zstd,
+            0,
+            original.len() as u64,
+            compressed.len() as u64,
+            false,
+        )
+        .unwrap();
+        assert_eq!(file_bytes, compressed.len() as u64);
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        assert_eq!(output, original);
+    }
+}
