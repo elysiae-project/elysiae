@@ -193,4 +193,230 @@ mod tests {
         let s = SophonError::NoManifests.to_string();
         assert!(!s.is_empty());
     }
+
+    #[tokio::test]
+    async fn error_display_http() {
+        let result = reqwest::Client::new()
+            .get("https://192.0.2.1:1/nonexistent")
+            .timeout(std::time::Duration::from_millis(1))
+            .send()
+            .await;
+        let reqwest_err = result.unwrap_err();
+        let err = SophonError::Http(reqwest_err);
+        let msg = err.to_string();
+        assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn error_display_join_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.spawn(async { panic!("intentional panic") });
+        let result = rt.block_on(handle);
+        let err = SophonError::JoinError(result.unwrap_err());
+        let msg = err.to_string();
+        assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn error_display_manifest_decode() {
+        let decode_err = prost::DecodeError::new("invalid wire type");
+        let err = SophonError::ManifestDecode(decode_err);
+        let msg = err.to_string();
+        assert!(msg.contains("manifest"), "msg={msg}");
+    }
+
+    #[test]
+    fn error_display_decompression() {
+        let err = SophonError::Decompression("zstd error".to_string());
+        assert_eq!(err.to_string(), "Failed to decompress data: zstd error");
+    }
+
+    #[test]
+    fn error_display_invalid_asset_name() {
+        let err = SophonError::InvalidAssetName("file\0.txt".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("file"), "msg={msg}");
+    }
+
+    #[test]
+    fn error_display_unknown_game_id() {
+        let err = SophonError::UnknownGameId("xyz".to_string());
+        assert_eq!(err.to_string(), "Unknown game ID: xyz");
+    }
+
+    #[test]
+    fn error_display_no_manifests() {
+        assert_eq!(
+            SophonError::NoManifests.to_string(),
+            "API returned no manifests"
+        );
+    }
+
+    #[test]
+    fn error_display_no_game_manifest() {
+        assert_eq!(
+            SophonError::NoGameManifest.to_string(),
+            "No game manifest found"
+        );
+    }
+
+    #[test]
+    fn error_display_no_voice_manifest() {
+        let err = SophonError::NoVoiceManifest("ja-jp".to_string());
+        assert_eq!(
+            err.to_string(),
+            "No voice manifest found for language: ja-jp"
+        );
+    }
+
+    #[test]
+    fn error_display_no_installed_version() {
+        assert_eq!(
+            SophonError::NoInstalledVersion.to_string(),
+            "No installed version found"
+        );
+    }
+
+    #[test]
+    fn error_display_no_preinstall_available() {
+        assert_eq!(
+            SophonError::NoPreinstallAvailable.to_string(),
+            "No preinstall available"
+        );
+    }
+
+    #[test]
+    fn error_display_download_failed() {
+        let err = SophonError::DownloadFailed {
+            chunk: "chunk_001".to_string(),
+            attempts: 3,
+            error: "timeout".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("chunk_001"));
+        assert!(msg.contains("3"));
+        assert!(msg.contains("timeout"));
+    }
+
+    #[test]
+    fn error_display_assembly_failed() {
+        let err = SophonError::AssemblyFailed {
+            file: "data.pak".to_string(),
+            error: "md5 mismatch".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("data.pak"));
+        assert!(msg.contains("md5 mismatch"));
+    }
+
+    #[test]
+    fn error_display_index_out_of_bounds() {
+        let err = SophonError::IndexOutOfBounds {
+            kind: "file_idx",
+            index: 42,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("file_idx"));
+        assert!(msg.contains("42"));
+    }
+
+    #[test]
+    fn error_display_plugin_validation_failed() {
+        let err = SophonError::PluginValidationFailed("checksum mismatch".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn error_display_patch_manifest_decode() {
+        let err = SophonError::PatchManifestDecode("truncated data".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("truncated data"));
+    }
+
+    #[test]
+    fn error_display_hdiff_patch_failed() {
+        let err = SophonError::HDiffPatchFailed {
+            file: "data.bin".to_string(),
+            error: "corrupt diff".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("data.bin"));
+        assert!(msg.contains("corrupt diff"));
+    }
+
+    #[test]
+    fn error_display_original_file_missing() {
+        let err = SophonError::OriginalFileMissing("old/data.bin".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("old/data.bin"));
+    }
+
+    #[test]
+    fn error_display_patch_chunk_not_found() {
+        let err = SophonError::PatchChunkNotFound("patch_001.hdiff".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("patch_001.hdiff"));
+    }
+
+    #[test]
+    fn error_display_preinstall_state_invalid() {
+        let err = SophonError::PreinstallStateInvalid("corrupted json".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("corrupted json"));
+    }
+
+    #[test]
+    fn error_display_no_space_available() {
+        let err = SophonError::NoSpaceAvailable {
+            path: "/game".to_string(),
+            needed: 1_000_000_000,
+            available: 500_000_000,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("/game"));
+        assert!(msg.contains("1000000000"));
+        assert!(msg.contains("500000000"));
+    }
+
+    #[test]
+    fn error_display_resume_failed() {
+        let err = SophonError::ResumeFailed {
+            message: "file size changed".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("file size changed"));
+    }
+
+    #[test]
+    fn error_display_invalid_size_string() {
+        let err = SophonError::InvalidSizeString("abc".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("abc"));
+    }
+
+    #[test]
+    fn error_from_join_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.spawn(async { panic!("fail") });
+        let join_err = rt.block_on(handle).unwrap_err();
+        let sophon_err: SophonError = join_err.into();
+        assert!(matches!(sophon_err, SophonError::JoinError(_)));
+    }
+
+    #[test]
+    fn error_from_manifest_decode() {
+        let decode_err = prost::DecodeError::new("test");
+        let sophon_err: SophonError = decode_err.into();
+        assert!(matches!(sophon_err, SophonError::ManifestDecode(_)));
+    }
+
+    #[test]
+    fn error_impl_std_error() {
+        use std::error::Error;
+        let err = SophonError::NoManifests;
+        assert!(err.source().is_none());
+        let err = SophonError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        assert!(err.source().is_some());
+    }
 }
