@@ -240,4 +240,56 @@ mod tests {
         assert!(!is_known_vo_locale("cutscenes"));
         assert!(!is_known_vo_locale(""));
     }
+
+    #[test]
+    fn update_info_serde_roundtrip_basic() {
+        let info = UpdateInfo {
+            update_available: true,
+            preinstall_available: false,
+            preinstall_downloaded: false,
+            current_tag: Some("1.0.0".into()),
+            remote_tag: "2.0.0".into(),
+            preinstall_tag: None,
+            update_compressed_size: 1_000_000,
+            update_decompressed_size: 5_000_000,
+            preinstall_compressed_size: 0,
+            preinstall_decompressed_size: 0,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let decoded: UpdateInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.update_available, true);
+        assert_eq!(decoded.preinstall_available, false);
+        assert_eq!(decoded.current_tag, Some("1.0.0".to_string()));
+        assert_eq!(decoded.remote_tag, "2.0.0");
+        assert_eq!(decoded.update_compressed_size, 1_000_000);
+    }
+
+    #[test]
+    fn update_info_serde_roundtrip_all_fields() {
+        let info = UpdateInfo {
+            update_available: false,
+            preinstall_available: true,
+            preinstall_downloaded: true,
+            current_tag: None,
+            remote_tag: "3.0.0-pre".into(),
+            preinstall_tag: Some("3.0.0-pre".into()),
+            update_compressed_size: u64::MAX,
+            update_decompressed_size: u64::MAX,
+            preinstall_compressed_size: 0,
+            preinstall_decompressed_size: 0,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let decoded: UpdateInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.preinstall_available, true);
+        assert_eq!(decoded.current_tag, None);
+        assert_eq!(decoded.preinstall_tag, Some("3.0.0-pre".to_string()));
+        assert_eq!(decoded.update_compressed_size, u64::MAX);
+    }
+
+    #[test]
+    fn update_info_deserialize_missing_field_fails() {
+        let json = r#"{"update_available":true}"#;
+        let result: Result<UpdateInfo, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
 }
