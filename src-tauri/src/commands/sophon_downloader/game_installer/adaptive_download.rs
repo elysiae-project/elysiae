@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use tauri_plugin_log::log;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::{Notify, Semaphore, SemaphorePermit};
 
 use super::*;
 
@@ -24,6 +24,7 @@ impl Drop for AdaptivePermit<'_> {
 
 pub struct AdaptiveSemaphore {
     semaphore: Semaphore,
+    notify: Notify,
     target: AtomicUsize,
     active: AtomicUsize,
     total_bytes: AtomicU64,
@@ -38,6 +39,7 @@ impl AdaptiveSemaphore {
         let initial = adaptive_max_concurrency().min(ADAPTIVE_INITIAL_CONCURRENCY);
         Self {
             semaphore: Semaphore::new(initial),
+            notify: Notify::new(),
             target: AtomicUsize::new(initial),
             active: AtomicUsize::new(0),
             total_bytes: AtomicU64::new(0),
@@ -68,7 +70,7 @@ impl AdaptiveSemaphore {
             }
             self.active.fetch_sub(1, Ordering::AcqRel);
             drop(permit);
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            self.notify.notified().await;
         }
     }
 
@@ -138,6 +140,7 @@ impl AdaptiveSemaphore {
         }
 
         self.target.store(new_target, Ordering::Release);
+        self.notify.notify_waiters();
         *window_start = now;
         new_target
     }
