@@ -275,6 +275,12 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     let f = File::open(chunk_path)?;
     let buf_reader = BufReader::with_capacity(64 * 1024, f);
     let mut decoder = zstd::Decoder::new(buf_reader)?;
+    let window_log: u32 = if cfg!(target_pointer_width = "64") {
+        31
+    } else {
+        30
+    };
+    decoder.set_parameter(zstd::zstd_safe::DParameter::WindowLogMax(window_log))?;
 
     writer.seek(SeekFrom::Start(offset))?;
 

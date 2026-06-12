@@ -298,6 +298,22 @@ async fn download_with_resume(
 
     check_available_space(dest, remaining)?;
 
+    // Seed the hasher with existing file content so we can do incremental hashing
+    // during the append — avoids re-reading the entire file for MD5 verification.
+    let mut hasher = Md5::new();
+    {
+        let existing_file = tokio::fs::File::open(dest).await?;
+        let mut reader = tokio::io::BufReader::new(existing_file);
+        let mut buf = vec![0u8; MD5_HASH_BUFFER_SIZE];
+        loop {
+            let n = reader.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+    }
+
     let file = tokio::fs::OpenOptions::new()
         .append(true)
         .open(dest)
@@ -312,6 +328,7 @@ async fn download_with_resume(
                 let bytes = chunk_bytes?;
                 file.write_all(&bytes).await?;
                 total_len += bytes.len() as u64;
+                hasher.update(&bytes);
             }
             Ok(None) => break,
             Err(_) => {
@@ -334,9 +351,9 @@ async fn download_with_resume(
         });
     }
 
-    // Verify MD5 of the complete file after resume
+    // Verify MD5 using the accumulated incremental hash (no full-file re-read)
     if !chunk.chunk_compressed_hash_md5.is_empty() {
-        let actual = compute_file_md5(dest).await?;
+        let actual = hex::encode(hasher.finalize());
         if actual != chunk.chunk_compressed_hash_md5 {
             let _ = tokio::fs::remove_file(dest).await;
             return Err(SophonError::Md5Mismatch {
