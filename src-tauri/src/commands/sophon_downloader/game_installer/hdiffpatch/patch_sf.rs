@@ -306,6 +306,7 @@ fn copy_n(
 
 #[cfg(test)]
 mod tests {
+    use super::super::{CompressionMode, DiffChunkInfo, DiffSingleChunkInfo};
     use super::*;
 
     #[test]
@@ -456,5 +457,133 @@ mod tests {
         assert_eq!(data[..10], [0x00u8; 10]);
         assert_eq!(data[10], 0x11);
         assert_eq!(data[11], 0x22);
+    }
+
+    #[test]
+    fn patch_sf_new_creates_struct() {
+        let header = HeaderInfo::default();
+        let patcher = PatchSF::new(header);
+        assert_eq!(patcher.header_info.comp_mode, CompressionMode::Nocomp);
+    }
+
+    #[test]
+    fn patch_sf_patch_missing_file_returns_not_found() {
+        let header = HeaderInfo {
+            single_chunk_info: DiffSingleChunkInfo {
+                diff_data_pos: 0,
+                uncompressed_size: 1,
+                compressed_size: 0,
+            },
+            comp_mode: CompressionMode::Nocomp,
+            chunk_info: DiffChunkInfo {
+                cover_count: 1,
+                ..Default::default()
+            },
+            new_data_size: 1,
+            step_mem_size: 1,
+            ..Default::default()
+        };
+        let patcher = PatchSF::new(header);
+        let mut input = Cursor::new(Vec::new());
+        let mut output = Cursor::new(Vec::new());
+        let result = patcher.patch(
+            &mut input,
+            &mut output,
+            "/nonexistent/patch_file.hdiff",
+            None,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn patch_sf_patch_negative_cover_count_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch_path = dir.path().join("patch.hdiff");
+        std::fs::write(&patch_path, b"").unwrap();
+
+        let header = HeaderInfo {
+            single_chunk_info: DiffSingleChunkInfo {
+                diff_data_pos: 0,
+                uncompressed_size: 0,
+                compressed_size: 0,
+            },
+            comp_mode: CompressionMode::Nocomp,
+            chunk_info: DiffChunkInfo {
+                cover_count: -1,
+                ..Default::default()
+            },
+            new_data_size: 1,
+            step_mem_size: 1,
+            ..Default::default()
+        };
+        let patcher = PatchSF::new(header);
+        let mut input = Cursor::new(Vec::new());
+        let mut output = Cursor::new(Vec::new());
+        let result = patcher.patch(&mut input, &mut output, patch_path.to_str().unwrap(), None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("cover_count is negative"), "msg={msg}");
+    }
+
+    #[test]
+    fn patch_sf_patch_negative_new_data_size_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch_path = dir.path().join("patch.hdiff");
+        std::fs::write(&patch_path, b"").unwrap();
+
+        let header = HeaderInfo {
+            single_chunk_info: DiffSingleChunkInfo {
+                diff_data_pos: 0,
+                uncompressed_size: 0,
+                compressed_size: 0,
+            },
+            comp_mode: CompressionMode::Nocomp,
+            chunk_info: DiffChunkInfo {
+                cover_count: 0,
+                ..Default::default()
+            },
+            new_data_size: -1,
+            step_mem_size: 1,
+            ..Default::default()
+        };
+        let patcher = PatchSF::new(header);
+        let mut input = Cursor::new(Vec::new());
+        let mut output = Cursor::new(Vec::new());
+        let result = patcher.patch(&mut input, &mut output, patch_path.to_str().unwrap(), None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("new_data_size is negative"), "msg={msg}");
+    }
+
+    #[test]
+    fn patch_sf_patch_non_positive_step_mem_size_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch_path = dir.path().join("patch.hdiff");
+        std::fs::write(&patch_path, b"").unwrap();
+
+        let header = HeaderInfo {
+            single_chunk_info: DiffSingleChunkInfo {
+                diff_data_pos: 0,
+                uncompressed_size: 0,
+                compressed_size: 0,
+            },
+            comp_mode: CompressionMode::Nocomp,
+            chunk_info: DiffChunkInfo {
+                cover_count: 0,
+                ..Default::default()
+            },
+            new_data_size: 0,
+            step_mem_size: 0,
+            ..Default::default()
+        };
+        let patcher = PatchSF::new(header);
+        let mut input = Cursor::new(Vec::new());
+        let mut output = Cursor::new(Vec::new());
+        let result = patcher.patch(&mut input, &mut output, patch_path.to_str().unwrap(), None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("step_mem_size is non-positive"), "msg={msg}");
     }
 }
