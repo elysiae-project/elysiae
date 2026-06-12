@@ -297,4 +297,66 @@ mod tests {
     fn parse_size_invalid() {
         assert!(parse_size("abc").is_err());
     }
+
+    #[test]
+    fn parse_size_zero() {
+        assert_eq!(parse_size("0").unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_size_negative_returns_error() {
+        assert!(parse_size("-1").is_err());
+    }
+
+    #[test]
+    fn parse_size_empty_returns_error() {
+        assert!(parse_size("").is_err());
+    }
+
+    #[test]
+    fn parse_size_whitespace_returns_error() {
+        assert!(parse_size(" 1024 ").is_err());
+    }
+
+    #[test]
+    fn parse_size_leading_zeros() {
+        assert_eq!(parse_size("0001024").unwrap(), 1024);
+    }
+
+    #[test]
+    fn parse_size_large_number() {
+        assert_eq!(parse_size("999999999999").unwrap(), 999999999999);
+    }
+
+    #[test]
+    fn vo_lang_matches_empty_both() {
+        assert!(!vo_lang_matches("", ""));
+    }
+
+    #[test]
+    fn vo_lang_matches_exact() {
+        assert!(vo_lang_matches("en", "en"));
+    }
+
+    #[test]
+    fn vo_lang_matches_case_sensitive() {
+        assert!(!vo_lang_matches("EN-US", "en"));
+    }
+
+    #[test]
+    fn is_known_vo_locale_empty() {
+        assert!(!is_known_vo_locale(""));
+    }
+
+    #[test]
+    fn is_known_vo_locale_gibberish() {
+        assert!(!is_known_vo_locale("xyz123"));
+    }
+
+    #[test]
+    fn manifest_temp_path_returns_valid_path() {
+        let path = manifest_temp_path();
+        assert!(path.to_string_lossy().contains("sophon_manifest_"));
+        assert!(path.parent().unwrap() == std::env::temp_dir());
+    }
 }
