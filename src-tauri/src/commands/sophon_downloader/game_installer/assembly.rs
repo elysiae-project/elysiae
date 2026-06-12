@@ -1053,4 +1053,58 @@ mod tests {
     fn validate_chunk_name_absolute_path() {
         assert!(!validate_chunk_name("/etc/passwd"));
     }
+
+    #[test]
+    fn hash_writer_writes_data_and_updates_hasher() {
+        use md5::{Digest, Md5};
+        let mut hasher = Md5::new();
+        let mut output = Vec::new();
+        {
+            let mut hw = HashWriter {
+                inner: &mut output,
+                hasher: &mut hasher,
+            };
+            hw.write_all(b"hello ").unwrap();
+            hw.write_all(b"world").unwrap();
+            hw.flush().unwrap();
+        }
+        assert_eq!(output, b"hello world");
+        let expected = hex::encode(Md5::digest(b"hello world"));
+        assert_eq!(hex::encode(hasher.finalize()), expected);
+    }
+
+    #[test]
+    fn hash_writer_empty_write() {
+        use md5::{Digest, Md5};
+        let mut hasher = Md5::new();
+        let mut output = Vec::new();
+        {
+            let mut hw = HashWriter {
+                inner: &mut output,
+                hasher: &mut hasher,
+            };
+            hw.write_all(b"").unwrap();
+        }
+        assert!(output.is_empty());
+        let expected = hex::encode(Md5::digest(b""));
+        assert_eq!(hex::encode(hasher.finalize()), expected);
+    }
+
+    #[test]
+    fn hash_writer_multiple_writes_accumulate_hash() {
+        use md5::{Digest, Md5};
+        let mut hasher = Md5::new();
+        let mut output = Vec::new();
+        {
+            let mut hw = HashWriter {
+                inner: &mut output,
+                hasher: &mut hasher,
+            };
+            hw.write_all(b"a").unwrap();
+            hw.write_all(b"b").unwrap();
+            hw.write_all(b"c").unwrap();
+        }
+        let combined_hash = hex::encode(Md5::digest(b"abc"));
+        assert_eq!(hex::encode(hasher.finalize()), combined_hash);
+    }
 }
