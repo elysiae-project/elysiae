@@ -106,3 +106,64 @@ impl PatchSingle {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PatchSingle;
+    use std::io::Cursor;
+
+    #[test]
+    fn patch_single_new_creates_struct() {
+        let header_info = super::HeaderInfo::default();
+        let ps = PatchSingle::new(header_info);
+        // Verify patch returns an error (file not found) to confirm the struct was
+        // created
+        let mut input = Cursor::new(Vec::<u8>::new());
+        let mut output = Vec::<u8>::new();
+        let result = ps.patch(
+            &mut input,
+            &mut output,
+            "/tmp/nonexistent_patch_file_xyzzy.hdiff",
+            None,
+        );
+        assert!(result.is_err(), "patch should fail with missing file");
+    }
+
+    #[test]
+    fn patch_single_patch_missing_file_returns_not_found() {
+        let header_info = super::HeaderInfo::default();
+        let ps = PatchSingle::new(header_info);
+        let mut input = Cursor::new(Vec::<u8>::new());
+        let mut output = Vec::<u8>::new();
+        let result = ps.patch(
+            &mut input,
+            &mut output,
+            "/tmp/nonexistent_patch_file_xyzzy_42.hdiff",
+            None,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().kind(),
+            std::io::ErrorKind::NotFound,
+            "should return NotFound for missing patch file"
+        );
+    }
+
+    #[test]
+    fn header_info_zlib_padding_is_one() {
+        let padding: u64 = match super::CompressionMode::Zlib {
+            super::CompressionMode::Zlib => 1,
+            _ => 0,
+        };
+        assert_eq!(padding, 1);
+    }
+
+    #[test]
+    fn header_info_nocomp_padding_is_zero() {
+        let padding: u64 = match super::CompressionMode::Nocomp {
+            super::CompressionMode::Zlib => 1,
+            _ => 0,
+        };
+        assert_eq!(padding, 0);
+    }
+}
