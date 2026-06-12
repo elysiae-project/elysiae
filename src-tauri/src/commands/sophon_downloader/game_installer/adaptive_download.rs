@@ -155,7 +155,7 @@ impl AdaptiveSemaphore {
                 (current + increase).min(adaptive_max_concurrency())
             }
         } else if best == 0.0 && prev_ewma == 0.0 && ewma > 0.0 {
-            let increase = current.max(8);
+            let increase = (current / 2).max(8);
             (current + increase).min(adaptive_max_concurrency())
         } else if prev_ewma > 0.0 && ewma >= prev_ewma * 0.9 {
             let increase = (current / 8).max(4);
@@ -262,7 +262,7 @@ mod tests {
         let current = if max > 1 { max / 2 } else { 1 };
         let target = AdaptiveSemaphore::calculate_new_target(current, 50.0, 0.0, 0.0);
         // best=0, so ewma >= 0.8*best (0) is true → ramp-up
-        let increase = current.max(8); // initial exploration with aggressive ramp-up
+        let increase = (current / 2).max(8); // initial exploration with aggressive ramp-up
         let expected = (current + increase).min(max);
         assert!(
             target > current,
