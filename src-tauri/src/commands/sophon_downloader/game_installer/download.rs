@@ -8,8 +8,8 @@ use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
-use super::MD5_HASH_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
+use super::{FILE_WRITE_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
@@ -218,7 +218,7 @@ async fn download_full_file_with_response(
     check_available_space(dest, chunk.chunk_size)?;
 
     let file = tokio::fs::File::create(dest).await?;
-    let mut file = BufWriter::new(file);
+    let mut file = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, file);
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
@@ -302,7 +302,7 @@ async fn download_with_resume(
         .append(true)
         .open(dest)
         .await?;
-    let mut file = BufWriter::new(file);
+    let mut file = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, file);
     let mut stream = resp.bytes_stream();
     let mut total_len = existing_size;
 
