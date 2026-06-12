@@ -476,4 +476,82 @@ mod tests {
         let result = check_file_md5_cached(&file_path, 0, &md5, dir.path(), &cache).unwrap();
         assert!(result);
     }
+
+    #[test]
+    fn load_verification_cache_loads_stale_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+        let stale = serde_json::to_string(&VerificationCacheSerializable {
+            files: HashMap::from([(
+                "nonexistent.bin".to_string(),
+                VerificationEntry {
+                    size: 100,
+                    md5: "abc".to_string(),
+                    mtime_secs: 1000,
+                },
+            )]),
+        })
+        .unwrap();
+        fs::write(&cache_path, &stale).unwrap();
+        let loaded = load_verification_cache(&game_dir);
+        assert_eq!(loaded.len(), 1, "stale entries are kept (lazy pruning)");
+    }
+
+    #[test]
+    fn load_verification_cache_keeps_all_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+        let data = serde_json::to_string(&VerificationCacheSerializable {
+            files: HashMap::from([
+                (
+                    "a.bin".to_string(),
+                    VerificationEntry {
+                        size: 1,
+                        md5: "m1".to_string(),
+                        mtime_secs: 10,
+                    },
+                ),
+                (
+                    "b.bin".to_string(),
+                    VerificationEntry {
+                        size: 2,
+                        md5: "m2".to_string(),
+                        mtime_secs: 20,
+                    },
+                ),
+            ]),
+        })
+        .unwrap();
+        fs::write(&cache_path, &data).unwrap();
+        let loaded = load_verification_cache(&game_dir);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded.get("a.bin").unwrap().size, 1);
+        assert_eq!(loaded.get("b.bin").unwrap().size, 2);
+    }
+
+    #[test]
+    fn save_verification_cache_writes_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let cache = DashMap::new();
+        cache.insert(
+            "f".to_string(),
+            VerificationEntry {
+                size: 42,
+                md5: "abc".to_string(),
+                mtime_secs: 999,
+            },
+        );
+        save_verification_cache(&game_dir, &cache).unwrap();
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+        assert!(cache_path.exists());
+        let content = fs::read_to_string(&cache_path).unwrap();
+        assert!(content.contains("f"));
+        assert!(content.contains("42"));
+    }
 }
