@@ -370,4 +370,48 @@ mod tests {
         let entry: ValidationEntry = serde_json::from_str(json).unwrap();
         assert_eq!(entry.size, None);
     }
+
+    #[test]
+    fn game_id_for_code_bh3() {
+        assert_eq!(game_id_for_code("bh3"), Some("bxPTXSET5t"));
+    }
+
+    #[test]
+    fn game_id_for_code_hkrpg() {
+        assert_eq!(game_id_for_code("hkrpg"), Some("4ziysqXOQ8"));
+    }
+
+    #[test]
+    fn game_id_for_code_nap() {
+        assert_eq!(game_id_for_code("nap"), Some("U5hbdsT9W7"));
+    }
+
+    #[test]
+    fn game_id_for_code_empty() {
+        assert_eq!(game_id_for_code(""), None);
+    }
+
+    #[test]
+    fn parse_validation_invalid_json_fails() {
+        let json = r#"{
+            "url": "https://example.com/pkg.zip",
+            "md5": "abc",
+            "size": "100",
+            "decompressed_size": "200",
+            "command": null,
+            "validation": "[invalid]",
+            "pkg_version_file_name": null
+        }"#;
+        let result: Result<PackageData, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_validation_missing_md5_field() {
+        let json = r#"{"path":"f.dll","size":"100"}"#;
+        let entry: ValidationEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.path, "f.dll");
+        assert_eq!(entry.md5, None);
+        assert_eq!(entry.size, Some(100));
+    }
 }
