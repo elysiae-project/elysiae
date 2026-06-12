@@ -6,8 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use dashmap::DashMap;
-use std::sync::Mutex;
+use dashmap::{DashMap, DashSet};
 
 use futures_util::StreamExt;
 use futures_util::future::try_join_all;
@@ -398,8 +397,7 @@ pub async fn preinstall_download(
         existing
     };
 
-    let downloaded_chunks: Arc<Mutex<HashSet<String>>> =
-        Arc::new(Mutex::new(resume_chunks.keys().cloned().collect()));
+    let downloaded_chunks: Arc<DashSet<String>> = Arc::new(resume_chunks.keys().cloned().collect());
     let chunk_bytes_map: Arc<DashMap<String, u64>> = Arc::new(DashMap::new());
     for (k, v) in resume_chunks {
         chunk_bytes_map.insert(k, v);
@@ -460,10 +458,7 @@ pub async fn preinstall_download(
                 {
                     downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
                     if !already_downloaded_chunk {
-                        downloaded_chunks
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .insert(chunk_info.patch_name.clone());
+                        downloaded_chunks.insert(chunk_info.patch_name.clone());
                         chunk_bytes_map
                             .insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                     }
@@ -484,10 +479,7 @@ pub async fn preinstall_download(
                     .await?;
 
                     downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                    downloaded_chunks
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .insert(chunk_info.patch_name.clone());
+                    downloaded_chunks.insert(chunk_info.patch_name.clone());
                     chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                 }
 
@@ -562,11 +554,13 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
-    let downloaded_chunks: HashSet<String> = downloaded_chunks
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .drain()
-        .collect();
+    let downloaded_chunks: HashSet<String> = match Arc::try_unwrap(downloaded_chunks) {
+        Ok(set) => set.into_iter().collect(),
+        Err(arc) => {
+            log::warn!("downloaded_chunks DashSet still has references, using iter");
+            arc.iter().map(|r| r.clone()).collect()
+        }
+    };
     let state = PreinstallState {
         tag: plan.tag.clone(),
         game_id: game_id.to_string(),
