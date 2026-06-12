@@ -359,4 +359,34 @@ mod tests {
         assert!(path.to_string_lossy().contains("sophon_manifest_"));
         assert!(path.parent().unwrap() == std::env::temp_dir());
     }
+
+    #[test]
+    fn decompress_zstd_from_file_roundtrip() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("data.zst");
+        let original = b"hello zstd world!";
+        let compressed = zstd::encode_all(std::io::Cursor::new(original), 3).unwrap();
+        let mut f = std::fs::File::create(&file_path).unwrap();
+        f.write_all(&compressed).unwrap();
+        drop(f);
+        let decompressed = decompress_zstd_from_file(&file_path).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn decompress_zstd_from_file_missing_returns_error() {
+        let path = std::path::PathBuf::from("/nonexistent/file.zst");
+        let result = decompress_zstd_from_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decompress_zstd_from_file_invalid_data_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("invalid.zst");
+        std::fs::write(&file_path, b"not zstd compressed data").unwrap();
+        let result = decompress_zstd_from_file(&file_path);
+        assert!(result.is_err());
+    }
 }
