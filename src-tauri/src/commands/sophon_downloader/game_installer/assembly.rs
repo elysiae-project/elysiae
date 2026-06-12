@@ -173,7 +173,7 @@ pub fn assemble_file(
     };
 
     let mut consumed_chunks: Vec<&str> = Vec::new();
-    let mut transfer_buffer = vec![0u8; 65536];
+    let mut transfer_buffer = vec![0u8; FILE_WRITE_BUFFER_SIZE];
     for chunk in &file.asset_chunks {
         if chunk.chunk_old_offset >= 0 {
             // Chunk-level reuse: read decompressed data from the existing game
