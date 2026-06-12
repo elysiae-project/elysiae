@@ -21,6 +21,7 @@ pub fn run() {
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(4)
+                .tcp_nodelay(true)
                 .http2_adaptive_window(true)
                 .http2_keep_alive_interval(Duration::from_secs(30))
                 .http2_keep_alive_timeout(Duration::from_secs(20))

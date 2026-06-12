@@ -125,6 +125,7 @@ fn write_cache_to_output(
     if !data.is_empty() {
         output.write_all(data)?;
         cache.get_mut().clear();
+        cache.get_mut().shrink_to_fit();
         cache.set_position(0);
     }
     Ok(())
