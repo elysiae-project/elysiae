@@ -188,9 +188,8 @@ pub fn assemble_file(
                 &mut transfer_buffer,
                 &chunk.chunk_decompressed_hash_md5,
             )
-            .map_err(|e| {
+            .inspect_err(|_| {
                 let _ = fs::remove_file(&tmp_path);
-                e
             })?;
             total_written += bytes_written;
             // No refcount to decrement — old-source chunks were never
@@ -207,9 +206,8 @@ pub fn assemble_file(
                 &mut transfer_buffer,
                 &chunk.chunk_decompressed_hash_md5,
             )
-            .map_err(|e| {
+            .inspect_err(|_| {
                 let _ = fs::remove_file(&tmp_path);
-                e
             })?;
 
             total_written += bytes_written;
@@ -250,7 +248,8 @@ pub fn assemble_file(
     if target_path.exists() {
         let _ = fs::metadata(&target_path).ok().and_then(|m| {
             let mut perms = m.permissions();
-            perms.set_readonly(false);
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o644);
             fs::set_permissions(&target_path, perms).ok()
         });
     }
@@ -352,7 +351,7 @@ fn write_from_old_file<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
-    let f = File::open(old_file_path).map_err(|e| SophonError::Io(e))?;
+    let f = File::open(old_file_path).map_err(SophonError::Io)?;
     let mut reader = BufReader::with_capacity(64 * 1024, f);
     reader.seek(SeekFrom::Start(old_offset))?;
 

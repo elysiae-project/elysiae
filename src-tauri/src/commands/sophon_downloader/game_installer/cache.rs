@@ -29,15 +29,15 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
     // Clean up any leftover .tmp files from a previous crash (the
     // atomic-write pattern in save_verification_cache writes to a .tmp
     // before rename; if the process crashed during rename, the .tmp lingers).
-    if let Some(parent) = cache_path.parent() {
-        if let Ok(entries) = parent.read_dir() {
-            let cache_stem = cache_path.file_stem();
-            for entry in entries.flatten() {
-                if entry.path().extension().map_or(false, |e| e == "tmp")
-                    && cache_stem == entry.path().file_stem()
-                {
-                    let _ = fs::remove_file(entry.path());
-                }
+    if let Some(parent) = cache_path.parent()
+        && let Ok(entries) = parent.read_dir()
+    {
+        let cache_stem = cache_path.file_stem();
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|e| e == "tmp")
+                && cache_stem == entry.path().file_stem()
+            {
+                let _ = fs::remove_file(entry.path());
             }
         }
     }

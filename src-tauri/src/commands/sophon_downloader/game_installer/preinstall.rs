@@ -1380,15 +1380,14 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             actual: actual_size,
         });
     }
-    if !asset.target_file_hash.is_empty() {
-        if !verify_file_hash(&temp_path, &asset.target_file_hash) {
-            let _ = fs::remove_file(&temp_path);
-            return Err(SophonError::Md5Mismatch {
-                item: asset.target_file_path.clone(),
-                expected: asset.target_file_hash.clone(),
-                actual: "(computed)".to_string(),
-            });
-        }
+    if !asset.target_file_hash.is_empty() && !verify_file_hash(&temp_path, &asset.target_file_hash)
+    {
+        let _ = fs::remove_file(&temp_path);
+        return Err(SophonError::Md5Mismatch {
+            item: asset.target_file_path.clone(),
+            expected: asset.target_file_hash.clone(),
+            actual: "(computed)".to_string(),
+        });
     }
     if target_path.exists() {
         let _ = fs::remove_file(&target_path);
@@ -1527,15 +1526,15 @@ fn apply_hdiff_patch(
                     actual: actual_size,
                 });
             }
-            if !asset.target_file_hash.is_empty() {
-                if !verify_file_hash(&temp_output, &asset.target_file_hash) {
-                    let _ = fs::remove_file(&temp_output);
-                    return Err(SophonError::Md5Mismatch {
-                        item: asset.target_file_path.clone(),
-                        expected: asset.target_file_hash.clone(),
-                        actual: "(computed)".to_string(),
-                    });
-                }
+            if !asset.target_file_hash.is_empty()
+                && !verify_file_hash(&temp_output, &asset.target_file_hash)
+            {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::Md5Mismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_hash.clone(),
+                    actual: "(computed)".to_string(),
+                });
             }
             if target_path.exists() {
                 let _ = fs::remove_file(&target_path);
@@ -1621,15 +1620,15 @@ fn apply_hdiff_patch_from_files(
                     actual: actual_size,
                 });
             }
-            if !asset.target_file_hash.is_empty() {
-                if !verify_file_hash(&temp_output, &asset.target_file_hash) {
-                    let _ = fs::remove_file(&temp_output);
-                    return Err(SophonError::Md5Mismatch {
-                        item: asset.target_file_path.clone(),
-                        expected: asset.target_file_hash.clone(),
-                        actual: "(computed)".to_string(),
-                    });
-                }
+            if !asset.target_file_hash.is_empty()
+                && !verify_file_hash(&temp_output, &asset.target_file_hash)
+            {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::Md5Mismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_hash.clone(),
+                    actual: "(computed)".to_string(),
+                });
             }
             if target_path.exists() {
                 let _ = fs::remove_file(&target_path);

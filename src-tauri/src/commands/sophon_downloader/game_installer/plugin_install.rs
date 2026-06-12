@@ -237,12 +237,12 @@ async fn install_single_plugin(
     let raw_filename = pkg.url.rsplit('/').next().unwrap_or("plugin.zip");
     let filename = raw_filename
         .split(['/', '\\'])
-        .last()
+        .next_back()
         .unwrap_or("plugin.zip");
     if filename.contains("..") || filename.is_empty() {
         return Err(SophonError::PathTraversal(PathBuf::from(filename)));
     }
-    let zip_path = game_dir.join(&filename);
+    let zip_path = game_dir.join(filename);
 
     download_zip(client, &pkg.url, &zip_path, &pkg.md5, updater).await?;
 
@@ -329,11 +329,14 @@ async fn install_single_sdk(
         .rsplit('/')
         .next()
         .unwrap_or("sdk.zip");
-    let filename = raw_filename.split(['/', '\\']).last().unwrap_or("sdk.zip");
+    let filename = raw_filename
+        .split(['/', '\\'])
+        .next_back()
+        .unwrap_or("sdk.zip");
     if filename.contains("..") || filename.is_empty() {
         return Err(SophonError::PathTraversal(PathBuf::from(filename)));
     }
-    let zip_path = game_dir.join(&filename);
+    let zip_path = game_dir.join(filename);
 
     download_zip(
         client,

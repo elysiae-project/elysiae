@@ -702,7 +702,7 @@ async fn download_chunk_with_retries(
                 if hash_failures > MAX_HASH_RETRIES {
                     return Err(SophonError::DownloadFailed {
                         chunk: item.chunk.chunk_name.clone(),
-                        attempts: hash_failures as u32,
+                        attempts: hash_failures,
                         error: format!(
                             "hash verification failed after {} retries",
                             MAX_HASH_RETRIES
