@@ -1,4 +1,4 @@
-// Protobuf data fetched from the collapse launcher project (Hi3Helper.Sophon)
+// Protobuf data fetched from the Sophon protocol (Hi3Helper.Sophon)
 use prost::Message;
 
 // Top level of the protobuf
@@ -34,7 +34,6 @@ pub struct SophonManifestAssetProperty {
 
 impl SophonManifestAssetProperty {
     /// Returns true if this entry represents a directory (not a data file).
-    /// Matches Collapse logic: asset_type != 0 OR empty MD5 hash.
     #[inline]
     pub fn is_directory(&self) -> bool {
         self.asset_type != 0 || self.asset_hash_md5.is_empty()

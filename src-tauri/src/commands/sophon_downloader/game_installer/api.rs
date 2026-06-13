@@ -210,14 +210,15 @@ fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
 #[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
     let vo = vo_lang.as_bytes();
+    let lower = matching_field.to_ascii_lowercase();
     if vo.eq_ignore_ascii_case(b"cn") {
-        matching_field.contains("zh")
+        lower.contains("zh")
     } else if vo.eq_ignore_ascii_case(b"en") {
-        matching_field.contains("en")
+        lower.contains("en")
     } else if vo.eq_ignore_ascii_case(b"jp") {
-        matching_field.contains("ja")
+        lower.contains("ja")
     } else if vo.eq_ignore_ascii_case(b"kr") {
-        matching_field.contains("ko")
+        lower.contains("ko")
     } else {
         false
     }
@@ -339,8 +340,13 @@ mod tests {
     }
 
     #[test]
-    fn vo_lang_matches_case_sensitive() {
-        assert!(!vo_lang_matches("EN-US", "en"));
+    fn vo_lang_matches_case_insensitive_en() {
+        assert!(vo_lang_matches("EN-US", "en"));
+    }
+
+    #[test]
+    fn vo_lang_matches_case_insensitive_cn() {
+        assert!(vo_lang_matches("ZH-CN", "cn"));
     }
 
     #[test]

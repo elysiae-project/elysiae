@@ -1576,7 +1576,7 @@ fn apply_hdiff_patch_from_files(
             fs::create_dir_all(parent)?;
         }
         fs::File::create(&empty_original_path)?;
-        // Collapse uses BlankFileMd5Hash to represent an empty original file.
+        // BlankFileMd5Hash represents an empty original file.
         // Verify our freshly-created diff_ref is actually empty before proceeding.
         if !verify_file_hash(&empty_original_path, BLANK_FILE_MD5) {
             return Err(SophonError::HDiffPatchFailed {
