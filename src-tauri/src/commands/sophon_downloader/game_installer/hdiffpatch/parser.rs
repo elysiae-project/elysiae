@@ -93,7 +93,7 @@ pub(crate) fn read_long_7bit_from_slice(
     tag_bit: u8,
     prev_byte: u8,
 ) -> std::io::Result<i64> {
-    if *offset >= buf.len() {
+    if tag_bit == 0 && *offset >= buf.len() {
         return Err(std::io::Error::other("varint: buffer underflow"));
     }
     let code = if tag_bit != 0 {
@@ -455,6 +455,29 @@ mod tests {
         let val = read_long_7bit_from_slice(buf, &mut offset, 1, 0x0A).unwrap();
         assert_eq!(val, 10);
         assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_1_empty_buf() {
+        let buf = b"";
+        let mut offset = 0;
+        let val = read_long_7bit_from_slice(buf, &mut offset, 1, 0x05).unwrap();
+        assert_eq!(val, 5);
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_1_empty_buf_continuation_fails() {
+        let buf = b"";
+        let mut offset = 0;
+        let result = read_long_7bit_from_slice(buf, &mut offset, 1, 0x45);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("underflow"),
+            "error should mention underflow, got: {}",
+            err
+        );
     }
 
     #[test]
