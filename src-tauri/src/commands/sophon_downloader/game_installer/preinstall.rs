@@ -1352,23 +1352,19 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         return result;
     }
 
-    // Stream copy: read from chunk file + write to target without loading all into
-    // memory
+    // Stream copy: seek back past magic bytes and copy all chunk data
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
     let temp_path = game_dir.join(format!("patching/copyover_{}.tmp", safe_hash));
+    chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
     {
         let file = fs::File::create(&temp_path)?;
         let mut writer = BufWriter::new(file);
-        writer.write_all(&magic_buf)?;
-        if asset.patch_chunk_length > magic_buf.len() as u64 {
-            let remaining = asset.patch_chunk_length - magic_buf.len() as u64;
-            let mut limited = (&mut chunk_file).take(remaining);
-            std::io::copy(&mut limited, &mut writer)?;
-        }
+        let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
+        std::io::copy(&mut limited, &mut writer)?;
         writer.flush()?;
     }
     let actual_size = fs::metadata(&temp_path)?.len();

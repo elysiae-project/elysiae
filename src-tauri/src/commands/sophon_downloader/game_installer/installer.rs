@@ -1251,6 +1251,7 @@ pub async fn install(
                         let file_chunk_size: u64 = file
                             .asset_chunks
                             .iter()
+                            .filter(|c| c.chunk_old_offset < 0)
                             .map(|c| c.chunk_size)
                             .fold(0u64, |acc, x| acc.saturating_add(x));
                         resume_bytes_offset = resume_bytes_offset.saturating_add(file_chunk_size);

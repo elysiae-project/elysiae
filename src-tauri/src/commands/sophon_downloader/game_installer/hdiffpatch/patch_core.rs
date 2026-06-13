@@ -368,6 +368,9 @@ pub(crate) fn enumerate_cover_headers(
 
             let old_pos_back = last_old_pos_back;
             let new_pos_back = last_new_pos_back;
+            if offset >= buffer.len() {
+                return Err(std::io::Error::other("cover header data truncated"));
+            }
             let p_sign = buffer[offset];
             offset += 1;
 
