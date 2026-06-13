@@ -2383,6 +2383,107 @@ mod tests {
     }
 
     #[test]
+    fn apply_copy_over_small_chunk_below_magic_len() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let data = b"ab";
+        let md5_hex = hex::encode(md5::Md5::digest(data));
+        fs::write(chunks_dir.join("small_chunk"), data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/small.bin".to_string(),
+            target_file_size: data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "small_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: data.len() as u64,
+            patch_chunk_length: data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/small.bin")).unwrap();
+        assert_eq!(written, data);
+    }
+
+    #[test]
+    fn apply_copy_over_exact_magic_len_non_hdiff() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let data = b"ABCDE";
+        assert_eq!(data.len(), HDIFF_MAGIC.len());
+        assert_ne!(&data[..], HDIFF_MAGIC.as_ref());
+        let md5_hex = hex::encode(md5::Md5::digest(data));
+        fs::write(chunks_dir.join("exact_chunk"), data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/exact.bin".to_string(),
+            target_file_size: data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "exact_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: data.len() as u64,
+            patch_chunk_length: data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/exact.bin")).unwrap();
+        assert_eq!(written, data);
+    }
+
+    #[test]
+    fn apply_copy_over_with_offset_non_hdiff_seeks_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let full_data = b"__PREFIX__HelloHDIFFWorld__SUFFIX__";
+        fs::write(chunks_dir.join("offset_chunk"), full_data).unwrap();
+
+        let target_data = &full_data[10..25];
+        assert!(target_data.starts_with(b"HelloHDIFF"));
+        let md5_hex = hex::encode(md5::Md5::digest(target_data));
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/offset.bin".to_string(),
+            target_file_size: target_data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "offset_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 10,
+            patch_size: 15,
+            patch_chunk_length: 15,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/offset.bin")).unwrap();
+        assert_eq!(written, target_data);
+    }
+
+    #[test]
     fn apply_copy_over_detects_hdiff_magic() {
         let dir = tempfile::tempdir().unwrap();
         let chunks_dir = dir.path().join("patching/chunk");

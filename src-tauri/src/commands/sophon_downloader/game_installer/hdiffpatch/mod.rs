@@ -640,6 +640,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn enumerate_cover_headers_truncated_data_returns_error() {
+        use std::io::Cursor;
+        // Buffer has data but not enough for the first cover header entry.
+        // cover_count=3 but only 2 bytes of data provided.
+        let truncated = b"\x01\x02";
+        let result = super::patch_core::enumerate_cover_headers(
+            &mut Cursor::new(truncated.as_slice()),
+            truncated.len() as i64,
+            3,
+        );
+        assert!(result.is_err(), "should fail for truncated cover data");
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("underflow") || err.to_string().contains("truncated"),
+            "error should mention underflow or truncation, got: {}",
+            err
+        );
+    }
+
     // ========== Compression Mode Tests ==========
 
     /// Test that LZ4 compression mode can be parsed from string

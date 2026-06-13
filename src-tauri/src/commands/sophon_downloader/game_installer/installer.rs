@@ -2042,6 +2042,41 @@ mod tests {
     }
 
     #[test]
+    fn compute_totals_filters_old_reuse_chunks() {
+        let chunk_new = SophonManifestAssetChunk {
+            chunk_name: "new_chunk".into(),
+            chunk_size: 500,
+            chunk_size_decompressed: 500,
+            chunk_old_offset: -1,
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        };
+        let chunk_reuse = SophonManifestAssetChunk {
+            chunk_name: "reuse_chunk".into(),
+            chunk_size: 300,
+            chunk_size_decompressed: 300,
+            chunk_old_offset: 42,
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: String::new(),
+        };
+        let file1 = SophonManifestAssetProperty {
+            asset_name: "a.pak".into(),
+            asset_chunks: vec![chunk_new, chunk_reuse],
+            asset_type: 0,
+            asset_hash_md5: String::new(),
+            asset_size: 0,
+        };
+        let data = vec![make_installer_data(vec![file1])];
+        let (bytes, files) = compute_totals(&data);
+        assert_eq!(bytes, 500, "old-reuse chunk should be excluded");
+        assert_eq!(files, 1);
+    }
+
+    #[test]
     fn compute_totals_filters_directories() {
         let file1 = make_file("a.pak", "aa", vec![make_chunk("c1", 100)]);
         let dir1 = make_dir("GameData");
