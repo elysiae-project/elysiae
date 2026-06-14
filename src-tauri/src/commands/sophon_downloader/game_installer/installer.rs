@@ -19,7 +19,8 @@ use super::adaptive_assembly::AdaptiveAssembly;
 use super::adaptive_download::AdaptiveSemaphore;
 use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
 use super::assembly::{
-    self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task, validate_chunk_name,
+    self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task, validate_asset_name,
+    validate_chunk_name,
 };
 use super::cache::{self, VerificationEntry};
 use super::error::{SophonError, SophonResult};
@@ -1001,7 +1002,14 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &deleted_files {
-                let _ = fs::remove_file(gd.join(rel));
+                if let Err(e) = validate_asset_name(rel) {
+                    log::warn!("Skipping deleted file with invalid path: {e}");
+                    continue;
+                }
+                let path = gd.join(rel);
+                if let Err(e) = fs::remove_file(&path) {
+                    log::warn!("Failed to delete file {}: {}", path.display(), e);
+                }
             }
         })
         .await?;

@@ -853,7 +853,7 @@ fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
 /// at 30000 ms, that is used by both the `CopyOver` and `Patch` retry
 /// loops inside [`apply_preinstall`].
 pub fn compute_retry_delay(attempt: usize) -> Duration {
-    Duration::from_millis((1000u64 * (1u64 << (attempt as u64).min(4))).min(30_000))
+    Duration::from_millis((1000u64 * (1u64 << (attempt as u64).min(5))).min(30_000))
 }
 
 pub async fn apply_preinstall(
@@ -1062,11 +1062,8 @@ pub async fn apply_preinstall(
         let df = state.deleted_files.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &df {
-                if rel.contains("..")
-                    || rel.starts_with('/')
-                    || rel.starts_with('\\')
-                    || rel.contains('\0')
-                {
+                if let Err(e) = super::assembly::validate_asset_name(rel) {
+                    log::warn!("Skipping deleted file with invalid path: {e}");
                     continue;
                 }
                 let path = gd.join(rel);
@@ -1514,9 +1511,17 @@ fn apply_hdiff_patch(
             fs::create_dir_all(parent)?;
         }
         let diff_file = fs::File::create(&diff_temp)?;
-        let mut writer = std::io::BufWriter::new(diff_file);
+        let mut writer =
+            std::io::BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, diff_file);
         let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
-        std::io::copy(&mut limited, &mut writer)?;
+        let mut copy_buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
+        loop {
+            let n = limited.read(&mut copy_buf)?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&copy_buf[..n])?;
+        }
         writer.flush()?;
     }
 
@@ -2992,23 +2997,24 @@ mod tests {
         assert_eq!(compute_retry_delay(2).as_millis(), 4000);
         // attempt 3 -> 8s
         assert_eq!(compute_retry_delay(3).as_millis(), 8000);
-        // attempt 4 -> 16s (not yet capped)
+        // attempt 4 -> 16s
         assert_eq!(compute_retry_delay(4).as_millis(), 16000);
+        // attempt 5 -> 32s, capped to 30s
+        assert_eq!(compute_retry_delay(5).as_millis(), 30000);
     }
 
     #[test]
     fn retry_delay_caps_at_30_seconds_for_larger_attempts() {
-        // attempt 5 hits cap: (1000 * 2^4 = 16000, min(16000, 30000) = 16000
-        assert_eq!(compute_retry_delay(5).as_millis(), 16000);
-        assert_eq!(compute_retry_delay(6).as_millis(), 16000);
-        assert_eq!(compute_retry_delay(50).as_millis(), 16000);
+        assert_eq!(compute_retry_delay(5).as_millis(), 30000);
+        assert_eq!(compute_retry_delay(6).as_millis(), 30000);
+        assert_eq!(compute_retry_delay(50).as_millis(), 30000);
     }
 
     #[test]
     fn retry_delay_max_attempt_caps_before_multiply() {
-        // attempt as u64 capped at 4: (1000 * 2^4) = 16000 -> still 16000
-        assert_eq!(compute_retry_delay(10).as_millis(), 16000);
-        assert_eq!(compute_retry_delay(100).as_millis(), 16000);
+        // attempt as u64 capped at 5: (1000 * 2^5) = 32000 -> min(32000, 30000) = 30000
+        assert_eq!(compute_retry_delay(10).as_millis(), 30000);
+        assert_eq!(compute_retry_delay(100).as_millis(), 30000);
     }
 
     fn make_download_info() -> DownloadInfo {
