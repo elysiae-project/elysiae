@@ -397,7 +397,7 @@ pub async fn preinstall_download(
             .iter()
             .filter(|c| resume_chunks.contains_key(&c.patch_name))
             .map(|c| c.patch_size)
-            .sum();
+            .fold(0u64, |acc, x| acc.saturating_add(x));
         existing
     };
 
