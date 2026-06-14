@@ -1431,9 +1431,7 @@ fn apply_hdiff_patch(
         ));
     }
 
-    if let Some(ref expected_size) = asset.original_file_size
-        && original_path.exists()
-    {
+    if let Some(ref expected_size) = asset.original_file_size {
         let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
         if actual_size != *expected_size {
             if is_filtered_asset(cache, asset) {
