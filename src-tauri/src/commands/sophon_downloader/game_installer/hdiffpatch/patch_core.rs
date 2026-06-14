@@ -1039,4 +1039,135 @@ mod tests {
         // Since both mem_set_length and mem_copy_length are 0, nothing happens
         assert_eq!(copy_length, 8, "nothing consumed");
     }
+
+    // ========== tbytes_copy_stream_from_old_clip Negative Tests ==========
+
+    /// tbytes_copy_stream_from_old_clip with negative copy_length should return
+    /// an error.
+    #[test]
+    fn tbytes_copy_stream_from_old_clip_negative_copy_length_fails() {
+        use super::tbytes_copy_stream_from_old_clip;
+
+        let mut cache = Cursor::new(Vec::new());
+        let mut reader: &[u8] = &[];
+        let mut shared_buffer = [0u8; 32];
+        let result =
+            tbytes_copy_stream_from_old_clip(&mut cache, &mut reader, -1, &mut shared_buffer);
+        assert!(result.is_err(), "negative copy_length should fail");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("copy_length is negative"), "msg={msg}");
+    }
+
+    // ========== tbytes_set_rle_single Additional Wrapping Tests ==========
+
+    /// tbytes_set_rle_single with basic non-zero addition (add 0x10).
+    #[test]
+    fn tbytes_set_rle_single_basic_addition() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 3,
+            mem_set_value: 0x10, // add 16 to each byte
+        };
+        let mut cache = Cursor::new(vec![0x10, 0x20, 0x30]);
+        let mut copy_length: i64 = 3;
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok());
+        // 0x10 + 0x10 = 0x20, 0x20 + 0x10 = 0x30, 0x30 + 0x10 = 0x40
+        assert_eq!(shared_buffer[0], 0x20);
+        assert_eq!(shared_buffer[1], 0x30);
+        assert_eq!(shared_buffer[2], 0x40);
+    }
+
+    /// tbytes_set_rle_single with single byte addition (minimum non-trivial
+    /// case).
+    #[test]
+    fn tbytes_set_rle_single_single_byte_addition() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 1,
+            mem_set_value: 0x01,
+        };
+        let mut cache = Cursor::new(vec![0x00]);
+        let mut copy_length: i64 = 1;
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(copy_length, 0, "copy_length should be consumed");
+        assert_eq!(
+            rle_loader.mem_set_length, 0,
+            "mem_set_length should be exhausted"
+        );
+        assert_eq!(shared_buffer[0], 0x01, "0x00 + 0x01 = 0x01");
+    }
+
+    /// tbytes_set_rle_single with non-zero mem_set_value capped by a small
+    /// shared buffer.
+    #[test]
+    fn tbytes_set_rle_single_non_zero_capped_by_small_buffer() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 100,
+            mem_set_value: 0x10, // non-zero
+        };
+        let mut cache = Cursor::new(vec![0x00; 100]);
+        let mut copy_length: i64 = 100;
+        let mut shared_buffer = [0u8; 4]; // tiny buffer
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok());
+        // mem_set_step = min(100, 100, 4) = 4 bytes processed
+        assert_eq!(copy_length, 96, "copy_length should be reduced by 4");
+        assert_eq!(
+            rle_loader.mem_set_length, 96,
+            "mem_set_length should have 96 remaining"
+        );
+        // Verify the bytes were modified (non-zero code path)
+        assert_eq!(shared_buffer[0], 0x10, "0x00 + 0x10 = 0x10");
+        assert_eq!(shared_buffer[3], 0x10, "0x00 + 0x10 = 0x10");
+    }
+
+    /// tbytes_set_rle_single with mem_set_value = 0x80 and data = 0x80 tests
+    /// wrapping at 0x80 + 0x80 = 0x00.
+    #[test]
+    fn tbytes_set_rle_single_wrapping_0x80_plus_0x80() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 1,
+            mem_set_value: 0x80,
+        };
+        let mut cache = Cursor::new(vec![0x80]);
+        let mut copy_length: i64 = 1;
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(shared_buffer[0], 0x00, "0x80 + 0x80 should wrap to 0x00");
+    }
 }
