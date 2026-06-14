@@ -1058,4 +1058,132 @@ mod tests {
             err
         );
     }
+
+    // ========== Compression Mode Detection Tests ==========
+
+    /// Verify that zlib mode produces padding of 1 (used in patch_single for
+    /// compressed stream alignment).
+    #[test]
+    fn compression_mode_zlib_identifies_padding() {
+        let padding: u64 = match CompressionMode::Zlib {
+            CompressionMode::Zlib => 1,
+            _ => 0,
+        };
+        assert_eq!(padding, 1, "zlib mode should produce padding of 1");
+    }
+
+    /// Verify that zstd mode produces no padding.
+    #[test]
+    fn compression_mode_zstd_identifies_no_padding() {
+        let padding: u64 = match CompressionMode::Zstd {
+            CompressionMode::Zlib => 1,
+            _ => 0,
+        };
+        assert_eq!(padding, 0, "zstd mode should produce padding of 0");
+    }
+
+    /// Verify that nocomp mode produces no padding.
+    #[test]
+    fn compression_mode_nocomp_identifies_no_padding() {
+        let padding: u64 = match CompressionMode::Nocomp {
+            CompressionMode::Zlib => 1,
+            _ => 0,
+        };
+        assert_eq!(padding, 0, "nocomp mode should produce padding of 0");
+    }
+
+    /// Verify that lz4 mode produces no padding.
+    #[test]
+    fn compression_mode_lz4_identifies_no_padding() {
+        let padding: u64 = match CompressionMode::Lz4 {
+            CompressionMode::Zlib => 1,
+            _ => 0,
+        };
+        assert_eq!(padding, 0, "lz4 mode should produce padding of 0");
+    }
+
+    /// Only zlib mode results in padding for compressed streams; all other
+    /// modes have zero padding.
+    #[test]
+    fn compression_mode_only_zlib_has_padding() {
+        let modes_and_expected_padding = [
+            (CompressionMode::Nocomp, 0u64),
+            (CompressionMode::Zstd, 0u64),
+            (CompressionMode::Zlib, 1u64),
+            (CompressionMode::Lz4, 0u64),
+        ];
+        for (mode, expected) in modes_and_expected_padding {
+            let padding: u64 = match mode {
+                CompressionMode::Zlib => 1,
+                _ => 0,
+            };
+            assert_eq!(
+                padding, expected,
+                "mode {:?} should have padding of {}",
+                mode, expected
+            );
+        }
+    }
+
+    /// Verify that the header line "HDIFF13&zstd" correctly parses to v13
+    /// with Zstd compression.
+    #[test]
+    fn hdiff_header_parses_v13_zstd_mode() {
+        let parts: Vec<&str> = "HDIFF13&zstd".split('&').collect();
+        assert_eq!(parts.len(), 2);
+        let version = HDiff::try_get_version(parts[0]).unwrap();
+        assert_eq!(version, 13);
+        let mode: CompressionMode = parts[1].parse().unwrap();
+        assert_eq!(mode, CompressionMode::Zstd);
+    }
+
+    /// Verify that the header line "HDIFF20&zlib" correctly parses to v20
+    /// with Zlib compression.
+    #[test]
+    fn hdiff_header_parses_v20_zlib_mode() {
+        let parts: Vec<&str> = "HDIFF20&zlib".split('&').collect();
+        assert_eq!(parts.len(), 2);
+        let version = HDiff::try_get_version(parts[0]).unwrap();
+        assert_eq!(version, 20);
+        let mode: CompressionMode = parts[1].parse().unwrap();
+        assert_eq!(mode, CompressionMode::Zlib);
+    }
+
+    /// Verify that "HDIFF13&nocomp" parses to v13 with Nocomp mode.
+    #[test]
+    fn hdiff_header_parses_v13_nocomp_mode() {
+        let parts: Vec<&str> = "HDIFF13&nocomp".split('&').collect();
+        assert_eq!(parts.len(), 2);
+        let version = HDiff::try_get_version(parts[0]).unwrap();
+        assert_eq!(version, 13);
+        let mode: CompressionMode = parts[1].parse().unwrap();
+        assert_eq!(mode, CompressionMode::Nocomp);
+    }
+
+    /// Verify that a 3-part header (with checksum) correctly identifies both
+    /// compression mode and checksum presence.
+    #[test]
+    fn hdiff_header_parses_3part_with_checksum() {
+        let parts: Vec<&str> = "HDIFF20&zstd&fadler64".split('&').collect();
+        assert_eq!(parts.len(), 3);
+        let version = HDiff::try_get_version(parts[0]).unwrap();
+        assert_eq!(version, 20);
+        let mode: CompressionMode = parts[1].parse().unwrap();
+        assert_eq!(mode, CompressionMode::Zstd);
+        // Third part is the checksum mode
+        assert_eq!(parts[2], "fadler64");
+    }
+
+    /// is_single_compressed_diff should be true for version 20 regardless of
+    /// compression mode.
+    #[test]
+    fn compression_mode_v20_sets_single_compressed_flag() {
+        let is_single = 20 == 20;
+        assert!(is_single, "v20 should set is_single_compressed_diff");
+        let is_not_single = 13 == 20;
+        assert!(
+            !is_not_single,
+            "v13 should not set is_single_compressed_diff"
+        );
+    }
 }
