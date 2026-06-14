@@ -1094,22 +1094,8 @@ pub async fn apply_preinstall(
 }
 
 fn validate_asset_path(game_dir: &Path, asset_path: &str) -> SophonResult<PathBuf> {
-    if asset_path.contains('\0') {
-        return Err(SophonError::InvalidAssetName(
-            "asset_path cannot contain null bytes".into(),
-        ));
-    }
-    let mut chars = asset_path.chars();
-    if let (Some(first), Some(':')) = (chars.next(), chars.next())
-        && first.is_ascii_alphabetic()
-    {
-        return Err(SophonError::PathTraversal(game_dir.join(asset_path)));
-    }
-    let path = game_dir.join(asset_path);
-    if asset_path.starts_with('/') || asset_path.starts_with('\\') || asset_path.contains("..") {
-        return Err(SophonError::PathTraversal(path));
-    }
-    Ok(path)
+    super::assembly::validate_asset_name(asset_path)?;
+    Ok(game_dir.join(asset_path))
 }
 
 fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
@@ -1360,11 +1346,18 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
                 fs::create_dir_all(parent)?;
             }
             let diff_file = fs::File::create(&diff_temp)?;
-            let mut writer = BufWriter::new(diff_file);
+            let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, diff_file);
             writer.write_all(HDIFF_MAGIC.as_ref())?;
             let remaining = asset.patch_chunk_length - HDIFF_MAGIC.len() as u64;
             let mut limited = (&mut chunk_file).take(remaining);
-            std::io::copy(&mut limited, &mut writer)?;
+            let mut copy_buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
+            loop {
+                let n = limited.read(&mut copy_buf)?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&copy_buf[..n])?;
+            }
             writer.flush()?;
         }
         let result = apply_hdiff_patch_from_files(game_dir, &diff_temp, asset);
