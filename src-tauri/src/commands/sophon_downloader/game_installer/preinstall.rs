@@ -2022,7 +2022,19 @@ mod tests {
         assert!(!verify_file_hash(&path, "0123456789abcdef"));
     }
 
-    // --- Group 8: Wrong-hash negative cases ---
+    // --- Group 8: Positive lowercase and negative wrong-hash cases ---
+
+    /// Lowercase MD5 hash must be accepted (verify_file_hash normalizes to
+    /// lowercase).
+    #[test]
+    fn verify_file_hash_md5_lowercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_md5_lower");
+        let data = b"hello world";
+        let md5_lower = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+        assert!(verify_file_hash(&path, &md5_lower));
+    }
 
     /// A real MD5 mismatch must return false (verify_file_hash dispatcher).
     #[test]
@@ -2030,8 +2042,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_md5_wrong");
         fs::write(&path, b"hello world").unwrap();
-        // Real MD5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        // real md5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
         assert!(!verify_file_hash(&path, "00000000000000000000000000000000"));
+    }
+
+    /// Lowercase XXH64 hash must be accepted (verify_file_hash normalizes to
+    /// lowercase).
+    #[test]
+    fn verify_file_hash_xxh64_lowercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_xxh64_lower");
+        let data = b"hello world";
+        let mut hasher = twox_hash::XxHash64::default();
+        use std::hash::Hasher;
+        hasher.write(data);
+        let xxh64_lower = format!("{:016x}", hasher.finish());
+        fs::write(&path, data).unwrap();
+        assert!(verify_file_hash(&path, &xxh64_lower));
     }
 
     /// A real XXH64 mismatch must return false (verify_file_hash dispatcher).
@@ -2040,7 +2067,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_xxh64_wrong");
         fs::write(&path, b"hello world").unwrap();
-        // 16 all-zero characters is not the real XXH64
+        // 16 all-zero chars is not the real XXH64
         assert!(!verify_file_hash(&path, "0000000000000000"));
     }
 
