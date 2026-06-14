@@ -271,17 +271,24 @@ pub(crate) fn tbytes_set_rle(
         .min(*copy_length)
         .min(MAX_ARRAY_POOL_SECOND_OFFSET as i64) as usize;
     let last_pos = out_cache.position();
-    rle_code_stream.read_exact(&mut shared_buffer[..decode_step])?;
+    let available = (out_cache.get_ref().len() as i64 - last_pos).max(0) as usize;
+    let safe_decode_step = decode_step.min(available);
+    if safe_decode_step == 0 {
+        return Err(std::io::Error::other(
+            "tbytes_set_rle: out_cache has insufficient data for mem_copy",
+        ));
+    }
+    rle_code_stream.read_exact(&mut shared_buffer[..safe_decode_step])?;
     out_cache.read_exact(
         &mut shared_buffer
-            [MAX_ARRAY_POOL_SECOND_OFFSET..MAX_ARRAY_POOL_SECOND_OFFSET + decode_step],
+            [MAX_ARRAY_POOL_SECOND_OFFSET..MAX_ARRAY_POOL_SECOND_OFFSET + safe_decode_step],
     )?;
     out_cache.seek(SeekFrom::Start(last_pos))?;
     tbytes_set_rle_vector_software(
         rle_loader,
         out_cache,
         copy_length,
-        decode_step,
+        safe_decode_step,
         shared_buffer,
         0,
         MAX_ARRAY_POOL_SECOND_OFFSET,
@@ -416,7 +423,7 @@ pub(crate) fn enumerate_cover_headers(
                 new_pos_back,
                 cover_length,
                 remaining,
-            ));
+            )?);
         }
     } else {
         while remaining > 0 {
@@ -466,7 +473,7 @@ pub(crate) fn enumerate_cover_headers(
                 new_pos_back,
                 cover_length,
                 remaining,
-            ));
+            )?);
         }
     }
     Ok(headers)
