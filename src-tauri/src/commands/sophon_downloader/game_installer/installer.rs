@@ -1088,6 +1088,17 @@ pub struct InstallCallbacks {
     pub state_saver: StateSaver,
 }
 
+fn chunk_still_valid_for_resume(chunk_name: &str, chunk_size: u64, chunks_dir: &Path) -> bool {
+    if !validate_chunk_name(chunk_name) {
+        return false;
+    }
+    let chunk_path = chunks_dir.join(format!("{}.zstd", chunk_name));
+    match std::fs::metadata(&chunk_path) {
+        Ok(meta) => meta.len() == chunk_size,
+        Err(_) => false,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn install(
     installers: Vec<SophonInstaller>,
@@ -1139,21 +1150,7 @@ pub async fn install(
             prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
                 let before = prev_downloaded_chunks.len();
                 prev_downloaded_chunks.retain(|chunk_name, chunk_size| {
-                    if !validate_chunk_name(chunk_name) {
-                        return false;
-                    }
-                    let chunk_path = chunks_dir_validate.join(format!("{}.zstd", chunk_name));
-                    if !chunk_path.exists() {
-                        return false;
-                    }
-                    if let Ok(meta) = chunk_path.metadata() {
-                        if meta.len() != *chunk_size {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-                    true
+                    chunk_still_valid_for_resume(chunk_name, *chunk_size, &chunks_dir_validate)
                 });
                 let removed = before - prev_downloaded_chunks.len();
                 if removed > 0 {
@@ -2166,5 +2163,54 @@ mod tests {
         old_md5_map.insert("b.pak".to_string(), "bb".to_string());
         let diff = compute_diff_files(new_manifest, &old_md5_map);
         assert!(diff.is_empty());
+    }
+
+    #[test]
+    fn chunk_still_valid_for_resume_missing() {
+        let tmp = std::env::temp_dir().join(format!(
+            "elysiae_resume_missing_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        assert!(!chunk_still_valid_for_resume("missing_chunk", 123, &tmp));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn chunk_still_valid_for_resume_size_mismatch() {
+        let tmp = std::env::temp_dir().join(format!(
+            "elysiae_resume_size_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let chunk_path = tmp.join("OK_chunk.zstd");
+        std::fs::write(&chunk_path, b"abc").unwrap();
+        assert!(!chunk_still_valid_for_resume("OK_chunk", 5, &tmp));
+        assert!(!chunk_still_valid_for_resume("OK_chunk", 100, &tmp));
+        assert!(chunk_still_valid_for_resume("OK_chunk", 3, &tmp));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn chunk_still_valid_for_resume_invalid_name() {
+        let tmp = std::env::temp_dir().join(format!(
+            "elysiae_resume_invalid_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("ok.zstd"), b"hi").unwrap();
+        assert!(!chunk_still_valid_for_resume("../escape", 2, &tmp));
+        assert!(!chunk_still_valid_for_resume("", 0, &tmp));
+        assert!(!chunk_still_valid_for_resume("name/with/slash", 2, &tmp));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
