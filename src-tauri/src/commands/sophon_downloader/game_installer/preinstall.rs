@@ -217,7 +217,15 @@ pub async fn build_preinstall_plan(
         .iter()
         .map(|r| r.patch_manifest.patch_assets.len())
         .fold(0usize, |acc, len| acc.saturating_add(len));
-    all_patch_assets.reserve(total_patch_assets);
+    const MAX_PREINSTALL_ASSETS: usize = 1_000_000;
+    if total_patch_assets > MAX_PREINSTALL_ASSETS {
+        log::warn!(
+            "Preinstall manifest has {} assets, exceeding safe limit of {}",
+            total_patch_assets,
+            MAX_PREINSTALL_ASSETS
+        );
+    }
+    all_patch_assets.reserve(total_patch_assets.min(MAX_PREINSTALL_ASSETS));
 
     for result in patch_results {
         let patch_manifest = result.patch_manifest;
