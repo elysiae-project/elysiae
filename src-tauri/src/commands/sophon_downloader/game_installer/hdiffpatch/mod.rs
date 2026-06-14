@@ -1186,4 +1186,229 @@ mod tests {
             "v13 should not set is_single_compressed_diff"
         );
     }
+
+    // ========== try_get_version Edge Case Tests ==========
+
+    /// try_get_version without "HDIFF" in the string should fail.
+    #[test]
+    fn try_get_version_no_hdiff_fails() {
+        let result = HDiff::try_get_version("random_string");
+        assert!(result.is_err(), "should fail without HDIFF marker");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("cannot find 'HDIFF'"), "msg={msg}");
+    }
+
+    /// try_get_version with "HDIFF" but no trailing digits should fail.
+    #[test]
+    fn try_get_version_hdiff_no_digits_fails() {
+        let result = HDiff::try_get_version("HDIFF");
+        assert!(result.is_err(), "should fail when no digits follow HDIFF");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("invalid version string"), "msg={msg}");
+    }
+
+    /// try_get_version with non-numeric characters after HDIFF should fail.
+    #[test]
+    fn try_get_version_hdiff_non_numeric_fails() {
+        let result = HDiff::try_get_version("HDIFFabc");
+        assert!(result.is_err(), "should fail with non-numeric version");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("invalid version string"), "msg={msg}");
+    }
+
+    /// try_get_version with "HDIFF13" parses to version 13.
+    #[test]
+    fn try_get_version_hdiff13_parses() {
+        let version = HDiff::try_get_version("HDIFF13").unwrap();
+        assert_eq!(version, 13);
+    }
+
+    /// try_get_version with "HDIFF20" parses to version 20.
+    #[test]
+    fn try_get_version_hdiff20_parses() {
+        let version = HDiff::try_get_version("HDIFF20").unwrap();
+        assert_eq!(version, 20);
+    }
+
+    /// try_get_version with only digits after HDIFF returns the correct version
+    /// number (no trailing non-digit characters).
+    #[test]
+    fn try_get_version_hdiff_version_only() {
+        let version = HDiff::try_get_version("HDIFF42").unwrap();
+        assert_eq!(version, 42);
+    }
+
+    // ========== read_single_file_header Tests ==========
+
+    /// read_single_file_header with valid data should populate all fields.
+    #[test]
+    fn read_single_file_header_success() {
+        use std::io::Cursor;
+        let data = vec![
+            0x64, // new_data_size = 100
+            0x32, // old_data_size = 50
+            0x00, // cover_count = 0
+            0x88, 0x00, // step_mem_size = 1024
+            0x64, // uncompressed_size = 100
+            0x00, // compressed_size = 0
+        ];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        let result = HDiff::read_single_file_header(&mut cursor, &mut header_info);
+        assert!(result.is_ok(), "valid header should succeed");
+        assert_eq!(header_info.new_data_size, 100);
+        assert_eq!(header_info.old_data_size, 50);
+        assert_eq!(header_info.chunk_info.cover_count, 0);
+        assert_eq!(header_info.step_mem_size, 1024);
+        assert_eq!(header_info.single_chunk_info.uncompressed_size, 100);
+        assert_eq!(header_info.single_chunk_info.compressed_size, 0);
+    }
+
+    /// read_single_file_header with truncated data should return an error.
+    #[test]
+    fn read_single_file_header_truncated_fails() {
+        use std::io::Cursor;
+        let data = vec![0x64]; // only new_data_size, nothing else
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        let result = HDiff::read_single_file_header(&mut cursor, &mut header_info);
+        assert!(result.is_err(), "truncated data should fail");
+    }
+
+    /// read_single_file_header sets diff_data_pos to the stream position after
+    /// reading all header fields.
+    #[test]
+    fn read_single_file_header_sets_diff_data_pos() {
+        use std::io::Cursor;
+        let data = vec![0x64, 0x32, 0x00, 0x88, 0x00, 0x64, 0x00];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        HDiff::read_single_file_header(&mut cursor, &mut header_info).unwrap();
+        assert_eq!(
+            header_info.single_chunk_info.diff_data_pos, 7,
+            "diff_data_pos should be at end of header (7 bytes)"
+        );
+    }
+
+    /// When compressed_size is 0, compressed_count should be 0.
+    #[test]
+    fn read_single_file_header_compressed_count_zero() {
+        use std::io::Cursor;
+        let data = vec![0x64, 0x32, 0x00, 0x88, 0x00, 0x64, 0x00];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        HDiff::read_single_file_header(&mut cursor, &mut header_info).unwrap();
+        assert_eq!(header_info.compressed_count, 0);
+    }
+
+    /// When compressed_size > 0, compressed_count should be 1.
+    #[test]
+    fn read_single_file_header_compressed_count_one() {
+        use std::io::Cursor;
+        let data = vec![0x64, 0x32, 0x00, 0x88, 0x00, 0x64, 0x01];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        HDiff::read_single_file_header(&mut cursor, &mut header_info).unwrap();
+        assert_eq!(header_info.compressed_count, 1);
+    }
+
+    /// read_single_file_header with minimal non-zero values.
+    #[test]
+    fn read_single_file_header_minimal_values() {
+        use std::io::Cursor;
+        let data = vec![
+            0x01, // new_data_size = 1
+            0x01, // old_data_size = 1
+            0x01, // cover_count = 1
+            0x01, // step_mem_size = 1
+            0x01, // uncompressed_size = 1
+            0x01, // compressed_size = 1
+        ];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        let result = HDiff::read_single_file_header(&mut cursor, &mut header_info);
+        assert!(result.is_ok(), "minimal values should succeed");
+        assert_eq!(header_info.new_data_size, 1);
+        assert_eq!(header_info.old_data_size, 1);
+        assert_eq!(header_info.chunk_info.cover_count, 1);
+        assert_eq!(header_info.step_mem_size, 1);
+        assert_eq!(header_info.single_chunk_info.uncompressed_size, 1);
+        assert_eq!(header_info.single_chunk_info.compressed_size, 1);
+        assert_eq!(header_info.compressed_count, 1);
+    }
+
+    // ========== read_non_single_file_header Tests ==========
+
+    /// read_non_single_file_header with valid data and all-zero chunk info.
+    #[test]
+    fn read_non_single_file_header_success() {
+        use std::io::Cursor;
+        let data = vec![
+            0x64, 0x32, // new_data_size=100, old_data_size=50
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, // chunk info all zeros
+        ];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        let result = HDiff::read_non_single_file_header(&mut cursor, &mut header_info);
+        assert!(result.is_ok(), "valid header should succeed");
+        assert_eq!(header_info.new_data_size, 100);
+        assert_eq!(header_info.old_data_size, 50);
+        assert_eq!(header_info.chunk_info.cover_count, 0);
+        assert_eq!(header_info.chunk_info.cover_buf_size, 0);
+        assert_eq!(header_info.compressed_count, 0);
+    }
+
+    /// read_non_single_file_header with truncated data (only sizes, no chunk
+    /// info) should fail.
+    #[test]
+    fn read_non_single_file_header_truncated_fails() {
+        use std::io::Cursor;
+        let data = vec![0x64, 0x32]; // only sizes, no chunk info
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        let result = HDiff::read_non_single_file_header(&mut cursor, &mut header_info);
+        assert!(result.is_err(), "truncated chunk info should fail");
+    }
+
+    /// read_non_single_file_header with all-zero chunk info yields
+    /// compressed_count = 0.
+    #[test]
+    fn read_non_single_file_header_compressed_count_zero() {
+        use std::io::Cursor;
+        let data = vec![
+            0x64, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        HDiff::read_non_single_file_header(&mut cursor, &mut header_info).unwrap();
+        assert_eq!(header_info.compressed_count, 0);
+    }
+
+    /// read_non_single_file_header with one compress_*_size > 1 should report
+    /// compressed_count = 1.
+    #[test]
+    fn read_non_single_file_header_one_compressed_stream() {
+        use std::io::Cursor;
+        // cover_count=0, cover_buf_size=0, compress_cover_buf_size=2 (so > 1)
+        let data = vec![
+            0x64, 0x32, // new_data_size=100, old_data_size=50
+            0x00, // cover_count = 0
+            0x00, // cover_buf_size = 0
+            0x02, // compress_cover_buf_size = 2 (> 1 → counts as 1)
+            0x00, // rle_ctrl_buf_size = 0
+            0x00, // compress_rle_ctrl_buf_size = 0
+            0x00, // rle_code_buf_size = 0
+            0x00, // compress_rle_code_buf_size = 0
+            0x00, // new_data_diff_size = 0
+            0x00, // compress_new_data_diff_size = 0
+        ];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        HDiff::read_non_single_file_header(&mut cursor, &mut header_info).unwrap();
+        assert_eq!(
+            header_info.compressed_count, 1,
+            "one compress field > 1 should give count of 1"
+        );
+    }
 }
