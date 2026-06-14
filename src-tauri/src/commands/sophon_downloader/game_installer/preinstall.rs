@@ -1122,13 +1122,27 @@ fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
 }
 
 fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
-    let Ok(metadata) = fs::metadata(path) else {
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let Ok(metadata) = file.metadata() else {
         return false;
     };
     if metadata.len() != expected_size {
         return false;
     }
-    verify_file_hash(path, expected_md5)
+    let mut hasher = Md5::new();
+    let mut reader = std::io::BufReader::new(file);
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return false,
+        }
+    }
+    let actual = hex::encode(hasher.finalize());
+    actual == expected_md5
 }
 
 #[derive(Clone)]
