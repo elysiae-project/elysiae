@@ -4,13 +4,13 @@ import { info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
 import { broadcastNotification } from "./Desktop";
 import { exists } from "./Fs";
+import { protonExec, protonJadeiteExec } from "./ProtonManager";
 import { getOption } from "./Settings";
 import {
 	variantToExeName,
 	variantToGameCode,
 	variantToGameName,
 } from "./VariantConverter";
-import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 
 /**
  * Downloads a fresh install of any game to `games/gameCode`
@@ -37,8 +37,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 };
 
 /**
- * Launches a game with wine. Games that require Jadeite are launched with
- * jadeite instead
+ * Launches a game within a Proton environment. Additionally starts Jadeite if the game requires it to run
  *
  * @param game
  */
@@ -49,8 +48,8 @@ export const runGame = async (game: Variants): Promise<void> => {
 		variantToExeName[game],
 	);
 	game === Variants.HKRPG
-		? await runExeWithJadeite(gamePath)
-		: await runExeWithWine(gamePath);
+		? await protonJadeiteExec(gamePath)
+		: await protonExec(gamePath);
 };
 
 /** Pause Sophon Chunk Download */

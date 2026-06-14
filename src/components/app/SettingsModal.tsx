@@ -18,16 +18,16 @@ import {
 	isGameInstalled,
 	verifyGameIntegrity,
 } from "../../lib/GameDownloader";
+import {
+	getModuleVersion,
+	moduleTagsMatch,
+	updateProtonComponent,
+} from "../../lib/ProtonManager";
 import { getOption, setOption } from "../../lib/Settings";
 import {
 	variantToGameCode,
 	variantToGameName,
 } from "../../lib/VariantConverter";
-import {
-	getModuleVersion,
-	moduleTagsMatch,
-	updateWineComponent,
-} from "../../lib/WineManager";
 import type { AppModules, ModalHandle, Option, Variants } from "../../types";
 import Button from "../Button";
 import Dropdown from "../Dropdown";
@@ -160,7 +160,7 @@ const OptionRow = ({ option }: { option: (typeof options)[number] }) => {
 const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 	const [version, setVersion] = useState<string>("");
 	const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
-	const { setWineSetupProgress } = useDownload();
+	const { setProtonSetupProgress } = useDownload();
 
 	useEffect(() => {
 		getModuleVersion(componentName).then((res) => {
@@ -189,8 +189,8 @@ const ComponentInfo = ({ componentName }: { componentName: AppModules }) => {
 				variant={updateAvailable ? "primary" : "secondary"}
 				disabled={!updateAvailable}
 				onClick={() => {
-					updateWineComponent(componentName, (event) => {
-						setWineSetupProgress(event);
+					updateProtonComponent(componentName, (event) => {
+						setProtonSetupProgress(event);
 					});
 					setUpdateAvailable(false);
 				}}
@@ -289,7 +289,7 @@ export const SettingsModal = forwardRef<ModalHandle>((_, ref) => {
 				<div class="mb-2.5">
 					<h1 class="mb-2.5 text-xl">Modules</h1>
 					<div class="flex flex-col gap-y-3">
-						{["wine", "dxvk", "jadeite"].map((item) => (
+						{["proton", "jadeite"].map((item) => (
 							<ComponentInfo componentName={item as AppModules} />
 						))}
 					</div>

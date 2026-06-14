@@ -27,7 +27,7 @@ export const DownloadProgress = () => {
 		isCalculatingDownloads,
 		isError,
 		isFinished,
-		isSettingUpWine,
+		isSettingUpProton,
 	} = state;
 
 	const isActive =
@@ -37,25 +37,25 @@ export const DownloadProgress = () => {
 		isFetchingManifest ||
 		isCalculatingDownloads ||
 		isPaused ||
-		isSettingUpWine;
+		isSettingUpProton;
 	if (!isActive && !isError && !isFinished) return null;
 	if (isFinished) return null;
 
-	const wineSetupPct = useMemo(() => {
-		if (!isSettingUpWine || state.wineSetupDownloadTotal <= 0) return 0;
-		if (state.wineSetupPhase !== "downloading") return 100;
+	const protonSetupPct = useMemo(() => {
+		if (!isSettingUpProton || state.protonSetupDownloadTotal <= 0) return 0;
+		if (state.protonSetupPhase !== "downloading") return 100;
 		return (
-			(state.wineSetupDownloadedBytes / state.wineSetupDownloadTotal) * 100
+			(state.protonSetupDownloadedBytes / state.protonSetupDownloadTotal) * 100
 		);
 	}, [
-		isSettingUpWine,
-		state.wineSetupPhase,
-		state.wineSetupDownloadedBytes,
-		state.wineSetupDownloadTotal,
+		isSettingUpProton,
+		state.protonSetupPhase,
+		state.protonSetupDownloadedBytes,
+		state.protonSetupDownloadTotal,
 	]);
 
-	const winePhaseLabel = useMemo(() => {
-		switch (state.wineSetupPhase) {
+	const protonPhaseLabel = useMemo(() => {
+		switch (state.protonSetupPhase) {
 			case "downloading":
 				return "Downloading";
 			case "extracting":
@@ -65,12 +65,12 @@ export const DownloadProgress = () => {
 			default:
 				return "";
 		}
-	}, [state.wineSetupPhase]);
+	}, [state.protonSetupPhase]);
 
-	const wineDownloadedMB = (state.wineSetupDownloadedBytes / 1024 ** 2).toFixed(
+	const protonDownloadedMB = (state.protonSetupDownloadedBytes / 1024 ** 2).toFixed(
 		1,
 	);
-	const wineTotalMB = (state.wineSetupDownloadTotal / 1024 ** 2).toFixed(1);
+	const protonTotalMB = (state.protonSetupDownloadTotal / 1024 ** 2).toFixed(1);
 
 	const derived = useMemo(() => {
 		const downloadPct =
@@ -116,7 +116,7 @@ export const DownloadProgress = () => {
 
 	const titleText = isPaused
 		? "Download Paused"
-		: isSettingUpWine
+		: isSettingUpProton
 			? "Setting Up Environment..."
 			: isVerifying
 				? "Verifying Files..."
@@ -155,18 +155,18 @@ export const DownloadProgress = () => {
 					</Button>
 				)}
 			</div>
-			{isSettingUpWine && (
+			{isSettingUpProton && (
 				<div class="flex min-w-full flex-col gap-y-1 text-left">
 					<h2 class="ml-1 text-sm text-white">
-						{winePhaseLabel} {state.wineSetupComponent}
-						{state.wineSetupPhase === "downloading" &&
-						state.wineSetupDownloadTotal > 0
-							? ` (${wineDownloadedMB}MB / ${wineTotalMB}MB - ${wineSetupPct.toFixed(1)}%)`
-							: state.wineSetupPhase !== "downloading"
+						{protonPhaseLabel} {state.protonSetupComponent}
+						{state.protonSetupPhase === "downloading" &&
+						state.protonSetupDownloadTotal > 0
+							? ` (${protonDownloadedMB}MB / ${protonTotalMB}MB - ${protonSetupPct.toFixed(1)}%)`
+							: state.protonSetupPhase !== "downloading"
 								? "..."
 								: ""}
 					</h2>
-					<Progressbar progress={wineSetupPct} game={game} />
+					<Progressbar progress={protonSetupPct} game={game} />
 				</div>
 			)}
 			{isCalculatingDownloads && state.totalFiles > 0 && (

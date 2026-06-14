@@ -25,19 +25,16 @@ export const PhotosensitivityModal = () => {
 			<div class="flex flex-col justify-center gap-y-3 pb-3">
 				<h1 class="text-2xl">Warning</h1>
 				<p class="text-left">
-					Elysiae depends on compatibility layers like{" "}
+					Elysiae depends on{" "}
 					<a href="https://winehq.org" class="underline">
-						Wine
-					</a>{" "}
-					and{" "}
-					<a href="https://github.com/doitsujin/dxvk" class="underline">
-						DXVK
-					</a>{" "}
-					to run games on Linux. Due to the nature of these tools, applications
-					running through them are more prone to experience rendering errors
-					that can trigger seizures in certain individuals. If you are one of
-					these individuals, please take caution when using Elysiae and other
-					applications that use Wine and/or DXVK.
+						Proton
+					</a>
+					to run games on Linux. Due to the nature of the tools Proton uses,
+					applications running through proton are more prone to experience
+					rendering errors that can trigger seizures in certain individuals. If
+					you are one of these individuals, please take caution when using
+					Elysiae and other applications that use Proton. While we expect these
+					issues to be extremely rare, it is best to stay cautious
 				</p>
 				<div class="flex justify-center">
 					<Button

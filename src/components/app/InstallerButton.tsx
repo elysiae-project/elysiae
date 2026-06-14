@@ -8,20 +8,24 @@ import {
 	runGame,
 } from "../../lib/GameDownloader";
 import {
+	protonAvailable,
+	updateAllProtonComponents,
+} from "../../lib/ProtonManager";
+import {
 	gameCodeToVariant,
 	variantToGameCode,
 } from "../../lib/VariantConverter";
-import {
-	updateAllWineComponents,
-	wineEnvAvailable,
-} from "../../lib/WineManager";
 import type { GameCodes } from "../../types";
 import Button from "../Button";
 
 export const InstallerButton = () => {
 	const { game } = useGame();
-	const { state, setDownloadingGame, setResumable, setWineSetupProgress } =
-		useDownload();
+	const {
+		state,
+		setDownloadingGame,
+		setResumable,
+		setProtonSetupProgress: setWineSetupProgress,
+	} = useDownload();
 	const [wineAvailable, setWineAvailable] = useState<boolean>(false);
 	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
@@ -39,7 +43,7 @@ export const InstallerButton = () => {
 
 	useEffect(() => {
 		let cancelled = false;
-		wineEnvAvailable().then((res) => {
+		protonAvailable().then((res) => {
 			if (!cancelled) setWineAvailable(res);
 		});
 		isGameInstalled(game).then((res) => {
@@ -66,10 +70,10 @@ export const InstallerButton = () => {
 				variant="primary"
 				width={13.75}
 				height={4.06}
-				disabled={(downloadActive && !gameInstalled) || state.isSettingUpWine}
+				disabled={(downloadActive && !gameInstalled) || state.isSettingUpProton}
 				onClick={async () => {
 					if (!wineAvailable) {
-						await updateAllWineComponents((event) => {
+						await updateAllProtonComponents((event) => {
 							setWineSetupProgress(event);
 						});
 						setWineAvailable(true);
@@ -87,7 +91,7 @@ export const InstallerButton = () => {
 			>
 				{(() => {
 					if (!wineAvailable) {
-						return state.isSettingUpWine ? "Setting Up..." : "Create Env";
+						return state.isSettingUpProton ? "Setting Up..." : "Create Env";
 					} else if (canResume && !gameInstalled) {
 						return downloadActive && isDownloadForActiveGame
 							? "Downloading..."
