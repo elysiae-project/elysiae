@@ -776,7 +776,7 @@ fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     let Ok(file) = fs::File::open(path) else {
         return false;
     };
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = Md5::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -805,7 +805,7 @@ fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
         );
         return false;
     };
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = twox_hash::XxHash64::default();
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -1135,7 +1135,7 @@ fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) 
         return false;
     }
     let mut hasher = Md5::new();
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut buf = [0u8; 64 * 1024];
     loop {
         match reader.read(&mut buf) {

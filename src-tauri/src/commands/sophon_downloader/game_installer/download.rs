@@ -59,7 +59,10 @@ std::thread_local! {
 }
 
 async fn compute_file_md5(path: &Path) -> SophonResult<String> {
-    let mut file = tokio::io::BufReader::new(tokio::fs::File::open(path).await?);
+    let mut file = tokio::io::BufReader::with_capacity(
+        super::FILE_WRITE_BUFFER_SIZE,
+        tokio::fs::File::open(path).await?,
+    );
     let mut hasher = Md5::new();
 
     // Take buffer from thread_local (or get empty default) and ensure capacity
@@ -337,7 +340,8 @@ async fn download_with_resume(
     let mut hasher = Md5::new();
     {
         let existing_file = tokio::fs::File::open(dest).await?;
-        let mut reader = tokio::io::BufReader::new(existing_file);
+        let mut reader =
+            tokio::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, existing_file);
         let mut buf = MD5_BUF.with(std::cell::RefCell::take);
         if buf.capacity() < MD5_HASH_BUFFER_SIZE {
             buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
