@@ -1057,6 +1057,48 @@ mod tests {
         assert!(!validate_chunk_name("/etc/passwd"));
     }
 
+    // --- Group 6: Additional chunk name security and acceptance tests ---
+
+    /// Double-dot path traversal pattern must be rejected even when embedded.
+    #[test]
+    fn validate_chunk_name_rejects_double_dot_embedded() {
+        assert!(!validate_chunk_name("foo..bar"));
+        assert!(!validate_chunk_name("a..b"));
+        assert!(!validate_chunk_name("..anything"));
+        assert!(!validate_chunk_name("anything.."));
+    }
+
+    /// Backslash-prefixed names (Windows-style absolute paths) must be
+    /// rejected.
+    #[test]
+    fn validate_chunk_name_rejects_backslash_prefix() {
+        assert!(!validate_chunk_name("\\Windows\\System32"));
+        assert!(!validate_chunk_name("\\etc\\passwd"));
+    }
+
+    /// Drive-letter style strings (e.g. C:\...) must be rejected.
+    #[test]
+    fn validate_chunk_name_rejects_drive_letter() {
+        assert!(!validate_chunk_name("C:\\Windows"));
+        assert!(!validate_chunk_name("Z:\\"));
+    }
+
+    /// Alphanumeric chunk names with underscores, hyphens and dots are valid.
+    #[test]
+    fn validate_chunk_name_accepts_valid_special_chars() {
+        assert!(validate_chunk_name("chunk_001"));
+        assert!(validate_chunk_name("chunk-v2"));
+        assert!(validate_chunk_name("chunk_1.2.3"));
+        assert!(validate_chunk_name("my_chunk-abc.xyz"));
+    }
+
+    /// Purely numeric chunk names (common for indexed chunks) must be accepted.
+    #[test]
+    fn validate_chunk_name_accepts_numeric() {
+        assert!(validate_chunk_name("12345"));
+        assert!(validate_chunk_name("0"));
+    }
+
     #[test]
     fn hash_writer_writes_data_and_updates_hasher() {
         use md5::{Digest, Md5};
