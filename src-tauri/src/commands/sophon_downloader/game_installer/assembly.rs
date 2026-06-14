@@ -253,7 +253,7 @@ pub fn assemble_file(
             fs::set_permissions(&target_path, perms).ok()
         });
     }
-    out_file.sync_all().map_err(|e| SophonError::Io(e))?;
+    out_file.sync_all().map_err(SophonError::Io)?;
     fs::rename(&tmp_path, &target_path)?;
 
     for chunk_name in consumed_chunks {

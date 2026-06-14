@@ -714,7 +714,7 @@ async fn download_patch_chunk_inner(
         match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk)) => {
                 let bytes = chunk?;
-                if bytes.is_empty() && content_length.map_or(true, |expected| total_len < expected)
+                if bytes.is_empty() && content_length.is_none_or(|expected| total_len < expected)
                 {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Io(std::io::Error::new(
@@ -1067,10 +1067,8 @@ pub async fn apply_preinstall(
                     continue;
                 }
                 let path = gd.join(rel);
-                if path.exists() {
-                    if let Err(e) = fs::remove_file(&path) {
-                        log::warn!("Failed to delete file {}: {}", path.display(), e);
-                    }
+                if let Err(e) = fs::remove_file(&path) {
+                    log::warn!("Failed to delete file {}: {}", path.display(), e);
                 }
             }
         })
