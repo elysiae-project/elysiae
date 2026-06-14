@@ -107,6 +107,10 @@ pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> Sophon
         serde_json::to_writer(&mut writer, state)
             .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
         writer.flush()?;
+        writer
+            .into_inner()
+            .map_err(|e| SophonError::Io(e.into_error()))?
+            .sync_all()?;
     }
     fs::rename(&tmp_path, &path)?;
     Ok(())
@@ -212,7 +216,7 @@ pub async fn build_preinstall_plan(
     let total_patch_assets: usize = patch_results
         .iter()
         .map(|r| r.patch_manifest.patch_assets.len())
-        .sum();
+        .fold(0usize, |acc, len| acc.saturating_add(len));
     all_patch_assets.reserve(total_patch_assets);
 
     for result in patch_results {
@@ -1056,7 +1060,9 @@ pub async fn apply_preinstall(
                 }
                 let path = gd.join(rel);
                 if path.exists() {
-                    let _ = fs::remove_file(&path);
+                    if let Err(e) = fs::remove_file(&path) {
+                        log::warn!("Failed to delete file {}: {}", path.display(), e);
+                    }
                 }
             }
         })

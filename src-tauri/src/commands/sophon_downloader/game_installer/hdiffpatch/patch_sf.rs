@@ -44,7 +44,7 @@ impl PatchSF {
         let cover_count = self.header_info.chunk_info.cover_count as u64;
         let new_data_size = self.header_info.new_data_size as u64;
         let step_mem_size = (self.header_info.step_mem_size as usize).min(MAX_STEP_SIZE);
-        let total_size = step_mem_size + step_mem_size;
+        let total_size = step_mem_size * 2;
         let mut work_buf = vec![0u8; total_size];
         let (step_buf, io_buf) = work_buf.split_at_mut(step_mem_size);
         patch_loop(
