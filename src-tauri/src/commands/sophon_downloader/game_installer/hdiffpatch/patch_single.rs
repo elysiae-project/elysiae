@@ -28,11 +28,10 @@ impl PatchSingle {
         let hi = &self.header_info;
         let ci = &hi.chunk_info;
 
-        let f = File::open(patch_path)?;
-        let f0 = f.try_clone()?;
-        let f1 = f.try_clone()?;
-        let f2 = f.try_clone()?;
-        let f3 = f;
+        let f0 = File::open(patch_path)?;
+        let f1 = File::open(patch_path)?;
+        let f2 = File::open(patch_path)?;
+        let f3 = File::open(patch_path)?;
 
         let mut offset = ci.head_end_pos as u64;
         let cover_padding = if ci.compress_cover_buf_size > 0 {

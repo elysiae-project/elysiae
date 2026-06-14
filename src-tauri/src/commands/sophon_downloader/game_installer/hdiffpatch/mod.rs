@@ -85,24 +85,13 @@ struct CoverHeader {
 }
 
 impl CoverHeader {
-    fn new(
-        old_pos: i64,
-        new_pos: i64,
-        cover_length: i64,
-        next_cover_index: i64,
-    ) -> std::io::Result<Self> {
-        if cover_length < 0 {
-            return Err(std::io::Error::other(format!(
-                "CoverHeader: cover_length cannot be negative (got {})",
-                cover_length
-            )));
-        }
-        Ok(Self {
+    fn new(old_pos: i64, new_pos: i64, cover_length: i64, next_cover_index: i64) -> Self {
+        Self {
             old_pos,
             new_pos,
             cover_length,
             next_cover_index,
-        })
+        }
     }
 }
 
@@ -780,7 +769,7 @@ mod tests {
 
     #[test]
     fn cover_header_new_and_fields() {
-        let ch = CoverHeader::new(1, 2, 3, 4).unwrap();
+        let ch = CoverHeader::new(1, 2, 3, 4);
         assert_eq!(ch.old_pos, 1);
         assert_eq!(ch.new_pos, 2);
         assert_eq!(ch.cover_length, 3);
@@ -789,7 +778,7 @@ mod tests {
 
     #[test]
     fn cover_header_debug_and_clone() {
-        let ch = CoverHeader::new(10, 20, 30, 40).unwrap();
+        let ch = CoverHeader::new(10, 20, 30, 40);
         let _ = format!("{:?}", ch);
         let cloned = ch.clone();
         assert_eq!(ch.old_pos, cloned.old_pos);
