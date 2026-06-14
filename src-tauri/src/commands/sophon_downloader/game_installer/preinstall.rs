@@ -28,7 +28,7 @@ use crate::commands::sophon_downloader::api_scrape::{
     DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
 };
 use crate::commands::sophon_downloader::proto_parse::{
-    SophonManifestAssetChunk, SophonManifestProto,
+    SophonManifestAssetChunk, SophonManifestProto, SophonPatchAssetChunk, SophonPatchAssetProperty,
 };
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
@@ -140,6 +140,39 @@ pub struct PreinstallPlan {
     pub main_manifest_ids: Vec<(String, String)>,
 }
 
+/// Validates that all i64 fields from the patch protobuf are non-negative,
+/// preventing silent wrapping when cast to u64.
+fn validate_patch_chunk_fields(chunk: &SophonPatchAssetChunk, asset_name: &str) -> bool {
+    if chunk.patch_size < 0 {
+        log::warn!("Skipping chunk with negative patch_size for asset {asset_name}");
+        return false;
+    }
+    if chunk.patch_offset < 0 {
+        log::warn!("Skipping chunk with negative patch_offset for asset {asset_name}");
+        return false;
+    }
+    if chunk.patch_length < 0 {
+        log::warn!("Skipping chunk with negative patch_length for asset {asset_name}");
+        return false;
+    }
+    if chunk.original_file_length < 0 {
+        log::warn!("Skipping chunk with negative original_file_length for asset {asset_name}");
+        return false;
+    }
+    true
+}
+
+fn validate_patch_asset_fields(asset: &SophonPatchAssetProperty) -> bool {
+    if asset.asset_size < 0 {
+        log::warn!(
+            "Skipping asset with negative asset_size: {}",
+            asset.asset_name
+        );
+        return false;
+    }
+    true
+}
+
 pub async fn build_preinstall_plan(
     client: &Client,
     game_id: &str,
@@ -249,6 +282,9 @@ pub async fn build_preinstall_plan(
                         Some(c) => c,
                         None => {
                             if has_main_entry {
+                                if !validate_patch_asset_fields(asset_prop) {
+                                    continue;
+                                }
                                 all_patch_assets.push(PatchAssetInfo {
                                     target_file_path: asset_prop.asset_name.clone(),
                                     target_file_size: asset_prop.asset_size as u64,
@@ -274,6 +310,13 @@ pub async fn build_preinstall_plan(
                             continue;
                         }
                     };
+
+                    if !validate_patch_asset_fields(asset_prop) {
+                        continue;
+                    }
+                    if !validate_patch_chunk_fields(chunk, &asset_prop.asset_name) {
+                        continue;
+                    }
 
                     let (method, original_file_path, original_file_hash, original_file_size) =
                         if chunk.original_file_name.is_empty() {
@@ -313,6 +356,9 @@ pub async fn build_preinstall_plan(
                 }
                 None if has_main_entry => {
                     seen_patch_targets.insert(asset_prop.asset_name.clone());
+                    if !validate_patch_asset_fields(asset_prop) {
+                        continue;
+                    }
                     all_patch_assets.push(PatchAssetInfo {
                         target_file_path: asset_prop.asset_name.clone(),
                         target_file_size: asset_prop.asset_size as u64,
