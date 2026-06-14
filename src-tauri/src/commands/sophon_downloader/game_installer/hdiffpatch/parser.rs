@@ -497,4 +497,160 @@ mod tests {
         assert_eq!(val, 540931);
         assert_eq!(offset, 3);
     }
+
+    // ========== Varint truncated stream tests ==========
+
+    /// When the first byte has a continuation bit set but the stream has no
+    /// more bytes, read_long_7bit should return an error (UnexpectedEof
+    /// from read_exact).
+    #[test]
+    fn read_long_7bit_truncated_stream_returns_error() {
+        let mut c = src(b"\x80"); // continuation bit set, but no follow-up byte
+        let result = c.read_long_7bit();
+        assert!(result.is_err(), "should fail for truncated varint stream");
+    }
+
+    /// Same as above but for i32 variant: truncated multi-byte varint.
+    #[test]
+    fn read_int_7bit_truncated_stream_returns_error() {
+        let mut c = src(b"\x80");
+        let result = c.read_int_7bit();
+        assert!(result.is_err(), "should fail for truncated varint stream");
+    }
+
+    /// read_long_7bit_tagged with tag_bit=1, prev_byte signalling continuation
+    /// but the stream has no more bytes.
+    #[test]
+    fn read_long_7bit_tagged_truncated_stream_returns_error() {
+        let mut c = src(b"");
+        // prev_byte=0x4A: tag_bit=1 → bits 0-5 = 0x0A (10), bit 6 set → continuation
+        let result = c.read_long_7bit_tagged(1, 0x4A);
+        assert!(
+            result.is_err(),
+            "should fail when continuation byte is missing from stream"
+        );
+    }
+
+    /// read_int_7bit_tagged with tag_bit=1, prev_byte signalling continuation
+    /// but the stream has no more bytes.
+    #[test]
+    fn read_int_7bit_tagged_truncated_stream_returns_error() {
+        let mut c = src(b"");
+        let result = c.read_int_7bit_tagged(1, 0x4A);
+        assert!(
+            result.is_err(),
+            "should fail when continuation byte is missing from stream"
+        );
+    }
+
+    // ========== Varint with tag_bit=2 ==========
+
+    /// tag_bit=2 means 5 value bits and bit 5 is the continuation flag.
+    /// prev_byte=0x1F → value bits = 0x1F & 0x1F = 31, no continuation.
+    #[test]
+    fn read_long_7bit_tagged_tag_bit_2_no_continuation() {
+        let mut c = src(b"\xFF"); // extra byte should not be consumed
+        let val = c.read_long_7bit_tagged(2, 0x1F).unwrap();
+        assert_eq!(val, 31i64, "tag_bit=2, prev_byte=0x1F should yield 31");
+        // Verify no byte was consumed from the stream
+        assert_eq!(c.position(), 0, "no bytes should be read from stream");
+    }
+
+    /// tag_bit=2 with continuation: prev_byte=0x25 → bits 0-4 = 5, bit 5 set.
+    /// Next byte = 0x03 (no continuation), so value = (5 << 7) | 3 = 643.
+    #[test]
+    fn read_long_7bit_tagged_tag_bit_2_with_continuation() {
+        let mut c = src(b"\x03");
+        let val = c.read_long_7bit_tagged(2, 0x25).unwrap();
+        assert_eq!(val, 643i64, "tag_bit=2, prev_byte=0x25 + byte 0x03 = 643");
+        assert_eq!(c.position(), 1, "one byte consumed from stream");
+    }
+
+    /// tag_bit=2, no continuation for i32 variant.
+    #[test]
+    fn read_int_7bit_tagged_tag_bit_2_no_continuation() {
+        let mut c = src(b"\xFF");
+        let val = c.read_int_7bit_tagged(2, 0x1F).unwrap();
+        assert_eq!(val, 31i32, "tag_bit=2, prev_byte=0x1F should yield 31");
+        assert_eq!(c.position(), 0, "no bytes should be read from stream");
+    }
+
+    /// tag_bit=2 with continuation for i32 variant.
+    #[test]
+    fn read_int_7bit_tagged_tag_bit_2_with_continuation() {
+        let mut c = src(b"\x03");
+        let val = c.read_int_7bit_tagged(2, 0x25).unwrap();
+        assert_eq!(val, 643i32, "tag_bit=2, prev_byte=0x25 + byte 0x03 = 643");
+        assert_eq!(c.position(), 1, "one byte consumed from stream");
+    }
+
+    /// read_long_7bit_from_slice with tag_bit=2, no continuation.
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_2_no_continuation() {
+        let buf = b"\x00"; // should not be consumed
+        let mut offset = 0;
+        let val = read_long_7bit_from_slice(buf, &mut offset, 2, 0x1F).unwrap();
+        assert_eq!(val, 31i64, "tag_bit=2, prev_byte=0x1F → value=31");
+        assert_eq!(offset, 0, "no bytes should be consumed from buffer");
+    }
+
+    /// read_long_7bit_from_slice with tag_bit=2, continuation present.
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_2_with_continuation() {
+        let buf = b"\x03\xFF"; // 0x03 = no continuation, value 3
+        let mut offset = 0;
+        let val = read_long_7bit_from_slice(buf, &mut offset, 2, 0x25).unwrap();
+        assert_eq!(val, 643i64, "(5<<7)|3 = 643");
+        assert_eq!(offset, 1, "one byte consumed from buffer");
+    }
+
+    /// read_long_7bit_tagged overflow with tag_bit=1: a valid prev_byte starts
+    /// a sequence that keeps growing until it exceeds i64 capacity.
+    #[test]
+    fn read_long_7bit_tagged_overflow_returns_error() {
+        // With tag_bit=1, prev_byte=0x7F: bits 0-5 = 0x3F (63), bit 6 set →
+        // continuation. Feed 12 more 0xFF bytes to trigger overflow.
+        let data = vec![0xFFu8; 12];
+        let mut c = Cursor::new(data);
+        let result = c.read_long_7bit_tagged(1, 0x7F);
+        assert!(
+            result.is_err(),
+            "should detect varint overflow with tag_bit=1"
+        );
+        assert!(
+            result.unwrap_err().to_string().contains("varint overflow"),
+            "should report varint overflow"
+        );
+    }
+
+    /// read_int_7bit_tagged overflow: tag_bit=1 causes large continuation that
+    /// overflows i32.
+    #[test]
+    fn read_int_7bit_tagged_overflow_returns_error() {
+        let data = vec![0xFFu8; 6];
+        let mut c = Cursor::new(data);
+        let result = c.read_int_7bit_tagged(1, 0x7F);
+        assert!(
+            result.is_err(),
+            "should detect varint overflow with tag_bit=1"
+        );
+        assert!(
+            result.unwrap_err().to_string().contains("varint overflow"),
+            "should report varint overflow"
+        );
+    }
+
+    /// read_long_7bit with multi-byte truncated stream: first continuation byte
+    /// consumed, second continuation byte set, but no further data.
+    #[test]
+    fn read_long_7bit_multi_byte_truncated_returns_error() {
+        // 0x81 = continuation bit set, value 1
+        // 0x82 = continuation bit set, value 2 — but no more bytes follow
+        let mut c = src(b"\x81\x82");
+        let result = c.read_long_7bit();
+        assert!(
+            result.is_err(),
+            "should fail when varint sequence is truncated mid-stream"
+        );
+    }
 }
