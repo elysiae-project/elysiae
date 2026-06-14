@@ -219,7 +219,7 @@ pub fn assemble_file(
         let _ = fs::remove_file(&tmp_path);
         SophonError::Io(e)
     })?;
-    let _out_file = buf_writer.into_inner().map_err(|e| {
+    let out_file = buf_writer.into_inner().map_err(|e| {
         let _ = fs::remove_file(&tmp_path);
         SophonError::Io(e.into_error())
     })?;
@@ -253,6 +253,7 @@ pub fn assemble_file(
             fs::set_permissions(&target_path, perms).ok()
         });
     }
+    out_file.sync_all().map_err(|e| SophonError::Io(e))?;
     fs::rename(&tmp_path, &target_path)?;
 
     for chunk_name in consumed_chunks {
