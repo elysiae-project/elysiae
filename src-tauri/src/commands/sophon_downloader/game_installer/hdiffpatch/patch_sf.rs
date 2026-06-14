@@ -705,6 +705,55 @@ mod tests {
         assert!(result.is_err(), "should fail with insufficient diff data");
     }
 
+    /// When step_end exceeds the allocated step_buf capacity (but is still
+    /// below MAX_STEP_SIZE), the buffer capacity check should fire.
+    #[test]
+    fn patch_sf_step_end_exceeds_buffer_capacity() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch_path = dir.path().join("patch.hdiff");
+
+        // buf_cover_size = 200, buf_rle_size = 0
+        // step_end = 200 < MAX_STEP_SIZE (16MB)
+        // But step_mem_size = 100, so step_buf.len() = 100
+        // 200 > 100 → should trigger "exceeds allocated buffer capacity"
+        // 200 varint: 200 = 128 + 72 = (1 << 7) | 72
+        // Encoding: 0x81 (0x80 | 1, continuation), 0x48 (72, no continuation)
+        let diff_data: Vec<u8> = vec![
+            0x81, 0x48, // buf_cover_size = 200
+            0x00, // buf_rle_size = 0
+        ];
+        std::fs::write(&patch_path, &diff_data).unwrap();
+
+        let header = HeaderInfo {
+            single_chunk_info: DiffSingleChunkInfo {
+                diff_data_pos: 0,
+                uncompressed_size: diff_data.len() as i64,
+                compressed_size: 0,
+            },
+            comp_mode: CompressionMode::Nocomp,
+            chunk_info: DiffChunkInfo {
+                cover_count: 1,
+                ..Default::default()
+            },
+            new_data_size: 0,
+            step_mem_size: 100, // small buffer; step_end=200 > 100
+            ..Default::default()
+        };
+        let patcher = PatchSF::new(header);
+        let mut input = Cursor::new(Vec::new());
+        let mut output = Cursor::new(Vec::new());
+        let result = patcher.patch(&mut input, &mut output, patch_path.to_str().unwrap(), None);
+        assert!(
+            result.is_err(),
+            "should fail when step_end > step_buf capacity"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("exceeds allocated"),
+            "error should mention buffer capacity, got: {msg}"
+        );
+    }
+
     /// When step_end exceeds both MAX_STEP_SIZE and step_buf capacity, the
     /// MAX_STEP_SIZE check fires first since it is checked before buffer
     /// capacity. This variant uses two medium-sized values that sum past
