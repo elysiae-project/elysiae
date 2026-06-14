@@ -1138,13 +1138,22 @@ pub async fn install(
             let chunks_dir_validate = Arc::clone(&chunks_dir);
             prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
                 let before = prev_downloaded_chunks.len();
-                prev_downloaded_chunks.retain(|chunk_name, _| {
+                prev_downloaded_chunks.retain(|chunk_name, chunk_size| {
                     if !validate_chunk_name(chunk_name) {
                         return false;
                     }
-                    chunks_dir_validate
-                        .join(format!("{}.zstd", chunk_name))
-                        .exists()
+                    let chunk_path = chunks_dir_validate.join(format!("{}.zstd", chunk_name));
+                    if !chunk_path.exists() {
+                        return false;
+                    }
+                    if let Ok(meta) = chunk_path.metadata() {
+                        if meta.len() != *chunk_size {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                    true
                 });
                 let removed = before - prev_downloaded_chunks.len();
                 if removed > 0 {
