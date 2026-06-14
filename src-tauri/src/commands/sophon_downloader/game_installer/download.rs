@@ -687,6 +687,208 @@ mod tests {
         assert_eq!(written, data);
     }
 
+    /// Helper: construct a `DownloadInfo` without spinning up a `MockServer`.
+    ///
+    /// Used by path-validation rejection tests where validation fails before
+    /// any HTTP call, so the URL prefix is irrelevant.
+    fn dummy_download_info() -> DownloadInfo {
+        DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "http://invalid.test/".to_string(),
+            url_suffix: "chunks".to_string(),
+        }
+    }
+
+    /// Path-traversal validation must reject an empty chunk name before any
+    /// HTTP request is constructed. The error variant per download.rs is
+    /// always `SophonError::PathTraversal` for any validation failure.
+    #[tokio::test]
+    async fn download_chunk_rejects_empty_chunk_name() {
+        // ARRANGE: chunk with empty name; DownloadInfo URL prefix is irrelevant
+        // because validation short-circuits before `url_for` is called.
+        let chunk = make_chunk("", 100, "irrelevant");
+        let dl_info = dummy_download_info();
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT: must be rejected with PathTraversal, not an HTTP/IO error.
+        assert!(result.is_err(), "empty chunk_name must be rejected");
+        assert!(
+            matches!(result.unwrap_err(), SophonError::PathTraversal(_)),
+            "expected PathTraversal, got non-matching error variant"
+        );
+    }
+
+    /// A `..` path component (`foo/../bar`) is a classic traversal attempt and
+    /// must be rejected before any HTTP request is constructed.
+    #[tokio::test]
+    async fn download_chunk_rejects_dotdot_component() {
+        // ARRANGE: chunk whose name contains a parent-directory component
+        let chunk = make_chunk("foo/../bar", 100, "irrelevant");
+        let dl_info = dummy_download_info();
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT
+        assert!(result.is_err(), "'foo/../bar' must be rejected");
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    /// An absolute POSIX path must be rejected as traversal.
+    #[tokio::test]
+    async fn download_chunk_rejects_absolute_path() {
+        // ARRANGE: chunk whose name is a leading-slash absolute path
+        let chunk = make_chunk("/etc/passwd", 100, "irrelevant");
+        let dl_info = dummy_download_info();
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT
+        assert!(result.is_err(), "'/etc/passwd' must be rejected");
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    /// A leading backslash must be rejected so a Windows-style absolute path
+    /// cannot be smuggled in even on non-Windows hosts.
+    #[tokio::test]
+    async fn download_chunk_rejects_backslash_prefix() {
+        // ARRANGE: chunk whose name begins with a backslash
+        let chunk = make_chunk("\\Windows\\System32", 100, "irrelevant");
+        let dl_info = dummy_download_info();
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT
+        assert!(result.is_err(), "'\\Windows\\System32' must be rejected");
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    /// A Windows drive-letter prefix (`C:\Windows`) must be rejected; allowing
+    /// it would let an attacker redirect the download to an arbitrary host
+    /// path on Windows clients.
+    #[tokio::test]
+    async fn download_chunk_rejects_drive_letter() {
+        // ARRANGE: chunk whose name starts with a Windows drive letter
+        let chunk = make_chunk("C:\\Windows", 100, "irrelevant");
+        let dl_info = dummy_download_info();
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT
+        assert!(result.is_err(), "'C:\\Windows' must be rejected");
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    /// A null byte in the chunk name must be rejected. Some runtimes treat
+    /// null as a string terminator and would happily use whatever follows as
+    /// the real path on disk; rejecting here closes that hole entirely.
+    #[tokio::test]
+    async fn download_chunk_rejects_null_byte() {
+        // ARRANGE: chunk whose name contains a null byte
+        let chunk = make_chunk("evil\0chunk", 100, "irrelevant");
+        let dl_info = dummy_download_info();
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT
+        assert!(result.is_err(), "null byte in chunk_name must be rejected");
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    /// Regression guard: consecutive dots *inside a single filename component*
+    /// (e.g. `chunk_v1.0..2.0`) are legitimate version-like names and MUST NOT
+    /// be rejected as traversal. Only `..` appearing as a separator-delimited
+    /// path component is treated as a traversal pattern.
+    #[tokio::test]
+    async fn download_chunk_allows_consecutive_dots() {
+        // ARRANGE: mock server returns the expected payload at the URL path
+        // derived from the allowed chunk name.
+        let server = MockServer::start().await;
+        let data = b"versioned chunk payload".to_vec();
+        let expected_md5 = hex::encode(Md5::digest(&data));
+        let chunk = make_chunk("chunk_v1.0..2.0", data.len() as u64, &expected_md5);
+        let dl_info = make_download_info(&server);
+
+        Mock::given(method("GET"))
+            .and(path("chunks/chunk_v1.0..2.0"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT: validation succeeds AND the download writes the payload to
+        // disk. If the regression had returned, validation would short-circuit
+        // with PathTraversal before any HTTP traffic occurred.
+        assert!(
+            result.is_ok(),
+            "chunk with consecutive dots inside a single component must be allowed, got: {result:?}"
+        );
+        let written = tokio::fs::read(&dest).await.unwrap();
+        assert_eq!(written, data);
+    }
+
+    /// Positive control: a normal alphanumeric chunk name passes validation
+    /// and the download proceeds end-to-end against the mock server.
+    #[tokio::test]
+    async fn download_chunk_allows_normal_chunk_name() {
+        // ARRANGE
+        let server = MockServer::start().await;
+        let data = b"plain chunk payload".to_vec();
+        let expected_md5 = hex::encode(Md5::digest(&data));
+        let chunk = make_chunk("abc123", data.len() as u64, &expected_md5);
+        let dl_info = make_download_info(&server);
+
+        Mock::given(method("GET"))
+            .and(path("chunks/abc123"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let client = Client::new();
+        let dest = dest_path();
+
+        // ACT
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+
+        // ASSERT: validation accepted and download completed.
+        assert!(result.is_ok(), "normal chunk name must be allowed");
+        let written = tokio::fs::read(&dest).await.unwrap();
+        assert_eq!(written, data);
+    }
+
     #[test]
     fn parse_content_range_start_standard() {
         assert_eq!(parse_content_range_start("bytes 500-999/1000"), Some(500));
