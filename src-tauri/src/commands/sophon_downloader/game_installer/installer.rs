@@ -1576,6 +1576,9 @@ async fn redownload_asset(
     fs::create_dir_all(chunks_dir)?;
 
     for chunk in &asset.asset_chunks {
+        if !validate_chunk_name(&chunk.chunk_name) {
+            return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+        }
         let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
         let needs_download = !chunk_path.exists()
             || !cache::check_file_md5_cached(
