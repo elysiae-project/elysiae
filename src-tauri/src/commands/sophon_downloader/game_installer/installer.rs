@@ -1110,6 +1110,13 @@ pub async fn install(
     for installer in &installers {
         for asset in &installer.manifest.assets {
             if asset.is_directory() {
+                if let Err(e) = validate_asset_name(&asset.asset_name) {
+                    log::warn!(
+                        "Skipping directory with invalid asset_name \"{}\": {e}",
+                        asset.asset_name
+                    );
+                    continue;
+                }
                 let dir_path = game_dir.join(&asset.asset_name);
                 let dp = dir_path.clone();
                 tokio::task::spawn_blocking(move || fs::create_dir_all(&dp))
@@ -1241,6 +1248,13 @@ pub async fn install(
                 indices.insert(file_idx);
                 pre_assembled += 1;
             } else {
+                if let Err(e) = validate_asset_name(&file.asset_name) {
+                    log::warn!(
+                        "Skipping file with invalid asset_name \"{}\": {e}",
+                        file.asset_name
+                    );
+                    continue;
+                }
                 let target_path = game_dir.join(&file.asset_name);
                 if target_path.exists() {
                     let valid = {

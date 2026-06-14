@@ -108,7 +108,7 @@ pub async fn download_chunk(
     }
     if chunk.chunk_name.starts_with('/')
         || chunk.chunk_name.starts_with('\\')
-        || chunk.chunk_name.contains("..")
+        || chunk.chunk_name.split(&['/', '\\']).any(|c| c == "..")
     {
         return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
     }
