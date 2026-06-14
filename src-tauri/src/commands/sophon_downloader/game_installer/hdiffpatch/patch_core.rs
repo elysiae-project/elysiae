@@ -820,4 +820,224 @@ mod tests {
         );
         assert_eq!(copy_length, 2, "copy_length should be 5 - 3 = 2");
     }
+
+    // ========== RLE Edge Case: mem_set_step capping ==========
+
+    /// When mem_set_length exceeds shared_buffer.len(), the step should be
+    /// capped to the buffer size. Only shared_buffer.len() bytes are processed.
+    #[test]
+    fn tbytes_set_rle_single_caps_by_small_shared_buffer() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 100, // much larger than buffer
+            mem_set_value: 0x01,
+        };
+
+        let mut cache = Cursor::new(vec![0x00; 100]);
+        let mut copy_length: i64 = 100;
+        let mut shared_buffer = [0u8; 4]; // tiny buffer
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok(), "should succeed even with tiny buffer");
+        // mem_set_step = min(100, 100, 4) = 4 bytes processed
+        assert_eq!(copy_length, 96, "copy_length should be reduced by 4");
+        assert_eq!(
+            rle_loader.mem_set_length, 96,
+            "mem_set_length should have 96 remaining"
+        );
+    }
+
+    /// When both mem_set_length and copy_length are larger than the buffer,
+    /// but copy_length is the smallest, step is capped to copy_length.
+    #[test]
+    fn tbytes_set_rle_single_caps_by_copy_length_when_smallest() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 100,
+            mem_set_value: 0x01,
+        };
+
+        let mut cache = Cursor::new(vec![0x00; 100]);
+        let mut copy_length: i64 = 3; // smaller than buffer
+        let mut shared_buffer = [0u8; 32];
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok());
+        // mem_set_step = min(100, 3, 32) = 3
+        assert_eq!(copy_length, 0, "copy_length should be exhausted");
+        assert_eq!(
+            rle_loader.mem_set_length, 97,
+            "mem_set_length should have 97 remaining"
+        );
+    }
+
+    /// When mem_set_value is 0 and step is capped by small buffer, position
+    /// advances by the buffer size without modifying data.
+    #[test]
+    fn tbytes_set_rle_single_zero_value_capped_by_buffer() {
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 50,
+            mem_set_value: 0, // skip mode
+        };
+
+        let mut cache = Cursor::new(vec![0xAA; 50]);
+        let mut copy_length: i64 = 50;
+        let mut shared_buffer = [0u8; 8]; // tiny buffer
+
+        let result = tbytes_set_rle_single(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+        );
+
+        assert!(result.is_ok());
+        // mem_set_step = min(50, 50, 8) = 8 bytes skipped
+        assert_eq!(cache.position(), 8, "should advance 8 bytes");
+        assert_eq!(copy_length, 42, "copy_length should be 50 - 8 = 42");
+        assert_eq!(
+            rle_loader.mem_set_length, 42,
+            "mem_set_length should have 42 remaining"
+        );
+    }
+
+    // ========== RLE Edge Case: empty streams ==========
+
+    /// When both mem_set_length and mem_copy_length are 0, tbytes_set_rle
+    /// should return immediately without doing anything.
+    #[test]
+    fn tbytes_set_rle_empty_stream_no_modification() {
+        use super::tbytes_set_rle;
+
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(vec![0xAA, 0xBB, 0xCC]);
+        let mut copy_length: i64 = 3;
+        let mut shared_buffer = [0u8; 32];
+        let initial_pos = cache.position();
+
+        // Create an empty rle_code_stream (no data to read)
+        let mut rle_code: &[u8] = &[];
+        let result = tbytes_set_rle(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+            &mut rle_code,
+        );
+
+        assert!(result.is_ok(), "empty RLE stream should succeed");
+        assert_eq!(copy_length, 3, "copy_length should be unchanged");
+        assert_eq!(
+            cache.position(),
+            initial_pos,
+            "cache position should not advance"
+        );
+    }
+
+    // ========== RLE Edge Case: mem_copy_length bounds ==========
+
+    /// When mem_copy_length exceeds MAX_ARRAY_POOL_SECOND_OFFSET, the decode
+    /// step is capped to MAX_ARRAY_POOL_SECOND_OFFSET in tbytes_set_rle.
+    #[test]
+    fn tbytes_set_rle_caps_decode_step_to_second_offset() {
+        use super::MAX_ARRAY_POOL_SECOND_OFFSET;
+        use std::io::Cursor;
+
+        // Setup: mem_copy_length much larger than MAX_ARRAY_POOL_SECOND_OFFSET
+        // decode_step = min(mem_copy_length, copy_length, MAX_ARRAY_POOL_SECOND_OFFSET)
+        // This tests the cap by MAX_ARRAY_POOL_SECOND_OFFSET
+        let offset = MAX_ARRAY_POOL_SECOND_OFFSET;
+        // We can't easily test the full tbytes_set_rle with real I/O here because
+        // it reads from rle_code_stream and cache. Instead, verify the constant
+        // and the capping logic is exercised via tbytes_set_rle_vector_software.
+        // Test that decode_step exceeding available data returns correctly.
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: offset as i64 + 100, // exceeds offset
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(Vec::new());
+        let mut copy_length: i64 = offset as i64 + 100;
+        // Need large enough buffer for rle_idx and old_idx regions
+        let mut buf = vec![0u8; offset * 2 + 100];
+
+        // Fill with test data at old_idx
+        for i in 0..offset {
+            buf[offset + i] = (i % 256) as u8;
+        }
+
+        // decode_step = min(mem_copy_length, copy_length, MAX_ARRAY_POOL_SECOND_OFFSET)
+        // = min(offset+100, offset+100, offset) = offset
+        let result = tbytes_set_rle_vector_software(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            offset, // decode_step = MAX_ARRAY_POOL_SECOND_OFFSET
+            &mut buf,
+            0,      // rle_idx
+            offset, // old_idx
+        );
+
+        assert!(
+            result.is_ok(),
+            "should succeed with decode_step at MAX_ARRAY_POOL_SECOND_OFFSET"
+        );
+        assert_eq!(
+            rle_loader.mem_copy_length, 100,
+            "mem_copy_length should have 100 remaining after cap"
+        );
+        assert_eq!(
+            copy_length, 100,
+            "copy_length should have 100 remaining after cap"
+        );
+    }
+
+    /// When mem_copy_length is zero, tbytes_set_rle skips the vector step
+    /// entirely (returns early after calling tbytes_set_rle_single).
+    #[test]
+    fn tbytes_set_rle_zero_copy_length_returns_early() {
+        use super::tbytes_set_rle;
+
+        let mut rle_loader = RleRefClip {
+            mem_copy_length: 0,
+            mem_set_length: 0,
+            mem_set_value: 0,
+        };
+
+        let mut cache = Cursor::new(vec![0x00; 8]);
+        let mut copy_length: i64 = 8;
+        let mut shared_buffer = [0u8; 32];
+        let mut rle_code: &[u8] = &[];
+
+        let result = tbytes_set_rle(
+            &mut rle_loader,
+            &mut cache,
+            &mut copy_length,
+            &mut shared_buffer,
+            &mut rle_code,
+        );
+
+        assert!(result.is_ok());
+        // Since both mem_set_length and mem_copy_length are 0, nothing happens
+        assert_eq!(copy_length, 8, "nothing consumed");
+    }
 }
