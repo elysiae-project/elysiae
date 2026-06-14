@@ -705,7 +705,7 @@ async fn download_patch_chunk_inner(
         .and_then(|s| s.parse::<u64>().ok());
     let mut stream = resp.bytes_stream();
     let file = tokio::fs::File::create(dest).await?;
-    let mut file = TokioBufWriter::new(file);
+    let mut file = TokioBufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
@@ -1385,9 +1385,16 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
     {
         let file = fs::File::create(&temp_path)?;
-        let mut writer = BufWriter::new(file);
+        let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
         let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
-        std::io::copy(&mut limited, &mut writer)?;
+        let mut copy_buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
+        loop {
+            let n = limited.read(&mut copy_buf)?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&copy_buf[..n])?;
+        }
         writer.flush()?;
     }
     let actual_size = fs::metadata(&temp_path)?.len();

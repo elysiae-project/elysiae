@@ -239,6 +239,7 @@ pub fn assemble_file(
         let _ = fs::remove_file(&tmp_path);
         SophonError::Io(e.into_error())
     })?;
+    drop(out_file);
 
     if total_written != file.asset_size {
         let _ = fs::remove_file(&tmp_path);
