@@ -3,7 +3,7 @@ mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
 use tauri::command;
 use std::env;
-
+use tauri::Manager;
 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,8 +26,12 @@ pub fn run() {
         .manage(ActiveDownload(tokio::sync::Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
-        .plugin(
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.unminimize().ok();
+                window.set_focus().ok();
+            }
+        }))        .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
