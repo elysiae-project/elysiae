@@ -1854,10 +1854,17 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || fs::create_dir_all(&cd)).await??;
     }
 
-    for chunk in &file_entry.asset_chunks {
-        let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
-        download_chunk_with_retries(client, chunk_download, chunk, &chunk_path).await?;
-    }
+    let chunk_futures =
+        file_entry.asset_chunks.iter().map(|chunk| {
+            let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
+            let client = client.clone();
+            let chunk_download = chunk_download.clone();
+            let chunk = chunk.clone();
+            async move {
+                download_chunk_with_retries(&client, &chunk_download, &chunk, &chunk_path).await
+            }
+        });
+    try_join_all(chunk_futures).await?;
 
     {
         let gd = game_dir.to_path_buf();
