@@ -1,8 +1,8 @@
 import { cva } from "class-variance-authority";
 import { useState } from "preact/hooks";
 import { useGame } from "../hooks/useGame";
+import { variantToGameCode } from "../lib/VariantConverter";
 import { Variants } from "../types";
-import { getActiveGameCode } from "../util/AppFunctions";
 
 const menuCloseStyles = cva(
 	"flex items-center justify-center transition-all duration-75 h-10 w-10",
@@ -21,7 +21,7 @@ const menuCloseStyles = cva(
 	},
 );
 
-export default function MenuClose({
+export const MenuClose = ({
 	clickAction,
 	size = 32,
 }: {
@@ -29,9 +29,9 @@ export default function MenuClose({
 	size?: number;
 	width?: number;
 	height?: number;
-}) {
+}) => {
 	const { game } = useGame();
-	const assetPath = `/icon/${getActiveGameCode(game)}`;
+	const assetPath = `/icon/${variantToGameCode[game]}`;
 	const [mouseDown, setMouseDown] = useState<boolean>(false);
 
 	return (
@@ -71,4 +71,6 @@ export default function MenuClose({
 			/>
 		</button>
 	);
-}
+};
+
+export default MenuClose;

@@ -8,13 +8,17 @@ import {
 	runGame,
 } from "../../lib/GameDownloader";
 import {
+	gameCodeToVariant,
+	variantToGameCode,
+} from "../../lib/VariantConverter";
+import {
 	updateAllWineComponents,
 	wineEnvAvailable,
 } from "../../lib/WineManager";
-import { getActiveGameCode, getVariantFromCode } from "../../util/AppFunctions";
+import type { GameCodes } from "../../types";
 import Button from "../Button";
 
-export default function InstallerButton() {
+export const InstallerButton = () => {
 	const { game } = useGame();
 	const { state, setDownloadingGame, setResumable, setWineSetupProgress } =
 		useDownload();
@@ -31,7 +35,7 @@ export default function InstallerButton() {
 	const canResume =
 		state.isResumable &&
 		state.resumeInfo !== null &&
-		getActiveGameCode(game) === state.resumeInfo.gameId;
+		variantToGameCode[game] === state.resumeInfo.gameId;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -53,7 +57,7 @@ export default function InstallerButton() {
 	}, [state.isFinished, isDownloadForActiveGame]);
 
 	const resumeVariant = state.resumeInfo
-		? getVariantFromCode(state.resumeInfo.gameId)
+		? gameCodeToVariant[state.resumeInfo.gameId as GameCodes]
 		: null;
 
 	return (
@@ -99,4 +103,6 @@ export default function InstallerButton() {
 			</Button>
 		</div>
 	);
-}
+};
+
+export default InstallerButton;

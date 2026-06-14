@@ -33,7 +33,7 @@ const toggleSwitchStyles = cva("transition-colors duration-150 delay-0", {
 		{
 			game: Variants.BH3,
 			variant: "active",
-			class: "bg-bh3-toggle-active",
+			class: "bg-bh3-modal-border",
 		},
 		{
 			game: Variants.HK4E,
@@ -90,7 +90,7 @@ const PADDING_REM: Record<ComponentSize, number> = {
 	xl: 1.5,
 };
 
-export default function ToggleSwitch({
+export const ToggleSwitch = ({
 	onClick,
 	startActive = false,
 	width = 7.5,
@@ -102,7 +102,7 @@ export default function ToggleSwitch({
 	width?: number;
 	height?: number;
 	size?: ComponentSize;
-}) {
+}) => {
 	const { game } = useGame();
 	const [enabled, setEnabled] = useState<boolean>(startActive);
 	const padding = PADDING_REM[size];
@@ -143,4 +143,6 @@ export default function ToggleSwitch({
 			</div>
 		</button>
 	);
-}
+};
+
+export default ToggleSwitch;

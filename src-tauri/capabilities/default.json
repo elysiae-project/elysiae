@@ -18,7 +18,8 @@
         { "url": "https://autopatch*.**" },
         { "url": "https://api.github.com" },
         { "url": "https://raw.githubusercontent.com" },
-        { "url": "https://codeberg.org" }
+        { "url": "https://codeberg.org" },
+        { "url": "https://assets.elysiae.app/**" }
       ]
     },
     {
@@ -43,6 +44,7 @@
     "fs:read-all",
     "fs:write-all",
     "notification:default",
-    "core:app:allow-default-window-icon"
+    "core:app:allow-default-window-icon",
+    "window-state:default"
   ]
 }

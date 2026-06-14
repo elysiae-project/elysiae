@@ -1,28 +1,37 @@
-//use tauri::menu::{MenuBuilder, MenuItemBuilder};
-//use tauri::tray::TrayIconBuilder;
-
-use crate::commands::{app_functions, file_downloader, file_manager};
+use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
+use tauri::command;
+use std::env;
+use tauri::Manager;
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
     apply_nvidia_wayland_workaround();
 
+    #[cfg(target_os = "linux")]
+    apply_webkit_memory_improvements();
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
                 .pool_max_idle_per_host(64)
                 .build()
                 .unwrap(),
-        )) //  Required for sophon chunk downloading
+        )) // Required for sophon chunk downloading
         .manage(ActiveDownload(tokio::sync::Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
-        .plugin(
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.unminimize().ok();
+                window.set_focus().ok();
+            }
+        }))        .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
@@ -31,11 +40,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(disable_shortcuts())
+        .setup(|_app| {
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
             file_manager::get_dir_size,
-            app_functions::in_dev_env,
             commands::sophon_downloader::sophon_download,
             commands::sophon_downloader::sophon_update,
             commands::sophon_downloader::sophon_preinstall,
@@ -48,41 +60,36 @@ pub fn run() {
             commands::sophon_downloader::sophon_resume,
             commands::sophon_downloader::sophon_cancel,
             commands::sophon_downloader::sophon_check_update,
+            elysiae_version,
         ])
-        /* .setup(|app| {
-            let quit_item = MenuItemBuilder::new("Quit Elysiae").id("quit").build(app)?;
-            let menu = MenuBuilder::new(app).items(&[&quit_item]).build()?;
-            TrayIconBuilder::new()
-                .menu(&menu)
-                .icon(app.default_window_icon().unwrap().clone())
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    if event.id().as_ref() == "quit" {
-                        app.exit(0)
-                    }
-                })
-                .build(app)?;
-            Ok(())
-        })*/
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
 #[cfg(target_os = "linux")]
+fn apply_webkit_memory_improvements() {
+    unsafe {
+        std::env::set_var("WEBKIT_FORCE_MEMORY_PRESSURE_SYSTEM", "critical");
+        std::env::set_var("WEBKIT_CACHE_MODEL", "document_viewer");
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
-    // Webkit2Gtk has a longstanding bug that prevents NVIDIA systems using wayland
-    // from running tauri apps. This env var is the least destructive way to solve
-    // until it is fixed
     if is_nvidia() && is_wayland() {
         println!("Elysiae: Applying NVIDIA Wayland Workaround");
-        unsafe { std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1") };
+        unsafe {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+            std::env::set_var("WEBKIT_DISABLE_GPU_COMPOSITING", "1");
+            std::env::set_var("WEBKIT_DISABLE_VAAPI", "1");
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        };
     }
 }
 
 #[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
-    // If a NVIDIA graphics card is present, one of these two files should also be
-    // available
+    // If a NVIDIA graphics card is present, one of these two paths should exist
     std::path::Path::new("/proc/driver/nvidia/version").exists()
         || std::path::Path::new("/dev/nvidia0").exists()
 }
@@ -93,4 +100,27 @@ fn is_wayland() -> bool {
         || std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")
             .unwrap_or(false)
+}
+
+#[cfg(debug_assertions)]
+fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::empty())
+        .build()
+}
+
+#[cfg(not(debug_assertions))]
+fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::all())
+        .build()
+}
+
+#[command]
+fn elysiae_version() -> String {
+    env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "Unknown App Version".to_string())
 }

@@ -9,7 +9,7 @@ import {
 } from "../../lib/GameDownloader";
 import Button from "../Button";
 
-export default function PreinstallButton() {
+export const PreinstallButton = () => {
 	const [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
 	const { game } = useGame();
 	const { state, setDownloadingGame } = useDownload();
@@ -50,4 +50,6 @@ export default function PreinstallButton() {
 			<Save className="-m-1 leading-0" />
 		</Button>
 	);
-}
+};
+
+export default PreinstallButton;

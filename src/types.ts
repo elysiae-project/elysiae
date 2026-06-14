@@ -23,6 +23,9 @@ export enum BhServers {
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
 export type AppModules = "wine" | "dxvk" | "jadeite";
 export type AppOptions =
+	| "isFirstLaunch"
+	| "lastUsedVersion"
+	| "cachedBackgrounds"
 	| "selectedGame"
 	| "voLanguage"
 	| "blockNotifications"
@@ -89,13 +92,28 @@ export type LauncherGraphicsRawData = {
 export type LauncherGraphicsData = {
 	[key in Variants]: {
 		backgroundImage: string;
-		backgroundVideo: string;
+		backgroundVideo: string | null;
 		backgroundVideoOverlay: string;
 		icon: string;
 	};
 };
 
 // Launcher – Branding
+export type LauncherBackgroundData = {
+	[key in Variants]: {
+		backgroundVideo: string | null;
+		backgroundImage: string | null;
+	};
+};
+
+export type LauncherBackgroundRawData = {
+	[key in GameCodes]: LauncherBackgroundAsset[];
+};
+
+export type LauncherBackgroundAsset = {
+	image: string | null;
+	video: string | null;
+};
 
 export type LauncherBrandingRawGameData = {
 	id: string;
@@ -258,6 +276,7 @@ export type ModalProps = {
 	title?: string;
 	width?: number;
 	height?: number;
+	closeable?: boolean;
 	children: React.ReactNode;
 };
 
@@ -278,3 +297,7 @@ type DropdownOption = BaseOption<"dropdown", string> & {
 type BooleanOption = BaseOption<"boolean", boolean>;
 
 export type Option = DropdownOption | BooleanOption;
+
+export type CachedBackgrounds = {
+	[key in Variants]: string[];
+};

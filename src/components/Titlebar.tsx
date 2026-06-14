@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { StateFlags, saveWindowState } from "@tauri-apps/plugin-window-state";
 import { cva } from "class-variance-authority";
 import { AnimatePresence } from "motion/react";
 import { useGame } from "../hooks/useGame.ts";
@@ -6,7 +7,7 @@ import { Variants } from "../types";
 import MenuClose from "./MenuClose.tsx";
 
 const titlebarStyles = cva(
-	"h-16 min-w-full p-1 transition-all duration-250 overflow-y-hidden",
+	"h-16 min-w-full p-1 transition-all duration-250 overflow-y-hidden z-30",
 	{
 		variants: {
 			game: {
@@ -21,7 +22,7 @@ const titlebarStyles = cva(
 	},
 );
 
-export default function Titlebar() {
+export const Titlebar = () => {
 	const { game } = useGame();
 
 	return (
@@ -35,7 +36,8 @@ export default function Titlebar() {
 				<AnimatePresence mode="wait" initial={false}>
 					<MenuClose
 						size={42}
-						clickAction={() => {
+						clickAction={async () => {
+							await saveWindowState(StateFlags.ALL);
 							getCurrentWindow().close();
 						}}
 					/>
@@ -43,4 +45,6 @@ export default function Titlebar() {
 			</div>
 		</div>
 	);
-}
+};
+
+export default Titlebar;

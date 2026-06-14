@@ -7,7 +7,8 @@
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "yarn build",
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "removeUnusedCommands": true
   },
   "app": {
     "windows": [
@@ -25,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; img-src asset: https: ; video-src asset: https:",
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**"]

@@ -30,13 +30,13 @@ const dropdownStyles = cva(
 );
 
 const dropdownList = cva(
-	"min-h-auto absolute flex w-full flex-col transition-opacity duration-150 z-100",
+	"min-h-auto absolute flex w-full flex-col transition-opacity duration-250 z-100",
 	{
 		variants: {
 			game: {
 				[Variants.BH3]: "bg-white text-bh3-dropdown-text",
 				[Variants.HK4E]:
-					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1 transition-opacity duration-150",
+					"rounded-[1.25rem] bg-[#495366] drop-shadow-md px-1 py-1",
 				[Variants.HKRPG]: "bg-hkrpg-list-bg rounded-xs",
 				[Variants.NAP]: "bg-[#353535] rounded-2xl",
 			},
@@ -81,7 +81,7 @@ const getInitialValue = (value: number | string, values: string[]): number => {
 	return valueIndex !== -1 ? valueIndex : 0;
 };
 
-export default function Dropdown({
+export const Dropdown = ({
 	labels,
 	values = labels,
 	initialValue = 0,
@@ -97,13 +97,13 @@ export default function Dropdown({
 	width?: number;
 	height?: number;
 	size?: ComponentSize;
-}) {
+}) => {
 	const { game } = useGame();
 	const initialValueIndex = getInitialValue(initialValue, values);
 	const [open, setOpen] = useState<boolean>(false);
 	const [label, setLabel] = useState<string>(labels[initialValueIndex]);
 	const [currentIndex, setCurrentIndex] = useState<number>(initialValueIndex);
-	const dropdownDiv: MutableRef<HTMLDivElement | null> = useRef(null);
+	const dialog: MutableRef<HTMLDialogElement | null> = useRef(null);
 
 	const onChange = (index: number) => {
 		if (!open) return;
@@ -119,10 +119,7 @@ export default function Dropdown({
 		if (!open) return;
 
 		const handleOutsideClick = (e: MouseEvent) => {
-			if (
-				dropdownDiv.current &&
-				!dropdownDiv.current.contains(e.target as Node)
-			) {
+			if (dialog.current && !dialog.current.contains(e.target as Node)) {
 				setOpen(false);
 			}
 		};
@@ -139,7 +136,7 @@ export default function Dropdown({
 	};
 
 	return (
-		<div class="relative" ref={dropdownDiv} style={containerStyle}>
+		<dialog class="relative" ref={dialog} style={containerStyle}>
 			<div class="flex h-full flex-col">
 				<button
 					type="button"
@@ -171,6 +168,8 @@ export default function Dropdown({
 					))}
 				</div>
 			</div>
-		</div>
+		</dialog>
 	);
-}
+};
+
+export default Dropdown;

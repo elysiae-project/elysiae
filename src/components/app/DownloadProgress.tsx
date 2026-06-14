@@ -3,11 +3,19 @@ import { useMemo } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
 import { pauseDownload, resumeDownload } from "../../lib/GameDownloader";
-import { formatNumber, getGameName } from "../../util/AppFunctions";
+import { variantToGameName } from "../../lib/VariantConverter";
 import Button from "../Button";
 import Progressbar from "../Progressbar";
 
-export default function GameDownloadProgress() {
+const formatNumber = (num: number): string => {
+	try {
+		return new Intl.NumberFormat(navigator.language).format(num);
+	} catch {
+		return new Intl.NumberFormat("en-US").format(num);
+	}
+};
+
+export const DownloadProgress = () => {
 	const { state } = useDownload();
 	const { game } = useGame();
 	const {
@@ -117,7 +125,7 @@ export default function GameDownloadProgress() {
 					: isFetchingManifest
 						? "Fetching Manifest..."
 						: state.downloadingGame !== null
-							? `Downloading ${getGameName(state.downloadingGame)}...`
+							? `Downloading ${variantToGameName[state.downloadingGame]}...`
 							: "Downloading...";
 
 	const canPause = isDownloading || isPaused;
@@ -210,4 +218,6 @@ export default function GameDownloadProgress() {
 			)}
 		</div>
 	);
-}
+};
+
+export default DownloadProgress;

@@ -15,7 +15,14 @@ tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
 glib = "0.22.7"
-tokio = { version = "1.52.3", features = ["rt", "sync", "time", "macros"] }
+tokio = { version = "1.52.3", features = [
+    "rt",
+    "sync",
+    "time",
+    "macros",
+    "net",
+    "io-util",
+] }
 tokio-util = "0.7.18"
 futures = "0.3.32"
 futures-util = "0.3.32"
@@ -24,7 +31,7 @@ tauri = { version = "2.11.2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2.5.4"
 
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 
 tauri-plugin-fs = "2.5.1"
 tauri-plugin-http = "2.5.9"
@@ -34,25 +41,30 @@ tauri-plugin-os = "2.3.2"
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-store = "2.4.3"
 
-reqwest = { version = "0.13.3", features = ["stream", "blocking", "json"] }
+reqwest = { version = "0.13.4", features = ["stream", "blocking", "json"] }
 
 zstd = "0.13.3"
 xz = "0.1.0"
 flate2 = "1.1.9"
 zip = "8.6.0"
-tar = "0.4.45"
+tar = "0.4.46"
 md-5 = "0.11.0"
-dashmap = "6.1.0"
+dashmap = "6.2.1"
 hex = "0.4.3"
 bytes = "1.11.1"
-prost = "0.14.3"
+prost = "0.14.4"
 lru = "0.18.0"
 thiserror = "2.0.18"
 sha2 = "0.11.0"
 fs_extra = "1.3.0"
+tauri-plugin-prevent-default = "5.0.0"
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.7.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.2"
+tauri-plugin-window-state = "2.4.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -66,4 +78,5 @@ panic = "abort"
 strip = "symbols"
 
 [profile.dev]
+incremental = true
 panic = "abort"

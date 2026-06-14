@@ -8,10 +8,10 @@ import type {
 	WineModule,
 	WineSetupProgress,
 } from "../types";
-import { executeLocalBinary } from "../util/AppFunctions";
-import { getOption, setOption } from "../util/Settings";
-import { downloadFileWithProgress, getApiJson } from "../util/WebUtils";
 import { exists, extractFile, remove, removeDir, rename } from "./Fs";
+import { getOption, setOption } from "./Settings";
+import { executeLocalBinary } from "./ShellCommands";
+import { downloadFile, getApiJson } from "./Web";
 
 const components: ((
 	onProgress: (event: WineSetupProgress) => void,
@@ -38,36 +38,37 @@ const components: ((
 			const dirs = [
 				{
 					initialDirName: "x64",
-					finalDirName: "system32",
+					destDirName: "system32",
 				},
 				{
 					initialDirName: "x32",
-					finalDirName: "syswow64",
+					destDirName: "syswow64",
 				},
 			] as const;
+			const dlls = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
 
-			dirs.map(async (dirInfo) => {
-				const destPath = await join(
-					"wine",
-					"drive_c",
-					"windows",
-					dirInfo.finalDirName,
-				);
-				const sourceFolder = await join("dxvk", dirInfo.initialDirName);
-				rename(sourceFolder, destPath);
-			});
-
-			const dllNames = ["d3d9", "d3d10core", "d3d11", "dxgi"] as const;
 			await Promise.all(
-				dllNames.map(async (dll) => {
-					await registerNewDLL(dll);
+				dirs.map(async ({ initialDirName, destDirName }) => {
+					const sourceDir = await join("dxvk", initialDirName);
+					const destDir = await join("wine", "drive_c", "windows", destDirName);
+
+					await Promise.all(
+						dlls.map(async (dll) => {
+							const sourceFile = await join(sourceDir, `${dll}.dll`);
+							const destFile = await join(destDir, `${dll}.dll`);
+							await rename(sourceFile, destFile);
+						}),
+					);
 				}),
 			);
 
+			// Both x32 and x64 DLLs must be in place before the DLL registry keys can be added to the Wine registry
+			await Promise.all(dlls.map(registerNewDLL));
 			await removeDir("dxvk");
 		},
 	}),
 	() => ({
+		// This will likely not be needed in the coming months. TODO: Remove when tests show that it isn't needed
 		componentName: "jadeite",
 		extractTo: "jadeite",
 		saveTo: "jadeite.zip",
@@ -75,19 +76,6 @@ const components: ((
 			await executeLocalBinary("jadeite/block_analytics.sh");
 		},
 	}),
-	/*(onProgress) => ({
-    // While not used right now, it will for certain be used in future games or game updates as DX12 gets adopted by these games
-    componentName: "vkd3d",
-    extractTo: "vkd3d",
-    saveTo: "vkd3d.tar.zst",
-    postInstall: async () => {
-      // Run setup_vkd3d_proton.sh to automate the installation process
-      await executeLocalBinary("vkd3d/setup_vkd3d_proton.sh", "install", {
-        WINEPREFIX: await winePrefix(),
-      });
-      await removeDir("vkd3d");
-    },
-  }),*/
 ];
 
 // Components that do not need to be updated (i.e. Visual C++ Redistributable)
@@ -162,7 +150,7 @@ export const updateWineComponent = async (
 			total_bytes: 0,
 		});
 
-		await downloadFileWithProgress(
+		await downloadFile(
 			json.download_url,
 			component.saveTo,
 			(progress, total) => {
@@ -219,18 +207,14 @@ const installWineModules = async (
 				total_bytes: 0,
 			});
 
-			await downloadFileWithProgress(
-				module.downloadLink,
-				filename,
-				(progress, total) => {
-					onProgress({
-						type: "wineSetupDownloading",
-						component: module.name,
-						downloaded_bytes: progress,
-						total_bytes: total,
-					});
-				},
-			);
+			await downloadFile(module.downloadLink, filename, (progress, total) => {
+				onProgress({
+					type: "wineSetupDownloading",
+					component: module.name,
+					downloaded_bytes: progress,
+					total_bytes: total,
+				});
+			});
 
 			if (module.moduleType === "exe") {
 				await runExeWithWine(filename, "/install /quiet /norestart");
@@ -258,11 +242,17 @@ export const wineCommand = async (
 	const appData = await appDataDir();
 	const wineLib = await join(appData, "wine", "lib");
 	const wineLib64 = await join(appData, "wine", "lib64");
+	const shaderCache = await join(appData, "shaders");
 
 	await executeLocalBinary(`wine/bin/${binary}`, args, {
 		WINEPREFIX: prefix,
 		WINEARCH: "win64",
 		LD_LIBRARY_PATH: `${wineLib64}:${wineLib}:${wineLib64}/wine/x86_64-unix:${wineLib}/wine/i386-unix`,
+		__GL_THREADED_OPTIMIZATIONS: "0",
+		DXVK_STATE_CACHE: "1",
+		DXVK_STATE_CACHE_PATH: `${shaderCache}`,
+		MESA_SHADER_CACHE: "true",
+		__NV_DISABLE_EXPLICIT_SYNC: "1",
 	});
 };
 
@@ -314,7 +304,9 @@ export const updateModuleTracker = async (
 	module: AppModules,
 	newVersion: string,
 ) => {
-	const current = await getOption<WineComponentData>("installedComponents");
+	const current =
+		(await getOption<WineComponentData>("installedComponents")) ??
+		({} as WineComponentData);
 	current[module] = newVersion;
 	await setOption("installedComponents", current);
 };
@@ -322,16 +314,13 @@ export const updateModuleTracker = async (
 export const getModuleVersion = async (
 	module: AppModules | undefined = undefined,
 ): Promise<WineComponentData | string | null> => {
-	return new Promise((resolve, reject) => {
-		getOption<WineComponentData>("installedComponents")
-			.then((data) => {
-				if (typeof module === "undefined") {
-					resolve(data);
-				}
-				resolve(data[module as AppModules]);
-			})
-			.catch(reject);
-	});
+	const data =
+		(await getOption<WineComponentData>("installedComponents")) ??
+		({} as WineComponentData);
+	if (typeof module === "undefined") {
+		return data;
+	}
+	return data[module as AppModules] ?? null;
 };
 
 export const moduleTagsMatch = async (module: AppModules): Promise<boolean> => {

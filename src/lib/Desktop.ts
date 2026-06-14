@@ -5,6 +5,9 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { getOption, setOption } from "./Settings";
 
+/**
+ * @returns Status of notification permission from DE + settings.
+ */
 const areNotificationsPermitted = async (): Promise<boolean> => {
 	if (await getOption("blockNotifications")) return false;
 	const permission = await requestPermission();
@@ -15,9 +18,12 @@ const areNotificationsPermitted = async (): Promise<boolean> => {
 	return true;
 };
 
+/**
+ * Sends a notification to the active desktop environment
+ * @param message The body of the notification
+ */
 export const broadcastNotification = async (message: string) => {
 	if (await areNotificationsPermitted()) {
-		console.log("Notifications Allowed");
 		sendNotification({
 			title: "Elysiae",
 			body: message,
@@ -25,3 +31,16 @@ export const broadcastNotification = async (message: string) => {
 		});
 	}
 };
+
+/*
+1.1 features
+
+export const createDesktopShortcut = async (game: Variants) => {
+
+};
+
+
+export const createSteamTitle = async() => {
+
+}
+*/

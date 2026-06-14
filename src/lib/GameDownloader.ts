@@ -2,14 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
-import {
-	getActiveGameCode,
-	getGameExeName,
-	getGameName,
-} from "../util/AppFunctions";
-import { broadcastNotification } from "../util/NotificationHelper";
-import { getOption } from "../util/Settings";
+import { broadcastNotification } from "./Desktop";
 import { exists } from "./Fs";
+import { getOption } from "./Settings";
+import {
+	variantToExeName,
+	variantToGameCode,
+	variantToGameName,
+} from "./VariantConverter";
 import { runExeWithJadeite, runExeWithWine } from "./WineManager";
 
 /**
@@ -19,7 +19,9 @@ import { runExeWithJadeite, runExeWithWine } from "./WineManager";
  */
 export const downloadGame = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
-	await broadcastNotification(`Beginning Download of ${getGameName(game)}`);
+	await broadcastNotification(
+		`Beginning Download of ${variantToGameName[game]}`,
+	);
 	try {
 		info("Beginning sophon download sequence");
 		await invoke("sophon_download", {
@@ -29,7 +31,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		});
 	} finally {
 		await broadcastNotification(
-			`${getGameName(game)} Has Finished Downloading`,
+			`${variantToGameName[game]} Has Finished Downloading`,
 		);
 	}
 };
@@ -43,8 +45,8 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 export const runGame = async (game: Variants): Promise<void> => {
 	const gamePath = await join(
 		"games",
-		getActiveGameCode(game),
-		getGameExeName(game),
+		variantToGameCode[game],
+		variantToExeName[game],
 	);
 	game === Variants.HKRPG
 		? await runExeWithJadeite(gamePath)
@@ -213,7 +215,9 @@ export const applyUpdate = async (game: Variants): Promise<void> => {
  */
 export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
 	const gameData = await getGameData(game);
-	await broadcastNotification(`Verifying ${getGameName(game)} integrity...`);
+	await broadcastNotification(
+		`Verifying ${variantToGameName[game]} integrity...`,
+	);
 
 	try {
 		await invoke("sophon_verify_integrity", {
@@ -223,7 +227,7 @@ export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
 		});
 	} finally {
 		await broadcastNotification(
-			`${getGameName(game)} integrity check complete`,
+			`${variantToGameName[game]} integrity check complete`,
 		);
 	}
 };
@@ -235,7 +239,7 @@ export const verifyGameIntegrity = async (game: Variants): Promise<void> => {
  * @returns Weather or not `game` is installed
  */
 export const isGameInstalled = async (game: Variants): Promise<boolean> => {
-	const path = await join("games", getActiveGameCode(game), "pkg_version");
+	const path = await join("games", variantToGameCode[game], "pkg_version");
 	return exists(path);
 };
 
@@ -248,7 +252,7 @@ export const isGameInstalled = async (game: Variants): Promise<boolean> => {
  *   voice over language the user requested in their settings
  */
 const getGameData = async (game: Variants): Promise<GameData> => {
-	const gameCode = getActiveGameCode(game);
+	const gameCode = variantToGameCode[game];
 	const gameDir = await join("games", gameCode);
 	const requestedLanguage = (await getOption("voLanguage")) as string;
 
