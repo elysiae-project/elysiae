@@ -1115,7 +1115,10 @@ fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
     {
         return Err(SophonError::PathTraversal(patch_name.into()));
     }
-    if patch_name.starts_with('/') || patch_name.starts_with('\\') || patch_name.contains("..") {
+    if patch_name.starts_with('/')
+        || patch_name.starts_with('\\')
+        || patch_name.split(&['/', '\\']).any(|c| c == "..")
+    {
         return Err(SophonError::PathTraversal(patch_name.into()));
     }
     Ok(())
@@ -2198,6 +2201,53 @@ mod tests {
     }
 
     #[test]
+    fn validate_patch_name_rejects_relative_parent_component() {
+        // Path-component `..` check (not literal substring): a single leading
+        // `..` segment must still be rejected as traversal.
+        // ARRANGE: a name whose first path component is `..`
+        let name = "../etc/passwd";
+
+        // ACT: validate the patch name
+        let result = validate_patch_name(name);
+
+        // ASSERT: rejected as PathTraversal (not InvalidAssetName)
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_parent_component_in_middle() {
+        // Path-component `..` check: `..` may legally appear as a *substring*
+        // (e.g. `foo..bar`) but is still rejected when it appears as a
+        // directory component between separators.
+        // ARRANGE: a name with `..` as a middle directory component
+        let name = "path/../file";
+
+        // ACT
+        let result = validate_patch_name(name);
+
+        // ASSERT
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_accepts_consecutive_dots_in_filename() {
+        // Consecutive dots within a single filename component are NOT
+        // path traversal and must remain accepted.
+        // ARRANGE / ACT / ASSERT
+        assert!(validate_patch_name("foo..bar").is_ok());
+    }
+
+    #[test]
+    fn validate_patch_name_accepts_version_like_name() {
+        // Version-like names such as `2.0..hotfix.pak` are legitimate
+        // patch filenames and must be accepted.
+        // ARRANGE / ACT / ASSERT
+        assert!(validate_patch_name("2.0..hotfix.pak").is_ok());
+    }
+
+    #[test]
     fn is_file_already_patched_size_mismatch() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.bin");
@@ -2233,6 +2283,82 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nonexistent.bin");
         assert!(!is_file_already_patched(&path, 100, "any_hash"));
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_false_when_file_missing() {
+        // TOCTOU fix: function must fail soft (return false) when the file
+        // handle cannot be opened, rather than panicking or returning true.
+        // ARRANGE: an isolated tempdir containing no target file
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does_not_exist.bin");
+        // `dir` must outlive the call so the tempdir stays valid for `path`.
+        let _keep_dir_alive = &dir;
+
+        // ACT
+        let result = is_file_already_patched(&path, 0, "d41d8cd98f00b204e9800998ecf8427e");
+
+        // ASSERT: missing file -> false, regardless of expected hash/size
+        assert!(!result);
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_false_when_size_mismatch() {
+        // Size check must short-circuit before hashing, so incorrect
+        // expected size must return false without computing any hash.
+        // ARRANGE: a 5-byte file but expected size is far larger
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("size_mismatch.bin");
+        let data = b"short";
+        fs::write(&path, data).unwrap();
+        let actual_size = data.len() as u64;
+
+        // ACT
+        let result = is_file_already_patched(
+            &path,
+            actual_size + 9_999,
+            "00000000000000000000000000000000",
+        );
+
+        // ASSERT
+        assert!(!result);
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_true_when_size_and_md5_match() {
+        // Happy path: when both the on-disk size and the computed MD5 of
+        // the *same* file handle match, the function returns true.
+        // This exercises the open-then-hash-from-same-handle flow.
+        // ARRANGE
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("match.bin");
+        let data = b"hello world";
+        let expected_md5 = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+
+        // ACT
+        let result = is_file_already_patched(&path, data.len() as u64, &expected_md5);
+
+        // ASSERT
+        assert!(result);
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_false_when_only_md5_mismatch() {
+        // When size matches but the MD5 computed from the file handle does
+        // not equal expected_md5, the function must return false.
+        // ARRANGE
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("md5_mismatch.bin");
+        let data = b"hello world";
+        fs::write(&path, data).unwrap();
+
+        // ACT: pass the correct size but a deliberately wrong hash
+        let result =
+            is_file_already_patched(&path, data.len() as u64, "00000000000000000000000000000000");
+
+        // ASSERT
+        assert!(!result);
     }
 
     #[test]
