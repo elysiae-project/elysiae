@@ -93,26 +93,7 @@ pub async fn download_chunk(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
 ) -> SophonResult<()> {
-    if chunk.chunk_name.is_empty() {
-        return Err(SophonError::InvalidAssetName(
-            "chunk_name cannot be empty".into(),
-        ));
-    }
-    if chunk.chunk_name.contains('\0') {
-        return Err(SophonError::InvalidAssetName(
-            "chunk_name cannot contain null bytes".into(),
-        ));
-    }
-    let mut chars = chunk.chunk_name.chars();
-    if let (Some(first), Some(':')) = (chars.next(), chars.next())
-        && first.is_ascii_alphabetic()
-    {
-        return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
-    }
-    if chunk.chunk_name.starts_with('/')
-        || chunk.chunk_name.starts_with('\\')
-        || chunk.chunk_name.split(&['/', '\\']).any(|c| c == "..")
-    {
+    if !super::assembly::validate_chunk_name(&chunk.chunk_name) {
         return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
     }
 
