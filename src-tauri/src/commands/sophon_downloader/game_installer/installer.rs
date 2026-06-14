@@ -819,6 +819,11 @@ async fn process_download_item(
             .await?;
     }
 
+    if !validate_chunk_name(&item.chunk.chunk_name) {
+        return Err(SophonError::PathTraversal(
+            item.chunk.chunk_name.clone().into(),
+        ));
+    }
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(&item.chunk));
 
     let mut was_actually_downloaded = false;
