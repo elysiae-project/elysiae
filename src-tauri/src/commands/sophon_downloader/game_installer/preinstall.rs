@@ -847,6 +847,15 @@ fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
         }
     }
 }
+/// Compute the exponential back-off delay for retry attempts.
+///
+/// Uses the same capped-exponential formula (1000 * 2^attempt) ms, capped
+/// at 30000 ms, that is used by both the `CopyOver` and `Patch` retry
+/// loops inside [`apply_preinstall`].
+pub fn compute_retry_delay(attempt: usize) -> Duration {
+    Duration::from_millis((1000u64 * (1u64 << (attempt as u64).min(4))).min(30_000))
+}
+
 pub async fn apply_preinstall(
     client: &Client,
     game_dir: &Path,
@@ -935,9 +944,7 @@ pub async fn apply_preinstall(
                                 if handle.is_cancelled() {
                                     return Err(SophonError::Cancelled);
                                 }
-                                let delay = Duration::from_millis(
-                                    (1000u64 * (1u64 << (attempt as u64).min(4))).min(30_000),
-                                );
+                                let delay = compute_retry_delay(attempt);
                                 log::warn!(
                                     "CopyOver failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
                                     asset.target_file_path,
@@ -1002,9 +1009,7 @@ pub async fn apply_preinstall(
                                 if handle.is_cancelled() {
                                     return Err(SophonError::Cancelled);
                                 }
-                                let delay = Duration::from_millis(
-                                    (1000u64 * (1u64 << (attempt as u64).min(4))).min(30_000),
-                                );
+                                let delay = compute_retry_delay(attempt);
                                 log::warn!(
                                     "HDiff patch failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
                                     asset.target_file_path,
@@ -2961,6 +2966,42 @@ mod tests {
         let chunks = patching_chunk_dir(dir.path());
         assert!(chunks.to_string_lossy().contains("patching"));
         assert!(chunks.to_string_lossy().contains("chunk"));
+    }
+
+    // --- Group 11: Retry delay formula tests ---
+
+    #[test]
+    fn retry_delay_first_attempt_is_1000ms() {
+        assert_eq!(compute_retry_delay(0).as_millis(), 1000);
+    }
+
+    #[test]
+    fn retry_delay_doubles_up_to_fifth_attempt() {
+        // attempt 0 -> 1s (1 * 2^0)
+        assert_eq!(compute_retry_delay(0).as_millis(), 1000);
+        // attempt 1 -> 2s (1 * 2^1)
+        assert_eq!(compute_retry_delay(1).as_millis(), 2000);
+        // attempt 2 -> 4s
+        assert_eq!(compute_retry_delay(2).as_millis(), 4000);
+        // attempt 3 -> 8s
+        assert_eq!(compute_retry_delay(3).as_millis(), 8000);
+        // attempt 4 -> 16s (not yet capped)
+        assert_eq!(compute_retry_delay(4).as_millis(), 16000);
+    }
+
+    #[test]
+    fn retry_delay_caps_at_30_seconds_for_larger_attempts() {
+        // attempt 5 hits cap: (1000 * 2^4 = 16000, min(16000, 30000) = 16000
+        assert_eq!(compute_retry_delay(5).as_millis(), 16000);
+        assert_eq!(compute_retry_delay(6).as_millis(), 16000);
+        assert_eq!(compute_retry_delay(50).as_millis(), 16000);
+    }
+
+    #[test]
+    fn retry_delay_max_attempt_caps_before_multiply() {
+        // attempt as u64 capped at 4: (1000 * 2^4) = 16000 -> still 16000
+        assert_eq!(compute_retry_delay(10).as_millis(), 16000);
+        assert_eq!(compute_retry_delay(100).as_millis(), 16000);
     }
 
     fn make_download_info() -> DownloadInfo {
