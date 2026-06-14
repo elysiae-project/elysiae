@@ -1473,9 +1473,6 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             actual: "(computed)".to_string(),
         });
     }
-    if target_path.exists() {
-        let _ = fs::remove_file(&target_path);
-    }
     fs::rename(&temp_path, &target_path)?;
 
     Ok(())
@@ -1626,9 +1623,6 @@ fn apply_hdiff_patch(
                     actual: "(computed)".to_string(),
                 });
             }
-            if target_path.exists() {
-                let _ = fs::remove_file(&target_path);
-            }
             fs::rename(&temp_output, &target_path)?;
             Ok(())
         }
@@ -1719,9 +1713,6 @@ fn apply_hdiff_patch_from_files(
                     expected: asset.target_file_hash.clone(),
                     actual: "(computed)".to_string(),
                 });
-            }
-            if target_path.exists() {
-                let _ = fs::remove_file(&target_path);
             }
             fs::rename(&temp_output, &target_path)?;
             Ok(())
