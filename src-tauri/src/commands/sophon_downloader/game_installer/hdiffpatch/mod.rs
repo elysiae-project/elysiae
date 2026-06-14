@@ -189,7 +189,7 @@ impl HDiff {
         }
 
         let out_file = File::create(&self.dest_path)?;
-        let mut out_writer = BufWriter::new(out_file);
+        let mut out_writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, out_file);
 
         if header_info.is_single_compressed_diff {
             patch_sf::PatchSF::new(header_info).patch(

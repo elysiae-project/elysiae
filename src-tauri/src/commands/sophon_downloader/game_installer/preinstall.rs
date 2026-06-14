@@ -103,7 +103,7 @@ pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> Sophon
     let tmp_path = path.with_extension("json.tmp");
     {
         let f = fs::File::create(&tmp_path)?;
-        let mut writer = BufWriter::new(f);
+        let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, f);
         serde_json::to_writer(&mut writer, state)
             .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
         writer.flush()?;
@@ -1573,7 +1573,7 @@ fn apply_hdiff_patch(
         }
         Err(join_err) => {
             let _ = fs::remove_file(&temp_output);
-            let error_msg = if let Some(s) = join_err.downcast_ref::<&str>() {
+            let error_msg = if let Some(s) = join_err.downcast_ref::<&'static str>() {
                 s.to_string()
             } else if let Some(s) = join_err.downcast_ref::<String>() {
                 s.clone()
@@ -1667,7 +1667,7 @@ fn apply_hdiff_patch_from_files(
         }
         Err(join_err) => {
             let _ = fs::remove_file(&temp_output);
-            let error_msg = if let Some(s) = join_err.downcast_ref::<&str>() {
+            let error_msg = if let Some(s) = join_err.downcast_ref::<&'static str>() {
                 s.to_string()
             } else if let Some(s) = join_err.downcast_ref::<String>() {
                 s.clone()

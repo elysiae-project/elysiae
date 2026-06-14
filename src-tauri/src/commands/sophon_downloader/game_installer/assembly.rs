@@ -82,7 +82,10 @@ pub fn validate_chunk_name(chunk_name: &str) -> bool {
         log::warn!("chunk_name has drive letter, skipping file operation");
         return false;
     }
-    if chunk_name.starts_with('/') || chunk_name.starts_with('\\') || chunk_name.contains("..") {
+    if chunk_name.starts_with('/')
+        || chunk_name.starts_with('\\')
+        || chunk_name.split(&['/', '\\']).any(|c| c == "..")
+    {
         log::warn!("chunk_name has path traversal pattern, skipping file operation");
         return false;
     }
@@ -98,7 +101,10 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
     if name.starts_with('/') || name.starts_with('\\') {
         return Err(SophonError::PathTraversal(name.into()));
     }
-    if name.contains("..") {
+    if name.starts_with("./") || name.starts_with(".\\") {
+        return Err(SophonError::PathTraversal(name.into()));
+    }
+    if name.split(&['/', '\\']).any(|component| component == "..") {
         return Err(SophonError::PathTraversal(name.into()));
     }
     if name.contains('\0') {
@@ -596,6 +602,25 @@ mod tests {
     }
 
     #[test]
+    fn validate_asset_name_dot_slash_prefix() {
+        assert!(validate_asset_name("./etc/passwd").is_err());
+        assert!(validate_asset_name(".\\Windows\\system32").is_err());
+    }
+
+    #[test]
+    fn validate_asset_name_consecutive_dots_allowed() {
+        assert!(validate_asset_name("foo..bar").is_ok());
+        assert!(validate_asset_name("2.0..hotfix.pak").is_ok());
+    }
+
+    #[test]
+    fn validate_asset_name_dotdot_component_rejected() {
+        assert!(validate_asset_name("../etc/passwd").is_err());
+        assert!(validate_asset_name("foo/../bar").is_err());
+        assert!(validate_asset_name("a/..").is_err());
+    }
+
+    #[test]
     fn chunk_filename_format() {
         let chunk = SophonManifestAssetChunk {
             chunk_name: "abc123".into(),
@@ -1076,13 +1101,22 @@ mod tests {
 
     // --- Group 6: Additional chunk name security and acceptance tests ---
 
-    /// Double-dot path traversal pattern must be rejected even when embedded.
+    /// Double-dot as a path component must be rejected (e.g. `foo/../bar`).
+    /// Consecutive dots within a filename component are allowed (e.g.
+    /// `foo..bar`).
     #[test]
-    fn validate_chunk_name_rejects_double_dot_embedded() {
-        assert!(!validate_chunk_name("foo..bar"));
-        assert!(!validate_chunk_name("a..b"));
-        assert!(!validate_chunk_name("..anything"));
-        assert!(!validate_chunk_name("anything.."));
+    fn validate_chunk_name_rejects_double_dot_component() {
+        assert!(!validate_chunk_name("../etc/passwd"));
+        assert!(!validate_chunk_name("foo/../bar"));
+        assert!(!validate_chunk_name("a/.."));
+        assert!(!validate_chunk_name("a\\..\\b"));
+    }
+
+    #[test]
+    fn validate_chunk_name_allows_consecutive_dots_in_filename() {
+        assert!(validate_chunk_name("foo..bar"));
+        assert!(validate_chunk_name("a..b"));
+        assert!(validate_chunk_name("2.0..hotfix.pak"));
     }
 
     /// Backslash-prefixed names (Windows-style absolute paths) must be

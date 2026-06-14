@@ -21,7 +21,7 @@ fn get_available_space(path: &Path) -> Option<u64> {
     if ret != 0 {
         return None;
     }
-    Some(stat.f_bavail as u64 * stat.f_frsize as u64)
+    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
 }
 
 pub fn check_available_space(dest: &Path, needed: u64) -> Result<(), SophonError> {

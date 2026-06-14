@@ -110,7 +110,7 @@ pub fn save_verification_cache(
     };
     {
         let f = File::create(&tmp_path)?;
-        let mut writer = std::io::BufWriter::new(f);
+        let mut writer = std::io::BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, f);
         serde_json::to_writer(&mut writer, &serializable)?;
         writer.flush()?;
     }
