@@ -39,7 +39,9 @@ impl PatchSingle {
         } else {
             0
         };
-        let cover_start = offset.wrapping_add(cover_padding);
+        let cover_start = offset
+            .checked_add(cover_padding)
+            .ok_or_else(|| std::io::Error::other("offset overflow computing cover_start"))?;
         let (clip0, len0) = get_clip_stream(
             f0,
             hi.comp_mode,
@@ -48,7 +50,9 @@ impl PatchSingle {
             ci.compress_cover_buf_size as u64,
             false,
         )?;
-        offset = cover_start.wrapping_add(len0);
+        offset = cover_start
+            .checked_add(len0)
+            .ok_or_else(|| std::io::Error::other("offset overflow after cover"))?;
 
         let rle_ctrl_padding = if ci.compress_rle_ctrl_buf_size > 0 {
             padding
