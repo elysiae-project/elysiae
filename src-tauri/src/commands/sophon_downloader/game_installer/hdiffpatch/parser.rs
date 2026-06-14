@@ -653,4 +653,228 @@ mod tests {
             "should fail when varint sequence is truncated mid-stream"
         );
     }
+
+    // ========== Varint edge cases: empty stream ==========
+
+    /// read_long_7bit on a completely empty stream should return UnexpectedEof.
+    #[test]
+    fn read_long_7bit_empty_stream_returns_error() {
+        let mut c = src(b"");
+        let result = c.read_long_7bit();
+        assert!(result.is_err(), "should fail on empty stream");
+    }
+
+    /// read_int_7bit on a completely empty stream should return UnexpectedEof.
+    #[test]
+    fn read_int_7bit_empty_stream_returns_error() {
+        let mut c = src(b"");
+        let result = c.read_int_7bit();
+        assert!(result.is_err(), "should fail on empty stream");
+    }
+
+    // ========== Varint with tag_bit=3 ==========
+
+    /// tag_bit=3 means 4 value bits and bit 4 is the continuation flag.
+    /// prev_byte=0x0A → value bits = 0x0A & 0x0F = 10, no continuation.
+    #[test]
+    fn read_long_7bit_tagged_tag_bit_3_no_continuation() {
+        let mut c = src(b"\xFF");
+        let val = c.read_long_7bit_tagged(3, 0x0A).unwrap();
+        assert_eq!(val, 10i64, "tag_bit=3, prev_byte=0x0A should yield 10");
+        assert_eq!(c.position(), 0, "no bytes should be read from stream");
+    }
+
+    /// tag_bit=3 with continuation: prev_byte=0x1A → bits 0-3 = 10, bit 4 set.
+    /// Next byte = 0x7F (no continuation), so value = (10 << 7) | 127 = 1407.
+    #[test]
+    fn read_long_7bit_tagged_tag_bit_3_with_continuation() {
+        let mut c = src(b"\x7F");
+        let val = c.read_long_7bit_tagged(3, 0x1A).unwrap();
+        assert_eq!(val, 1407i64, "tag_bit=3, prev_byte=0x1A + byte 0x7F = 1407");
+        assert_eq!(c.position(), 1, "one byte consumed from stream");
+    }
+
+    /// tag_bit=3 overflow: prev_byte has continuation, followed by many
+    /// continuation bytes until i64 overflows.
+    #[test]
+    fn read_long_7bit_tagged_tag_bit_3_overflow_returns_error() {
+        let data = vec![0xFFu8; 12];
+        let mut c = Cursor::new(data);
+        let result = c.read_long_7bit_tagged(3, 0x7F);
+        assert!(
+            result.is_err(),
+            "should detect varint overflow with tag_bit=3"
+        );
+        assert!(
+            result.unwrap_err().to_string().contains("varint overflow"),
+            "should report varint overflow"
+        );
+    }
+
+    /// tag_bit=3, no continuation for i32 variant.
+    #[test]
+    fn read_int_7bit_tagged_tag_bit_3_no_continuation() {
+        let mut c = src(b"\xFF");
+        let val = c.read_int_7bit_tagged(3, 0x0A).unwrap();
+        assert_eq!(val, 10i32, "tag_bit=3, prev_byte=0x0A should yield 10");
+        assert_eq!(c.position(), 0, "no bytes should be read from stream");
+    }
+
+    /// tag_bit=3 with continuation for i32 variant.
+    #[test]
+    fn read_int_7bit_tagged_tag_bit_3_with_continuation() {
+        let mut c = src(b"\x7F");
+        let val = c.read_int_7bit_tagged(3, 0x1A).unwrap();
+        assert_eq!(val, 1407i32, "tag_bit=3, prev_byte=0x1A + byte 0x7F = 1407");
+        assert_eq!(c.position(), 1, "one byte consumed from stream");
+    }
+
+    /// read_long_7bit_from_slice with tag_bit=3, no continuation.
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_3_no_continuation() {
+        let buf = b"\x00";
+        let mut offset = 0;
+        let val = read_long_7bit_from_slice(buf, &mut offset, 3, 0x0A).unwrap();
+        assert_eq!(val, 10i64, "tag_bit=3, prev_byte=0x0A → value=10");
+        assert_eq!(offset, 0, "no bytes should be consumed from buffer");
+    }
+
+    /// read_long_7bit_from_slice with tag_bit=3, continuation present.
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_3_with_continuation() {
+        let buf = b"\x7F\xFF";
+        let mut offset = 0;
+        let val = read_long_7bit_from_slice(buf, &mut offset, 3, 0x1A).unwrap();
+        assert_eq!(val, 1407i64, "(10<<7)|127 = 1407");
+        assert_eq!(offset, 1, "one byte consumed from buffer");
+    }
+
+    /// read_long_7bit_from_slice overflow with tag_bit=3.
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_3_overflow_returns_error() {
+        let data = vec![0xFFu8; 12];
+        let mut offset = 0;
+        let result = read_long_7bit_from_slice(&data, &mut offset, 3, 0x7F);
+        assert!(result.is_err(), "should detect overflow with tag_bit=3");
+        assert!(
+            result.unwrap_err().to_string().contains("overflow"),
+            "should report overflow"
+        );
+    }
+
+    /// read_long_7bit_from_slice tag_bit=3 with truncated continuation.
+    #[test]
+    fn read_long_7bit_from_slice_tag_bit_3_truncated_returns_error() {
+        let buf = b"";
+        let mut offset = 0;
+        let result = read_long_7bit_from_slice(buf, &mut offset, 3, 0x1A);
+        assert!(result.is_err(), "should fail on truncated stream");
+        assert!(
+            result.unwrap_err().to_string().contains("underflow"),
+            "should report buffer underflow"
+        );
+    }
+
+    // ========== read_string_to_null edge cases ==========
+
+    /// read_string_to_null with buffer_size=0 and first byte null returns empty
+    /// string.
+    #[test]
+    fn read_string_to_null_buffer_size_zero_with_null() {
+        let mut c = src(b"\x00hello");
+        let s = c.read_string_to_null(0).unwrap();
+        assert_eq!(s, "");
+    }
+
+    /// read_string_to_null with buffer_size=0 and non-null data fails
+    /// immediately.
+    #[test]
+    fn read_string_to_null_buffer_size_zero_no_null_fails() {
+        let mut c = src(b"a");
+        let result = c.read_string_to_null(0);
+        assert!(
+            result.is_err(),
+            "should fail with buffer_size=0 and non-null data"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("null byte not found"),
+            "should report buffer_size limit hit"
+        );
+    }
+
+    /// read_string_to_null with buffer_size=64 and exactly 64 bytes before null
+    /// should succeed (null found at position 64, before the 65th push).
+    #[test]
+    fn read_string_to_null_buffer_size_64_with_exact_data_succeeds() {
+        let s = "a".repeat(64);
+        let mut data = s.as_bytes().to_vec();
+        data.push(0); // null at position 64
+        let mut c = Cursor::new(data);
+        let result = c.read_string_to_null(64);
+        assert!(result.is_ok(), "64 bytes + null should succeed");
+        assert_eq!(result.unwrap().len(), 64);
+    }
+
+    /// read_string_to_null with buffer_size=64 and 65 bytes without null should
+    /// fail because buf.len() reaches 64 before the null is read.
+    #[test]
+    fn read_string_to_null_buffer_size_64_string_too_long_fails() {
+        let s = "b".repeat(65);
+        let mut data = s.as_bytes().to_vec();
+        data.push(0); // null at position 65, too late
+        let mut c = Cursor::new(data);
+        let result = c.read_string_to_null(64);
+        assert!(
+            result.is_err(),
+            "65 bytes without null within buffer_size=64 should fail"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("null byte not found"),
+            "should report buffer_size limit hit"
+        );
+    }
+
+    /// read_string_to_null with buffer_size > 64 reads normally up to
+    /// buffer_size (not limited to initial capacity of 64).
+    #[test]
+    fn read_string_to_null_buffer_size_greater_than_64_succeeds() {
+        let s = "c".repeat(80);
+        let mut data = s.as_bytes().to_vec();
+        data.push(0);
+        let mut c = Cursor::new(data);
+        let result = c.read_string_to_null(100);
+        assert!(
+            result.is_ok(),
+            "80-byte string with buffer_size=100 should succeed"
+        );
+        assert_eq!(result.unwrap().len(), 80);
+    }
+
+    /// read_string_to_null with buffer_size > 64 and string exceeding
+    /// buffer_size by one should fail (101 non-null bytes, buffer_size=100).
+    #[test]
+    fn read_string_to_null_buffer_size_greater_than_64_too_long_fails() {
+        let s = "d".repeat(101);
+        let mut data = s.as_bytes().to_vec();
+        data.push(0); // null at position 101, past the limit
+        let mut c = Cursor::new(data);
+        let result = c.read_string_to_null(100);
+        assert!(
+            result.is_err(),
+            "101 bytes without null within buffer_size=100 should fail"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("null byte not found"),
+            "should report buffer_size limit hit"
+        );
+    }
 }
