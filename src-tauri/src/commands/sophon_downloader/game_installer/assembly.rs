@@ -1,13 +1,19 @@
+use std::cell::RefCell;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread_local;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use md5::{Digest, Md5};
 use tauri_plugin_log::log;
+
+thread_local! {
+    static TRANSFER_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
 use super::cache::VerificationEntry;
 use super::error::{SophonError, SophonResult};
@@ -173,7 +179,14 @@ pub fn assemble_file(
     };
 
     let mut consumed_chunks: Vec<&str> = Vec::new();
-    let mut transfer_buffer = vec![0u8; FILE_WRITE_BUFFER_SIZE];
+    let mut transfer_buffer = TRANSFER_BUF.with(|cell| {
+        let mut buf = cell.take();
+        if buf.capacity() < FILE_WRITE_BUFFER_SIZE {
+            buf = Vec::with_capacity(FILE_WRITE_BUFFER_SIZE);
+        }
+        buf.resize(FILE_WRITE_BUFFER_SIZE, 0);
+        buf
+    });
     for chunk in &file.asset_chunks {
         if chunk.chunk_old_offset >= 0 {
             // Chunk-level reuse: read decompressed data from the existing game
@@ -261,6 +274,9 @@ pub fn assemble_file(
     for chunk_name in consumed_chunks {
         decrement_chunk_refcount(chunk_name, chunk_refcounts, chunks_dir);
     }
+
+    transfer_buffer.clear();
+    TRANSFER_BUF.with(|cell| cell.replace(transfer_buffer));
 
     Ok(())
 }

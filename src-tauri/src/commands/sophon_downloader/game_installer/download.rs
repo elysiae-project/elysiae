@@ -338,7 +338,11 @@ async fn download_with_resume(
     {
         let existing_file = tokio::fs::File::open(dest).await?;
         let mut reader = tokio::io::BufReader::new(existing_file);
-        let mut buf = vec![0u8; MD5_HASH_BUFFER_SIZE];
+        let mut buf = MD5_BUF.with(std::cell::RefCell::take);
+        if buf.capacity() < MD5_HASH_BUFFER_SIZE {
+            buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
+        }
+        buf.resize(MD5_HASH_BUFFER_SIZE, 0);
         loop {
             let n = reader.read(&mut buf).await?;
             if n == 0 {
@@ -346,6 +350,8 @@ async fn download_with_resume(
             }
             hasher.update(&buf[..n]);
         }
+        buf.clear();
+        MD5_BUF.with(|cell| cell.replace(buf));
     }
 
     let file = tokio::fs::OpenOptions::new()
