@@ -702,6 +702,14 @@ async fn download_patch_chunk_inner(
         match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk)) => {
                 let bytes = chunk?;
+                if bytes.is_empty() && content_length.map_or(true, |expected| total_len < expected)
+                {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "corrupted compressed data: empty chunk while data remaining",
+                    )));
+                }
                 total_len += bytes.len() as u64;
                 if let Some(expected_len) = content_length
                     && total_len > expected_len
@@ -883,7 +891,7 @@ pub async fn apply_preinstall(
 
         match asset.patch_method {
             PatchMethod::CopyOver => {
-                const COPY_MAX_RETRIES: usize = 2;
+                const COPY_MAX_RETRIES: usize = 4;
                 let mut fallback_to_download = false;
                 let mut skip_progress = false;
 
@@ -948,7 +956,7 @@ pub async fn apply_preinstall(
                 }
             }
             PatchMethod::Patch => {
-                const PATCH_MAX_RETRIES: usize = 2;
+                const PATCH_MAX_RETRIES: usize = 4;
                 let mut fallback_to_download = false;
                 let mut skip_progress = false;
 

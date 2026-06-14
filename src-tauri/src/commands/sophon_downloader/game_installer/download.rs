@@ -246,7 +246,22 @@ async fn download_full_file_with_response(
         match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk_bytes)) => {
                 let bytes = chunk_bytes?;
+                if bytes.is_empty() && total_len < chunk.chunk_size {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "corrupted compressed data: empty chunk while data remaining",
+                    )));
+                }
                 total_len += bytes.len() as u64;
+                if total_len > chunk.chunk_size {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::SizeMismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: chunk.chunk_size,
+                        actual: total_len,
+                    });
+                }
                 hasher.update(&bytes);
                 file.write_all(&bytes).await?;
             }
@@ -345,8 +360,23 @@ async fn download_with_resume(
         match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk_bytes)) => {
                 let bytes = chunk_bytes?;
-                file.write_all(&bytes).await?;
+                if bytes.is_empty() && total_len < expected_total {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "corrupted compressed data: empty chunk while data remaining",
+                    )));
+                }
                 total_len += bytes.len() as u64;
+                if total_len > expected_total {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::SizeMismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: expected_total,
+                        actual: total_len,
+                    });
+                }
+                file.write_all(&bytes).await?;
                 hasher.update(&bytes);
             }
             Ok(None) => break,
