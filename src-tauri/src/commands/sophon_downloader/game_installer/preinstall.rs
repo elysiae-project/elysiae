@@ -107,10 +107,9 @@ pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> Sophon
         serde_json::to_writer(&mut writer, state)
             .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
         writer.flush()?;
-        writer
+        let _ = writer
             .into_inner()
-            .map_err(|e| SophonError::Io(e.into_error()))?
-            .sync_all()?;
+            .map_err(|e| SophonError::Io(e.into_error()))?;
     }
     fs::rename(&tmp_path, &path)?;
     Ok(())
@@ -714,8 +713,7 @@ async fn download_patch_chunk_inner(
         match timeout(Duration::from_millis(20000), stream.next()).await {
             Ok(Some(chunk)) => {
                 let bytes = chunk?;
-                if bytes.is_empty() && content_length.is_none_or(|expected| total_len < expected)
-                {
+                if bytes.is_empty() && content_length.is_none_or(|expected| total_len < expected) {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
