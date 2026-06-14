@@ -198,19 +198,10 @@ async fn download_full_file_with_response(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
 ) -> SophonResult<()> {
-    let len = match resp.content_length() {
-        Some(l) => l,
-        None => {
-            return Err(SophonError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                format!(
-                    "server did not send Content-Length for chunk '{}'",
-                    chunk.chunk_name
-                ),
-            )));
-        }
-    };
-    if len != chunk.chunk_size {
+    let content_length = resp.content_length();
+    if let Some(len) = content_length
+        && len != chunk.chunk_size
+    {
         return Err(SophonError::SizeMismatch {
             item: chunk.chunk_name.clone(),
             expected: chunk.chunk_size,
