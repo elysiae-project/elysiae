@@ -1496,6 +1496,10 @@ pub async fn verify_integrity(
 
     for (scanned, (asset, chunk_download)) in all_assets.into_iter().enumerate() {
         let scanned = (scanned + 1) as u64;
+        if let Err(e) = validate_asset_name(&asset.asset_name) {
+            log::warn!("Skipping file with invalid asset_name during verification: {e}");
+            continue;
+        }
         let file_path = game_dir.join(&asset.asset_name);
 
         let is_valid = tokio::task::spawn_blocking({
