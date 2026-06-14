@@ -59,7 +59,9 @@ impl PatchSingle {
         } else {
             0
         };
-        let rle_ctrl_start = offset.wrapping_add(rle_ctrl_padding);
+        let rle_ctrl_start = offset
+            .checked_add(rle_ctrl_padding)
+            .ok_or_else(|| std::io::Error::other("offset overflow computing rle_ctrl_start"))?;
         let (clip1, len1) = get_clip_stream(
             f1,
             hi.comp_mode,
@@ -68,14 +70,18 @@ impl PatchSingle {
             ci.compress_rle_ctrl_buf_size as u64,
             false,
         )?;
-        offset = rle_ctrl_start.wrapping_add(len1);
+        offset = rle_ctrl_start
+            .checked_add(len1)
+            .ok_or_else(|| std::io::Error::other("offset overflow after rle_ctrl"))?;
 
         let rle_code_padding = if ci.compress_rle_code_buf_size > 0 {
             padding
         } else {
             0
         };
-        let rle_code_start = offset.wrapping_add(rle_code_padding);
+        let rle_code_start = offset
+            .checked_add(rle_code_padding)
+            .ok_or_else(|| std::io::Error::other("offset overflow computing rle_code_start"))?;
         let (clip2, len2) = get_clip_stream(
             f2,
             hi.comp_mode,
@@ -84,7 +90,9 @@ impl PatchSingle {
             ci.compress_rle_code_buf_size as u64,
             false,
         )?;
-        offset = rle_code_start.wrapping_add(len2);
+        offset = rle_code_start
+            .checked_add(len2)
+            .ok_or_else(|| std::io::Error::other("offset overflow after rle_code"))?;
 
         let new_data_diff_padding = if ci.compress_new_data_diff_size > 0 {
             padding
@@ -96,7 +104,9 @@ impl PatchSingle {
         } else {
             ci.compress_new_data_diff_size as u64
         };
-        let new_data_diff_start = offset.wrapping_add(new_data_diff_padding);
+        let new_data_diff_start = offset.checked_add(new_data_diff_padding).ok_or_else(|| {
+            std::io::Error::other("offset overflow computing new_data_diff_start")
+        })?;
         let (clip3, _) = get_clip_stream(
             f3,
             hi.comp_mode,

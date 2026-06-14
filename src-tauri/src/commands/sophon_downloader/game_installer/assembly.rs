@@ -195,6 +195,9 @@ pub fn assemble_file(
             // No refcount to decrement — old-source chunks were never
             // downloaded.
         } else {
+            if !validate_chunk_name(&chunk.chunk_name) {
+                return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+            }
             let chunk_path = chunks_dir.join(chunk_filename(chunk));
 
             let bytes_written = write_decompressed_chunk_at(

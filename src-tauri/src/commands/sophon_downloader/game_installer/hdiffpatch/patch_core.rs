@@ -297,7 +297,10 @@ pub(crate) fn tbytes_set_rle_single(
     if rle_loader.mem_set_length == 0 {
         return Ok(());
     }
-    let mem_set_step = rle_loader.mem_set_length.min(*copy_length);
+    let mem_set_step = rle_loader
+        .mem_set_length
+        .min(*copy_length)
+        .min(shared_buffer.len() as i64);
 
     if rle_loader.mem_set_value != 0 {
         let last_pos = out_cache.position();
