@@ -2022,6 +2022,28 @@ mod tests {
         assert!(!verify_file_hash(&path, "0123456789abcdef"));
     }
 
+    // --- Group 8: Wrong-hash negative cases ---
+
+    /// A real MD5 mismatch must return false (verify_file_hash dispatcher).
+    #[test]
+    fn verify_file_hash_md5_wrong_hash_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_md5_wrong");
+        fs::write(&path, b"hello world").unwrap();
+        // Real MD5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        assert!(!verify_file_hash(&path, "00000000000000000000000000000000"));
+    }
+
+    /// A real XXH64 mismatch must return false (verify_file_hash dispatcher).
+    #[test]
+    fn verify_file_hash_xxh64_wrong_hash_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_xxh64_wrong");
+        fs::write(&path, b"hello world").unwrap();
+        // 16 all-zero characters is not the real XXH64
+        assert!(!verify_file_hash(&path, "0000000000000000"));
+    }
+
     #[test]
     fn delete_preinstall_state_cleans_up() {
         let dir = tempfile::tempdir().unwrap();
