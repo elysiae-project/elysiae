@@ -165,7 +165,13 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
             // escapes game_dir, this is a symlink-traversal attack.
             if !out_path.canonicalize()?.starts_with(&canonical_game) {
                 log::warn!("Skipping path traversal attempt: {:?}", out_path);
-                let _ = fs::remove_dir_all(&out_path);
+                if let Err(e) = fs::remove_dir_all(&out_path) {
+                    log::warn!(
+                        "Failed to clean up symlink-traversal directory {}: {}",
+                        out_path.display(),
+                        e
+                    );
+                }
                 continue;
             }
         } else {
