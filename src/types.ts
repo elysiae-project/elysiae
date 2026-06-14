@@ -21,7 +21,7 @@ export enum BhServers {
 // Primitive / Alias Types
 
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
-export type AppModules = "wine" | "dxvk" | "jadeite";
+export type AppModules = "proton" | "jadeite";
 export type AppOptions =
 	| "isFirstLaunch"
 	| "lastUsedVersion"
@@ -194,26 +194,18 @@ export type LauncherBrandingData = {
 	};
 };
 
-// Wine / Components
+// Proton / Components
 
-export type WineComponent = {
+export type ProtonComponent = {
 	componentName: AppModules;
 	extractTo: string;
 	saveTo: string;
 	postInstall?: () => Promise<void>;
 };
 
-export type WineComponentData = {
-	wine: string | null;
-	dxvk: string | null;
+export type ProtonComponentData = {
+	proton: string | null;
 	jadeite: string | null;
-	vkd3d: string | null;
-};
-
-export type WineModule = {
-	name: string;
-	downloadLink: string;
-	moduleType: "exe" | "dll32" | "dll64";
 };
 
 export type ModuleData = {
@@ -253,16 +245,16 @@ export type SophonProgress =
 	  }
 	| { type: "finished" };
 
-export type WineSetupProgress =
+export type ProtonSetupProgress =
 	| {
-			type: "wineSetupDownloading";
+			type: "protonSetupDownloading";
 			component: string;
 			downloaded_bytes: number;
 			total_bytes: number;
 	  }
-	| { type: "wineSetupExtracting"; component: string }
-	| { type: "wineSetupInstalling"; component: string }
-	| { type: "wineSetupFinished" };
+	| { type: "protonSetupExtracting"; component: string }
+	| { type: "protonSetupInstalling"; component: string }
+	| { type: "protonSetupFinished" };
 
 // Modal
 
