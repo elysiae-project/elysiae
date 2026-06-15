@@ -179,6 +179,12 @@ pub fn assemble_file(
     let mut buf_writer = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, out_file);
     let mut total_written: u64 = 0;
     let mut file_hasher = if file.asset_hash_md5.is_empty() {
+        if !file.is_directory() {
+            log::warn!(
+                "File '{}' has no asset_hash_md5; assembled without file-level verification",
+                file.asset_name
+            );
+        }
         None
     } else {
         Some(Md5::new())
