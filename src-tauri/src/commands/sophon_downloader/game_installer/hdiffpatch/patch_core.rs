@@ -381,8 +381,13 @@ pub(crate) fn enumerate_cover_headers(
         return Err(std::io::Error::other("cover_size is negative"));
     }
     const MAX_COVER_COUNT: i64 = 50_000_000;
-    if cover_count > MAX_COVER_COUNT {
-        return Err(std::io::Error::other("cover_count exceeds safe maximum"));
+    const MAX_COVER_HEADERS_MEMORY: usize = 1 << 30;
+    const COVER_HEADER_SIZE: usize = 32;
+    let max_headers_by_memory = (MAX_COVER_HEADERS_MEMORY / COVER_HEADER_SIZE) as i64;
+    if cover_count > MAX_COVER_COUNT || cover_count > max_headers_by_memory {
+        return Err(std::io::Error::other(
+            "cover_count exceeds safe maximum or memory limit",
+        ));
     }
     if cover_count > 0 && cover_size == 0 {
         return Err(std::io::Error::other("cover_count > 0 but cover_size is 0"));
