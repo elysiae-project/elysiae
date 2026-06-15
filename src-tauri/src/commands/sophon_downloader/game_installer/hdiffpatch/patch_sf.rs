@@ -45,7 +45,13 @@ impl PatchSF {
         let new_data_size = self.header_info.new_data_size as u64;
         let step_mem_size = (self.header_info.step_mem_size as usize).min(MAX_STEP_SIZE);
         let total_size = step_mem_size * 2;
-        let mut work_buf = vec![0u8; total_size];
+        // Both halves of the work buffer are fully written via read_exact
+        // before any byte is read from them, so we can skip zero-initialization.
+        let mut work_buf = Vec::with_capacity(total_size);
+        // Safety: every index 0..total_size is populated by read_exact before
+        // being read in patch_loop. The split into step_buf / io_buf keeps two
+        // independent mutable slices and both are filled lazily.
+        unsafe { work_buf.set_len(total_size) };
         let (step_buf, io_buf) = work_buf.split_at_mut(step_mem_size);
         patch_loop(
             &mut diff,
