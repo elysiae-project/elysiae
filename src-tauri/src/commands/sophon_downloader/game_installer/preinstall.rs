@@ -1576,6 +1576,7 @@ fn apply_hdiff_patch(
     }
 
     let diff_temp = game_dir.join(format!("patching/{}.diff", safe_patch_name));
+    let _ = fs::remove_file(&diff_temp);
     {
         let mut chunk_file = fs::File::open(&chunk_path)?;
         chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
@@ -1602,6 +1603,7 @@ fn apply_hdiff_patch(
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
     let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
     let temp_output = game_dir.join(format!("patching/{}_{}.tmp.out", safe_path, safe_hash));
+    let _ = fs::remove_file(&temp_output);
 
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
@@ -1696,6 +1698,7 @@ fn apply_hdiff_patch_from_files(
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
     let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
     let temp_output = game_dir.join(format!("patching/{}_{}.tmp.out", safe_path, safe_hash));
+    let _ = fs::remove_file(&temp_output);
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
     }
