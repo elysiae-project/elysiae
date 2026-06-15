@@ -132,8 +132,36 @@ pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
     match serde_json::from_str(&content) {
         Ok(state) => Some(state),
         Err(e) => {
-            log::warn!("Download state file corrupted, removing: {}", e);
-            let _ = fs::remove_file(&path);
+            // Preserve the corrupt state file under a timestamped name so the
+            // user can diagnose and we don't silently lose resume context.
+            // The frontend surfaces a Warning event with the path so the user
+            // knows re-download will happen.
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let backup_path = path.with_extension(format!("corrupted-{timestamp}.json"));
+            log::warn!(
+                "Download state file corrupted ({}), preserving as {}",
+                e,
+                backup_path.display()
+            );
+            match fs::rename(&path, &backup_path) {
+                Ok(()) => {
+                    log::warn!(
+                        "Corrupted download state preserved at {}; user will resume from scratch",
+                        backup_path.display()
+                    );
+                }
+                Err(rename_err) => {
+                    log::warn!(
+                        "Failed to preserve corrupted download state at {}: {}; removing instead",
+                        backup_path.display(),
+                        rename_err
+                    );
+                    let _ = fs::remove_file(&path);
+                }
+            }
             None
         }
     }
