@@ -1906,7 +1906,13 @@ async fn apply_download_over(
                 &dashmap::DashMap::new(),
                 &vc,
             );
-            let _ = fs::remove_dir_all(&tmp_dir);
+            if let Err(e) = fs::remove_dir_all(&tmp_dir) {
+                log::warn!(
+                    "Failed to clean up temp directory {}: {}",
+                    tmp_dir.display(),
+                    e
+                );
+            }
             result
         })
         .await??;
