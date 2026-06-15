@@ -1370,10 +1370,7 @@ pub async fn install(
     };
 
     let adaptive_assembly = Arc::new(AdaptiveAssembly::new());
-    let initial_dashmap: DashMap<String, u64> = DashMap::new();
-    for (k, v) in initial_chunks {
-        initial_dashmap.insert(k, v);
-    }
+    let initial_dashmap: DashMap<String, u64> = DashMap::from_iter(initial_chunks);
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
         game_dir: game_dir.to_path_buf(),
