@@ -731,18 +731,8 @@ async fn download_chunk_with_retries(
                         MAX_CHUNK_RETRIES
                     );
                     let delay = retry_delay(attempt);
-                    tokio::select! {
-                        _ = tokio::time::sleep(delay) => {},
-                        () = async {
-                            loop {
-                                if handle.is_cancelled() {
-                                    return;
-                                }
-                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                            }
-                        } => {
-                            return Err(SophonError::Cancelled);
-                        }
+                    if cancelable_sleep(handle, delay).await.is_err() {
+                        return Err(SophonError::Cancelled);
                     }
                 } else {
                     log::warn!(
@@ -924,14 +914,6 @@ fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
         }
     }
 }
-/// Compute the exponential back-off delay for retry attempts.
-///
-/// Uses the same capped-exponential formula (1000 * 2^attempt) ms, capped
-/// at 30000 ms, that is used by both the `CopyOver` and `Patch` retry
-/// loops inside [`apply_preinstall`].
-pub fn compute_retry_delay(attempt: usize) -> Duration {
-    Duration::from_millis((1000u64 * (1u64 << (attempt as u64).min(5))).min(30_000))
-}
 
 pub async fn apply_preinstall(
     client: &Client,
@@ -1021,7 +1003,7 @@ pub async fn apply_preinstall(
                                 if handle.is_cancelled() {
                                     return Err(SophonError::Cancelled);
                                 }
-                                let delay = compute_retry_delay(attempt);
+                                let delay = retry_delay(attempt as u32);
                                 log::warn!(
                                     "CopyOver failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
                                     asset.target_file_path,
@@ -1029,7 +1011,9 @@ pub async fn apply_preinstall(
                                     COPY_MAX_RETRIES + 1,
                                     delay.as_millis()
                                 );
-                                tokio::time::sleep(delay).await;
+                                if cancelable_sleep(handle, delay).await.is_err() {
+                                    return Err(SophonError::Cancelled);
+                                }
                             }
                         }
                     }
@@ -1087,7 +1071,7 @@ pub async fn apply_preinstall(
                                 if handle.is_cancelled() {
                                     return Err(SophonError::Cancelled);
                                 }
-                                let delay = compute_retry_delay(attempt);
+                                let delay = retry_delay(attempt as u32);
                                 log::warn!(
                                     "HDiff patch failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
                                     asset.target_file_path,
@@ -1095,7 +1079,9 @@ pub async fn apply_preinstall(
                                     PATCH_MAX_RETRIES + 1,
                                     delay.as_millis()
                                 );
-                                tokio::time::sleep(delay).await;
+                                if cancelable_sleep(handle, delay).await.is_err() {
+                                    return Err(SophonError::Cancelled);
+                                }
                             }
                         }
                     }
@@ -1841,18 +1827,8 @@ async fn apply_download_over_with_retry(
                     delay.as_millis(),
                     err_msg
                 );
-                tokio::select! {
-                    _ = tokio::time::sleep(delay) => {},
-                    () = async {
-                        loop {
-                            if handle.is_cancelled() {
-                                return;
-                            }
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                    } => {
-                        return Err(SophonError::Cancelled);
-                    }
+                if cancelable_sleep(handle, delay).await.is_err() {
+                    return Err(SophonError::Cancelled);
                 }
             }
         }
@@ -3211,37 +3187,36 @@ mod tests {
 
     #[test]
     fn retry_delay_first_attempt_is_1000ms() {
-        assert_eq!(compute_retry_delay(0).as_millis(), 1000);
+        assert_eq!(retry_delay(0 as u32).as_millis(), 1000);
     }
 
     #[test]
     fn retry_delay_doubles_up_to_fifth_attempt() {
         // attempt 0 -> 1s (1 * 2^0)
-        assert_eq!(compute_retry_delay(0).as_millis(), 1000);
+        assert_eq!(retry_delay(0 as u32).as_millis(), 1000);
         // attempt 1 -> 2s (1 * 2^1)
-        assert_eq!(compute_retry_delay(1).as_millis(), 2000);
+        assert_eq!(retry_delay(1 as u32).as_millis(), 2000);
         // attempt 2 -> 4s
-        assert_eq!(compute_retry_delay(2).as_millis(), 4000);
+        assert_eq!(retry_delay(2 as u32).as_millis(), 4000);
         // attempt 3 -> 8s
-        assert_eq!(compute_retry_delay(3).as_millis(), 8000);
+        assert_eq!(retry_delay(3 as u32).as_millis(), 8000);
         // attempt 4 -> 16s
-        assert_eq!(compute_retry_delay(4).as_millis(), 16000);
+        assert_eq!(retry_delay(4 as u32).as_millis(), 16000);
         // attempt 5 -> 32s, capped to 30s
-        assert_eq!(compute_retry_delay(5).as_millis(), 30000);
+        assert_eq!(retry_delay(5 as u32).as_millis(), 30000);
     }
 
     #[test]
     fn retry_delay_caps_at_30_seconds_for_larger_attempts() {
-        assert_eq!(compute_retry_delay(5).as_millis(), 30000);
-        assert_eq!(compute_retry_delay(6).as_millis(), 30000);
-        assert_eq!(compute_retry_delay(50).as_millis(), 30000);
+        assert_eq!(retry_delay(5 as u32).as_millis(), 30000);
+        assert_eq!(retry_delay(6 as u32).as_millis(), 30000);
+        assert_eq!(retry_delay(50 as u32).as_millis(), 30000);
     }
 
     #[test]
     fn retry_delay_max_attempt_caps_before_multiply() {
-        // attempt as u64 capped at 5: (1000 * 2^5) = 32000 -> min(32000, 30000) = 30000
-        assert_eq!(compute_retry_delay(10).as_millis(), 30000);
-        assert_eq!(compute_retry_delay(100).as_millis(), 30000);
+        assert_eq!(retry_delay(10).as_millis(), 30000);
+        assert_eq!(retry_delay(100).as_millis(), 30000);
     }
 
     fn make_download_info() -> DownloadInfo {
