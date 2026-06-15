@@ -1,10 +1,9 @@
 use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
-use tauri::command;
 use std::env;
 use tauri::Manager;
-
+use tauri::command;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,6 +14,13 @@ pub fn run() {
     apply_webkit_memory_improvements();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.unminimize().ok();
+                window.set_focus().ok();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
@@ -26,12 +32,7 @@ pub fn run() {
         .manage(ActiveDownload(tokio::sync::Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                window.unminimize().ok();
-                window.set_focus().ok();
-            }
-        }))        .plugin(
+        .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
@@ -41,9 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(disable_shortcuts())
-        .setup(|_app| {
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
