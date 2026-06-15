@@ -190,7 +190,12 @@ pub fn assemble_file(
         if buf.capacity() < FILE_WRITE_BUFFER_SIZE {
             buf = Vec::with_capacity(FILE_WRITE_BUFFER_SIZE);
         }
-        buf.resize(FILE_WRITE_BUFFER_SIZE, 0);
+        // Safety: the entire buffer is overwritten by read() before any byte
+        // is observed via write_all(). The buffer is initialized only when
+        // first allocated (set to 0 in with_capacity branch above), and
+        // kept across calls. Resetting len here lets us skip the zero-fill
+        // on the hot path.
+        unsafe { buf.set_len(FILE_WRITE_BUFFER_SIZE) };
         buf
     });
     for chunk in &file.asset_chunks {

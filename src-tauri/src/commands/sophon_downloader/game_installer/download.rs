@@ -70,7 +70,12 @@ async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     if buf.capacity() < MD5_HASH_BUFFER_SIZE {
         buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
     }
-    buf.resize(MD5_HASH_BUFFER_SIZE, 0);
+    // Skip the zero-fill: the hasher only ever reads `buf[..n]` where `n` is
+    // the actual bytes-per-read returned by `file.read()`. The unreferenced
+    // tail is never observed.
+    // Safety: every byte of `buf[..MD5_HASH_BUFFER_SIZE]` is overwritten by
+    // `file.read(&mut buf)` before `hasher.update(&buf[..n])` is called.
+    unsafe { buf.set_len(MD5_HASH_BUFFER_SIZE) };
 
     loop {
         let n = file.read(&mut buf).await?;
@@ -318,7 +323,8 @@ async fn download_with_resume(
         if buf.capacity() < MD5_HASH_BUFFER_SIZE {
             buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
         }
-        buf.resize(MD5_HASH_BUFFER_SIZE, 0);
+        // Safety: see compute_file_md5 above for invariants.
+        unsafe { buf.set_len(MD5_HASH_BUFFER_SIZE) };
         loop {
             let n = reader.read(&mut buf).await?;
             if n == 0 {
