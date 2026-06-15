@@ -158,4 +158,35 @@ mod tests {
         let expected = (cpus * 4).clamp(8, 128);
         assert_eq!(adaptive_max_concurrency(), expected);
     }
+
+    #[test]
+    fn retry_delay_exponential() {
+        assert_eq!(retry_delay(0), Duration::from_millis(1000));
+        assert_eq!(retry_delay(1), Duration::from_millis(2000));
+        assert_eq!(retry_delay(2), Duration::from_millis(4000));
+        assert_eq!(retry_delay(3), Duration::from_millis(8000));
+        assert_eq!(retry_delay(4), Duration::from_millis(16000));
+    }
+
+    #[test]
+    fn retry_delay_capped_at_30s() {
+        assert_eq!(retry_delay(5), Duration::from_millis(30000));
+        assert_eq!(retry_delay(10), Duration::from_millis(30000));
+        assert_eq!(retry_delay(100), Duration::from_millis(30000));
+    }
+
+    #[tokio::test]
+    async fn cancelable_sleep_completes_normally() {
+        let handle = DownloadHandle::new();
+        let result = cancelable_sleep(&handle, Duration::from_millis(10)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancelable_sleep_returns_err_on_cancel() {
+        let handle = DownloadHandle::new();
+        handle.cancel();
+        let result = cancelable_sleep(&handle, Duration::from_secs(30)).await;
+        assert!(result.is_err());
+    }
 }

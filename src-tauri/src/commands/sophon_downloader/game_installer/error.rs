@@ -456,4 +456,82 @@ mod tests {
         let err = SophonError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
         assert!(err.source().is_some());
     }
+
+    #[test]
+    fn is_retryable_transient_errors() {
+        assert!(
+            SophonError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
+                .is_retryable()
+        );
+        assert!(
+            SophonError::Md5Mismatch {
+                item: "f".into(),
+                expected: "a".into(),
+                actual: "b".into()
+            }
+            .is_retryable()
+        );
+        assert!(
+            SophonError::SizeMismatch {
+                item: "f".into(),
+                expected: 100,
+                actual: 50
+            }
+            .is_retryable()
+        );
+        assert!(
+            SophonError::ResumeFailed {
+                message: "test".into()
+            }
+            .is_retryable()
+        );
+        assert!(
+            SophonError::DownloadFailed {
+                chunk: "c".into(),
+                attempts: 3,
+                error: "e".into()
+            }
+            .is_retryable()
+        );
+        assert!(SophonError::Decompression("bad".into()).is_retryable());
+    }
+
+    #[tokio::test]
+    async fn is_retryable_http() {
+        let err = reqwest::Client::new()
+            .get("https://192.0.2.1:1")
+            .timeout(std::time::Duration::from_millis(1))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(SophonError::Http(err).is_retryable());
+    }
+
+    #[test]
+    fn is_retryable_fatal_errors() {
+        assert!(!SophonError::Cancelled.is_retryable());
+        assert!(!SophonError::NoManifests.is_retryable());
+        assert!(!SophonError::NoGameManifest.is_retryable());
+        assert!(!SophonError::PathTraversal("p".into()).is_retryable());
+        assert!(!SophonError::InvalidAssetName("a".into()).is_retryable());
+        assert!(
+            !SophonError::NoSpaceAvailable {
+                path: "p".into(),
+                needed: 1,
+                available: 0
+            }
+            .is_retryable()
+        );
+        assert!(!SophonError::PatchManifestDecode("bad".into()).is_retryable());
+        assert!(!SophonError::PluginValidationFailed("bad".into()).is_retryable());
+        assert!(
+            !SophonError::HDiffPatchFailed {
+                file: "f".into(),
+                error: "e".into()
+            }
+            .is_retryable()
+        );
+        assert!(!SophonError::OriginalFileMissing("f".into()).is_retryable());
+        assert!(!SophonError::ApiError(400, "bad".into()).is_retryable());
+    }
 }
