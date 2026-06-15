@@ -25,12 +25,12 @@ The Elysiae Project aims to provide an alternative to the launchers maintained b
 
 To use Elysiae, Your system must meet the following requirements:
 
-- A 64-Bit CPU
+- An x64 (x86-64) or arm64 (aarch64) CPU
 - At least 1024MB of memory
 - Linux Kernel >= 6.14
 - Systemd
 - DE running with Wayland
-- About 300MB of storage for Elysiae and the Wine Environment it provides
+- ~450MB of storage
 
 ## Building From Source / Contributing to Elysiae
 
