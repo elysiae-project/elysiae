@@ -678,7 +678,7 @@ async fn download_patch_chunk_with_retries(
                         attempt + 1,
                         max_retries
                     );
-                    let delay = retry_delay(attempt as u32);
+                    let delay = retry_delay(attempt);
                     tokio::select! {
                         _ = tokio::time::sleep(delay) => {},
                         () = async {
@@ -740,7 +740,7 @@ async fn download_chunk_with_retries(
                         attempt + 1,
                         MAX_CHUNK_RETRIES
                     );
-                    let delay = retry_delay(attempt as u32);
+                    let delay = retry_delay(attempt);
                     tokio::select! {
                         _ = tokio::time::sleep(delay) => {},
                         () = async {
@@ -1842,7 +1842,7 @@ async fn apply_download_over_with_retry(
                 if is_last {
                     break;
                 }
-                let delay = retry_delay(attempt as u32);
+                let delay = retry_delay(attempt);
                 log::warn!(
                     "DownloadOver failed for {} (attempt {}/{}), retrying in {}ms: {}",
                     asset.target_file_path,
