@@ -17,7 +17,8 @@ finish-args:
   - --device=dri
   - --share=ipc
   - --share=network
-  - --filesystem=xdg-run/path
+  - --filesystem=xdg-run
+  - --filesystem=xdg-desktop
 modules:
   - name: Elysiae
     buildsystem: simple
