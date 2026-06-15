@@ -5,3 +5,4 @@ Icon=app.elysiae.Elysiae
 Type=Application
 Categories=Utility;Game
 Terminal=false
+SingleMainWindow=true
