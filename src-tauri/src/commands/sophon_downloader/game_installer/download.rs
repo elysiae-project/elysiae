@@ -151,33 +151,63 @@ async fn do_download_chunk(
     dest: &Path,
 ) -> SophonResult<()> {
     // Check for partial download to resume (skip exists() to avoid TOCTOU)
-    let existing_size = match tokio::fs::metadata(dest).await {
+    let mut existing_size = match tokio::fs::metadata(dest).await {
         Ok(meta) => meta.len(),
         Err(_) => 0,
     };
 
     if existing_size >= chunk.chunk_size {
-        // File is already complete (or larger than expected)
-        if existing_size > chunk.chunk_size {
-            let _ = tokio::fs::remove_file(dest).await;
-        } else {
-            if !chunk.chunk_compressed_hash_md5.is_empty() {
-                if verify_existing_file_hash(dest, &chunk.chunk_compressed_hash_md5).await? {
-                    return Ok(());
+        // Truncate if oversized, then verify
+        if existing_size >= chunk.chunk_size {
+            if existing_size > chunk.chunk_size {
+                // Truncate to expected size: avoids re-downloading when extra
+                // bytes were appended from a previous interrupted write.
+                match tokio::fs::OpenOptions::new().write(true).open(dest).await {
+                    Ok(mut f) => {
+                        if let Err(e) = f.set_len(chunk.chunk_size).await {
+                            log::warn!(
+                                "Failed to truncate {} to {}: {}; deleting and re-downloading",
+                                chunk.chunk_name,
+                                chunk.chunk_size,
+                                e
+                            );
+                            let _ = tokio::fs::remove_file(dest).await;
+                            existing_size = 0;
+                        } else {
+                            existing_size = chunk.chunk_size;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to open {} for truncation: {}; deleting and re-downloading",
+                            chunk.chunk_name,
+                            e
+                        );
+                        let _ = tokio::fs::remove_file(dest).await;
+                        existing_size = 0;
+                    }
                 }
-                let _ = tokio::fs::remove_file(dest).await;
-            } else if chunk.chunk_decompressed_hash_md5.is_empty() {
-                log::warn!(
-                    "Chunk {} has no compressed or decompressed MD5; trusting size match",
-                    chunk.chunk_name
-                );
-                return Ok(());
-            } else {
-                log::warn!(
-                    "Chunk {} has no compressed MD5; re-downloading for integrity",
-                    chunk.chunk_name
-                );
-                let _ = tokio::fs::remove_file(dest).await;
+            }
+
+            if existing_size >= chunk.chunk_size {
+                if !chunk.chunk_compressed_hash_md5.is_empty() {
+                    if verify_existing_file_hash(dest, &chunk.chunk_compressed_hash_md5).await? {
+                        return Ok(());
+                    }
+                    let _ = tokio::fs::remove_file(dest).await;
+                } else if chunk.chunk_decompressed_hash_md5.is_empty() {
+                    log::warn!(
+                        "Chunk {} has no compressed or decompressed MD5; trusting size match",
+                        chunk.chunk_name
+                    );
+                    return Ok(());
+                } else {
+                    log::warn!(
+                        "Chunk {} has no compressed MD5; re-downloading for integrity",
+                        chunk.chunk_name
+                    );
+                    let _ = tokio::fs::remove_file(dest).await;
+                }
             }
         }
     }
@@ -1101,6 +1131,43 @@ mod tests {
         assert!(
             matches!(err, SophonError::Md5Mismatch { .. }),
             "expected Md5Mismatch for XXH64, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_chunk_truncates_oversized_existing_file() {
+        let server = MockServer::start().await;
+        let data = b"hello world".to_vec();
+        let expected_md5 = hex::encode(md5::Md5::digest(data.as_slice()));
+
+        // Pre-create a file larger than chunk_size with garbage at the end
+        let dest = dest_path();
+        let oversized: Vec<u8> = data.iter().chain(b"extra_garbage_bytes").cloned().collect();
+        tokio::fs::write(&dest, &oversized).await.unwrap();
+        let pre_size = tokio::fs::metadata(&dest).await.unwrap().len();
+        assert!(pre_size > data.len() as u64);
+
+        // Server is mounted but won't be called — the oversized file should be
+        // truncated to chunk_size, then verified via MD5, and return Ok.
+        Mock::given(method("GET"))
+            .and(path("chunks/test_chunk"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = Client::new();
+        let chunk = make_chunk("test_chunk", data.len() as u64, &expected_md5);
+        let dl_info = make_download_info(&server);
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let post_size = tokio::fs::metadata(&dest).await.unwrap().len();
+        assert!(
+            result.is_ok(),
+            "expected Ok after truncation+verify, got: {result:?}",
+        );
+        assert_eq!(
+            post_size,
+            data.len() as u64,
+            "file should be truncated to chunk_size"
         );
     }
 }
