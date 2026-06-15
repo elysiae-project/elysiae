@@ -46,12 +46,26 @@ impl PatchSF {
         let step_mem_size = (self.header_info.step_mem_size as usize).min(MAX_STEP_SIZE);
         let total_size = step_mem_size * 2;
         // Both halves of the work buffer are fully written via read_exact
-        // before any byte is read from them, so we can skip zero-initialization.
-        let mut work_buf = Vec::with_capacity(total_size);
+        // before any byte is read from them. Use MaybeUninit so Rust (and
+        // clippy::uninit_vec) know that the buffer contents are intentionally
+        // uninitialized at this point.
+        let mut work_buf: Vec<std::mem::MaybeUninit<u8>> = Vec::with_capacity(total_size);
         // Safety: every index 0..total_size is populated by read_exact before
-        // being read in patch_loop. The split into step_buf / io_buf keeps two
-        // independent mutable slices and both are filled lazily.
+        // being read in patch_loop.
         unsafe { work_buf.set_len(total_size) };
+        // Cast through raw pointers to a contiguous initialized region once
+        // we know the writes have happened. patch_loop's contract guarantees
+        // that the entire `step_mem_size * 2` range is read_exact-filled
+        // before any read happens.
+        let mut work_buf: Vec<u8> = unsafe {
+            let (ptr, len, cap) = (
+                work_buf.as_mut_ptr() as *mut u8,
+                total_size,
+                work_buf.capacity(),
+            );
+            std::mem::forget(work_buf);
+            Vec::from_raw_parts(ptr, len, cap)
+        };
         let (step_buf, io_buf) = work_buf.split_at_mut(step_mem_size);
         patch_loop(
             &mut diff,
