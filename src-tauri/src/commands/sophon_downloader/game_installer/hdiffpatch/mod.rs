@@ -149,6 +149,11 @@ impl HDiff {
         }
 
         let p_file_ver = Self::try_get_version(h_info_arr[0])?;
+        if p_file_ver == 19 {
+            return Err(
+                "directory patches (HDIFF19) are not supported by the single-file patcher".into(),
+            );
+        }
         if p_file_ver != 13 && p_file_ver != 20 {
             return Err(format!(
                 "unsupported HDiff version {p_file_ver} (only 13 and 20 supported)"
@@ -156,12 +161,17 @@ impl HDiff {
             .into());
         }
 
-        // 3-part header: "HDIFF19&zstd&fadler64" — checksum mode is the third field
-        let _checksum_mode = if h_info_arr.len() == 3 {
-            Some(h_info_arr[2].to_string())
-        } else {
-            None
-        };
+        // 3-part header: "HDIFF13&zstd&fadler64" or "HDIFF20&zstd&fadler64"
+        // The third field is a checksum mode string; validate it if present.
+        if h_info_arr.len() == 3 {
+            let checksum_name = h_info_arr[2];
+            match checksum_name {
+                "crc32" | "fadler64" | "nochecksum" | "Crc32" | "Fadler64" | "Nochecksum" => {}
+                _ => {
+                    return Err(format!("unsupported HDiff checksum mode: {checksum_name}").into());
+                }
+            }
+        }
 
         header_info.comp_mode = h_info_arr[1].parse()?;
         header_info.is_single_compressed_diff = p_file_ver == 20;
