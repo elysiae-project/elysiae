@@ -4,9 +4,9 @@ fn main() {
         "Elysiae is only supported on Linux hosts. Please build in a Linux environment\nIf you are on Windows, You may want to consider taking a look at WSL: https://aka.ms/wsl"
     );
 
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     compile_error!(
-        "Elysiae is only supported on x64 (x86_64) CPUs.\nIf you are running on an Arm CPU, you can target x64 and use FEX to run Elyisae: https://github.com/FEX-Emu/FEX\nFEX is untested not officially supported by the Elysiae Project; issues that result from its use will not be fixed."
+        "Elysiae is only supported on x64 (x86_64) and ARM. Please target one of these two architectures when building Elysiae"
     );
 
     if !kernel_version_at_least_6_14_0() {
