@@ -30,6 +30,23 @@ pub fn retry_delay(attempt: u32) -> Duration {
     let exp = 1000u64.saturating_mul(1u64 << attempt.min(5));
     Duration::from_millis(exp.min(30_000))
 }
+
+pub async fn cancelable_sleep(
+    handle: &crate::commands::sophon_downloader::game_installer::handle::DownloadHandle,
+    delay: Duration,
+) -> Result<(), ()> {
+    tokio::select! {
+        _ = tokio::time::sleep(delay) => Ok(()),
+        _ = async {
+            loop {
+                if handle.is_cancelled() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        } => Err(()),
+    }
+}
 /// Maximum concurrent file assembly tasks.
 pub const ASSEMBLY_CONCURRENCY: usize = 8;
 /// Size of the channel buffer for assembly task scheduling.

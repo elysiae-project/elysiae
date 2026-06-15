@@ -709,18 +709,11 @@ async fn download_chunk_with_retries(
                     hash_failures,
                     MAX_HASH_RETRIES
                 );
-                tokio::select! {
-                    _ = tokio::time::sleep(retry_delay(hash_failures)) => {},
-                    () = async {
-                        loop {
-                            if handle.is_cancelled() {
-                                return;
-                            }
-                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        }
-                    } => {
-                        return Err(SophonError::Cancelled);
-                    }
+                if cancelable_sleep(handle, retry_delay(hash_failures))
+                    .await
+                    .is_err()
+                {
+                    return Err(SophonError::Cancelled);
                 }
                 // Don't count against network retries — corrupted data is
                 // not a network error. Continue to re-download the chunk.
@@ -741,18 +734,11 @@ async fn download_chunk_with_retries(
                             item.chunk.chunk_name, network_attempts, MAX_RETRIES
                         ),
                     });
-                    tokio::select! {
-                        _ = tokio::time::sleep(retry_delay(network_attempts)) => {},
-                        () = async {
-                            loop {
-                                if handle.is_cancelled() {
-                                    return;
-                                }
-                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                            }
-                        } => {
-                            return Err(SophonError::Cancelled);
-                        }
+                    if cancelable_sleep(handle, retry_delay(network_attempts))
+                        .await
+                        .is_err()
+                    {
+                        return Err(SophonError::Cancelled);
                     }
                 } else {
                     return Err(SophonError::DownloadFailed {

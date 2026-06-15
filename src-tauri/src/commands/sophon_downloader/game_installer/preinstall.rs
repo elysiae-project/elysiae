@@ -24,7 +24,7 @@ use super::api::{
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::read_installed_tag;
-use super::{MAX_RETRIES, retry_delay};
+use super::{MAX_RETRIES, cancelable_sleep, retry_delay};
 use crate::commands::sophon_downloader::api_scrape::{
     DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
 };
@@ -679,18 +679,8 @@ async fn download_patch_chunk_with_retries(
                         max_retries
                     );
                     let delay = retry_delay(attempt);
-                    tokio::select! {
-                        _ = tokio::time::sleep(delay) => {},
-                        () = async {
-                            loop {
-                                if handle.is_cancelled() {
-                                    return;
-                                }
-                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                            }
-                        } => {
-                            return Err(SophonError::Cancelled);
-                        }
+                    if cancelable_sleep(handle, delay).await.is_err() {
+                        return Err(SophonError::Cancelled);
                     }
                 } else {
                     log::warn!(
