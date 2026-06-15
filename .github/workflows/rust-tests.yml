@@ -12,6 +12,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu-latest
+          - arch: x86_64
+            distro: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
