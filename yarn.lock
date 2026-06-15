@@ -1131,6 +1131,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tauri-apps/plugin-deep-link@npm:^2.4.9":
+  version: 2.4.9
+  resolution: "@tauri-apps/plugin-deep-link@npm:2.4.9"
+  dependencies:
+    "@tauri-apps/api": "npm:^2.11.0"
+  checksum: 10c0/3a3a5f41f4556889ecd94ab9c8b23f5faed5ebbe61590a4ddc6116b8ff7f4c6e16e33a60e384e11668101d85f9059600375a978ac280f51ea212b9906b6acc95
+  languageName: node
+  linkType: hard
+
 "@tauri-apps/plugin-fs@npm:^2.5.1":
   version: 2.5.1
   resolution: "@tauri-apps/plugin-fs@npm:2.5.1"
@@ -1507,6 +1516,7 @@ __metadata:
     "@tailwindcss/vite": "npm:^4.3.1"
     "@tauri-apps/api": "npm:^2.11.0"
     "@tauri-apps/cli": "npm:^2.11.2"
+    "@tauri-apps/plugin-deep-link": "npm:^2.4.9"
     "@tauri-apps/plugin-fs": "npm:^2.5.1"
     "@tauri-apps/plugin-http": "npm:^2.5.9"
     "@tauri-apps/plugin-log": "npm:^2.8.0"

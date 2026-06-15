@@ -73,6 +73,7 @@
     "fs:write-all",
     "notification:default",
     "core:app:allow-default-window-icon",
-    "window-state:default"
+    "window-state:default",
+    "deep-link:default"
   ]
 }
