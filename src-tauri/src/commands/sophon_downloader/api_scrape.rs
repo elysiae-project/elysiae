@@ -35,8 +35,6 @@ pub struct PackageBranch {
     pub branch: String,
     pub password: String,
     pub tag: String,
-    #[serde(default)]
-    pub diff_tags: Vec<String>,
 }
 
 #[allow(dead_code)]
