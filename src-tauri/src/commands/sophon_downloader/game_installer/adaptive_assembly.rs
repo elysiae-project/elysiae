@@ -52,8 +52,7 @@ impl AdaptiveAssembly {
         new_target
     }
 
-    pub fn spawn_adjuster(self: &Arc<Self>) -> tokio_util::sync::CancellationToken {
-        let cancel_token = tokio_util::sync::CancellationToken::new();
+    pub fn spawn_adjuster(self: &Arc<Self>, cancel_token: tokio_util::sync::CancellationToken) {
         let adaptive = Arc::clone(self);
         let token = cancel_token.clone();
 
@@ -70,8 +69,6 @@ impl AdaptiveAssembly {
                 }
             }
         });
-
-        cancel_token
     }
 }
 
@@ -203,7 +200,8 @@ mod tests {
     #[tokio::test]
     async fn spawn_adjuster_cancels_cleanly() {
         let aa = Arc::new(AdaptiveAssembly::new());
-        let token = aa.spawn_adjuster();
+        let token = tokio_util::sync::CancellationToken::new();
+        aa.spawn_adjuster(token.clone());
         token.cancel();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(aa.current_target() >= 1);

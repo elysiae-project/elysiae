@@ -573,15 +573,16 @@ async fn drain_join_set(
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
     assemble_rx: mpsc::Receiver<(usize, usize)>,
-) -> (
-    tokio::task::JoinHandle<SophonResult<()>>,
-    tokio_util::sync::CancellationToken,
-) {
+    assembly_cancel: tokio_util::sync::CancellationToken,
+) -> tokio::task::JoinHandle<SophonResult<()>> {
     let ctx = Arc::clone(ctx);
-    let assembly_cancel = ctx.adaptive_assembly.spawn_adjuster();
+    ctx.adaptive_assembly
+        .spawn_adjuster(assembly_cancel.clone());
+    let task_cancel = assembly_cancel;
 
     let handle = tokio::spawn(async move {
         let mut rx = assemble_rx;
+        let cancel = task_cancel;
         let mut join_set = tokio::task::JoinSet::new();
 
         loop {
@@ -601,13 +602,22 @@ fn spawn_assembly_coordinator(
             }
 
             if join_set.is_empty() {
-                match rx.recv().await {
-                    Some((file_idx, tmp_dir_idx)) => {
+                // Race recv against cancellation so cancellation can drain workers
+                // even when downloads have stopped pushing. `biased` ensures we
+                // observe cancellation before committing to a new assembly task.
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => {
+                        return drain_join_set(&mut join_set).await;
+                    }
+                    msg = rx.recv() => {
+                        let Some((file_idx, tmp_dir_idx)) = msg else {
+                            return drain_join_set(&mut join_set).await;
+                        };
                         let params = make_assembly_params(&ctx, file_idx, tmp_dir_idx);
                         let updater = Arc::clone(&ctx.updater);
                         join_set.spawn(spawn_assembly_task(params, move |p| updater(p)));
                     }
-                    None => return drain_join_set(&mut join_set).await,
                 }
             } else if let Some(res) = join_set.join_next().await {
                 match res {
@@ -626,7 +636,7 @@ fn spawn_assembly_coordinator(
         }
     });
 
-    (handle, assembly_cancel)
+    handle
 }
 
 fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveSemaphore>) -> CancellationToken {
@@ -1381,7 +1391,12 @@ pub async fn install(
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
-    let (assembly_task, assembly_cancel_token) = spawn_assembly_coordinator(&ctx, assemble_rx);
+    // Single token shared by AdaptiveAssembly::spawn_adjuster and the coordinator
+    // loop. Cancelling it cuts the RAM adjuster AND wakes the recv() race
+    // above.
+    let assembly_cancel_token = tokio_util::sync::CancellationToken::new();
+    let assembly_task =
+        spawn_assembly_coordinator(&ctx, assemble_rx, assembly_cancel_token.clone());
 
     let (download_items, chunk_to_files) = build_download_state(
         installer_data,
