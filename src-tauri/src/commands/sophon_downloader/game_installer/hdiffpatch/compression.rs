@@ -1,6 +1,7 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use flate2::read::ZlibDecoder;
+use tauri_plugin_log::log;
 
 use super::CompressionMode;
 
@@ -18,6 +19,15 @@ pub(crate) fn get_clip_stream(
     const MAX_BUFFERED_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
 
     if comp_mode == CompressionMode::Nocomp || comp_length == 0 {
+        // When comp_length=0 with a non-Nocomp mode, this is unusual — log
+        // a warning to surface potentially corrupt headers without breaking
+        // compatibility with diff producers that emit empty compressed clips.
+        if comp_mode != CompressionMode::Nocomp && comp_length == 0 {
+            log::warn!(
+                "Compressed stream (mode={comp_mode:?}) has comp_length=0; \
+                 falling back to uncompressed read of length={length}"
+            );
+        }
         if is_buffered {
             if length > MAX_BUFFERED_SIZE {
                 return Err(std::io::Error::other(
@@ -204,6 +214,9 @@ mod tests {
         let path = dir.path().join("test.bin");
         std::fs::write(&path, b"Hello World!").unwrap();
         let file = std::fs::File::open(&path).unwrap();
+        // With Zstd mode and comp_length=0, the code falls back to uncompressed
+        // reads (preserves compatibility with diff producers that omit
+        // comp_length for tiny clips).
         let (mut reader, file_bytes) =
             get_clip_stream(file, CompressionMode::Zstd, 0, 5, 0, false).unwrap();
         assert_eq!(file_bytes, 5);
