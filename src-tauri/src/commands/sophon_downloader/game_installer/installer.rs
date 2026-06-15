@@ -1218,10 +1218,11 @@ pub async fn install(
     if game_code == "nap" {
         super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
     }
-    let mut all_files: Vec<SophonManifestAssetProperty> = installer_data
-        .iter()
-        .flat_map(|d| d.files.clone())
-        .collect();
+    let total_assets: usize = installer_data.iter().map(|d| d.files.len()).sum();
+    let mut all_files: Vec<SophonManifestAssetProperty> = Vec::with_capacity(total_assets);
+    for d in &installer_data {
+        all_files.extend(d.files.iter().cloned());
+    }
     if game_code == "hkrpg" {
         super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
     } else if game_code == "hk4e" {
