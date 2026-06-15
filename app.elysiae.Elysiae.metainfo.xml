@@ -10,10 +10,10 @@
   <project_license>BSD-3-Clause</project_license>
   <description>
     <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
-    <p>Elysiae is built from the ground up to allow for several features, including:</p>
+    <p>It is built from the ground up to allow for several features, including:</p>
     <ul>
       <li>A unified environment, preventing unnecessary bloat (compared to projects from an-anime-team)</li>
-      <li>The use of Proton instead of wine for more performance and stability when running games</li>
+      <li>The use of Proton instead of Wine for improved performance and stability when running games</li>
       <li>x86 and arm support</li>
       <li>Faster downloads (compared to projects from an-anime-team)</li>
       <li>Active support and more features planned down the line</li>
