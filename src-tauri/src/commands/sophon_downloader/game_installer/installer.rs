@@ -709,6 +709,16 @@ async fn download_chunk_with_retries(
                     hash_failures,
                     MAX_HASH_RETRIES
                 );
+                // Discard the corrupted payload. Resuming a Range download from
+                // a corrupted tail would still fail MD5 verification because we
+                // would append new bytes on top of garbage. Start fresh.
+                if let Err(e) = tokio::fs::remove_file(dest).await {
+                    log::warn!(
+                        "Failed to discard corrupted chunk {} before retry: {}",
+                        item.chunk.chunk_name,
+                        e
+                    );
+                }
                 if cancelable_sleep(handle, retry_delay(hash_failures))
                     .await
                     .is_err()
@@ -717,9 +727,6 @@ async fn download_chunk_with_retries(
                 }
                 // Don't count against network retries — corrupted data is
                 // not a network error. Continue to re-download the chunk.
-                // Don't delete the partial file here — the inner layer
-                // (download.rs) can resume it on the next attempt via
-                // HTTP Range requests.
             }
             Err(e) => {
                 if !e.is_retryable() {
