@@ -8,21 +8,21 @@ import {
 	runGame,
 } from "../../lib/GameDownloader";
 import {
+	protonEnvAvailable,
+	updateAllProtonComponents,
+} from "../../lib/ProtonManager";
+import {
 	gameCodeToVariant,
 	variantToGameCode,
 } from "../../lib/VariantConverter";
-import {
-	updateAllWineComponents,
-	wineEnvAvailable,
-} from "../../lib/WineManager";
 import type { GameCodes } from "../../types";
 import Button from "../Button";
 
 export const InstallerButton = () => {
 	const { game } = useGame();
-	const { state, setDownloadingGame, setResumable, setWineSetupProgress } =
+	const { state, setDownloadingGame, setResumable, setProtonSetupProgress } =
 		useDownload();
-	const [wineAvailable, setWineAvailable] = useState<boolean>(false);
+	const [protonAvailable, setProtonAvailable] = useState<boolean>(false);
 	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
 
 	const downloadActive =
@@ -39,8 +39,8 @@ export const InstallerButton = () => {
 
 	useEffect(() => {
 		let cancelled = false;
-		wineEnvAvailable().then((res) => {
-			if (!cancelled) setWineAvailable(res);
+		protonEnvAvailable().then((res) => {
+			if (!cancelled) setProtonAvailable(res);
 		});
 		isGameInstalled(game).then((res) => {
 			if (!cancelled) setGameInstalled(res);
@@ -66,13 +66,13 @@ export const InstallerButton = () => {
 				variant="primary"
 				width={13.75}
 				height={4.06}
-				disabled={(downloadActive && !gameInstalled) || state.isSettingUpWine}
+				disabled={(downloadActive && !gameInstalled) || state.isSettingUpProton}
 				onClick={async () => {
-					if (!wineAvailable) {
-						await updateAllWineComponents((event) => {
-							setWineSetupProgress(event);
+					if (!protonAvailable) {
+						await updateAllProtonComponents((event) => {
+							setProtonSetupProgress(event);
 						});
-						setWineAvailable(true);
+						setProtonAvailable(true);
 					} else if (canResume && resumeVariant !== null) {
 						setResumable(null);
 						setDownloadingGame(resumeVariant);
@@ -86,8 +86,8 @@ export const InstallerButton = () => {
 				}}
 			>
 				{(() => {
-					if (!wineAvailable) {
-						return state.isSettingUpWine ? "Setting Up..." : "Create Env";
+					if (!protonAvailable) {
+						return state.isSettingUpProton ? "Setting Up..." : "Create Env";
 					} else if (canResume && !gameInstalled) {
 						return downloadActive && isDownloadForActiveGame
 							? "Downloading..."

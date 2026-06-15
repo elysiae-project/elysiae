@@ -3,10 +3,10 @@ import { type ComponentChildren, createContext } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { getResumeInfo } from "../lib/GameDownloader";
 import type {
+	ProtonSetupProgress,
 	ResumeInfo,
 	SophonProgress,
 	Variants,
-	WineSetupProgress,
 } from "../types";
 
 export interface DownloadState {
@@ -35,18 +35,18 @@ export interface DownloadState {
 	pluginProgress: string;
 	isResumable: boolean;
 	resumeInfo: ResumeInfo | null;
-	isSettingUpWine: boolean;
-	wineSetupComponent: string;
-	wineSetupPhase: string;
-	wineSetupDownloadedBytes: number;
-	wineSetupDownloadTotal: number;
+	isSettingUpProton: boolean;
+	protonSetupComponent: string;
+	protonSetupPhase: string;
+	protonSetupDownloadedBytes: number;
+	protonSetupDownloadTotal: number;
 }
 
 interface DownloadContextType {
 	state: DownloadState;
 	setDownloadingGame: (game: Variants | null) => void;
 	setResumable: (info: ResumeInfo | null) => void;
-	setWineSetupProgress: (event: WineSetupProgress) => void;
+	setProtonSetupProgress: (event: ProtonSetupProgress) => void;
 }
 
 const initialState: DownloadState = {
@@ -75,18 +75,18 @@ const initialState: DownloadState = {
 	pluginProgress: "",
 	isResumable: false,
 	resumeInfo: null,
-	isSettingUpWine: false,
-	wineSetupComponent: "",
-	wineSetupPhase: "",
-	wineSetupDownloadedBytes: 0,
-	wineSetupDownloadTotal: 0,
+	isSettingUpProton: false,
+	protonSetupComponent: "",
+	protonSetupPhase: "",
+	protonSetupDownloadedBytes: 0,
+	protonSetupDownloadTotal: 0,
 };
 
 export const DownloadContext = createContext<DownloadContextType>({
 	state: initialState,
 	setDownloadingGame: () => {},
 	setResumable: () => {},
-	setWineSetupProgress: () => {},
+	setProtonSetupProgress: () => {},
 });
 
 export const DownloadProvider = ({
@@ -258,44 +258,44 @@ export const DownloadProvider = ({
 		};
 	}, []);
 
-	const setWineSetupProgress = (event: WineSetupProgress) => {
+	const setProtonSetupProgress = (event: ProtonSetupProgress) => {
 		setState((prev) => {
 			switch (event.type) {
-				case "wineSetupDownloading":
+				case "protonSetupDownloading":
 					return {
 						...prev,
-						isSettingUpWine: true,
-						wineSetupComponent: event.component,
-						wineSetupPhase: "downloading",
-						wineSetupDownloadedBytes: event.downloaded_bytes,
-						wineSetupDownloadTotal: event.total_bytes,
+						isSettingUpProton: true,
+						protonSetupComponent: event.component,
+						protonSetupPhase: "downloading",
+						protonSetupDownloadedBytes: event.downloaded_bytes,
+						protonSetupDownloadTotal: event.total_bytes,
 					};
-				case "wineSetupExtracting":
+				case "protonSetupExtracting":
 					return {
 						...prev,
-						isSettingUpWine: true,
-						wineSetupComponent: event.component,
-						wineSetupPhase: "extracting",
-						wineSetupDownloadedBytes: 0,
-						wineSetupDownloadTotal: 0,
+						isSettingUpProton: true,
+						protonSetupComponent: event.component,
+						protonSetupPhase: "extracting",
+						protonSetupDownloadedBytes: 0,
+						protonSetupDownloadTotal: 0,
 					};
-				case "wineSetupInstalling":
+				case "protonSetupInstalling":
 					return {
 						...prev,
-						isSettingUpWine: true,
-						wineSetupComponent: event.component,
-						wineSetupPhase: "installing",
-						wineSetupDownloadedBytes: 0,
-						wineSetupDownloadTotal: 0,
+						isSettingUpProton: true,
+						protonSetupComponent: event.component,
+						protonSetupPhase: "installing",
+						protonSetupDownloadedBytes: 0,
+						protonSetupDownloadTotal: 0,
 					};
-				case "wineSetupFinished":
+				case "protonSetupFinished":
 					return {
 						...prev,
-						isSettingUpWine: false,
-						wineSetupComponent: "",
-						wineSetupPhase: "",
-						wineSetupDownloadedBytes: 0,
-						wineSetupDownloadTotal: 0,
+						isSettingUpProton: false,
+						protonSetupComponent: "",
+						protonSetupPhase: "",
+						protonSetupDownloadedBytes: 0,
+						protonSetupDownloadTotal: 0,
 					};
 			}
 		});
@@ -303,7 +303,12 @@ export const DownloadProvider = ({
 
 	return (
 		<DownloadContext.Provider
-			value={{ state, setDownloadingGame, setResumable, setWineSetupProgress }}
+			value={{
+				state,
+				setDownloadingGame,
+				setResumable,
+				setProtonSetupProgress,
+			}}
 		>
 			{children}
 		</DownloadContext.Provider>
