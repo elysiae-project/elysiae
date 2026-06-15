@@ -24,7 +24,7 @@ use super::api::{
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::read_installed_tag;
-use super::{MAX_HASH_RETRIES, MAX_RETRIES, retry_delay};
+use super::{MAX_RETRIES, retry_delay};
 use crate::commands::sophon_downloader::api_scrape::{
     DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
 };
