@@ -131,6 +131,16 @@ impl HDiff {
         &self,
         on_progress: Option<&dyn Fn(u64)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Reject same source/destination — patching in-place would corrupt
+        // the source while reading it.
+        if self.source_path == self.dest_path {
+            return Err(format!(
+                "source and destination paths are identical: {}",
+                self.source_path
+            )
+            .into());
+        }
+
         let mut diff_file = File::open(&self.diff_path)?;
         let mut header_info = HeaderInfo::default();
         let header_info_line = diff_file.read_string_to_null(512)?;
