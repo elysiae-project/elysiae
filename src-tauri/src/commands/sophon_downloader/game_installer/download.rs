@@ -5,6 +5,7 @@ use futures_util::StreamExt;
 use libc;
 use md5::{Digest, Md5};
 use reqwest::Client;
+use tauri_plugin_log::log;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
@@ -129,19 +130,19 @@ async fn do_download_chunk(
                 if actual == chunk.chunk_compressed_hash_md5 {
                     return Ok(());
                 }
-                // MD5 mismatch - remove and re-download
                 let _ = tokio::fs::remove_file(dest).await;
+            } else if chunk.chunk_decompressed_hash_md5.is_empty() {
+                log::warn!(
+                    "Chunk {} has no compressed or decompressed MD5; trusting size match",
+                    chunk.chunk_name
+                );
+                return Ok(());
             } else {
-                // Fall back to decompressed hash verification
-                if !chunk.chunk_decompressed_hash_md5.is_empty() {
-                    let actual = compute_file_md5(dest).await?;
-                    if actual == chunk.chunk_decompressed_hash_md5 {
-                        return Ok(());
-                    }
-                    let _ = tokio::fs::remove_file(dest).await;
-                } else {
-                    return Ok(());
-                }
+                log::warn!(
+                    "Chunk {} has no compressed MD5; re-downloading for integrity",
+                    chunk.chunk_name
+                );
+                let _ = tokio::fs::remove_file(dest).await;
             }
         }
     }
