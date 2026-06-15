@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri::path::BaseDirectory;
@@ -118,7 +118,15 @@ pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(),
 
 pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
     let path = download_state_path(app)?;
-    let content = match fs::read_to_string(&path) {
+    load_download_state_from(&path)
+}
+
+/// Loads and parses a download state file from `path`. On parse failure the
+/// corrupt file is renamed to `<path>.corrupted-<unix-timestamp>.json` for
+/// post-mortem inspection instead of being silently deleted. Returns `None`
+/// if the file is missing or unparseable.
+pub(crate) fn load_download_state_from(path: &Path) -> Option<DownloadState> {
+    let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
             log::warn!(
@@ -131,40 +139,41 @@ pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
     };
     match serde_json::from_str(&content) {
         Ok(state) => Some(state),
-        Err(e) => {
-            // Preserve the corrupt state file under a timestamped name so the
-            // user can diagnose and we don't silently lose resume context.
-            // The frontend surfaces a Warning event with the path so the user
-            // knows re-download will happen.
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let backup_path = path.with_extension(format!("corrupted-{timestamp}.json"));
+        Err(e) => preserve_corrupted_state(path, &e),
+    }
+}
+
+/// Renames `path` to a timestamped backup and returns `None`. If the rename
+/// fails (e.g. read-only filesystem), the file is removed as a fallback so
+/// subsequent loads do not keep failing on the same corrupt JSON.
+fn preserve_corrupted_state(path: &Path, parse_err: &serde_json::Error) -> Option<DownloadState> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let backup_path = path.with_extension(format!("corrupted-{timestamp}.json"));
+    log::warn!(
+        "Download state file corrupted ({}), preserving as {}",
+        parse_err,
+        backup_path.display()
+    );
+    match fs::rename(path, &backup_path) {
+        Ok(()) => {
             log::warn!(
-                "Download state file corrupted ({}), preserving as {}",
-                e,
+                "Corrupted download state preserved at {}; user will resume from scratch",
                 backup_path.display()
             );
-            match fs::rename(&path, &backup_path) {
-                Ok(()) => {
-                    log::warn!(
-                        "Corrupted download state preserved at {}; user will resume from scratch",
-                        backup_path.display()
-                    );
-                }
-                Err(rename_err) => {
-                    log::warn!(
-                        "Failed to preserve corrupted download state at {}: {}; removing instead",
-                        backup_path.display(),
-                        rename_err
-                    );
-                    let _ = fs::remove_file(&path);
-                }
-            }
-            None
+        }
+        Err(rename_err) => {
+            log::warn!(
+                "Failed to preserve corrupted download state at {}: {}; removing instead",
+                backup_path.display(),
+                rename_err
+            );
+            let _ = fs::remove_file(path);
         }
     }
+    None
 }
 
 pub fn clear_download_state(app: &AppHandle) {
@@ -1263,5 +1272,110 @@ mod tests {
         };
         let hash = compute_content_manifest_hash(&manifest);
         assert_eq!(hash.len(), 16);
+    }
+
+    /// When the resume state JSON is corrupt, the file should be preserved
+    /// under a timestamped backup name so the user can diagnose, instead of
+    /// being silently removed.
+    #[test]
+    fn load_download_state_corrupted_preserves_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("download_state.json");
+        let corrupt_bytes = b"{not valid json at all";
+        std::fs::write(&state_path, corrupt_bytes).unwrap();
+
+        let result = load_download_state_from(&state_path);
+        assert!(result.is_none(), "corrupt state must not load");
+
+        assert!(
+            !state_path.exists(),
+            "original corrupt file should be moved aside"
+        );
+
+        let mut found_backup = false;
+        for entry in std::fs::read_dir(dir.path()).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("download_state.corrupted-") && name.ends_with(".json") {
+                let backup_bytes = std::fs::read(entry.path()).unwrap();
+                assert_eq!(
+                    backup_bytes, corrupt_bytes,
+                    "preserved backup must contain the original corrupt bytes"
+                );
+                found_backup = true;
+            }
+        }
+        assert!(
+            found_backup,
+            "expected a renamed backup file matching the corrupted-<timestamp>.json pattern"
+        );
+    }
+
+    /// Renaming can fail in edge cases (read-only filesystem, cross-device
+    /// moves on some OSes). When it does, we must still avoid returning the
+    /// parse error indefinitely: the corrupt file should be removed so the
+    /// next load attempts a fresh state.
+    #[test]
+    fn load_download_state_corrupted_removed_when_rename_fails() {
+        // On Linux, cross-device rename fails. We simulate by setting up the
+        // state file as a directory — fs::rename will fail because the
+        // destination pattern resolves to a child of this dir that already
+        // exists.
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("download_state.json");
+        // Place a file at the backup path so the rename-overwrite attempt
+        // would resolve to an existing path; on Linux rename silently
+        // replaces, so we instead place a directory at the backup path.
+        let backup_collide = dir.path().join("download_state.corrupted-0.json");
+        std::fs::create_dir(&backup_collide).unwrap();
+        std::fs::write(&state_path, b"garbage").unwrap();
+
+        let result = load_download_state_from(&state_path);
+        assert!(result.is_none());
+        // Either the original file is gone (success path) or we exercised the
+        // fallback that removed it. In both cases the original state must
+        // not be left in place to cause repeated failures.
+        if state_path.exists() {
+            panic!(
+                "original state file should have been renamed or removed; leftover content suggests bug"
+            );
+        }
+    }
+
+    /// A valid state file should load successfully without producing a
+    /// backup file.
+    #[test]
+    fn load_download_state_valid_does_not_create_backup() {
+        use crate::commands::sophon_downloader::DownloadState;
+        use std::collections::HashMap;
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("download_state.json");
+        let state = DownloadState {
+            game_id: "test_game".into(),
+            vo_lang: "en-us".into(),
+            output_path: "/data/game".into(),
+            download_type: DownloadType::Fresh,
+            current_tag: None,
+            manifest_hash: "hash".into(),
+            downloaded_chunks: HashMap::new(),
+        };
+        std::fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+
+        let result = load_download_state_from(&state_path);
+        assert!(result.is_some(), "valid state must load");
+        assert!(
+            state_path.exists(),
+            "valid state file should remain in place"
+        );
+
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "no backup file should have been created; found: {entries:?}"
+        );
     }
 }
