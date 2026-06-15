@@ -1167,6 +1167,27 @@ pub async fn install(
                 prev_manifest_hash,
                 current_manifest_hash
             );
+            // The cached chunks reference names from the previous manifest.
+            // Filter them down to names that still exist in the new manifest
+            // so we don't waste I/O on MD5-validating chunks that have no
+            // consumer.
+            let manifest_chunk_names: HashSet<String> = installers
+                .iter()
+                .flat_map(|inst| inst.manifest.assets.iter())
+                .flat_map(|asset| asset.asset_chunks.iter())
+                .map(|c| c.chunk_name.clone())
+                .collect();
+            let before = prev_downloaded_chunks.len();
+            prev_downloaded_chunks
+                .retain(|chunk_name, _| manifest_chunk_names.contains(chunk_name));
+            let dropped = before - prev_downloaded_chunks.len();
+            if dropped > 0 {
+                log::warn!(
+                    "Dropped {}/{} stale chunk entries whose names are absent from the new manifest",
+                    dropped,
+                    before
+                );
+            }
         } else {
             log::info!(
                 "Manifest unchanged on resume (hash={}), preserving {} cached chunks",
