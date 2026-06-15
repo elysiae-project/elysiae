@@ -1441,9 +1441,19 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             }
             writer.flush()?;
         }
-        let result = apply_hdiff_patch_from_files(game_dir, &diff_temp, asset);
+        let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            apply_hdiff_patch_from_files(game_dir, &diff_temp, asset)
+        }));
         let _ = fs::remove_file(&diff_temp);
-        return result;
+        match patch_result {
+            Ok(result) => return result,
+            Err(_) => {
+                return Err(SophonError::HDiffPatchFailed {
+                    file: asset.target_file_path.clone(),
+                    error: "HDiff patch panicked".to_string(),
+                });
+            }
+        }
     }
 
     // Stream copy: seek back past magic bytes and copy all chunk data
@@ -1684,6 +1694,7 @@ fn apply_hdiff_patch_from_files(
         // BlankFileMd5Hash represents an empty original file.
         // Verify our freshly-created diff_ref is actually empty before proceeding.
         if !verify_file_hash(&empty_original_path, BLANK_FILE_MD5) {
+            let _ = fs::remove_file(&empty_original_path);
             return Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
                 error: format!(
