@@ -126,6 +126,43 @@ pub enum SophonError {
     InvalidSizeString(String),
 }
 
+impl SophonError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Http(_)
+            | Self::Io(_)
+            | Self::Md5Mismatch { .. }
+            | Self::SizeMismatch { .. }
+            | Self::ResumeFailed { .. }
+            | Self::DownloadFailed { .. }
+            | Self::Decompression(_) => true,
+            Self::Cancelled
+            | Self::NoManifests
+            | Self::NoGameManifest
+            | Self::NoVoiceManifest(_)
+            | Self::NoInstalledVersion
+            | Self::NoPreinstallAvailable
+            | Self::PathTraversal(_)
+            | Self::InvalidAssetName(_)
+            | Self::NoSpaceAvailable { .. }
+            | Self::PatchManifestDecode(_)
+            | Self::PluginValidationFailed(_)
+            | Self::HDiffPatchFailed { .. }
+            | Self::OriginalFileMissing(_)
+            | Self::PreinstallStateInvalid(_)
+            | Self::PatchChunkNotFound(_)
+            | Self::ApiError(_, _)
+            | Self::UnknownGameId(_)
+            | Self::JoinError(_)
+            | Self::Semaphore(_)
+            | Self::ManifestDecode(_)
+            | Self::AssemblyFailed { .. }
+            | Self::IndexOutOfBounds { .. }
+            | Self::InvalidSizeString(_) => false,
+        }
+    }
+}
+
 pub type SophonResult<T> = Result<T, SophonError>;
 
 #[cfg(test)]

@@ -729,6 +729,9 @@ async fn download_chunk_with_retries(
                 // HTTP Range requests.
             }
             Err(e) => {
+                if !e.is_retryable() {
+                    return Err(e);
+                }
                 network_attempts += 1;
                 if network_attempts < MAX_RETRIES {
                     let err_msg = e.to_string();

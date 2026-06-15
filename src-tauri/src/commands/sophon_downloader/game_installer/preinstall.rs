@@ -668,6 +668,9 @@ async fn download_patch_chunk_with_retries(
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_err = e.to_string();
+                if !e.is_retryable() {
+                    return Err(e);
+                }
                 if attempt < max_retries - 1 {
                     log::warn!(
                         "Patch chunk {} failed (attempt {}/{}): {last_err}",
@@ -727,6 +730,9 @@ async fn download_chunk_with_retries(
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_err = e.to_string();
+                if !e.is_retryable() {
+                    return Err(e);
+                }
                 if attempt < MAX_CHUNK_RETRIES - 1 {
                     log::warn!(
                         "Chunk {} failed (attempt {}/{}): {last_err}",
@@ -1827,6 +1833,9 @@ async fn apply_download_over_with_retry(
         match apply_download_over(client, game_dir, state, asset, context, handle).await {
             Ok(()) => return Ok(()),
             Err(e) => {
+                if !e.is_retryable() {
+                    return Err(e);
+                }
                 let err_msg = e.to_string();
                 last_err = Some(e);
                 let is_last = attempt == MAX_RETRIES - 1;
@@ -1842,7 +1851,19 @@ async fn apply_download_over_with_retry(
                     delay.as_millis(),
                     err_msg
                 );
-                tokio::time::sleep(delay).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {},
+                    () = async {
+                        loop {
+                            if handle.is_cancelled() {
+                                return;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                    } => {
+                        return Err(SophonError::Cancelled);
+                    }
+                }
             }
         }
     }
