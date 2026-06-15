@@ -6,7 +6,7 @@ fn main() {
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     compile_error!(
-        "Elysiae is only supported on x64 (x86_64) and ARM. Please target one of these two architectures when building Elysiae"
+        "Elysiae is only supported on x64 (x86_64) and ARM (aarch64) computers. Please target one of these two architectures when building Elysiae"
     );
 
     if !kernel_version_at_least_6_14_0() {
