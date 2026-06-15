@@ -1,16 +1,16 @@
 [
   {
     "type": "file",
-    "url": "https://repo.yarnpkg.com/4.16.0/packages/yarnpkg-cli/bin/yarn.js",
-    "sha512": "5374c94eb4ef6aa8188fb112f20c1aa6569f248d676c5e576e1fd2a1a4d8d87a96df65d9dfe1c2a0252cbe38bda46cf18d955005b81b43cc7607a5c9d56fd2b6",
+    "url": "https://repo.yarnpkg.com/4.17.0/packages/yarnpkg-cli/bin/yarn.js",
+    "sha512": "c2957de2f9025ab14d63b24d0d8be1f1655810e22c341042c27f7ecd017b180ec12db73d69ac366d71b304ef9f069349ce462de96f04f8f1da317f4f762c95ae",
     "dest-filename": "yarn.js",
-    "dest": "flatpak-node/corepack-home/v1/yarn/4.16.0"
+    "dest": "flatpak-node/corepack-home/v1/yarn/4.17.0"
   },
   {
     "type": "inline",
-    "contents": "{\"locator\":{\"name\":\"yarn\",\"reference\":\"4.16.0\"},\"bin\":[\"yarn\",\"yarnpkg\"],\"hash\":\"sha512.5374c94eb4ef6aa8188fb112f20c1aa6569f248d676c5e576e1fd2a1a4d8d87a96df65d9dfe1c2a0252cbe38bda46cf18d955005b81b43cc7607a5c9d56fd2b6\"}",
+    "contents": "{\"locator\":{\"name\":\"yarn\",\"reference\":\"4.17.0\"},\"bin\":[\"yarn\",\"yarnpkg\"],\"hash\":\"sha512.c2957de2f9025ab14d63b24d0d8be1f1655810e22c341042c27f7ecd017b180ec12db73d69ac366d71b304ef9f069349ce462de96f04f8f1da317f4f762c95ae\"}",
     "dest-filename": ".corepack",
-    "dest": "flatpak-node/corepack-home/v1/yarn/4.16.0"
+    "dest": "flatpak-node/corepack-home/v1/yarn/4.17.0"
   },
   {
     "type": "inline",
@@ -36,7 +36,7 @@
       "yarn config set enableOfflineMode true",
       "yarn config set globalFolder -- \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/yarn-berry\"",
       "yarn plugin import \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/flatpak-yarn.js\"",
-      "yarn convertToZip \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/corepack-home/v1/yarn/4.16.0/yarn.js\""
+      "yarn convertToZip \"${FLATPAK_BUILDER_BUILDDIR:?}/flatpak-node/corepack-home/v1/yarn/4.17.0/yarn.js\""
     ],
     "dest": "flatpak-node"
   }
