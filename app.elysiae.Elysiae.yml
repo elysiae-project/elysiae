@@ -30,6 +30,13 @@ modules:
       - download-sources/yarn.json
     build-options:
       append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin:/run/build/Elysiae/flatpak-node/corepack-shims
+      arch:
+        x86-64:
+          env:
+            CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+        aarch64:
+          env:
+            CARGO_BUILD_TARGET: aarch64-unknown-linux-gnu
       env:
         HOME: /run/build/Elysiae
         CARGO_HOME: /run/build/Elysiae/src-tauri/cargo
