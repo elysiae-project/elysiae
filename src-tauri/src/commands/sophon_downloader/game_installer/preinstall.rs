@@ -24,6 +24,7 @@ use super::api::{
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::read_installed_tag;
+use super::{MAX_HASH_RETRIES, MAX_RETRIES, retry_delay};
 use crate::commands::sophon_downloader::api_scrape::{
     DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
 };
@@ -669,10 +670,7 @@ async fn download_patch_chunk_with_retries(
                         attempt + 1,
                         max_retries
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                        100 * (1 << attempt).min(8),
-                    ))
-                    .await;
+                    tokio::time::sleep(retry_delay(attempt as u32)).await;
                 } else {
                     log::warn!(
                         "Patch chunk {} failed (final attempt {}/{}): {last_err}",
@@ -714,10 +712,7 @@ async fn download_chunk_with_retries(
                         attempt + 1,
                         MAX_CHUNK_RETRIES
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                        100 * (1 << attempt).min(8),
-                    ))
-                    .await;
+                    tokio::time::sleep(retry_delay(attempt as u32)).await;
                 } else {
                     log::warn!(
                         "Chunk {} failed (final attempt {}/{}): {last_err}",
@@ -1785,9 +1780,6 @@ async fn apply_download_over_with_retry(
     asset: &PatchAssetInfo,
     context: &DownloadOverContext,
 ) -> SophonResult<()> {
-    const MAX_RETRIES: u32 = 10;
-    const INITIAL_DELAY_MS: u64 = 1000;
-
     let mut last_err = None;
     for attempt in 0..MAX_RETRIES {
         match apply_download_over(client, game_dir, state, asset, context).await {
@@ -1799,9 +1791,7 @@ async fn apply_download_over_with_retry(
                 if is_last {
                     break;
                 }
-                let delay = std::time::Duration::from_millis(
-                    (INITIAL_DELAY_MS * (1 << attempt)).min(30_000),
-                );
+                let delay = retry_delay(attempt as u32);
                 log::warn!(
                     "DownloadOver failed for {} (attempt {}/{}), retrying in {}ms: {}",
                     asset.target_file_path,

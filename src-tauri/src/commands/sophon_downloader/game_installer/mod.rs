@@ -22,6 +22,14 @@ mod integration_tests;
 
 /// Maximum retry attempts for failed chunk downloads.
 pub const MAX_RETRIES: u32 = 10;
+pub const MAX_HASH_RETRIES: u32 = 5;
+
+use std::time::Duration;
+
+pub fn retry_delay(attempt: u32) -> Duration {
+    let exp = 1000u64.saturating_mul(1u64 << attempt.min(5));
+    Duration::from_millis(exp.min(30_000))
+}
 /// Maximum concurrent file assembly tasks.
 pub const ASSEMBLY_CONCURRENCY: usize = 8;
 /// Size of the channel buffer for assembly task scheduling.

@@ -679,7 +679,6 @@ async fn download_chunk_with_retries(
     ctx: &InstallContext,
     handle: &DownloadHandle,
 ) -> SophonResult<()> {
-    const MAX_HASH_RETRIES: u32 = 5;
     let mut network_attempts: u32 = 0;
     let mut hash_failures: u32 = 0;
 
@@ -694,7 +693,7 @@ async fn download_chunk_with_retries(
             Ok(()) => return Ok(()),
             Err(SophonError::Md5Mismatch { .. }) => {
                 hash_failures += 1;
-                if hash_failures > MAX_HASH_RETRIES {
+                if hash_failures >= MAX_HASH_RETRIES {
                     return Err(SophonError::DownloadFailed {
                         chunk: item.chunk.chunk_name.clone(),
                         attempts: hash_failures,
@@ -711,7 +710,7 @@ async fn download_chunk_with_retries(
                     MAX_HASH_RETRIES
                 );
                 tokio::select! {
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                    _ = tokio::time::sleep(retry_delay(hash_failures)) => {},
                     () = async {
                         loop {
                             if handle.is_cancelled() {
@@ -740,7 +739,7 @@ async fn download_chunk_with_retries(
                         ),
                     });
                     tokio::select! {
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                        _ = tokio::time::sleep(retry_delay(network_attempts)) => {},
                         () = async {
                             loop {
                                 if handle.is_cancelled() {
