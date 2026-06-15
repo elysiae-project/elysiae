@@ -306,9 +306,14 @@ pub(crate) fn tbytes_set_rle_single(
         let len = mem_set_step as usize;
         out_cache.read_exact(&mut shared_buffer[..len])?;
         out_cache.seek(SeekFrom::Start(last_pos))?;
-        for i in (0..len).rev() {
-            shared_buffer[i] = shared_buffer[i].wrapping_add(rle_loader.mem_set_value);
-        }
+        // Use slice iterator form so LLVM can emit a broadcast-add
+        // (vpaddb with broadcast on x86_64 AVX2). Iteration direction is
+        // safe in either way because each index only reads and writes
+        // itself.
+        let v = rle_loader.mem_set_value;
+        shared_buffer[..len]
+            .iter_mut()
+            .for_each(|b| *b = b.wrapping_add(v));
         out_cache.write_all(&shared_buffer[..len])?;
     } else {
         let cur = out_cache.position();
@@ -328,10 +333,37 @@ pub(crate) fn tbytes_set_rle_vector_software(
     rle_idx: usize,
     old_idx: usize,
 ) -> std::io::Result<()> {
-    for i in 0..decode_step {
-        buf[rle_idx + i] = buf[rle_idx + i].wrapping_add(buf[old_idx + i]);
+    // Use split_at_mut to obtain two non-overlapping mutable slices from
+    // buf. The pattern relies on the invariant that rle_idx and
+    // (old_idx + decode_step) split the buffer so the two ranges are
+    // disjoint — true for all callers in this codebase. Iter-zip form
+    // enables LLVM autovectorization (vpaddb/AVX2).
+    if rle_idx + decode_step <= old_idx || old_idx + decode_step <= rle_idx {
+        if rle_idx < old_idx {
+            let (lo, rest) = buf.split_at_mut(old_idx);
+            let dst = &mut lo[rle_idx..];
+            let src = &rest[..decode_step];
+            for (d, s) in dst.iter_mut().zip(src.iter()) {
+                *d = d.wrapping_add(*s);
+            }
+        } else {
+            let (lo, rest) = buf.split_at_mut(rle_idx);
+            let dst = &mut rest[..decode_step];
+            let src = &lo[old_idx..old_idx + decode_step];
+            for (d, s) in dst.iter_mut().zip(src.iter()) {
+                *d = d.wrapping_add(*s);
+            }
+        }
+        out_cache.write_all(&buf[rle_idx..rle_idx + decode_step])?;
+    } else {
+        // Overlapping ranges: read immediately before write at the same
+        // index so the add is well-defined serially.
+        for i in 0..decode_step {
+            let v = buf[old_idx + i];
+            buf[rle_idx + i] = buf[rle_idx + i].wrapping_add(v);
+        }
+        out_cache.write_all(&buf[rle_idx..rle_idx + decode_step])?;
     }
-    out_cache.write_all(&buf[rle_idx..rle_idx + decode_step])?;
     rle_loader.mem_copy_length -= decode_step as i64;
     *copy_length -= decode_step as i64;
     Ok(())
