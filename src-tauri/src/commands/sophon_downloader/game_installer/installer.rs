@@ -1012,7 +1012,9 @@ async fn finalize_install(
     }
 
     {
-        let _ = cache::save_verification_cache(&ctx.game_dir, &ctx.verify_cache);
+        if let Err(e) = cache::save_verification_cache(&ctx.game_dir, &ctx.verify_cache) {
+            log::warn!("Failed to save verification cache: {}", e);
+        }
     }
 
     if !deleted_files.is_empty() {
