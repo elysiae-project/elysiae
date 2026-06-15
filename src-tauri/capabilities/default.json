@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -14,25 +16,51 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://*.hoyoverse.com" },
-        { "url": "https://autopatch*.**" },
-        { "url": "https://api.github.com" },
-        { "url": "https://raw.githubusercontent.com" },
-        { "url": "https://codeberg.org" },
-        { "url": "https://assets.elysiae.app/**" }
+        {
+          "url": "https://*.hoyoverse.com"
+        },
+        {
+          "url": "https://autopatch*.**"
+        },
+        {
+          "url": "https://api.github.com"
+        },
+        {
+          "url": "https://raw.githubusercontent.com"
+        },
+        {
+          "url": "https://assets.elysiae.app/**"
+        }
       ]
     },
     {
       "identifier": "shell:allow-execute",
-      "allow": [{ "name": "sh", "cmd": "sh", "args": true }]
+      "allow": [
+        {
+          "name": "sh",
+          "cmd": "sh",
+          "args": true
+        }
+      ]
     },
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$APPDATA/**" }]
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        }
+      ]
     },
     {
       "identifier": "opener:allow-open-path",
-      "allow": [{ "path": "$APPDATA/**" }]
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+        }
+      ]
     },
     "store:default",
     "shell:default",
