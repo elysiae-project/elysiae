@@ -24,9 +24,6 @@ pub enum SophonError {
         tokio::task::JoinError,
     ),
 
-    #[error("Semaphore error: {0}")]
-    Semaphore(String),
-
     #[error("Failed to decode manifest")]
     ManifestDecode(
         #[from]
@@ -154,7 +151,6 @@ impl SophonError {
             | Self::ApiError(_, _)
             | Self::UnknownGameId(_)
             | Self::JoinError(_)
-            | Self::Semaphore(_)
             | Self::ManifestDecode(_)
             | Self::AssemblyFailed { .. }
             | Self::IndexOutOfBounds { .. }
@@ -213,12 +209,6 @@ mod tests {
         let err = SophonError::PathTraversal(PathBuf::from("../../etc/passwd"));
         let msg = err.to_string();
         assert!(msg.contains("../../etc/passwd"));
-    }
-
-    #[test]
-    fn error_from_semaphore_acquire() {
-        let sophon_err = SophonError::Semaphore("no permits available".to_string());
-        assert!(matches!(sophon_err, SophonError::Semaphore(_)));
     }
 
     #[test]
