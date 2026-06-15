@@ -163,7 +163,7 @@ async fn do_download_chunk(
                 // Truncate to expected size: avoids re-downloading when extra
                 // bytes were appended from a previous interrupted write.
                 match tokio::fs::OpenOptions::new().write(true).open(dest).await {
-                    Ok(mut f) => {
+                    Ok(f) => {
                         if let Err(e) = f.set_len(chunk.chunk_size).await {
                             log::warn!(
                                 "Failed to truncate {} to {}: {}; deleting and re-downloading",

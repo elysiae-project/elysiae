@@ -72,6 +72,7 @@ impl PatchSF {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn patch_loop(
     mut diff: &mut dyn Read,
     old: &mut dyn SeekableRead,

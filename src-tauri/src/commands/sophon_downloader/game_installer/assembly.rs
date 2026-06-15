@@ -378,6 +378,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
 /// the given old offset, verify the chunk's decompressed MD5, and write to the
 /// output writer at the new file offset. Used for chunk-level reuse during
 /// updates.
+#[allow(clippy::too_many_arguments)]
 fn write_from_old_file<W: Write + Seek>(
     old_file_path: &Path,
     writer: &mut W,

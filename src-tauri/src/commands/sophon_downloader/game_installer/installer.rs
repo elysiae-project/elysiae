@@ -577,6 +577,7 @@ async fn drain_join_set(
     }
 }
 
+#[allow(clippy::let_and_return)]
 fn spawn_assembly_coordinator(
     ctx: &Arc<InstallContext>,
     assemble_rx: mpsc::Receiver<(usize, usize)>,
@@ -970,6 +971,7 @@ async fn finalize_install(
         assembly_cancel_token.cancel(); // stop assembly before deleting chunks
         let _ = assembly_task.await; // drain before cleanup
         let cd = Arc::clone(&ctx.chunks_dir);
+        #[allow(unused_must_use)]
         tokio::task::spawn_blocking(move || {
             if let Err(e) = fs::remove_dir_all(&*cd) {
                 log::warn!(
