@@ -30,11 +30,11 @@ export const PhotosensitivityModal = () => {
 						Proton
 					</a>
 					to run games on Linux. Due to the nature of the tools Proton uses,
-					applications running through proton are more prone to experience
-					rendering errors that can trigger seizures in certain individuals. If
-					you are one of these individuals, please take caution when using
-					Elysiae and other applications that use Proton. While we expect these
-					issues to be extremely rare, it is best to stay cautious
+					applications running through Proton are more prone to rendering errors
+					that can trigger seizures in certain individuals. If you are sensitive
+					to flashing lights, please take caution when using Elysiae and other
+					applications that use Proton. While these issues are extremely rare,
+					it is best to stay cautious
 				</p>
 				<div class="flex justify-center">
 					<Button

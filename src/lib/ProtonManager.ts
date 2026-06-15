@@ -143,7 +143,7 @@ export const protonJadeiteExec = async (path: string): Promise<void> => {
 	await protonCommand(`${fullJadeitePath} ${fullExePath}`);
 };
 
-export const protonAvailable = async (): Promise<boolean> => {
+export const protonEnvAvailable = async (): Promise<boolean> => {
 	const protonInstallPath = await protonDir();
 	const protonDataDir = await protonData();
 
