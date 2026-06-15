@@ -633,15 +633,18 @@ pub async fn preinstall_download(
         main_manifest_ids: plan.main_manifest_ids.clone(),
     };
 
-    save_preinstall_state(game_dir, &state)?;
+    let tag_str = plan.tag.to_string();
+    let marker_path = PreinstallState::marker_file_path(game_dir, &tag_str);
+    let marker_path_clone = marker_path.clone();
+    tokio::task::spawn_blocking(move || fs::write(&marker_path_clone, &tag_str)).await??;
 
-    {
-        let gd = game_dir.to_path_buf();
-        let tag_str = plan.tag.clone();
-        tokio::task::spawn_blocking(move || {
-            fs::write(PreinstallState::marker_file_path(&gd, &tag_str), &tag_str)
+    if let Err(e) = save_preinstall_state(game_dir, &state) {
+        let marker_path_for_cleanup = marker_path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = fs::remove_file(&marker_path_for_cleanup);
         })
-        .await??;
+        .await;
+        return Err(e);
     }
 
     Ok(state)
