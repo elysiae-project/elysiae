@@ -970,8 +970,14 @@ async fn finalize_install(
         assembly_cancel_token.cancel(); // stop assembly before deleting chunks
         let _ = assembly_task.await; // drain before cleanup
         let cd = Arc::clone(&ctx.chunks_dir);
-        let _ = tokio::task::spawn_blocking(move || {
-            let _ = fs::remove_dir_all(&*cd);
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = fs::remove_dir_all(&*cd) {
+                log::warn!(
+                    "Failed to remove chunks directory {} on cancel: {}",
+                    cd.display(),
+                    e
+                );
+            }
         })
         .await;
         return Err(SophonError::Cancelled);
