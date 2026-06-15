@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>app.elysiae.Elysiae</id>
   <name>Elysiae</name>
-  <summary>Universal "Anime Game" Launcher</summary>
+  <summary>Unified "Anime Game" Launcher</summary>
   <developer id="app.elysiae">
     <name>The Elysiae Project</name>
   </developer>
@@ -10,7 +10,14 @@
   <project_license>BSD-3-Clause</project_license>
   <description>
     <p>Elysiae is a universal "Anime Game" launcher for Linux hosts</p>
-    <p>Elysiae is built to be efficient, have a beautiful UI, use modern/cutting-edge wine tooling, and serve as a replacement for the aag launchers and other Linux-based launchers/</p>
+    <p>Elysiae is built from the ground up to allow for several features, including:</p>
+    <ul>
+      <li>A unified environment, preventing unnecessary bloat (compared to projects from an-anime-team)</li>
+      <li>The use of Proton instead of wine for more performance and stability when running games</li>
+      <li>x86 and arm support</li>
+      <li>Faster downloads (compared to projects from an-anime-team)</li>
+      <li>Active support and more features planned down the line</li>
+    </ul>
   </description>
   <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
   <categories>
@@ -30,7 +37,6 @@
   </recommends>
   <supports>
     <control>gamepad</control>
-    <!--No clue if this works, I don't own a controller to be able to test it with-->
     <control>touch</control>
   </supports>
   <url type="homepage">https://elysiae.app</url>
