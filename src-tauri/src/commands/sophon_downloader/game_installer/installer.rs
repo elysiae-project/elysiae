@@ -419,12 +419,19 @@ fn register_chunks_for_file(
 
     let pending = Arc::new(AtomicUsize::new(chunk_count));
     for chunk in downloadable {
+        // Borrow the chunk_name once and reuse through &str to avoid 3×
+        // heap allocations per chunk (entry + refcount + index). The key
+        // types in the maps own `String`, so each entry() / insert() needs
+        // an owned key — we'll clone exactly once when we actually commit
+        // a brand-new item into the maps.
+        let name = chunk.chunk_name.as_str();
+
         chunk_to_files
             .entry(chunk.chunk_name.clone())
             .or_default()
             .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
 
-        let is_pre = pre_downloaded.contains(&chunk.chunk_name);
+        let is_pre = pre_downloaded.contains(name);
 
         match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
             Entry::Vacant(vacant) => {
@@ -439,7 +446,7 @@ fn register_chunks_for_file(
             }
             Entry::Occupied(mut occupied) => {
                 *occupied.get_mut() += 1;
-                if is_pre && let Some(&idx) = download_items_index.get(&chunk.chunk_name) {
+                if is_pre && let Some(&idx) = download_items_index.get(name) {
                     download_items[idx].is_pre_downloaded = is_pre;
                 }
             }
