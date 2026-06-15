@@ -701,8 +701,6 @@ async fn download_patch_chunk_with_retries(
     })
 }
 
-const MAX_CHUNK_RETRIES: u32 = 10;
-
 async fn download_chunk_with_retries(
     client: &Client,
     chunk_download: &DownloadInfo,
@@ -712,7 +710,7 @@ async fn download_chunk_with_retries(
 ) -> SophonResult<()> {
     let mut last_err = String::new();
 
-    for attempt in 0..MAX_CHUNK_RETRIES {
+    for attempt in 0..MAX_RETRIES {
         if handle.is_cancelled() {
             return Err(SophonError::Cancelled);
         }
@@ -723,12 +721,12 @@ async fn download_chunk_with_retries(
                 if !e.is_retryable() {
                     return Err(e);
                 }
-                if attempt < MAX_CHUNK_RETRIES - 1 {
+                if attempt < MAX_RETRIES - 1 {
                     log::warn!(
                         "Chunk {} failed (attempt {}/{}): {last_err}",
                         chunk.chunk_name,
                         attempt + 1,
-                        MAX_CHUNK_RETRIES
+                        MAX_RETRIES
                     );
                     let delay = retry_delay(attempt);
                     if cancelable_sleep(handle, delay).await.is_err() {
@@ -739,7 +737,7 @@ async fn download_chunk_with_retries(
                         "Chunk {} failed (final attempt {}/{}): {last_err}",
                         chunk.chunk_name,
                         attempt + 1,
-                        MAX_CHUNK_RETRIES
+                        MAX_RETRIES
                     );
                 }
             }
@@ -748,7 +746,7 @@ async fn download_chunk_with_retries(
 
     Err(SophonError::DownloadFailed {
         chunk: chunk.chunk_name.clone(),
-        attempts: MAX_CHUNK_RETRIES,
+        attempts: MAX_RETRIES,
         error: last_err,
     })
 }
