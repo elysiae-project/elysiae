@@ -840,7 +840,7 @@ async fn download_patch_chunk_inner(
     Ok(())
 }
 
-fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
+pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     let Ok(file) = fs::File::open(path) else {
         return false;
     };
@@ -865,7 +865,7 @@ fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     actual == expected_md5
 }
 
-fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
+pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
     let Ok(file) = fs::File::open(path) else {
         log::warn!(
             "Failed to open file for XXH64 verification: {}",
@@ -897,7 +897,7 @@ fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
     actual == expected_xxh64
 }
 
-fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
+pub(super) fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
     if expected_hash.is_empty() {
         return true;
     }
@@ -1192,27 +1192,13 @@ fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
 }
 
 fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
-    let Ok(file) = fs::File::open(path) else {
-        return false;
-    };
-    let Ok(metadata) = file.metadata() else {
+    let Ok(metadata) = fs::metadata(path) else {
         return false;
     };
     if metadata.len() != expected_size {
         return false;
     }
-    let mut hasher = Md5::new();
-    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => hasher.update(&buf[..n]),
-            Err(_) => return false,
-        }
-    }
-    let actual = hex::encode(hasher.finalize());
-    actual == expected_md5
+    verify_file_hash(path, expected_md5)
 }
 
 #[derive(Clone)]

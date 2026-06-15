@@ -93,6 +93,43 @@ async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+async fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
+    let mut file = tokio::io::BufReader::with_capacity(
+        super::FILE_WRITE_BUFFER_SIZE,
+        tokio::fs::File::open(path).await?,
+    );
+    let mut hasher = twox_hash::XxHash64::default();
+
+    let mut buf = vec![0u8; super::MD5_HASH_BUFFER_SIZE];
+    loop {
+        let n = file.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        std::hash::Hasher::write(&mut hasher, &buf[..n]);
+    }
+
+    Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)))
+}
+
+async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonResult<bool> {
+    if expected_hash.is_empty() {
+        return Ok(true);
+    }
+    let actual = match expected_hash.len() {
+        32 => compute_file_md5(path).await?,
+        16 => compute_file_xxh64(path).await?,
+        _ => {
+            log::warn!(
+                "Unknown hash format (length={}) for verification",
+                expected_hash.len()
+            );
+            return Ok(false);
+        }
+    };
+    Ok(actual == expected_hash.to_ascii_lowercase())
+}
+
 pub async fn download_chunk(
     client: &Client,
     chunk_download: &DownloadInfo,
@@ -124,10 +161,8 @@ async fn do_download_chunk(
         if existing_size > chunk.chunk_size {
             let _ = tokio::fs::remove_file(dest).await;
         } else {
-            // Verify MD5 of existing complete file
             if !chunk.chunk_compressed_hash_md5.is_empty() {
-                let actual = compute_file_md5(dest).await?;
-                if actual == chunk.chunk_compressed_hash_md5 {
+                if verify_existing_file_hash(dest, &chunk.chunk_compressed_hash_md5).await? {
                     return Ok(());
                 }
                 let _ = tokio::fs::remove_file(dest).await;
@@ -269,15 +304,43 @@ async fn download_full_file_with_response(
     }
 
     if !chunk.chunk_compressed_hash_md5.is_empty() {
-        let actual = hex::encode(hasher.finalize());
-        if actual != chunk.chunk_compressed_hash_md5 {
-            let _ = tokio::fs::remove_file(dest).await;
-            return Err(SophonError::Md5Mismatch {
-                item: chunk.chunk_name.clone(),
-                expected: chunk.chunk_compressed_hash_md5.clone(),
-                actual,
-            });
+        let expected = &chunk.chunk_compressed_hash_md5;
+        match expected.len() {
+            32 => {
+                let actual = hex::encode(hasher.finalize());
+                if actual != expected.to_ascii_lowercase() {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Md5Mismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: expected.clone(),
+                        actual,
+                    });
+                }
+            }
+            16 => {
+                drop(file);
+                if !verify_existing_file_hash(dest, expected).await? {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Md5Mismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: expected.clone(),
+                        actual: "(xxh64 mismatch)".to_string(),
+                    });
+                }
+            }
+            _ => {
+                log::warn!(
+                    "Unknown compressed hash format (length={}) for chunk {}",
+                    expected.len(),
+                    chunk.chunk_name
+                );
+            }
         }
+    } else {
+        log::warn!(
+            "Chunk {} downloaded without compressed hash verification",
+            chunk.chunk_name
+        );
     }
 
     Ok(())
@@ -390,17 +453,46 @@ async fn download_with_resume(
         });
     }
 
-    // Verify MD5 using the accumulated incremental hash (no full-file re-read)
+    // Verify hash using the accumulated incremental hash (no full-file re-read for
+    // MD5)
     if !chunk.chunk_compressed_hash_md5.is_empty() {
-        let actual = hex::encode(hasher.finalize());
-        if actual != chunk.chunk_compressed_hash_md5 {
-            let _ = tokio::fs::remove_file(dest).await;
-            return Err(SophonError::Md5Mismatch {
-                item: chunk.chunk_name.clone(),
-                expected: chunk.chunk_compressed_hash_md5.clone(),
-                actual,
-            });
+        let expected = &chunk.chunk_compressed_hash_md5;
+        match expected.len() {
+            32 => {
+                let actual = hex::encode(hasher.finalize());
+                if actual != expected.to_ascii_lowercase() {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Md5Mismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: expected.clone(),
+                        actual,
+                    });
+                }
+            }
+            16 => {
+                drop(file);
+                if !verify_existing_file_hash(dest, expected).await? {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Md5Mismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: expected.clone(),
+                        actual: "(xxh64 mismatch)".to_string(),
+                    });
+                }
+            }
+            _ => {
+                log::warn!(
+                    "Unknown compressed hash format (length={}) for chunk {}",
+                    expected.len(),
+                    chunk.chunk_name
+                );
+            }
         }
+    } else {
+        log::warn!(
+            "Chunk {} downloaded without compressed hash verification",
+            chunk.chunk_name
+        );
     }
 
     Ok(())
@@ -544,7 +636,7 @@ mod tests {
         let chunk = make_chunk(
             "test_chunk",
             data.len() as u64,
-            "badmd5hash00000000000000000",
+            "badmd5hash0000000000000000000000",
         );
         let dl_info = make_download_info(&server);
 
@@ -951,5 +1043,64 @@ mod tests {
         let bad_path = std::path::PathBuf::from("/nonexistent_path_xyzzy_42");
         assert!(check_available_space(&bad_path, 0).is_ok());
         assert!(check_available_space(&bad_path, u64::MAX).is_ok());
+    }
+
+    #[tokio::test]
+    async fn download_chunk_xxh64_hash_verified() {
+        use std::hash::Hasher;
+        let server = MockServer::start().await;
+        let data = b"hello world xxh64 test data".to_vec();
+        let mut hasher = twox_hash::XxHash64::default();
+        hasher.write(&data);
+        let expected_xxh64 = format!("{:016x}", hasher.finish());
+
+        let chunk = make_chunk("test_chunk", data.len() as u64, &expected_xxh64);
+        let dl_info = make_download_info(&server);
+
+        Mock::given(method("GET"))
+            .and(path("chunks/test_chunk"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let client = Client::new();
+        let dest = dest_path();
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        assert!(
+            result.is_ok(),
+            "expected Ok with matching XXH64, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_chunk_xxh64_mismatch() {
+        let server = MockServer::start().await;
+        let data = b"hello world xxh64 test data".to_vec();
+        let chunk = make_chunk("test_chunk", data.len() as u64, "0000000000000000");
+        let dl_info = make_download_info(&server);
+
+        Mock::given(method("GET"))
+            .and(path("chunks/test_chunk"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let client = Client::new();
+        let dest = dest_path();
+        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SophonError::Md5Mismatch { .. }),
+            "expected Md5Mismatch for XXH64, got: {err:?}"
+        );
     }
 }
