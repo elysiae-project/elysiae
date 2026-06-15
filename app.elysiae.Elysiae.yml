@@ -19,6 +19,8 @@ finish-args:
   - --share=network
   - --filesystem=xdg-run
   - --filesystem=xdg-desktop
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.OpenURI
 modules:
   - name: Elysiae
     buildsystem: simple
