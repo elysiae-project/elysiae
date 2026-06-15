@@ -533,6 +533,7 @@ pub async fn preinstall_download(
                         &chunk_path,
                         &chunk_info.patch_md5,
                         10,
+                        &handle,
                     )
                     .await?;
 
@@ -653,12 +654,16 @@ async fn download_patch_chunk_with_retries(
     dest: &Path,
     expected_md5: &str,
     max_retries: u32,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     validate_patch_name(patch_name)?;
     let url = diff_download.url_for(patch_name);
     let mut last_err = String::new();
 
     for attempt in 0..max_retries {
+        if handle.is_cancelled() {
+            return Err(SophonError::Cancelled);
+        }
         match download_patch_chunk_inner(client, &url, dest, expected_md5).await {
             Ok(()) => return Ok(()),
             Err(e) => {
@@ -670,7 +675,20 @@ async fn download_patch_chunk_with_retries(
                         attempt + 1,
                         max_retries
                     );
-                    tokio::time::sleep(retry_delay(attempt as u32)).await;
+                    let delay = retry_delay(attempt as u32);
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {},
+                        () = async {
+                            loop {
+                                if handle.is_cancelled() {
+                                    return;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            }
+                        } => {
+                            return Err(SophonError::Cancelled);
+                        }
+                    }
                 } else {
                     log::warn!(
                         "Patch chunk {} failed (final attempt {}/{}): {last_err}",
@@ -697,10 +715,14 @@ async fn download_chunk_with_retries(
     chunk_download: &DownloadInfo,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     let mut last_err = String::new();
 
     for attempt in 0..MAX_CHUNK_RETRIES {
+        if handle.is_cancelled() {
+            return Err(SophonError::Cancelled);
+        }
         match super::download::download_chunk(client, chunk_download, chunk, dest).await {
             Ok(()) => return Ok(()),
             Err(e) => {
@@ -712,7 +734,20 @@ async fn download_chunk_with_retries(
                         attempt + 1,
                         MAX_CHUNK_RETRIES
                     );
-                    tokio::time::sleep(retry_delay(attempt as u32)).await;
+                    let delay = retry_delay(attempt as u32);
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {},
+                        () = async {
+                            loop {
+                                if handle.is_cancelled() {
+                                    return;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            }
+                        } => {
+                            return Err(SophonError::Cancelled);
+                        }
+                    }
                 } else {
                     log::warn!(
                         "Chunk {} failed (final attempt {}/{}): {last_err}",
@@ -1014,6 +1049,7 @@ pub async fn apply_preinstall(
                         &state,
                         asset,
                         &download_over_context,
+                        handle,
                     )
                     .await?;
                 }
@@ -1079,6 +1115,7 @@ pub async fn apply_preinstall(
                         &state,
                         asset,
                         &download_over_context,
+                        handle,
                     )
                     .await?;
                 }
@@ -1090,6 +1127,7 @@ pub async fn apply_preinstall(
                     &state,
                     asset,
                     &download_over_context,
+                    handle,
                 )
                 .await?;
             }
@@ -1779,10 +1817,14 @@ async fn apply_download_over_with_retry(
     state: &PreinstallState,
     asset: &PatchAssetInfo,
     context: &DownloadOverContext,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     let mut last_err = None;
     for attempt in 0..MAX_RETRIES {
-        match apply_download_over(client, game_dir, state, asset, context).await {
+        if handle.is_cancelled() {
+            return Err(SophonError::Cancelled);
+        }
+        match apply_download_over(client, game_dir, state, asset, context, handle).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 let err_msg = e.to_string();
@@ -1817,6 +1859,7 @@ async fn apply_download_over(
     _state: &PreinstallState,
     asset: &PatchAssetInfo,
     context: &DownloadOverContext,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
 
@@ -1844,16 +1887,17 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || fs::create_dir_all(&cd)).await??;
     }
 
-    let chunk_futures =
-        file_entry.asset_chunks.iter().map(|chunk| {
-            let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
-            let client = client.clone();
-            let chunk_download = chunk_download.clone();
-            let chunk = chunk.clone();
-            async move {
-                download_chunk_with_retries(&client, &chunk_download, &chunk, &chunk_path).await
-            }
-        });
+    let chunk_futures = file_entry.asset_chunks.iter().map(|chunk| {
+        let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
+        let client = client.clone();
+        let chunk_download = chunk_download.clone();
+        let chunk = chunk.clone();
+        let handle = handle.clone();
+        async move {
+            download_chunk_with_retries(&client, &chunk_download, &chunk, &chunk_path, &handle)
+                .await
+        }
+    });
     try_join_all(chunk_futures).await?;
 
     {
