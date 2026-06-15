@@ -809,6 +809,13 @@ pub async fn sophon_apply_preinstall(
     app_handle: AppHandle,
     client: State<'_, HttpClient>,
 ) -> Result<(), String> {
+    // Validate preinstall_tag to prevent path traversal attacks.
+    // The tag is interpolated directly into state file paths; an attacker
+    // controlling the frontend (or a supply-chain compromised bundle)
+    // could pass "..\..\etc\cron.daily/evil" to access files outside
+    // game_dir. Reject any component that would produce path traversal.
+    game_installer::validate_asset_name(&preinstall_tag).map_err(|e| e.to_string())?;
+
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)

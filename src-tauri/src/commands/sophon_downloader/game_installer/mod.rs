@@ -108,6 +108,7 @@ pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
     fs::write(version_file_path(game_dir), tag)
 }
 
+pub use assembly::validate_asset_name;
 pub use error::SophonError;
 pub use handle::DownloadHandle;
 pub use installer::{
