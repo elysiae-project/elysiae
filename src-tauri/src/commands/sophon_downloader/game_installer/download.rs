@@ -208,11 +208,12 @@ async fn download_full_file_with_response(
     if let Some(len) = content_length
         && len != chunk.chunk_size
     {
-        return Err(SophonError::SizeMismatch {
-            item: chunk.chunk_name.clone(),
-            expected: chunk.chunk_size,
-            actual: len,
-        });
+        log::warn!(
+            "Content-Length ({}) != expected chunk_size ({}) for {}, proceeding anyway",
+            len,
+            chunk.chunk_size,
+            chunk.chunk_name
+        );
     }
 
     check_available_space(dest, chunk.chunk_size)?;
