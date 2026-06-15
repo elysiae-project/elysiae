@@ -2091,6 +2091,108 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    /// When a chunk download recovers via HTTP Range resume and still fails
+    /// MD5 verification, the partial file must be discarded before retrying.
+    /// Otherwise the next attempt would append fresh bytes on top of
+    /// corrupted ones and the MD5 would still never match.
+    #[tokio::test]
+    async fn download_chunk_with_retries_mismatch_discards_partial() {
+        use crate::commands::sophon_downloader::api_scrape::Compression;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let data = b"chunk payload that has the wrong hash".to_vec();
+        // Intentionally wrong hash so the chunk always fails MD5 verification.
+        let wrong_md5 = "00000000000000000000000000000000";
+
+        let chunk = SophonManifestAssetChunk {
+            chunk_name: "discard_partial_chunk".to_string(),
+            chunk_decompressed_hash_md5: String::new(),
+            chunk_on_file_offset: 0,
+            chunk_size: data.len() as u64,
+            chunk_size_decompressed: data.len() as u64,
+            chunk_compressed_hash_xxh: 0,
+            chunk_compressed_hash_md5: wrong_md5.to_string(),
+            chunk_old_offset: -1,
+        };
+
+        let dl_info = Arc::new(DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: format!("{}/", server.uri()),
+            url_suffix: "chunks".to_string(),
+        });
+
+        Mock::given(method("GET"))
+            .and(path("chunks/discard_partial_chunk"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let item = DownloadItem {
+            chunk,
+            client: Arc::new(Client::new()),
+            chunk_download: dl_info,
+            is_pre_downloaded: false,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("discard_partial_chunk.zstd");
+        // Pre-create the file so we can check whether it gets deleted.
+        tokio::fs::write(&dest, b"corrupted-existing-content")
+            .await
+            .unwrap();
+
+        let ctx = Arc::new(InstallContext {
+            chunks_dir: Arc::new(dir.path().to_path_buf()),
+            game_dir: dir.path().to_path_buf(),
+            all_tmp_dirs: Arc::new(vec![]),
+            all_files: Arc::new(vec![]),
+            downloaded_bytes: Arc::new(AtomicU64::new(0)),
+            assembled_files: Arc::new(AtomicU64::new(0)),
+            total_bytes: 0,
+            total_files: 0,
+            resume_bytes_offset: Arc::new(AtomicU64::new(0)),
+            verify_cache: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(DashMap::new()),
+            last_assembly_update: Arc::new(Mutex::new(Instant::now())),
+            last_update: Arc::new(Mutex::new(Instant::now())),
+            last_speed_bytes: Arc::new(AtomicU64::new(0)),
+            last_speed_time: Arc::new(Mutex::new(Instant::now())),
+            updater: Arc::new(|_| {}),
+            downloaded_chunks: Arc::new(DashMap::new()),
+            chunks_since_save: Arc::new(AtomicU64::new(0)),
+            last_save: Arc::new(Mutex::new(None)),
+            state_saver: Arc::new(|_| {}),
+            adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
+        });
+
+        let handle = DownloadHandle::new();
+
+        let result = download_chunk_with_retries(&item, &dest, &ctx, &handle).await;
+        // After MAX_HASH_RETRIES attempts, the operation should fail; the
+        // point of this test is that the partial file was discarded on each
+        // Md5Mismatch retry (so the retry attempt always starts from size 0).
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("hash verification failed"),
+            "expected hash failure, got: {err_msg}"
+        );
+        // The destination file must NOT exist after the failures because we
+        // discarded it on every mismatch.
+        assert!(
+            !dest.exists(),
+            "partial file should be deleted after MD5 mismatch retries"
+        );
+    }
+
     #[test]
     fn compute_totals_filters_old_reuse_chunks() {
         let chunk_new = SophonManifestAssetChunk {
