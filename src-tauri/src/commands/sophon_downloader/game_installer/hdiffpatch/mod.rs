@@ -37,7 +37,6 @@ impl std::str::FromStr for CompressionMode {
 struct HeaderInfo {
     comp_mode: CompressionMode,
     is_single_compressed_diff: bool,
-    patch_path: String,
     step_mem_size: i64,
     old_data_size: i64,
     new_data_size: i64,
@@ -185,7 +184,6 @@ impl HDiff {
 
         header_info.comp_mode = h_info_arr[1].parse()?;
         header_info.is_single_compressed_diff = p_file_ver == 20;
-        header_info.patch_path = self.diff_path.clone();
 
         if header_info.is_single_compressed_diff {
             Self::read_single_file_header(&mut diff_file, &mut header_info)?;
@@ -938,7 +936,6 @@ mod tests {
         let info = HeaderInfo::default();
         assert_eq!(info.comp_mode, CompressionMode::Nocomp);
         assert!(!info.is_single_compressed_diff);
-        assert_eq!(info.patch_path, "");
         assert_eq!(info.step_mem_size, 0);
         assert_eq!(info.old_data_size, 0);
         assert_eq!(info.new_data_size, 0);
