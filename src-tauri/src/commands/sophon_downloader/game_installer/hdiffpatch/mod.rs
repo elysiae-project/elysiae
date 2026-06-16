@@ -301,11 +301,11 @@ impl HDiff {
         }
 
         Self::get_diff_chunk_info(sr, &mut header_info.chunk_info, type_end_pos)?;
-        header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 1)
+        header_info.compressed_count = ((header_info.chunk_info.compress_cover_buf_size > 0)
             as i64)
-            + ((header_info.chunk_info.compress_rle_ctrl_buf_size > 1) as i64)
-            + ((header_info.chunk_info.compress_rle_code_buf_size > 1) as i64)
-            + ((header_info.chunk_info.compress_new_data_diff_size > 1) as i64);
+            + ((header_info.chunk_info.compress_rle_ctrl_buf_size > 0) as i64)
+            + ((header_info.chunk_info.compress_rle_code_buf_size > 0) as i64)
+            + ((header_info.chunk_info.compress_new_data_diff_size > 0) as i64);
         Ok(())
     }
 
@@ -1429,6 +1429,34 @@ mod tests {
         assert_eq!(
             header_info.compressed_count, 1,
             "one compress field > 1 should give count of 1"
+        );
+    }
+
+    /// Per the HDiff format, any non-zero compress_*_size counts as a
+    /// compressed section. A value of 1 is valid (e.g., when a compressor
+    /// collapses 2+ bytes to a single byte). The compressed_count must
+    /// reflect this.
+    #[test]
+    fn read_non_single_file_header_one_byte_compressed_counts() {
+        use std::io::Cursor;
+        let data = vec![
+            0x64, 0x32, // new_data_size=100, old_data_size=50
+            0x00, // cover_count = 0
+            0x00, // cover_buf_size = 0
+            0x01, // compress_cover_buf_size = 1 (single compressed byte)
+            0x00, // rle_ctrl_buf_size = 0
+            0x00, // compress_rle_ctrl_buf_size = 0
+            0x00, // rle_code_buf_size = 0
+            0x00, // compress_rle_code_buf_size = 0
+            0x00, // new_data_diff_size = 0
+            0x00, // compress_new_data_diff_size = 0
+        ];
+        let mut cursor = Cursor::new(data);
+        let mut header_info = HeaderInfo::default();
+        HDiff::read_non_single_file_header(&mut cursor, &mut header_info).unwrap();
+        assert_eq!(
+            header_info.compressed_count, 1,
+            "compress_cover_buf_size == 1 must count as compressed"
         );
     }
 }
