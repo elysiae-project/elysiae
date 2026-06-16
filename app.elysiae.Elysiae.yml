@@ -17,8 +17,8 @@ finish-args:
   - --device=dri
   - --share=ipc
   - --share=network
-  - --filesystem=xdg-run
-  - --filesystem=xdg-desktop
+  - --filesystem=xdg-run/path
+  - --filesystem=xdg-desktop/path
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.portal.OpenURI
 modules:
