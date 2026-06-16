@@ -402,6 +402,40 @@ pub async fn build_preinstall_plan(
 
     let diff_download = diff_download.ok_or(SophonError::NoGameManifest)?;
 
+    // Main-asset sweep: walk every main-manifest asset and emit DownloadOver
+    // for any file not already covered by the patch manifest. Without this,
+    // brand-new files introduced in the target version are silently dropped
+    // from the preinstall plan.
+    for (matching_field, meta) in main_by_field.iter() {
+        let manifest_result =
+            fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        for asset in &manifest_result.manifest.assets {
+            if asset.is_directory() {
+                seen_patch_targets.insert(asset.asset_name.clone());
+                continue;
+            }
+            if seen_patch_targets.contains(asset.asset_name.as_str()) {
+                continue;
+            }
+            all_patch_assets.push(PatchAssetInfo {
+                target_file_path: asset.asset_name.clone(),
+                target_file_size: asset.asset_size,
+                target_file_hash: asset.asset_hash_md5.clone(),
+                patch_method: PatchMethod::DownloadOver,
+                patch_name: String::new(),
+                patch_hash: String::new(),
+                patch_offset: 0,
+                patch_size: 0,
+                patch_chunk_length: 0,
+                original_file_path: None,
+                original_file_hash: None,
+                original_file_size: None,
+                matching_field: matching_field.to_string(),
+            });
+            seen_patch_targets.insert(asset.asset_name.clone());
+        }
+    }
+
     Ok(PreinstallPlan {
         patch_assets: all_patch_assets,
         deleted_files: all_deleted_files,
