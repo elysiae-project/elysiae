@@ -616,12 +616,12 @@ pub(crate) fn enumerate_cover_headers(
     CoverHeaderIterator::new(cover_reader, cover_size, cover_count).collect()
 }
 
-#[allow(dead_code)]
-pub(crate) fn enumerate_cover_headers_checked(
-    cover_reader: &mut dyn Read,
+#[allow(dead_code, clippy::needless_lifetimes)]
+pub(crate) fn enumerate_cover_headers_checked<'a>(
+    cover_reader: &'a mut dyn Read,
     cover_size: i64,
     cover_count: i64,
-) -> std::io::Result<CoverHeaderIterator> {
+) -> std::io::Result<CoverHeaderIterator<'a>> {
     if cover_count < 0 {
         return Err(std::io::Error::other("cover_count is negative"));
     }
