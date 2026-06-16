@@ -27,7 +27,6 @@ pub struct AdaptiveSemaphore {
     notify: Notify,
     target: AtomicUsize,
     active: AtomicUsize,
-    total_bytes: AtomicU64,
     ewma_throughput_mbps: AtomicU64,
     best_throughput_mbps: AtomicU64,
     window_start: Mutex<Instant>,
@@ -42,7 +41,6 @@ impl AdaptiveSemaphore {
             notify: Notify::new(),
             target: AtomicUsize::new(initial),
             active: AtomicUsize::new(0),
-            total_bytes: AtomicU64::new(0),
             ewma_throughput_mbps: AtomicU64::new(0),
             best_throughput_mbps: AtomicU64::new(0),
             window_start: Mutex::new(Instant::now()),
@@ -75,7 +73,6 @@ impl AdaptiveSemaphore {
     }
 
     pub fn record_bytes(&self, bytes: u64) {
-        self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
         self.window_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
@@ -107,7 +104,7 @@ impl AdaptiveSemaphore {
         let throughput_bps = window_bytes as f64 / elapsed;
         let throughput_mbps = throughput_bps / 1_048_576.0;
 
-        let prev_ewma_raw = self.ewma_throughput_mbps.load(Ordering::Relaxed);
+        let prev_ewma_raw = self.ewma_throughput_mbps.load(Ordering::Acquire);
         let prev_ewma = prev_ewma_raw as f64 / THROUGHPUT_SCALE;
         let new_ewma = if prev_ewma == 0.0 {
             throughput_mbps
@@ -115,9 +112,9 @@ impl AdaptiveSemaphore {
             EWMA_ALPHA * throughput_mbps + (1.0 - EWMA_ALPHA) * prev_ewma
         };
         self.ewma_throughput_mbps
-            .store((new_ewma * THROUGHPUT_SCALE) as u64, Ordering::Relaxed);
+            .store((new_ewma * THROUGHPUT_SCALE) as u64, Ordering::Release);
 
-        let best_raw = self.best_throughput_mbps.load(Ordering::Relaxed);
+        let best_raw = self.best_throughput_mbps.load(Ordering::Acquire);
         let best = if best_raw == 0 {
             0.0
         } else {
@@ -128,7 +125,7 @@ impl AdaptiveSemaphore {
         let effective_best = if new_ewma > best { new_ewma } else { best };
         self.best_throughput_mbps.store(
             (effective_best * THROUGHPUT_SCALE) as u64,
-            Ordering::Relaxed,
+            Ordering::Release,
         );
 
         let current = self.target.load(Ordering::Acquire);
@@ -140,7 +137,7 @@ impl AdaptiveSemaphore {
         }
 
         self.target.store(new_target, Ordering::Release);
-        self.notify.notify_waiters();
+        self.notify.notify_one();
         *window_start = now;
         new_target
     }
@@ -384,7 +381,6 @@ mod tests {
         let sem = AdaptiveSemaphore::new();
         sem.record_bytes(100);
         sem.record_bytes(200);
-        assert_eq!(sem.total_bytes.load(Ordering::Relaxed), 300);
         assert_eq!(sem.window_bytes.load(Ordering::Relaxed), 300);
     }
 
