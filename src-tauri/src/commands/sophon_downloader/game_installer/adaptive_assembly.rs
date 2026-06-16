@@ -78,56 +78,17 @@ impl Default for AdaptiveAssembly {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn available_ram_mb() -> u64 {
-    let Ok(contents) = std::fs::read_to_string("/proc/meminfo") else {
+    use std::sync::{Mutex, OnceLock};
+    use sysinfo::System;
+
+    static SYS: OnceLock<Mutex<System>> = OnceLock::new();
+    let sys = SYS.get_or_init(|| Mutex::new(System::new()));
+    let Ok(mut guard) = sys.lock() else {
         return u64::MAX;
     };
-    for line in contents.lines() {
-        if line.starts_with("MemAvailable:")
-            && let Ok(kb) = line.split_whitespace().nth(1).unwrap_or("0").parse::<u64>()
-        {
-            return kb / 1024;
-        }
-    }
-    u64::MAX
-}
-
-#[cfg(target_os = "macos")]
-fn available_ram_mb() -> u64 {
-    unsafe {
-        let mut vm_stats: libc::vm_statistics64 = std::mem::zeroed();
-        let mut count = (std::mem::size_of::<libc::vm_statistics64>()
-            / std::mem::size_of::<libc::natural_t>()) as u32;
-        let result = libc::host_statistics64(
-            libc::mach_host_self(),
-            libc::HOST_VM_INFO64,
-            &mut vm_stats as *mut _ as *mut i32,
-            &mut count,
-        );
-        if result != libc::KERN_SUCCESS {
-            return u64::MAX;
-        }
-        let page_size_raw = libc::sysconf(libc::_SC_PAGESIZE);
-        if page_size_raw <= 0 {
-            return u64::MAX;
-        }
-        let page_size = page_size_raw as u64;
-        let available_pages = (vm_stats.free_count as u64)
-            + (vm_stats.inactive_count as u64)
-            + (vm_stats.speculative_count as u64);
-        available_pages.saturating_mul(page_size) / (1024 * 1024)
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn available_ram_mb() -> u64 {
-    u64::MAX
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn available_ram_mb() -> u64 {
-    u64::MAX
+    guard.refresh_memory();
+    guard.available_memory() / (1024 * 1024)
 }
 
 #[cfg(test)]
@@ -158,7 +119,8 @@ mod tests {
     fn adjust_updates_target() {
         let aa = AdaptiveAssembly::new();
         let _ = aa.adjust();
-        // On Linux, this reads /proc/meminfo; on other platforms, returns u64::MAX
+        // adjust() reads available RAM via sysinfo; on failure, returns u64::MAX (full
+        // concurrency)
         let target = aa.current_target();
         assert!(target >= 1);
         assert!(target <= ASSEMBLY_CONCURRENCY);
