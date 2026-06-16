@@ -3,6 +3,20 @@ use std::fs;
 use std::io::{BufWriter, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+thread_local! {
+    /// Reusable per-thread copy buffer. The copyover preinstall path streams
+    /// each chunk from a downloaded file into a target temp file; allocating
+    /// a fresh `FILE_WRITE_BUFFER_SIZE` byte vector per asset is wasteful.
+    static COPY_BUFFER: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
+}
+
+fn borrow_copy_buffer<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Vec<u8>) -> R,
+{
+    COPY_BUFFER.with(|cell| f(&mut cell.borrow_mut()))
+}
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -1454,14 +1468,19 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             writer.write_all(HDIFF_MAGIC.as_ref())?;
             let remaining = asset.patch_chunk_length - HDIFF_MAGIC.len() as u64;
             let mut limited = (&mut chunk_file).take(remaining);
-            let mut copy_buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
-            loop {
-                let n = limited.read(&mut copy_buf)?;
-                if n == 0 {
-                    break;
+            borrow_copy_buffer(|copy_buf| -> std::io::Result<()> {
+                if copy_buf.len() < super::FILE_WRITE_BUFFER_SIZE {
+                    copy_buf.resize(super::FILE_WRITE_BUFFER_SIZE, 0);
                 }
-                writer.write_all(&copy_buf[..n])?;
-            }
+                loop {
+                    let n = limited.read(copy_buf)?;
+                    if n == 0 {
+                        break;
+                    }
+                    writer.write_all(&copy_buf[..n])?;
+                }
+                Ok(())
+            })?;
             writer.flush()?;
         }
         let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1494,14 +1513,19 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         let file = fs::File::create(&temp_path)?;
         let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
         let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
-        let mut copy_buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
-        loop {
-            let n = limited.read(&mut copy_buf)?;
-            if n == 0 {
-                break;
+        borrow_copy_buffer(|copy_buf| -> std::io::Result<()> {
+            if copy_buf.len() < super::FILE_WRITE_BUFFER_SIZE {
+                copy_buf.resize(super::FILE_WRITE_BUFFER_SIZE, 0);
             }
-            writer.write_all(&copy_buf[..n])?;
-        }
+            loop {
+                let n = limited.read(copy_buf)?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&copy_buf[..n])?;
+            }
+            Ok(())
+        })?;
         writer.flush()?;
     }
     let actual_size = fs::metadata(&temp_path)?.len();
@@ -1622,14 +1646,19 @@ fn apply_hdiff_patch(
         let mut writer =
             std::io::BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, diff_file);
         let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
-        let mut copy_buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
-        loop {
-            let n = limited.read(&mut copy_buf)?;
-            if n == 0 {
-                break;
+        borrow_copy_buffer(|copy_buf| -> std::io::Result<()> {
+            if copy_buf.len() < super::FILE_WRITE_BUFFER_SIZE {
+                copy_buf.resize(super::FILE_WRITE_BUFFER_SIZE, 0);
             }
-            writer.write_all(&copy_buf[..n])?;
-        }
+            loop {
+                let n = limited.read(copy_buf)?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&copy_buf[..n])?;
+            }
+            Ok(())
+        })?;
         writer.flush()?;
     }
 
