@@ -33,6 +33,18 @@ impl PatchSingle {
         let f2 = File::open(patch_path)?;
         let f3 = File::open(patch_path)?;
 
+        // For Zlib-compressed sections, the on-disk layout reserves 1 byte for
+        // the windowBits prefix prepended by the zlib plugin. We skip that byte
+        // when reading and subtract it from `compress_*_size` so the limited
+        // reader does not overrun into the next section's prefix byte.
+        let comp_size_for_read = |raw_compressed: u64| -> u64 {
+            if hi.comp_mode == CompressionMode::Zlib {
+                raw_compressed.saturating_sub(padding)
+            } else {
+                raw_compressed
+            }
+        };
+
         let mut offset = ci.head_end_pos as u64;
         let cover_padding = if ci.compress_cover_buf_size > 0 {
             padding
@@ -42,12 +54,13 @@ impl PatchSingle {
         let cover_start = offset
             .checked_add(cover_padding)
             .ok_or_else(|| std::io::Error::other("offset overflow computing cover_start"))?;
+        let cover_comp = comp_size_for_read(ci.compress_cover_buf_size as u64);
         let (clip0, len0) = get_clip_stream(
             f0,
             hi.comp_mode,
             cover_start,
             ci.cover_buf_size as u64,
-            ci.compress_cover_buf_size as u64,
+            cover_comp,
             false,
         )?;
         offset = cover_start
@@ -62,12 +75,13 @@ impl PatchSingle {
         let rle_ctrl_start = offset
             .checked_add(rle_ctrl_padding)
             .ok_or_else(|| std::io::Error::other("offset overflow computing rle_ctrl_start"))?;
+        let rle_ctrl_comp = comp_size_for_read(ci.compress_rle_ctrl_buf_size as u64);
         let (clip1, len1) = get_clip_stream(
             f1,
             hi.comp_mode,
             rle_ctrl_start,
             ci.rle_ctrl_buf_size as u64,
-            ci.compress_rle_ctrl_buf_size as u64,
+            rle_ctrl_comp,
             false,
         )?;
         offset = rle_ctrl_start
@@ -82,12 +96,13 @@ impl PatchSingle {
         let rle_code_start = offset
             .checked_add(rle_code_padding)
             .ok_or_else(|| std::io::Error::other("offset overflow computing rle_code_start"))?;
+        let rle_code_comp = comp_size_for_read(ci.compress_rle_code_buf_size as u64);
         let (clip2, len2) = get_clip_stream(
             f2,
             hi.comp_mode,
             rle_code_start,
             ci.rle_code_buf_size as u64,
-            ci.compress_rle_code_buf_size as u64,
+            rle_code_comp,
             false,
         )?;
         offset = rle_code_start
@@ -99,20 +114,16 @@ impl PatchSingle {
         } else {
             0
         };
-        let comp_diff_size = if hi.comp_mode == CompressionMode::Zlib {
-            (ci.compress_new_data_diff_size as u64).saturating_sub(padding)
-        } else {
-            ci.compress_new_data_diff_size as u64
-        };
         let new_data_diff_start = offset.checked_add(new_data_diff_padding).ok_or_else(|| {
             std::io::Error::other("offset overflow computing new_data_diff_start")
         })?;
+        let new_data_diff_comp = comp_size_for_read(ci.compress_new_data_diff_size as u64);
         let (clip3, _) = get_clip_stream(
             f3,
             hi.comp_mode,
             new_data_diff_start,
             ci.new_data_diff_size as u64,
-            comp_diff_size,
+            new_data_diff_comp,
             false,
         )?;
         let mut clips: [Box<dyn Read>; 4] = [clip0, clip1, clip2, clip3];
