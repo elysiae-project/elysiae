@@ -276,47 +276,61 @@ async fn build_diff_installers(
             .map(|f| f.asset_name.as_str())
             .collect();
 
-        let (old_md5_map, old_chunk_offsets): (HashMap<String, String>, HashMap<String, u64>) =
-            match old_by_field.get(new_meta.matching_field.as_str()) {
-                Some(old_meta) => {
-                    let old_result = super::api::fetch_manifest(
-                        client,
-                        &old_meta.manifest_download,
-                        &old_meta.manifest.id,
-                    )
-                    .await?;
+        let (old_md5_map, old_chunk_offsets): (
+            HashMap<String, String>,
+            HashMap<(String, String), u64>,
+        ) = match old_by_field.get(new_meta.matching_field.as_str()) {
+            Some(old_meta) => {
+                let old_result = super::api::fetch_manifest(
+                    client,
+                    &old_meta.manifest_download,
+                    &old_meta.manifest.id,
+                )
+                .await?;
 
-                    deleted_files.extend(collect_deleted_files(&old_result.manifest, &new_names));
+                deleted_files.extend(collect_deleted_files(&old_result.manifest, &new_names));
 
-                    // Build old-chunk hash→offset map BEFORE consuming old_result.manifest
-                    let old_chunk_offsets: HashMap<String, u64> = old_result
-                        .manifest
-                        .assets
-                        .iter()
-                        .filter(|f| !f.is_directory())
-                        .flat_map(|f| f.asset_chunks.iter())
-                        .map(|c| {
+                // Build old-chunk (asset_name, hash) → offset map BEFORE
+                // consuming old_result.manifest. Keying by (asset_name, hash)
+                // preserves file provenance: when a chunk's decompressed hash
+                // matches an old chunk, the offset must come from the same old
+                // source file that the new file will reuse.
+                let old_chunk_offsets: HashMap<(String, String), u64> = old_result
+                    .manifest
+                    .assets
+                    .iter()
+                    .filter(|f| !f.is_directory())
+                    .flat_map(|f| {
+                        let name = f.asset_name.clone();
+                        f.asset_chunks.iter().map(move |c| {
                             (
-                                c.chunk_decompressed_hash_md5.clone(),
+                                (name.clone(), c.chunk_decompressed_hash_md5.clone()),
                                 c.chunk_on_file_offset,
                             )
                         })
-                        .collect();
+                    })
+                    .collect();
 
-                    let old_md5_map = build_old_md5_map(old_result.manifest);
-                    (old_md5_map, old_chunk_offsets)
-                }
-                None => (HashMap::new(), HashMap::new()),
-            };
+                let old_md5_map = build_old_md5_map(old_result.manifest);
+                (old_md5_map, old_chunk_offsets)
+            }
+            None => (HashMap::new(), HashMap::new()),
+        };
 
         let mut diff_files = compute_diff_files(new_result.manifest, &old_md5_map);
 
-        // Chunk-level diff: annotate each chunk with old-file offset if its
-        // decompressed hash matches an old chunk, or -1 for new data.
+        // Chunk-level diff: annotate each chunk with the old-file offset only
+        // when the corresponding old chunk belonged to the same asset. Chunks
+        // introduced in the new version (no entry in the map) are marked -1 so
+        // they get downloaded.
         for file in &mut diff_files {
             for chunk in &mut file.asset_chunks {
+                let key = (
+                    file.asset_name.clone(),
+                    chunk.chunk_decompressed_hash_md5.clone(),
+                );
                 chunk.chunk_old_offset = old_chunk_offsets
-                    .get(&chunk.chunk_decompressed_hash_md5)
+                    .get(&key)
                     .map(|&off| off as i64)
                     .unwrap_or(-1);
             }
