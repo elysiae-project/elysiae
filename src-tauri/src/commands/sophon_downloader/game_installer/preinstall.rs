@@ -8,7 +8,8 @@ thread_local! {
     /// Reusable per-thread copy buffer. The copyover preinstall path streams
     /// each chunk from a downloaded file into a target temp file; allocating
     /// a fresh `FILE_WRITE_BUFFER_SIZE` byte vector per asset is wasteful.
-    static COPY_BUFFER: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
+    static COPY_BUFFER: std::cell::RefCell<Vec<u8>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn borrow_copy_buffer<F, R>(f: F) -> R

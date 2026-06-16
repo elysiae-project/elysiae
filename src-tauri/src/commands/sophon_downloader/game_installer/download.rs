@@ -100,7 +100,16 @@ async fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
     );
     let mut hasher = twox_hash::XxHash64::default();
 
-    let mut buf = vec![0u8; super::MD5_HASH_BUFFER_SIZE];
+    // Reuse the same thread-local buffer as compute_file_md5 to avoid
+    // allocating + zeroing on every invocation.
+    let mut buf = MD5_BUF.with(std::cell::RefCell::take);
+    if buf.capacity() < super::MD5_HASH_BUFFER_SIZE {
+        buf = Vec::with_capacity(super::MD5_HASH_BUFFER_SIZE);
+    }
+    // Safety: every byte of `buf[..MD5_HASH_BUFFER_SIZE]` is overwritten by
+    // `file.read(&mut buf)` before `hasher.write(&buf[..n])` is called.
+    unsafe { buf.set_len(super::MD5_HASH_BUFFER_SIZE) };
+
     loop {
         let n = file.read(&mut buf).await?;
         if n == 0 {
@@ -108,6 +117,9 @@ async fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
         }
         std::hash::Hasher::write(&mut hasher, &buf[..n]);
     }
+
+    buf.clear();
+    MD5_BUF.with(|cell| cell.replace(buf));
 
     Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)))
 }
