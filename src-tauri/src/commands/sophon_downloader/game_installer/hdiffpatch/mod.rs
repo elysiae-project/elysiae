@@ -76,7 +76,7 @@ struct RleRefClip {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CoverHeader {
+pub(crate) struct CoverHeader {
     old_pos: i64,
     new_pos: i64,
     cover_length: i64,
