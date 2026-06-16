@@ -121,6 +121,20 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
     Ok(())
 }
 
+struct DecrementGuard<'a> {
+    chunks: Vec<String>,
+    chunk_refcounts: &'a DashMap<String, usize>,
+    chunks_dir: &'a Path,
+}
+
+impl Drop for DecrementGuard<'_> {
+    fn drop(&mut self) {
+        for chunk_name in self.chunks.drain(..) {
+            decrement_chunk_refcount(&chunk_name, self.chunk_refcounts, self.chunks_dir);
+        }
+    }
+}
+
 pub fn assemble_file(
     file: &SophonManifestAssetProperty,
     game_dir: &Path,
@@ -130,6 +144,9 @@ pub fn assemble_file(
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
     validate_asset_name(&file.asset_name)?;
+    if file.is_directory() {
+        return Ok(());
+    }
     let target_path = game_dir.join(&file.asset_name);
     let tmp_path = temp_dir.join(format!(
         "{}.tmp",
@@ -171,7 +188,7 @@ pub fn assemble_file(
         .read(true)
         .write(true)
         .create(true)
-        .truncate(false)
+        .truncate(true)
         .open(&tmp_path)?;
 
     out_file.set_len(file.asset_size)?;
@@ -190,7 +207,6 @@ pub fn assemble_file(
         Some(Md5::new())
     };
 
-    let mut consumed_chunks: Vec<&str> = Vec::new();
     let mut transfer_buffer = TRANSFER_BUF.with(|cell| {
         let mut buf = cell.take();
         if buf.capacity() < FILE_WRITE_BUFFER_SIZE {
@@ -204,6 +220,43 @@ pub fn assemble_file(
         unsafe { buf.set_len(FILE_WRITE_BUFFER_SIZE) };
         buf
     });
+    let mut guard = DecrementGuard {
+        chunks: Vec::new(),
+        chunk_refcounts,
+        chunks_dir,
+    };
+
+    let mut cursor = 0u64;
+    let mut sorted_ranges: Vec<(u64, u64)> = file
+        .asset_chunks
+        .iter()
+        .map(|c| (c.chunk_on_file_offset, c.chunk_size_decompressed))
+        .collect();
+    sorted_ranges.sort_unstable_by_key(|r| r.0);
+    for (off, size) in &sorted_ranges {
+        if *off != cursor {
+            return Err(SophonError::SizeMismatch {
+                item: file.asset_name.clone(),
+                expected: file.asset_size,
+                actual: *off,
+            });
+        }
+        cursor = off
+            .checked_add(*size)
+            .ok_or_else(|| SophonError::SizeMismatch {
+                item: file.asset_name.clone(),
+                expected: file.asset_size,
+                actual: cursor,
+            })?;
+    }
+    if cursor != file.asset_size {
+        return Err(SophonError::SizeMismatch {
+            item: file.asset_name.clone(),
+            expected: file.asset_size,
+            actual: cursor,
+        });
+    }
+
     for chunk in &file.asset_chunks {
         if chunk.chunk_old_offset >= 0 {
             // Chunk-level reuse: read decompressed data from the existing game
@@ -244,7 +297,7 @@ pub fn assemble_file(
             })?;
 
             total_written += bytes_written;
-            consumed_chunks.push(&chunk.chunk_name);
+            guard.chunks.push(chunk.chunk_name.clone());
         }
     }
 
@@ -279,18 +332,24 @@ pub fn assemble_file(
         }
     }
 
-    if target_path.exists() {
-        let _ = fs::metadata(&target_path).ok().and_then(|m| {
-            let mut perms = m.permissions();
-            use std::os::unix::fs::PermissionsExt;
-            perms.set_mode(0o644);
-            fs::set_permissions(&target_path, perms).ok()
-        });
+    if let Err(e) = fs::rename(&tmp_path, &target_path) {
+        if e.raw_os_error() == Some(libc::EXDEV) || e.kind() == std::io::ErrorKind::CrossesDevices {
+            log::warn!("rename EXDEV; falling back to copy + unlink: {}", e);
+            fs::copy(&tmp_path, &target_path)?;
+            let _ = fs::remove_file(&tmp_path);
+        } else {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(SophonError::Io(e));
+        }
     }
-    fs::rename(&tmp_path, &target_path)?;
 
-    for chunk_name in consumed_chunks {
-        decrement_chunk_refcount(chunk_name, chunk_refcounts, chunks_dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(mut perms) = fs::metadata(&target_path).map(|m| m.permissions()) {
+            perms.set_mode(0o644);
+            let _ = fs::set_permissions(&target_path, perms);
+        }
     }
 
     transfer_buffer.clear();
@@ -358,9 +417,8 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
         });
     }
 
-    if !chunk_decompressed_hash_md5.is_empty()
-        && !chunk_decompressed_hash_md5.chars().all(|c| c == '0')
-    {
+    const EMPTY_MD5: &str = "00000000000000000000000000000000";
+    if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
         let actual = hex::encode(chunk_hasher.finalize());
         if actual != chunk_decompressed_hash_md5 {
             return Err(SophonError::Md5Mismatch {
@@ -434,9 +492,8 @@ fn write_from_old_file<W: Write + Seek>(
         });
     }
 
-    if !chunk_decompressed_hash_md5.is_empty()
-        && !chunk_decompressed_hash_md5.chars().all(|c| c == '0')
-    {
+    const EMPTY_MD5: &str = "00000000000000000000000000000000";
+    if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
         let actual = hex::encode(chunk_hasher.finalize());
         if actual != chunk_decompressed_hash_md5 {
             return Err(SophonError::Md5Mismatch {
