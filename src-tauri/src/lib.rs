@@ -1,9 +1,9 @@
 use std::env;
 use std::time::Duration;
 
-use tauri::command;
+use tauri::{Manager, command};
 
-use crate::commands::{file_downloader, file_manager, media_server};
+use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
 
@@ -44,7 +44,8 @@ pub fn run() {
                 window.unminimize().ok();
                 window.set_focus().ok();
             }
-        }))        .plugin(
+        }))
+        .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
@@ -53,10 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(disable_shortcuts())
-        .setup(|_app| {
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
@@ -113,24 +111,6 @@ fn is_wayland() -> bool {
         || std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")
             .unwrap_or(false)
-}
-
-#[cfg(debug_assertions)]
-fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    use tauri_plugin_prevent_default::Flags;
-
-    tauri_plugin_prevent_default::Builder::new()
-        .with_flags(Flags::empty())
-        .build()
-}
-
-#[cfg(not(debug_assertions))]
-fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    use tauri_plugin_prevent_default::Flags;
-
-    tauri_plugin_prevent_default::Builder::new()
-        .with_flags(Flags::all())
-        .build()
 }
 
 #[command]

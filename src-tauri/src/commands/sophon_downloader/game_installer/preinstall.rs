@@ -477,7 +477,7 @@ pub async fn preinstall_download(
     vo_lang: &str,
     handle: DownloadHandle,
     updater: ProgressUpdater,
-    state_saver: Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>,
+    state_saver: super::installer::StateSaver,
     resume_chunks: HashMap<String, u64>,
 ) -> SophonResult<PreinstallState> {
     let chunks_dir = patching_chunk_dir(game_dir);
@@ -987,7 +987,10 @@ pub async fn apply_preinstall(
     let total_files = state.patch_assets.len() as u64;
     let applied_files = Arc::new(AtomicU64::new(0u64));
 
-    let filter_cache = FilterCache::new(game_dir);
+    let game_dir_owned = game_dir.to_path_buf();
+    let filter_cache = tokio::task::spawn_blocking(move || FilterCache::new(&game_dir_owned))
+        .await
+        .unwrap_or_else(|_| FilterCache::new(game_dir));
     filter_patch_assets_for_removed_features(&filter_cache, &mut state.patch_assets);
 
     let download_over_context =
