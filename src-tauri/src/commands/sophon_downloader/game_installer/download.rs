@@ -147,13 +147,14 @@ pub async fn download_chunk(
     chunk_download: &DownloadInfo,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
+    handle: Option<&super::handle::DownloadHandle>,
 ) -> SophonResult<()> {
     if !super::assembly::validate_chunk_name(&chunk.chunk_name) {
         return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
     }
 
     let url = chunk_download.url_for(&chunk.chunk_name);
-    do_download_chunk(client, &url, chunk, dest).await
+    do_download_chunk(client, &url, chunk, dest, handle).await
 }
 
 async fn do_download_chunk(
@@ -161,6 +162,7 @@ async fn do_download_chunk(
     url: &str,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
+    handle: Option<&super::handle::DownloadHandle>,
 ) -> SophonResult<()> {
     // Check for partial download to resume (skip exists() to avoid TOCTOU)
     let mut existing_size = match tokio::fs::metadata(dest).await {
@@ -255,7 +257,7 @@ async fn do_download_chunk(
                 })
                 .unwrap_or(false);
             if range_header_valid {
-                return download_with_resume(resp, chunk, dest, existing_size).await;
+                return download_with_resume(resp, chunk, dest, existing_size, handle).await;
             }
             // Can't validate Content-Range - discard partial and re-download fresh
             let _ = tokio::fs::remove_file(dest).await;
@@ -273,13 +275,14 @@ async fn do_download_chunk(
         .send()
         .await?;
     let resp = resp.error_for_status()?;
-    download_full_file_with_response(resp, chunk, dest).await
+    download_full_file_with_response(resp, chunk, dest, handle).await
 }
 
 async fn download_full_file_with_response(
     resp: reqwest::Response,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
+    handle: Option<&super::handle::DownloadHandle>,
 ) -> SophonResult<()> {
     let content_length = resp.content_length();
     if let Some(len) = content_length
@@ -323,6 +326,12 @@ async fn download_full_file_with_response(
                 }
                 hasher.update(&bytes);
                 file.write_all(&bytes).await?;
+                if let Some(handle) = handle
+                    && handle.is_cancelled()
+                {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Cancelled);
+                }
             }
             Ok(None) => break,
             Err(_) => {
@@ -393,6 +402,7 @@ async fn download_with_resume(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
     existing_size: u64,
+    handle: Option<&super::handle::DownloadHandle>,
 ) -> SophonResult<()> {
     if resp.status() == reqwest::StatusCode::OK {
         let _ = tokio::fs::remove_file(dest).await;
@@ -473,6 +483,12 @@ async fn download_with_resume(
                 }
                 file.write_all(&bytes).await?;
                 hasher.update(&bytes);
+                if let Some(handle) = handle
+                    && handle.is_cancelled()
+                {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Cancelled);
+                }
             }
             Ok(None) => break,
             Err(_) => {
@@ -604,7 +620,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_ok());
     }
 
@@ -627,7 +643,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -655,7 +671,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -694,7 +710,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -722,7 +738,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_ok());
     }
 
@@ -740,7 +756,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_err());
     }
 
@@ -759,7 +775,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_err(), "416 on plain GET should be an error");
     }
 
@@ -783,7 +799,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        download_chunk(&client, &dl_info, &chunk, &dest)
+        download_chunk(&client, &dl_info, &chunk, &dest, None)
             .await
             .unwrap();
 
@@ -811,7 +827,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        download_chunk(&client, &dl_info, &chunk, &dest)
+        download_chunk(&client, &dl_info, &chunk, &dest, None)
             .await
             .unwrap();
 
@@ -847,7 +863,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT: must be rejected with PathTraversal, not an HTTP/IO error.
         assert!(result.is_err(), "empty chunk_name must be rejected");
@@ -868,7 +884,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT
         assert!(result.is_err(), "'foo/../bar' must be rejected");
@@ -885,7 +901,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT
         assert!(result.is_err(), "'/etc/passwd' must be rejected");
@@ -903,7 +919,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT
         assert!(result.is_err(), "'\\Windows\\System32' must be rejected");
@@ -922,7 +938,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT
         assert!(result.is_err(), "'C:\\Windows' must be rejected");
@@ -941,7 +957,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT
         assert!(result.is_err(), "null byte in chunk_name must be rejected");
@@ -976,7 +992,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT: validation succeeds AND the download writes the payload to
         // disk. If the regression had returned, validation would short-circuit
@@ -1014,7 +1030,7 @@ mod tests {
         let dest = dest_path();
 
         // ACT
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
 
         // ASSERT: validation accepted and download completed.
         assert!(result.is_ok(), "normal chunk name must be allowed");
@@ -1111,7 +1127,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(
             result.is_ok(),
             "expected Ok with matching XXH64, got: {result:?}"
@@ -1137,7 +1153,7 @@ mod tests {
 
         let client = Client::new();
         let dest = dest_path();
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -1170,7 +1186,7 @@ mod tests {
         let client = Client::new();
         let chunk = make_chunk("test_chunk", data.len() as u64, &expected_md5);
         let dl_info = make_download_info(&server);
-        let result = download_chunk(&client, &dl_info, &chunk, &dest).await;
+        let result = download_chunk(&client, &dl_info, &chunk, &dest, None).await;
         let post_size = tokio::fs::metadata(&dest).await.unwrap().len();
         assert!(
             result.is_ok(),

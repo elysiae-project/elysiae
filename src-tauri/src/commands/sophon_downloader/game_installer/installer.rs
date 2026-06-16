@@ -719,8 +719,14 @@ async fn download_chunk_with_retries(
             return Err(SophonError::Cancelled);
         }
 
-        match super::download::download_chunk(&item.client, &item.chunk_download, &item.chunk, dest)
-            .await
+        match super::download::download_chunk(
+            &item.client,
+            &item.chunk_download,
+            &item.chunk,
+            dest,
+            Some(handle),
+        )
+        .await
         {
             Ok(()) => return Ok(()),
             Err(SophonError::Md5Mismatch { .. }) => {
@@ -850,6 +856,9 @@ async fn process_download_item(
     let mut was_actually_downloaded = false;
     let needs_download =
         check_needs_download(dest.clone(), &item.chunk, &ctx.game_dir, &ctx.verify_cache).await?;
+    if handle.is_cancelled() {
+        return Err(SophonError::Cancelled);
+    }
     if needs_download {
         download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
         was_actually_downloaded = true;
@@ -959,7 +968,13 @@ async fn run_downloads(
             let handle = handle.clone();
             let adaptive = Arc::clone(&adaptive);
 
-            process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
+            async move {
+                if handle.is_cancelled() {
+                    return Err(SophonError::Cancelled);
+                }
+                process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
+                    .await
+            }
         })
         .buffer_unordered(256) // High ceiling, adaptive semaphore controls actual concurrency
         .collect()
@@ -1654,7 +1669,7 @@ async fn redownload_asset(
             emit(SophonProgress::Warning {
                 message: format!("Re-downloading chunk {}", chunk.chunk_name),
             });
-            download::download_chunk(client, chunk_download, chunk, &chunk_path).await?;
+            download::download_chunk(client, chunk_download, chunk, &chunk_path, None).await?;
         }
     }
 

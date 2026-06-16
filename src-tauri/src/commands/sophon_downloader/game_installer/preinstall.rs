@@ -766,7 +766,9 @@ async fn download_chunk_with_retries(
         if handle.is_cancelled() {
             return Err(SophonError::Cancelled);
         }
-        match super::download::download_chunk(client, chunk_download, chunk, dest).await {
+        match super::download::download_chunk(client, chunk_download, chunk, dest, Some(handle))
+            .await
+        {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_err = e.to_string();
