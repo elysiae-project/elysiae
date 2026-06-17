@@ -47,9 +47,14 @@ export const runGame = async (game: Variants): Promise<void> => {
 		variantToGameCode[game],
 		variantToExeName[game],
 	);
-	game === Variants.HKRPG
-		? await protonJadeiteExec(gamePath)
-		: await protonExec(gamePath);
+	if (await exists(gamePath)) {
+		game === Variants.HKRPG
+			? await protonJadeiteExec(gamePath)
+			: await protonExec(gamePath);
+	}
+	else {
+		await downloadGame(game);
+	}
 };
 
 /** Pause Sophon Chunk Download */
