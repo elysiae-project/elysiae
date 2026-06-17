@@ -176,9 +176,9 @@ impl Serialize for Compression {
 
 impl DownloadInfo {
     pub fn url_for(&self, item_name: &str) -> String {
-        // Trim any trailing/leading slashes to avoid double slashes
+        // Trim all slashes to avoid double slashes in URL construction
         let prefix = self.url_prefix.trim_end_matches('/');
-        let suffix = self.url_suffix.trim_start_matches('/');
+        let suffix = self.url_suffix.trim_matches('/');
         format!("{}/{}/{}", prefix, suffix, item_name)
     }
 
@@ -261,6 +261,36 @@ mod tests {
             dl.url_for("manifest.dat"),
             "https://example.com/v1/manifest.dat"
         );
+    }
+
+    #[test]
+    fn download_info_url_for_trims_slashes() {
+        // Test that trailing/leading slashes are properly trimmed
+        let dl = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com//".to_string(),
+            url_suffix: "/v1/".to_string(),
+        };
+        // Should not have double slashes (except in protocol)
+        let url = dl.url_for("manifest.dat");
+        // Check for double slashes not in protocol
+        let after_protocol = url.strip_prefix("https://").unwrap_or(&url);
+        assert!(!after_protocol.contains("//"), "URL should not contain double slashes: {}", url);
+        assert_eq!(url, "https://example.com/v1/manifest.dat");
+    }
+
+    #[test]
+    fn download_info_url_for_no_slashes() {
+        let dl = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com".to_string(),
+            url_suffix: "v1".to_string(),
+        };
+        assert_eq!(dl.url_for("manifest.dat"), "https://example.com/v1/manifest.dat");
     }
 
     #[test]
