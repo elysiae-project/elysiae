@@ -134,6 +134,12 @@ impl HDiff {
         // Reject same source/destination — patching in-place would corrupt
         // the source while reading it. Use canonical paths to handle equivalent
         // representations (./game/file.bin vs game/file.bin, symlinks, etc.).
+        // Note: canonicalize requires the file to exist, so this check only
+        // catches the case where both source AND dest already exist on disk.
+        // When dest is a new temp file (the common case), this check is
+        // skipped — but that's fine because the dest doesn't exist yet and
+        // can't be the same as source. The string comparison below provides
+        // a fallback for the same-path-string case.
         let source_canonical: Option<PathBuf> = std::fs::canonicalize(&self.source_path).ok();
         let dest_canonical: Option<PathBuf> = std::fs::canonicalize(&self.dest_path).ok();
         if source_canonical.is_some()
@@ -552,6 +558,24 @@ mod tests {
 
         let mut hdiff = HDiff::new(op, dp, tp);
         assert!(!hdiff.apply(None), "should fail for nonexistent diff file");
+    }
+
+    #[test]
+    fn hdiff_same_source_and_dest_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_path = dir.path().join("file.bin");
+        let diff_path = dir.path().join("diff.hdiff");
+
+        fs::write(&old_path, OLD_TEXT).unwrap();
+        fs::write(&diff_path, DIFF_V13_TEXT).unwrap();
+
+        // Use the same path for both source and dest — should fail
+        let path_str = old_path.to_string_lossy().to_string();
+        let mut hdiff = HDiff::new(path_str.clone(), diff_path.to_string_lossy().to_string(), path_str);
+        assert!(
+            !hdiff.apply(None),
+            "should fail when source and destination are the same file"
+        );
     }
 
     // ========== Bounds Check Tests ==========
