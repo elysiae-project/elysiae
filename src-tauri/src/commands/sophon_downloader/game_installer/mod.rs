@@ -21,8 +21,14 @@ mod bench_tests;
 mod integration_tests;
 
 /// Maximum retry attempts for failed chunk downloads.
-pub const MAX_RETRIES: u32 = 10;
+pub const MAX_RETRIES: u32 = 5;
 pub const MAX_HASH_RETRIES: u32 = 5;
+
+/// Streaming-download idle-poll interval. The HTTP body streaming loop wakes
+/// at this cadence to re-check cancellation and pause state. Must be small
+/// enough that a stalled connection cannot delay user-initiated cancel/pause
+/// past this bound on the order of seconds.
+pub const STREAM_POLL_INTERVAL_MS: u64 = 1_000;
 
 use std::time::Duration;
 

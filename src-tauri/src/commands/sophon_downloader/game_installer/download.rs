@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
 use super::error::{SophonError, SophonResult};
-use super::{FILE_WRITE_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE};
+use super::{FILE_WRITE_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE, STREAM_POLL_INTERVAL_MS};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
@@ -305,45 +305,73 @@ async fn download_full_file_with_response(
     let mut total_len = 0u64;
 
     loop {
-        match timeout(Duration::from_millis(20000), stream.next()).await {
-            Ok(Some(chunk_bytes)) => {
-                let bytes = chunk_bytes?;
-                if bytes.is_empty() && total_len < chunk.chunk_size {
-                    let _ = tokio::fs::remove_file(dest).await;
-                    return Err(SophonError::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "corrupted compressed data: empty chunk while data remaining",
-                    )));
+        match timeout(
+            Duration::from_millis(STREAM_POLL_INTERVAL_MS),
+            stream.next(),
+        )
+        .await
+        {
+            Ok(Some(chunk_bytes)) => match chunk_bytes {
+                Ok(bytes) => {
+                    if bytes.is_empty() && total_len < chunk.chunk_size {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "corrupted compressed data: empty chunk while data remaining",
+                        )));
+                    }
+                    total_len += bytes.len() as u64;
+                    if total_len > chunk.chunk_size {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::SizeMismatch {
+                            item: chunk.chunk_name.clone(),
+                            expected: chunk.chunk_size,
+                            actual: total_len,
+                        });
+                    }
+                    hasher.update(&bytes);
+                    if let Err(e) = file.write_all(&bytes).await {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::Io(e));
+                    }
+                    if let Some(handle) = handle
+                        && handle.is_cancelled()
+                    {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::Cancelled);
+                    }
                 }
-                total_len += bytes.len() as u64;
-                if total_len > chunk.chunk_size {
+                Err(_) => {
+                    // Network error reading from the response stream. The
+                    // partial bytes already written are not necessarily a
+                    // valid prefix, so discard to avoid spurious resume
+                    // attempts over a corrupt window.
                     let _ = tokio::fs::remove_file(dest).await;
-                    return Err(SophonError::SizeMismatch {
-                        item: chunk.chunk_name.clone(),
-                        expected: chunk.chunk_size,
-                        actual: total_len,
-                    });
+                    return Err(chunk_bytes.unwrap_err().into());
                 }
-                hasher.update(&bytes);
-                file.write_all(&bytes).await?;
+            },
+            Ok(None) => break,
+            Err(_) => {
+                // Idle poll window elapsed. Check cancellation before
+                // continuing; if the user hasn't asked to stop, treat the
+                // stall as a benign pause and resume polling. This keeps
+                // cancel responsiveness tight (≈ STREAM_POLL_INTERVAL_MS)
+                // even over a stalled TCP connection.
                 if let Some(handle) = handle
                     && handle.is_cancelled()
                 {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Cancelled);
                 }
-            }
-            Ok(None) => break,
-            Err(_) => {
-                return Err(SophonError::Io(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "stream read timed out after 20s",
-                )));
+                continue;
             }
         }
     }
 
-    file.flush().await?;
+    if let Err(e) = file.flush().await {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(SophonError::Io(e));
+    }
 
     if total_len != chunk.chunk_size {
         let _ = tokio::fs::remove_file(dest).await;
@@ -462,45 +490,64 @@ async fn download_with_resume(
     let mut total_len = existing_size;
 
     loop {
-        match timeout(Duration::from_millis(20000), stream.next()).await {
-            Ok(Some(chunk_bytes)) => {
-                let bytes = chunk_bytes?;
-                if bytes.is_empty() && total_len < expected_total {
-                    let _ = tokio::fs::remove_file(dest).await;
-                    return Err(SophonError::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "corrupted compressed data: empty chunk while data remaining",
-                    )));
+        match timeout(
+            Duration::from_millis(STREAM_POLL_INTERVAL_MS),
+            stream.next(),
+        )
+        .await
+        {
+            Ok(Some(chunk_bytes_res)) => match chunk_bytes_res {
+                Ok(bytes) => {
+                    if bytes.is_empty() && total_len < expected_total {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "corrupted compressed data: empty chunk while data remaining",
+                        )));
+                    }
+                    total_len += bytes.len() as u64;
+                    if total_len > expected_total {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::SizeMismatch {
+                            item: chunk.chunk_name.clone(),
+                            expected: expected_total,
+                            actual: total_len,
+                        });
+                    }
+                    if let Err(e) = file.write_all(&bytes).await {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::Io(e));
+                    }
+                    hasher.update(&bytes);
+                    if let Some(handle) = handle
+                        && handle.is_cancelled()
+                    {
+                        let _ = tokio::fs::remove_file(dest).await;
+                        return Err(SophonError::Cancelled);
+                    }
                 }
-                total_len += bytes.len() as u64;
-                if total_len > expected_total {
+                Err(_) => {
                     let _ = tokio::fs::remove_file(dest).await;
-                    return Err(SophonError::SizeMismatch {
-                        item: chunk.chunk_name.clone(),
-                        expected: expected_total,
-                        actual: total_len,
-                    });
+                    return Err(chunk_bytes_res.unwrap_err().into());
                 }
-                file.write_all(&bytes).await?;
-                hasher.update(&bytes);
+            },
+            Ok(None) => break,
+            Err(_) => {
                 if let Some(handle) = handle
                     && handle.is_cancelled()
                 {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Cancelled);
                 }
-            }
-            Ok(None) => break,
-            Err(_) => {
-                return Err(SophonError::Io(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "stream read timed out after 20s",
-                )));
+                continue;
             }
         }
     }
 
-    file.flush().await?;
+    if let Err(e) = file.flush().await {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(SophonError::Io(e));
+    }
 
     if total_len != expected_total {
         let _ = tokio::fs::remove_file(dest).await;
