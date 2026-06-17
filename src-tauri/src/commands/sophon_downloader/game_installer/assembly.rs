@@ -148,10 +148,14 @@ pub fn assemble_file(
         return Ok(());
     }
     let target_path = game_dir.join(&file.asset_name);
-    let tmp_path = temp_dir.join(format!(
-        "{}.tmp",
-        file.asset_name.replace(['/', '\\', ':'], "_")
-    ));
+    // Use hex-encoded hash of the asset name as tmp filename to avoid
+    // collisions from path sanitization (e.g. "a/b" and "a_b" both become "a_b"
+    // when '/' is replaced with '_', but have different hashes).
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    let mut hasher = DefaultHasher::new();
+    file.asset_name.hash(&mut hasher);
+    let tmp_path = temp_dir.join(format!("{:016x}.tmp", hasher.finish()));
 
     if target_path.exists() {
         let already_valid = super::cache::check_file_md5_cached(
