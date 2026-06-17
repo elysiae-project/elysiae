@@ -1257,6 +1257,8 @@ fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
     }
     if patch_name.starts_with('/')
         || patch_name.starts_with('\\')
+        || patch_name.starts_with("./")
+        || patch_name.starts_with(".\\")
         || patch_name.split(&['/', '\\']).any(|c| c == "..")
     {
         return Err(SophonError::PathTraversal(patch_name.into()));
@@ -2444,6 +2446,17 @@ mod tests {
         // patch filenames and must be accepted.
         // ARRANGE / ACT / ASSERT
         assert!(validate_patch_name("2.0..hotfix.pak").is_ok());
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_dot_prefix() {
+        // Reject ./ and .\\ prefixes for consistency with validate_asset_name
+        assert!(validate_patch_name("./foo").is_err());
+        assert!(validate_patch_name(".\\foo").is_err());
+        assert!(validate_patch_name("./foo/bar").is_err());
+        assert!(validate_patch_name(".\\foo\\bar").is_err());
+        // But "foo..bar" (consecutive dots in filename) is still OK
+        assert!(validate_patch_name("foo..bar").is_ok());
     }
 
     #[test]
