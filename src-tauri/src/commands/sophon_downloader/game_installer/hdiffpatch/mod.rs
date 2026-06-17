@@ -5,6 +5,7 @@ mod patch_core;
 mod patch_sf;
 mod patch_single;
 
+use std::path::PathBuf;
 use std::fs::File;
 use std::io::{BufWriter, Read, Seek, Write};
 
@@ -131,10 +132,16 @@ impl HDiff {
         on_progress: Option<&dyn Fn(u64)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Reject same source/destination — patching in-place would corrupt
-        // the source while reading it.
-        if self.source_path == self.dest_path {
+        // the source while reading it. Use canonical paths to handle equivalent
+        // representations (./game/file.bin vs game/file.bin, symlinks, etc.).
+        let source_canonical: Option<PathBuf> = std::fs::canonicalize(&self.source_path).ok();
+        let dest_canonical: Option<PathBuf> = std::fs::canonicalize(&self.dest_path).ok();
+        if source_canonical.is_some()
+            && dest_canonical.is_some()
+            && source_canonical == dest_canonical
+        {
             return Err(format!(
-                "source and destination paths are identical: {}",
+                "source and destination paths resolve to the same file: {}",
                 self.source_path
             )
             .into());

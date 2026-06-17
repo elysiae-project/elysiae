@@ -1489,10 +1489,15 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
             })?;
             writer.flush()?;
         }
+        let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+        let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
+        let temp_output = game_dir.join(format!("patching/{}_{}.tmp.out", safe_path, safe_hash));
+        let _ = fs::remove_file(&temp_output);
         let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             apply_hdiff_patch_from_files(game_dir, &diff_temp, asset)
         }));
         let _ = fs::remove_file(&diff_temp);
+        let _ = fs::remove_file(&temp_output);
         match patch_result {
             Ok(result) => return result,
             Err(_) => {
