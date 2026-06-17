@@ -176,7 +176,10 @@ impl Serialize for Compression {
 
 impl DownloadInfo {
     pub fn url_for(&self, item_name: &str) -> String {
-        format!("{}{}/{}", self.url_prefix, self.url_suffix, item_name)
+        // Trim any trailing/leading slashes to avoid double slashes
+        let prefix = self.url_prefix.trim_end_matches('/');
+        let suffix = self.url_suffix.trim_start_matches('/');
+        format!("{}/{}/{}", prefix, suffix, item_name)
     }
 
     pub fn is_compressed(&self) -> bool {

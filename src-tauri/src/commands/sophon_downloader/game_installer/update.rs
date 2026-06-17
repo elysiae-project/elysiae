@@ -102,19 +102,29 @@ pub async fn fetch_build_sizes(
     vo_lang: &str,
 ) -> SophonResult<(u64, u64)> {
     let build = fetch_build(client, branch, None).await?;
-    let game_meta = build.manifests.first().ok_or(SophonError::NoGameManifest)?;
-    let vo_meta = build
+
+    // Match the same filter as build_installers_from_data:
+    // game + VO language + non-VO manifests (cutscenes, etc.)
+    let qualifying: Vec<&SophonManifestMeta> = build
         .manifests
         .iter()
-        .find(|m| {
-            is_known_vo_locale(&m.matching_field) && vo_lang_matches(&m.matching_field, vo_lang)
+        .filter(|m| {
+            m.matching_field == "game"
+                || vo_lang_matches(&m.matching_field, vo_lang)
+                || !is_known_vo_locale(&m.matching_field)
         })
-        .ok_or_else(|| SophonError::NoVoiceManifest(vo_lang.into()))?;
+        .collect();
 
-    let cs = super::api::parse_size(&game_meta.stats.compressed_size)?
-        + super::api::parse_size(&vo_meta.stats.compressed_size)?;
-    let ds = super::api::parse_size(&game_meta.stats.uncompressed_size)?
-        + super::api::parse_size(&vo_meta.stats.uncompressed_size)?;
+    if qualifying.is_empty() {
+        return Err(SophonError::NoGameManifest);
+    }
+
+    let mut cs = 0u64;
+    let mut ds = 0u64;
+    for meta in qualifying {
+        cs += super::api::parse_size(&meta.stats.compressed_size)?;
+        ds += super::api::parse_size(&meta.stats.uncompressed_size)?;
+    }
     Ok((cs, ds))
 }
 

@@ -162,19 +162,29 @@ pub async fn fetch_patch_manifest(
     meta: &SophonPatchManifestMeta,
 ) -> SophonResult<PatchManifestWithMeta> {
     let url = meta.manifest_download.url_for(&meta.manifest.id);
-    let bytes = client
+    let resp = client
         .get(&url)
         .timeout(Duration::from_secs(120))
         .send()
         .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
+        .error_for_status()?;
 
+    // Use temp file to avoid holding both compressed and decompressed data in memory
     let raw = if meta.manifest_download.is_compressed() {
-        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
+        let bytes = resp.bytes().await?;
+        tokio::task::spawn_blocking(move || {
+            let tmp = tempfile::NamedTempFile::new()?;
+            {
+                let mut f = tmp.as_file();
+                f.write_all(&bytes)?;
+                f.flush()?;
+            }
+            let raw = decompress_zstd_from_file(tmp.path())?;
+            Ok::<Vec<u8>, SophonError>(raw)
+        })
+        .await??
     } else {
-        bytes.to_vec()
+        resp.bytes().await?.to_vec()
     };
 
     let patch_manifest =
