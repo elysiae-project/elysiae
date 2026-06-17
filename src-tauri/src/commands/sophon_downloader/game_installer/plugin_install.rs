@@ -12,6 +12,7 @@ use tauri_plugin_log::log;
 use tokio::io::AsyncWriteExt;
 use zip::ZipArchive;
 
+use super::cache;
 use super::error::{SophonError, SophonResult};
 use super::plugin_api::{
     ChannelSdkData, PackageData, PluginPackageInfo, ValidationEntry, fetch_channel_sdks,
@@ -306,6 +307,25 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
                 meta.len()
             );
             return false;
+        }
+        // Verify MD5 hash if provided for stronger integrity guarantee
+        if let Some(ref expected_md5) = entry.md5 {
+            let computed = match cache::file_md5_hex(&file_path) {
+                Ok(md5) => md5,
+                Err(e) => {
+                    log::warn!("Failed to compute MD5 for {}: {}", entry.path, e);
+                    return false;
+                }
+            };
+            if computed != *expected_md5 {
+                log::warn!(
+                    "Validation file MD5 mismatch: {} (expected {}, got {})",
+                    entry.path,
+                    expected_md5,
+                    computed
+                );
+                return false;
+            }
         }
     }
     true

@@ -179,7 +179,7 @@ std::thread_local! {
     static MD5_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-fn file_md5_hex(path: &Path) -> io::Result<String> {
+pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Md5::new();
 
