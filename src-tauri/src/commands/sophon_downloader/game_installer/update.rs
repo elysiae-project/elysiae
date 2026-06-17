@@ -240,6 +240,28 @@ mod tests {
         assert!(!is_known_vo_locale("cutscenes"));
         assert!(!is_known_vo_locale(""));
     }
+    #[test]
+    fn vo_lang_matches_cases() {
+        // CN matches zh-cn
+        assert!(vo_lang_matches("zh-cn", "cn"));
+        assert!(vo_lang_matches("zh-tw", "cn"));
+        // EN matches en-us
+        assert!(vo_lang_matches("en-us", "en"));
+        // JP matches ja-jp
+        assert!(vo_lang_matches("ja-jp", "jp"));
+        // KR matches ko-kr
+        assert!(vo_lang_matches("ko-kr", "kr"));
+        // Wrong language doesn't match
+        assert!(!vo_lang_matches("en-us", "jp"));
+        assert!(!vo_lang_matches("ja-jp", "en"));
+        // Case insensitive
+        assert!(vo_lang_matches("EN-US", "en"));
+        assert!(vo_lang_matches("zh-cn", "CN"));
+        // Empty doesn't match
+        assert!(!vo_lang_matches("", ""));
+        assert!(!vo_lang_matches("game", "en"));
+    }
+
 
     #[test]
     fn update_info_serde_roundtrip_basic() {
@@ -291,5 +313,23 @@ mod tests {
         let json = r#"{"update_available":true}"#;
         let result: Result<UpdateInfo, _> = serde_json::from_str(json);
         assert!(result.is_err());
+    }
+    #[test]
+    fn update_info_no_update_when_tags_match() {
+        let info = UpdateInfo {
+            update_available: false,
+            preinstall_available: false,
+            preinstall_downloaded: false,
+            current_tag: Some("1.0.0".into()),
+            remote_tag: "1.0.0".into(),
+            preinstall_tag: None,
+            update_compressed_size: 0,
+            update_decompressed_size: 0,
+            preinstall_compressed_size: 0,
+            preinstall_decompressed_size: 0,
+        };
+        assert!(!info.update_available);
+        assert_eq!(info.current_tag.as_deref(), Some("1.0.0"));
+        assert_eq!(info.current_tag.as_deref(), Some(info.remote_tag.as_str()));
     }
 }
