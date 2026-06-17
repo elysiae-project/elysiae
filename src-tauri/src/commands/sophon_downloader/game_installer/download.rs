@@ -51,12 +51,23 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
     let start_str = &after_prefix[..dash_pos];
     start_str.parse().ok()
 }
-
 // Thread-local buffer reused across `compute_file_md5` calls to avoid
 // allocating + zeroing 256 KiB on every invocation. For 5000 chunks verified
 // on resume, this eliminates ~1.28 GB of cumulative allocation churn.
 std::thread_local! {
     static MD5_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// RAII guard that returns the thread-local MD5 buffer to storage on drop.
+struct Md5BufGuard {
+    buf: Vec<u8>,
+}
+
+impl Drop for Md5BufGuard {
+    fn drop(&mut self) {
+        self.buf.clear();
+        MD5_BUF.with(|cell| cell.replace(self.buf.clone()));
+    }
 }
 
 async fn compute_file_md5(path: &Path) -> SophonResult<String> {
@@ -71,24 +82,20 @@ async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     if buf.capacity() < MD5_HASH_BUFFER_SIZE {
         buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
     }
-    // Skip the zero-fill: the hasher only ever reads `buf[..n]` where `n` is
-    // the actual bytes-per-read returned by `file.read()`. The unreferenced
-    // tail is never observed.
     // Safety: every byte of `buf[..MD5_HASH_BUFFER_SIZE]` is overwritten by
     // `file.read(&mut buf)` before `hasher.update(&buf[..n])` is called.
     unsafe { buf.set_len(MD5_HASH_BUFFER_SIZE) };
 
+    // Guard ensures buffer is always returned to thread-local, even on error
+    let mut _guard = Md5BufGuard { buf };
+
     loop {
-        let n = file.read(&mut buf).await?;
+        let n = file.read(&mut _guard.buf).await?;
         if n == 0 {
             break;
         }
-        hasher.update(&buf[..n]);
+        hasher.update(&_guard.buf[..n]);
     }
-
-    // Return buffer to thread_local for reuse on next call
-    buf.clear();
-    MD5_BUF.with(|cell| cell.replace(buf));
 
     Ok(hex::encode(hasher.finalize()))
 }
@@ -110,16 +117,16 @@ async fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
     // `file.read(&mut buf)` before `hasher.write(&buf[..n])` is called.
     unsafe { buf.set_len(super::MD5_HASH_BUFFER_SIZE) };
 
+    // Guard ensures buffer is always returned to thread-local, even on error
+    let mut _guard = Md5BufGuard { buf };
+
     loop {
-        let n = file.read(&mut buf).await?;
+        let n = file.read(&mut _guard.buf).await?;
         if n == 0 {
             break;
         }
-        std::hash::Hasher::write(&mut hasher, &buf[..n]);
+        std::hash::Hasher::write(&mut hasher, &_guard.buf[..n]);
     }
-
-    buf.clear();
-    MD5_BUF.with(|cell| cell.replace(buf));
 
     Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)))
 }
