@@ -1,5 +1,4 @@
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::time::Duration;
 
 use reqwest::Client;
@@ -61,22 +60,21 @@ pub async fn fetch_manifest(
 
     // Write to a temporary file before decompressing
     // This prevents holding both compressed and decompressed manifests in memory at
-    // the same time (almost 100MB each)
+    // the same time (almost 100MB each). Use `NamedTempFile` so the temp path is
+    // atomically unique across concurrent calls and the file is auto-cleaned
+    // (via Drop) even on panic or early return.
     let raw = if dl.is_compressed() {
         let bytes = resp.bytes().await?;
 
-        let tmp_path = tokio::task::spawn_blocking(move || {
-            let tmp_path = manifest_temp_path();
-            let mut f = std::fs::File::create(&tmp_path)?;
-            f.write_all(&bytes)?;
-            f.flush()?;
-            Ok::<PathBuf, SophonError>(tmp_path)
-        })
-        .await??;
-
         tokio::task::spawn_blocking(move || {
-            let raw = decompress_zstd_from_file(&tmp_path)?;
-            let _ = std::fs::remove_file(&tmp_path);
+            let tmp = tempfile::NamedTempFile::new()?;
+            {
+                let mut f = tmp.as_file();
+                f.write_all(&bytes)?;
+                f.flush()?;
+            }
+            let raw = decompress_zstd_from_file(tmp.path())?;
+            // raw is owned Vec<u8>; tmp drops here, removing the file.
             Ok::<Vec<u8>, SophonError>(raw)
         })
         .await??
@@ -90,19 +88,9 @@ pub async fn fetch_manifest(
     Ok(ManifestWithHash { manifest, hash })
 }
 
-/// Generates a unique temp file path for a manifest download.
-/// Uses PID + timestamp to avoid collisions across concurrent calls.
-fn manifest_temp_path() -> PathBuf {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    std::env::temp_dir().join(format!("sophon_manifest_{ts}_{}", std::process::id()))
-}
-
 /// Decompresses zstd data from a file, keeping only the decompressed output in
 /// memory.
-fn decompress_zstd_from_file(path: &PathBuf) -> SophonResult<Vec<u8>> {
+fn decompress_zstd_from_file(path: &std::path::Path) -> SophonResult<Vec<u8>> {
     let file = std::fs::File::open(path)?;
     let mut decoder = zstd::Decoder::new(file)?;
     let mut out = Vec::new();
@@ -357,13 +345,6 @@ mod tests {
     #[test]
     fn is_known_vo_locale_gibberish() {
         assert!(!is_known_vo_locale("xyz123"));
-    }
-
-    #[test]
-    fn manifest_temp_path_returns_valid_path() {
-        let path = manifest_temp_path();
-        assert!(path.to_string_lossy().contains("sophon_manifest_"));
-        assert!(path.parent().unwrap() == std::env::temp_dir());
     }
 
     #[test]
