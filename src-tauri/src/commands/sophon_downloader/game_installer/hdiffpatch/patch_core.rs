@@ -393,9 +393,9 @@ enum CoverReader<'a> {
 }
 
 impl<'a> CoverHeaderIterator<'a> {
-    pub(crate) fn new(cover_reader: &'a mut dyn Read, cover_size: i64, cover_count: i64) -> Self {
+    pub(crate) fn new(cover_reader: &'a mut dyn Read, cover_size: i64, cover_count: i64) -> std::io::Result<Self> {
         if cover_count <= 0 {
-            return Self {
+            return Ok(Self {
                 reader: CoverReader::Buffered {
                     data: Vec::new(),
                     offset: 0,
@@ -403,11 +403,16 @@ impl<'a> CoverHeaderIterator<'a> {
                 remaining: 0,
                 last_old_pos_back: 0,
                 last_new_pos_back: 0,
-            };
+            });
         }
         let reader = if cover_size < MAX_MEM_BUFFER_LEN {
             let mut buffer = vec![0u8; cover_size as usize];
-            let _ = cover_reader.read_exact(&mut buffer);
+            cover_reader.read_exact(&mut buffer).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    format!("failed to read cover data: {}", e),
+                )
+            })?;
             CoverReader::Buffered {
                 data: buffer,
                 offset: 0,
@@ -417,12 +422,12 @@ impl<'a> CoverHeaderIterator<'a> {
                 reader: cover_reader,
             }
         };
-        Self {
+        Ok(Self {
             reader,
             remaining: cover_count,
             last_old_pos_back: 0,
             last_new_pos_back: 0,
-        }
+        })
     }
 }
 
@@ -624,7 +629,7 @@ pub(crate) fn enumerate_cover_headers(
     if cover_count > 0 && cover_size == 0 {
         return Err(std::io::Error::other("cover_count > 0 but cover_size is 0"));
     }
-    CoverHeaderIterator::new(cover_reader, cover_size, cover_count).collect()
+    CoverHeaderIterator::new(cover_reader, cover_size, cover_count)?.collect()
 }
 
 #[allow(dead_code, clippy::needless_lifetimes)]
@@ -651,11 +656,7 @@ pub(crate) fn enumerate_cover_headers_checked<'a>(
     if cover_count > 0 && cover_size == 0 {
         return Err(std::io::Error::other("cover_count > 0 but cover_size is 0"));
     }
-    Ok(CoverHeaderIterator::new(
-        cover_reader,
-        cover_size,
-        cover_count,
-    ))
+    CoverHeaderIterator::new(cover_reader, cover_size, cover_count)
 }
 
 // ========== RLE Unit Tests ==========
