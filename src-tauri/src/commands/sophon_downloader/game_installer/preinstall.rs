@@ -3003,6 +3003,94 @@ mod tests {
     }
 
     #[test]
+    fn apply_hdiff_patch_blank_original_creates_diff_ref() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk.bin"), b"dummy chunk data").unwrap();
+
+        // Asset where original file doesn't exist but hash indicates blank file
+        let asset = PatchAssetInfo {
+            target_file_path: "new_file.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("nonexistent.bin".to_string()),
+            original_file_hash: Some(BLANK_FILE_MD5.to_string()),
+            original_file_size: Some(0),
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        // Should NOT return OriginalFileMissing — should create blank diff_ref and proceed
+        assert!(
+            !matches!(result, Err(SophonError::OriginalFileMissing(_))),
+            "Should not return OriginalFileMissing for blank original: {:?}",
+            result
+        );
+        // The patch will fail because the dummy chunk isn't a real HDiff, but that's OK —
+        // the point is we got past the blank-file check and didn't error on missing original.
+        // Verify the diff_ref was cleaned up after patching
+        let diff_ref_path = dir.path().join("patching/patch_chunk.bin.diff_ref");
+        assert!(
+            !diff_ref_path.exists(),
+            "diff_ref file should have been cleaned up after patching"
+        );
+    }
+
+    #[test]
+    fn apply_hdiff_patch_blank_original_by_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk2.bin"), b"dummy chunk data").unwrap();
+
+        // Asset where original file doesn't exist and original_file_size is 0
+        let asset = PatchAssetInfo {
+            target_file_path: "another_new_file.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk2.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("nonexistent2.bin".to_string()),
+            original_file_hash: None,
+            original_file_size: Some(0),
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        // Should NOT return OriginalFileMissing — should create blank diff_ref and proceed
+        assert!(
+            !matches!(result, Err(SophonError::OriginalFileMissing(_))),
+            "Should not return OriginalFileMissing for blank original (size=0): {:?}",
+            result
+        );
+        // Verify the diff_ref was cleaned up after patching
+        let diff_ref_path = dir.path().join("patching/patch_chunk2.bin.diff_ref");
+        assert!(
+            !diff_ref_path.exists(),
+            "diff_ref file should have been cleaned up after patching"
+        );
+    }
+
+    #[test]
     fn apply_hdiff_patch_from_files_blank_diff_ref_hash_matches() {
         let dir = tempfile::tempdir().unwrap();
 
