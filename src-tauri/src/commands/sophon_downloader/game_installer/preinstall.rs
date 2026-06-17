@@ -3108,6 +3108,54 @@ mod tests {
             "diff_ref file should have been cleaned up after patching"
         );
     }
+    /// Test that original_file_hash == BLANK_FILE_MD5 triggers blank-file handling
+    /// even when original_file_size is non-zero. The hash is authoritative for
+    /// blank detection; size inconsistency is a manifest bug but we handle it
+    /// gracefully by treating the file as blank.
+    #[test]
+    fn apply_hdiff_patch_blank_original_by_hash_ignores_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk3.bin"), b"dummy chunk data").unwrap();
+
+        // Asset where original file doesn't exist, hash indicates blank, but
+        // size is inconsistent (non-zero). Hash should take precedence.
+        let asset = PatchAssetInfo {
+            target_file_path: "new_file2.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk3.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("nonexistent3.bin".to_string()),
+            original_file_hash: Some(BLANK_FILE_MD5.to_string()),
+            original_file_size: Some(999), // Inconsistent: hash says blank, size says 999
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        // Should NOT return OriginalFileMissing — hash takes precedence and
+        // triggers blank-file handling.
+        assert!(
+            !matches!(result, Err(SophonError::OriginalFileMissing(_))),
+            "Should not return OriginalFileMissing when hash indicates blank: {:?}",
+            result
+        );
+        // Verify the diff_ref was cleaned up after patching
+        let diff_ref_path = dir.path().join("patching/patch_chunk3.bin.diff_ref");
+        assert!(
+            !diff_ref_path.exists(),
+            "diff_ref file should have been cleaned up after patching"
+        );
+    }
 
     #[test]
     fn apply_hdiff_patch_from_files_blank_diff_ref_hash_matches() {
