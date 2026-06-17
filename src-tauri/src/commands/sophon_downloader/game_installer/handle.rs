@@ -35,6 +35,10 @@ impl DownloadHandle {
     }
 
     pub fn pause(&self) {
+        // Cancellation is terminal — never overwrite it with PAUSED.
+        if self.state.load(Ordering::Acquire) == STATE_CANCELLED {
+            return;
+        }
         self.state.store(STATE_PAUSED, Ordering::Release);
     }
 
@@ -43,14 +47,22 @@ impl DownloadHandle {
         if self.state.load(Ordering::Acquire) == STATE_CANCELLED {
             return;
         }
-        // Only transition from PAUSED to RUNNING
-        let _ = self.state.compare_exchange(
-            STATE_PAUSED,
-            STATE_RUNNING,
-            Ordering::Release,
-            Ordering::Relaxed,
-        );
-        self.pause_notify.notify_waiters();
+        // Only transition from PAUSED to RUNNING and only wake waiters when the
+        // transition actually happened; otherwise we'd spuriously notify when no
+        // task is parked on `pause_notify` (e.g. resume called without a prior
+        // pause, or resume called twice in a row).
+        if self
+            .state
+            .compare_exchange(
+                STATE_PAUSED,
+                STATE_RUNNING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            self.pause_notify.notify_waiters();
+        }
     }
 
     pub fn cancel(&self) {
@@ -177,5 +189,46 @@ mod tests {
         assert_eq!(handle.get_state(), ControlState::Paused);
         handle.resume();
         assert_eq!(handle.get_state(), ControlState::Running);
+    }
+
+    #[test]
+    fn handle_resume_after_cancel_is_noop() {
+        let handle = DownloadHandle::new();
+        handle.cancel();
+        handle.resume();
+        assert_eq!(handle.get_state(), ControlState::Cancelled);
+        assert!(handle.is_cancelled());
+    }
+
+    #[test]
+    fn handle_pause_after_cancel_is_noop() {
+        let handle = DownloadHandle::new();
+        handle.cancel();
+        handle.pause();
+        assert_eq!(handle.get_state(), ControlState::Cancelled);
+        assert!(handle.is_cancelled());
+    }
+
+    #[test]
+    fn handle_resume_without_prior_pause_is_noop() {
+        let handle = DownloadHandle::new();
+        // Resume while state is RUNNING (not PAUSED) must not transition or notify
+        handle.resume();
+        assert_eq!(handle.get_state(), ControlState::Running);
+    }
+
+    #[tokio::test]
+    async fn handle_concurrent_pause_cancel_idempotent() {
+        for _ in 0..50 {
+            let handle = DownloadHandle::new();
+            let h = handle.clone();
+            tokio::spawn(async move {
+                h.pause();
+            });
+            handle.cancel();
+            tokio::task::yield_now().await;
+            // final state must be Cancelled (cancel takes precedence)
+            assert!(handle.is_cancelled());
+        }
     }
 }
