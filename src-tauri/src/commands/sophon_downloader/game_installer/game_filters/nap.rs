@@ -89,7 +89,7 @@ pub fn write_nap_audio_lang_records(game_dir: &Path, vo_langs: &[String]) -> std
 
 fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
     match locale {
-        "zh-cn" | "cn" => Some("Chinese"),
+        "zh-cn" | "cn" | "zh-tw" => Some("Chinese"),
         "en-us" | "en" => Some("English(US)"),
         "ja-jp" | "jp" => Some("Japanese"),
         "ko-kr" | "kr" => Some("Korean"),
@@ -99,7 +99,7 @@ fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
 
 fn locale_code_to_abbrev_lang_name(locale: &str) -> Option<&'static str> {
     match locale {
-        "zh-cn" | "cn" => Some("Cn"),
+        "zh-cn" | "cn" | "zh-tw" => Some("Cn"),
         "en-us" | "en" => Some("En"),
         "ja-jp" | "jp" => Some("Jp"),
         "ko-kr" | "kr" => Some("Kr"),

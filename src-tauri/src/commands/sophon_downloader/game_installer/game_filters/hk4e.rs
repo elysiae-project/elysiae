@@ -75,7 +75,7 @@ pub fn write_audio_lang_record(game_dir: &Path, vo_langs: &[String]) -> std::io:
 
 fn locale_code_to_audio_lang_name(locale: &str) -> Option<&'static str> {
     match locale {
-        "zh-cn" | "cn" => Some("Chinese"),
+        "zh-cn" | "cn" | "zh-tw" => Some("Chinese"),
         "en-us" | "en" => Some("English(US)"),
         "ja-jp" | "jp" => Some("Japanese"),
         "ko-kr" | "kr" => Some("Korean"),
