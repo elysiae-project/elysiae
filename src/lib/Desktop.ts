@@ -42,10 +42,14 @@ export const broadcastNotification = async (message: string) => {
 	}
 };
 
+/**
+ * Creates a desktop shortcut for an installed game
+ */
 export const createDesktopShortcut = async (game: Variants) => {
 	const gameName = variantToGameName[game];
 	const filePath = await join(await desktopDir(), `${gameName}.desktop`);
 
+	// TODO: Start caching game icons and other image assets to allow icons to be set for the dekstop shortcuts here
 	const desktopEntry = `
 		[Desktop Entry]
 		Name=${gameName}
@@ -54,7 +58,6 @@ export const createDesktopShortcut = async (game: Variants) => {
 		Icon=
 		Type=Application
 		Categories=Game
-		
 	`;
 
 	await writeTextFile(filePath, desktopEntry);
