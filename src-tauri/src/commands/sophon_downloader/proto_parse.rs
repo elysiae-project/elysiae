@@ -34,6 +34,9 @@ pub struct SophonManifestAssetProperty {
 
 impl SophonManifestAssetProperty {
     /// Returns true if this entry represents a directory (not a data file).
+    /// A directory is identified by either:
+    /// - `asset_type != 0` (proto value: 64 = directory), OR
+    /// - `asset_hash_md5` being empty (directories have no file content hash)
     #[inline]
     pub fn is_directory(&self) -> bool {
         self.asset_type != 0 || self.asset_hash_md5.is_empty()
