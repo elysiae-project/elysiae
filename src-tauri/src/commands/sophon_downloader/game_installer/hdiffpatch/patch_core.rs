@@ -16,7 +16,18 @@ pub(crate) fn write_cover_stream_to_output(
     header_info: &HeaderInfo,
     on_progress: Option<&dyn Fn(u64)>,
 ) -> std::io::Result<()> {
-    let mut shared_buffer = vec![0u8; MAX_ARRAY_POOL_LEN];
+    // Both halves of the shared buffer are fully written via read_exact
+    // before any byte is read from them. Skip the zero-init that
+    // `vec![0; n]` would perform to avoid touching 4 MiB of memory
+    // on every patch application.
+    // Safety: every index 0..MAX_ARRAY_POOL_LEN is populated by
+    // read_exact or write_all before being read in the RLE decode loop.
+    #[allow(clippy::uninit_vec)]
+    let mut shared_buffer = {
+        let mut v = Vec::with_capacity(MAX_ARRAY_POOL_LEN);
+        unsafe { v.set_len(MAX_ARRAY_POOL_LEN) };
+        v
+    };
     let mut cache = Cursor::new(Vec::<u8>::new());
 
     let mut new_pos_back = 0i64;
@@ -377,7 +388,7 @@ pub(crate) struct CoverHeaderIterator<'a> {
 }
 
 enum CoverReader<'a> {
-    Buffered { data: &'a [u8], offset: usize },
+    Buffered { data: Vec<u8>, offset: usize },
     Streaming { reader: &'a mut dyn Read },
 }
 
@@ -386,7 +397,7 @@ impl<'a> CoverHeaderIterator<'a> {
         if cover_count <= 0 {
             return Self {
                 reader: CoverReader::Buffered {
-                    data: &[],
+                    data: Vec::new(),
                     offset: 0,
                 },
                 remaining: 0,
@@ -398,7 +409,7 @@ impl<'a> CoverHeaderIterator<'a> {
             let mut buffer = vec![0u8; cover_size as usize];
             let _ = cover_reader.read_exact(&mut buffer);
             CoverReader::Buffered {
-                data: buffer.leak(),
+                data: buffer,
                 offset: 0,
             }
         } else {
