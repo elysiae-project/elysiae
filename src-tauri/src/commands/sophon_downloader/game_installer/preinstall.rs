@@ -49,6 +49,25 @@ use crate::commands::sophon_downloader::proto_parse::{
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
 const BLANK_FILE_MD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
+/// RAII guard that cleans up a blank diff_ref file when dropped.
+/// Ensures the temp file is removed on all return paths (normal return,
+/// early return, or panic).
+struct DiffRefGuard(Option<PathBuf>);
+
+impl Drop for DiffRefGuard {
+    fn drop(&mut self) {
+        if let Some(ref path) = self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+impl DiffRefGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+}
 const PREINSTALL_STATE_FILE_EXT: &str = ".json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1572,8 +1591,7 @@ fn apply_hdiff_patch(
         Some(p) => validate_asset_path(game_dir, p)?,
         None => validate_asset_path(game_dir, &asset.target_file_path)?,
     };
-
-    let mut blank_original_path: Option<PathBuf> = None;
+    let mut diff_ref_guard: DiffRefGuard = DiffRefGuard(None);
     if !original_path.exists() {
         let is_blank = asset.original_file_hash.as_deref() == Some(BLANK_FILE_MD5)
             || asset.original_file_size == Some(0);
@@ -1585,7 +1603,6 @@ fn apply_hdiff_patch(
             }
             fs::File::create(&diff_ref)?;
             if !verify_file_hash(&diff_ref, BLANK_FILE_MD5) {
-                let _ = fs::remove_file(&diff_ref);
                 return Err(SophonError::HDiffPatchFailed {
                     file: asset.target_file_path.clone(),
                     error: format!(
@@ -1593,7 +1610,7 @@ fn apply_hdiff_patch(
                     ),
                 });
             }
-            blank_original_path = Some(diff_ref);
+            diff_ref_guard = DiffRefGuard::new(diff_ref);
         } else if is_filtered_asset(cache, asset) {
             log::warn!(
                 "Original file missing for filtered asset, skipping: {}",
@@ -1607,33 +1624,33 @@ fn apply_hdiff_patch(
         }
     }
 
-    if blank_original_path.is_none() {
-        if let Some(ref expected_size) = asset.original_file_size {
-            let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
-            if actual_size != *expected_size {
-                if is_filtered_asset(cache, asset) {
-                    log::warn!(
-                        "Original file size mismatch for filtered asset, skipping: {}",
-                        asset.target_file_path
-                    );
-                    return Ok(());
-                }
+    if diff_ref_guard.0.is_none()
+        && let Some(ref expected_size) = asset.original_file_size
+    {
+        let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
+        if actual_size != *expected_size {
+            if is_filtered_asset(cache, asset) {
                 log::warn!(
-                    "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
-                    original_path.display(),
-                    expected_size,
-                    actual_size
+                    "Original file size mismatch for filtered asset, skipping: {}",
+                    asset.target_file_path
                 );
-                let _ = fs::remove_file(&original_path);
-                return Err(SophonError::OriginalFileMissing(format!(
-                    "{} (Size mismatch: expected {expected_size}, got {actual_size})",
-                    original_path.display()
-                )));
+                return Ok(());
             }
+            log::warn!(
+                "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
+                original_path.display(),
+                expected_size,
+                actual_size
+            );
+            let _ = fs::remove_file(&original_path);
+            return Err(SophonError::OriginalFileMissing(format!(
+                "{} (Size mismatch: expected {expected_size}, got {actual_size})",
+                original_path.display()
+            )));
         }
     }
     if let Some(ref expected_md5) = asset.original_file_hash
-        && blank_original_path.is_none()
+        && diff_ref_guard.0.is_none()
         && original_path.exists()
         && !expected_md5.is_empty()
         && !verify_file_hash(&original_path, expected_md5)
@@ -1646,7 +1663,7 @@ fn apply_hdiff_patch(
         return Ok(());
     }
     if let Some(ref expected_md5) = asset.original_file_hash
-        && blank_original_path.is_none()
+        && diff_ref_guard.0.is_none()
         && original_path.exists()
         && !expected_md5.is_empty()
         && !verify_file_hash(&original_path, expected_md5)
@@ -1708,7 +1725,7 @@ fn apply_hdiff_patch(
         fs::create_dir_all(parent)?;
     }
 
-    let effective_original = blank_original_path.as_deref().unwrap_or(&original_path);
+    let effective_original = diff_ref_guard.0.as_deref().unwrap_or(&original_path);
     let op = effective_original.to_string_lossy().into_owned();
     let dp = diff_temp.to_string_lossy().into_owned();
     let tp = temp_output.to_string_lossy().into_owned();
@@ -1719,9 +1736,6 @@ fn apply_hdiff_patch(
     }));
 
     let _ = fs::remove_file(&diff_temp);
-    if let Some(ref diff_ref) = blank_original_path {
-        let _ = fs::remove_file(diff_ref);
-    }
 
     match patch_result {
         Ok(true) => {
