@@ -134,7 +134,11 @@ pub fn check_file_md5_cached(
         .to_string();
     let metadata = match path.metadata() {
         Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File deleted - evict stale entry if present
+            cache.remove(&cache_key);
+            return Ok(false);
+        }
         Err(e) => return Err(e),
     };
     let mtime = metadata
@@ -152,6 +156,8 @@ pub fn check_file_md5_cached(
     }
 
     if metadata.len() != expected_size {
+        // Size mismatch - evict stale entry
+        cache.remove(&cache_key);
         return Ok(false);
     }
 
@@ -167,6 +173,9 @@ pub fn check_file_md5_cached(
                 mtime_secs: mtime,
             },
         );
+    } else {
+        // MD5 mismatch - evict stale entry to avoid repeated computation
+        cache.remove(&cache_key);
     }
 
     Ok(matches)
