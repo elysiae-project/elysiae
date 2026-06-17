@@ -168,12 +168,22 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         return Err(SophonError::ApiError(resp.retcode, resp.message));
     }
 
-    let mut plugins: Vec<PluginPackageInfo> = resp
+    // Non-adjacent duplicate plugin_ids can appear when the upstream returns
+    // multiple releases. `Vec::dedup_by` only removes consecutive duplicates,
+    // so we'd otherwise surface the same plugin multiple times (causing
+    // double-install attempts and UI confusion). Use a HashSet to dedup
+    // across the entire flat-map output, preserving upstream ordering so the
+    // newest (typically first) version wins when both are present.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let plugins: Vec<PluginPackageInfo> = resp
         .data
         .plugin_releases
         .into_iter()
         .flat_map(|r| r.plugins)
         .filter(|p| {
+            if !seen.insert(p.plugin_id.clone()) {
+                return false;
+            }
             let filename = p
                 .plugin_pkg
                 .url
@@ -185,7 +195,6 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         })
         .collect();
 
-    plugins.dedup_by(|a, b| a.plugin_id == b.plugin_id);
     Ok(plugins)
 }
 
@@ -413,5 +422,89 @@ mod tests {
         assert_eq!(entry.path, "f.dll");
         assert_eq!(entry.md5, None);
         assert_eq!(entry.size, Some(100));
+    }
+
+    #[test]
+    fn dedup_non_adjacent_duplicate_plugin_ids() {
+        // Same plugin_id p1 across two releases with other plugins between them.
+        // The prior `dedup_by` only removed *consecutive* duplicates so p1
+        // would have appeared twice in the result. The HashSet-based dedup
+        // keeps the first occurrence (typically the newest version when the
+        // upstream returns releases in newest-first order).
+        let json = r#"{
+            "retcode": 0,
+            "message": "OK",
+            "data": {
+                "plugin_releases": [
+                    {
+                        "game": {"id": "gopR6Cufr3", "biz": "hk4e_global"},
+                        "plugins": [
+                            {
+                                "plugin_id": "p1",
+                                "release_id": "r1",
+                                "version": "2.0",
+                                "plugin_pkg": {
+                                    "url": "https://example.com/p1v2.zip",
+                                    "md5": "abc",
+                                    "size": "100",
+                                    "decompressed_size": "200",
+                                    "command": null,
+                                    "validation": "[]",
+                                    "pkg_version_file_name": null
+                                }
+                            },
+                            {
+                                "plugin_id": "p2",
+                                "release_id": "r2",
+                                "version": "1.0",
+                                "plugin_pkg": {
+                                    "url": "https://example.com/p2.zip",
+                                    "md5": "def",
+                                    "size": "100",
+                                    "decompressed_size": "200",
+                                    "command": null,
+                                    "validation": "[]",
+                                    "pkg_version_file_name": null
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "game": {"id": "gopR6Cufr3", "biz": "hk4e_global"},
+                        "plugins": [
+                            {
+                                "plugin_id": "p1",
+                                "release_id": "r3",
+                                "version": "1.0",
+                                "plugin_pkg": {
+                                    "url": "https://example.com/p1v1.zip",
+                                    "md5": "ghi",
+                                    "size": "100",
+                                    "decompressed_size": "200",
+                                    "command": null,
+                                    "validation": "[]",
+                                    "pkg_version_file_name": null
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+        let resp: PluginApiResponse = serde_json::from_str(json).unwrap();
+        // Replicate the dedup logic from `fetch_plugins` (locally because the
+        // function is async + requires an HTTP client).
+        let mut seen = std::collections::HashSet::new();
+        let plugins: Vec<PluginPackageInfo> = resp
+            .data
+            .plugin_releases
+            .into_iter()
+            .flat_map(|r| r.plugins)
+            .filter(|p| seen.insert(p.plugin_id.clone()))
+            .collect();
+        assert_eq!(plugins.len(), 2);
+        assert_eq!(plugins[0].plugin_id, "p1");
+        assert_eq!(plugins[0].version, "2.0");
+        assert_eq!(plugins[1].plugin_id, "p2");
     }
 }
