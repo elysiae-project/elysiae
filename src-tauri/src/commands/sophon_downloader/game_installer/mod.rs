@@ -34,7 +34,14 @@ use std::time::Duration;
 
 pub fn retry_delay(attempt: u32) -> Duration {
     let exp = 1000u64.saturating_mul(1u64 << attempt.min(5));
-    Duration::from_millis(exp.min(30_000))
+    // Add jitter to prevent thundering herd when multiple chunks fail simultaneously
+    // Use timestamp-based pseudo-random jitter
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let jitter = (seed.wrapping_mul(1103515245)).wrapping_add(12345) % 1000;
+    Duration::from_millis(exp.min(30_000) + jitter)
 }
 
 pub async fn cancelable_sleep(
@@ -168,18 +175,28 @@ mod tests {
 
     #[test]
     fn retry_delay_exponential() {
-        assert_eq!(retry_delay(0), Duration::from_millis(1000));
-        assert_eq!(retry_delay(1), Duration::from_millis(2000));
-        assert_eq!(retry_delay(2), Duration::from_millis(4000));
-        assert_eq!(retry_delay(3), Duration::from_millis(8000));
-        assert_eq!(retry_delay(4), Duration::from_millis(16000));
+        // Base delays with jitter (0-999ms added)
+        assert!(retry_delay(0) >= Duration::from_millis(1000));
+        assert!(retry_delay(0) < Duration::from_millis(2000));
+        assert!(retry_delay(1) >= Duration::from_millis(2000));
+        assert!(retry_delay(1) < Duration::from_millis(3000));
+        assert!(retry_delay(2) >= Duration::from_millis(4000));
+        assert!(retry_delay(2) < Duration::from_millis(5000));
+        assert!(retry_delay(3) >= Duration::from_millis(8000));
+        assert!(retry_delay(3) < Duration::from_millis(9000));
+        assert!(retry_delay(4) >= Duration::from_millis(16000));
+        assert!(retry_delay(4) < Duration::from_millis(17000));
     }
 
     #[test]
     fn retry_delay_capped_at_30s() {
-        assert_eq!(retry_delay(5), Duration::from_millis(30000));
-        assert_eq!(retry_delay(10), Duration::from_millis(30000));
-        assert_eq!(retry_delay(100), Duration::from_millis(30000));
+        // Capped at 30000 + jitter (up to ~30999ms)
+        assert!(retry_delay(5) >= Duration::from_millis(30000));
+        assert!(retry_delay(5) < Duration::from_millis(31000));
+        assert!(retry_delay(10) >= Duration::from_millis(30000));
+        assert!(retry_delay(10) < Duration::from_millis(31000));
+        assert!(retry_delay(100) >= Duration::from_millis(30000));
+        assert!(retry_delay(100) < Duration::from_millis(31000));
     }
 
     #[tokio::test]
