@@ -1,19 +1,12 @@
-import {
-	desktopDir,
-	join,
-	resolveResource,
-} from "@tauri-apps/api/path";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { resolveResource } from "@tauri-apps/api/path";
+import { BaseDirectory, writeTextFile } from "@tauri-apps/plugin-fs";
 import {
 	requestPermission,
 	sendNotification,
 } from "@tauri-apps/plugin-notification";
 import type { Variants } from "../types";
 import { getOption, setOption } from "./Settings";
-import {
-	variantToGameCode,
-	variantToGameName,
-} from "./VariantConverter";
+import { variantToGameCode, variantToGameName } from "./VariantConverter";
 
 /**
  * @returns Status of notification permission from DE + settings.
@@ -47,20 +40,25 @@ export const broadcastNotification = async (message: string) => {
  */
 export const createDesktopShortcut = async (game: Variants) => {
 	const gameName = variantToGameName[game];
-	const filePath = await join(await desktopDir(), `${gameName}.desktop`);
 
 	// TODO: Start caching game icons and other image assets to allow icons to be set for the dekstop shortcuts here
 	const desktopEntry = `
 		[Desktop Entry]
 		Name=${gameName}
-		Exec=elysiae://open-game/${variantToGameCode[game]}
+		Exec=xdg-open elysiae://open-game/${variantToGameCode[game]}
 		Comment="Play with Elysiae"
 		Icon=
 		Type=Application
 		Categories=Game
 	`;
 
-	await writeTextFile(filePath, desktopEntry);
+	await writeTextFile(`${gameName}.desktop`, desktopEntry, {
+		baseDir: BaseDirectory.Desktop,
+	});
+
+	await writeTextFile(`applications/${gameName}.desktop`, desktopEntry, {
+		baseDir: BaseDirectory.Data,
+	});
 };
 
 /*

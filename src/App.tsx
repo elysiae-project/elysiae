@@ -22,6 +22,7 @@ import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
 import { startListening } from "./lib/DeepLinkManager.ts";
+import { createDesktopShortcut } from "./lib/Desktop.ts";
 import { type ModalHandle, Variants } from "./types";
 
 const textTheme = cva(null, {
@@ -54,6 +55,7 @@ const App = () => {
 	useEffect(() => {
 		restoreStateCurrent(StateFlags.ALL);
 		startListening();
+		createDesktopShortcut(Variants.HKRPG); // temporary, remove before pr merge
 	}, []);
 
 	return (
