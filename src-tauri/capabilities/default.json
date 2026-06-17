@@ -74,6 +74,7 @@
     "notification:default",
     "core:app:allow-default-window-icon",
     "window-state:default",
+    "core:event:default",
     "deep-link:default"
   ]
 }
