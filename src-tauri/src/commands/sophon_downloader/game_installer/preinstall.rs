@@ -1568,43 +1568,67 @@ fn apply_hdiff_patch(
         None => validate_asset_path(game_dir, &asset.target_file_path)?,
     };
 
+    let mut blank_original_path: Option<PathBuf> = None;
     if !original_path.exists() {
-        if is_filtered_asset(cache, asset) {
+        let is_blank = asset.original_file_hash.as_deref() == Some(BLANK_FILE_MD5)
+            || asset.original_file_size == Some(0);
+        if is_blank {
+            let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+            let diff_ref = game_dir.join(format!("patching/{}.diff_ref", safe_patch_name));
+            if let Some(parent) = diff_ref.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::File::create(&diff_ref)?;
+            if !verify_file_hash(&diff_ref, BLANK_FILE_MD5) {
+                let _ = fs::remove_file(&diff_ref);
+                return Err(SophonError::HDiffPatchFailed {
+                    file: asset.target_file_path.clone(),
+                    error: format!(
+                        "Blank diff_ref file hash mismatch for created empty file at {diff_ref:?}"
+                    ),
+                });
+            }
+            blank_original_path = Some(diff_ref);
+        } else if is_filtered_asset(cache, asset) {
             log::warn!(
                 "Original file missing for filtered asset, skipping: {}",
                 asset.target_file_path
             );
             return Ok(());
+        } else {
+            return Err(SophonError::OriginalFileMissing(
+                original_path.to_string_lossy().to_string(),
+            ));
         }
-        return Err(SophonError::OriginalFileMissing(
-            original_path.to_string_lossy().to_string(),
-        ));
     }
 
-    if let Some(ref expected_size) = asset.original_file_size {
-        let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
-        if actual_size != *expected_size {
-            if is_filtered_asset(cache, asset) {
+    if blank_original_path.is_none() {
+        if let Some(ref expected_size) = asset.original_file_size {
+            let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
+            if actual_size != *expected_size {
+                if is_filtered_asset(cache, asset) {
+                    log::warn!(
+                        "Original file size mismatch for filtered asset, skipping: {}",
+                        asset.target_file_path
+                    );
+                    return Ok(());
+                }
                 log::warn!(
-                    "Original file size mismatch for filtered asset, skipping: {}",
-                    asset.target_file_path
+                    "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
+                    original_path.display(),
+                    expected_size,
+                    actual_size
                 );
-                return Ok(());
+                let _ = fs::remove_file(&original_path);
+                return Err(SophonError::OriginalFileMissing(format!(
+                    "{} (Size mismatch: expected {expected_size}, got {actual_size})",
+                    original_path.display()
+                )));
             }
-            log::warn!(
-                "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
-                original_path.display(),
-                expected_size,
-                actual_size
-            );
-            let _ = fs::remove_file(&original_path);
-            return Err(SophonError::OriginalFileMissing(format!(
-                "{} (Size mismatch: expected {expected_size}, got {actual_size})",
-                original_path.display()
-            )));
         }
     }
     if let Some(ref expected_md5) = asset.original_file_hash
+        && blank_original_path.is_none()
         && original_path.exists()
         && !expected_md5.is_empty()
         && !verify_file_hash(&original_path, expected_md5)
@@ -1617,13 +1641,14 @@ fn apply_hdiff_patch(
         return Ok(());
     }
     if let Some(ref expected_md5) = asset.original_file_hash
+        && blank_original_path.is_none()
         && original_path.exists()
         && !expected_md5.is_empty()
         && !verify_file_hash(&original_path, expected_md5)
         && !is_filtered_asset(cache, asset)
     {
         log::warn!(
-            "Original file MD5 mismatch for {} — deleting and falling back to DownloadOver (matching reference behavior)",
+            "Original file MD5 mismatch for {} — deleting and falling back to DownloadOver",
             original_path.display()
         );
         let _ = fs::remove_file(&original_path);
@@ -1678,7 +1703,8 @@ fn apply_hdiff_patch(
         fs::create_dir_all(parent)?;
     }
 
-    let op = original_path.to_string_lossy().into_owned();
+    let effective_original = blank_original_path.as_deref().unwrap_or(&original_path);
+    let op = effective_original.to_string_lossy().into_owned();
     let dp = diff_temp.to_string_lossy().into_owned();
     let tp = temp_output.to_string_lossy().into_owned();
 
@@ -1688,6 +1714,9 @@ fn apply_hdiff_patch(
     }));
 
     let _ = fs::remove_file(&diff_temp);
+    if let Some(ref diff_ref) = blank_original_path {
+        let _ = fs::remove_file(diff_ref);
+    }
 
     match patch_result {
         Ok(true) => {
