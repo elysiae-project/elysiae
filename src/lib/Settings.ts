@@ -20,6 +20,7 @@ const loadStore = async (): Promise<Store> => {
 			})
 			.catch((e) => {
 				error(`loadStore: ${e}`);
+				reject(e);
 			});
 	});
 };
@@ -30,7 +31,6 @@ export const getOption = async <T = unknown>(
 	if (!store) {
 		store = await loadStore();
 	}
-
 	return store?.get<T>(key);
 };
 

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
-import { broadcastNotification } from "./Desktop";
+import { broadcastNotification, createDesktopShortcut } from "./Desktop";
 import { exists } from "./Fs";
 import { protonExec, protonJadeiteExec } from "./ProtonManager";
 import { getOption } from "./Settings";
@@ -33,6 +33,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		await broadcastNotification(
 			`${variantToGameName[game]} Has Finished Downloading`,
 		);
+		await createDesktopShortcut(game);
 	}
 };
 
@@ -51,8 +52,7 @@ export const runGame = async (game: Variants): Promise<void> => {
 		game === Variants.HKRPG
 			? await protonJadeiteExec(gamePath)
 			: await protonExec(gamePath);
-	}
-	else {
+	} else {
 		await downloadGame(game);
 	}
 };

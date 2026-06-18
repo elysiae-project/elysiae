@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { error } from "@tauri-apps/plugin-log";
 
 /**
  * @param url Link to an API
@@ -8,24 +9,32 @@ import { listen } from "@tauri-apps/api/event";
 export const getApiJson = async <T>(url: string): Promise<T> => {
 	return new Promise((resolve, reject) => {
 		if (!isURLValid(url)) {
+			error(`getApiJson: URL ${url} is invalid`);
 			reject(`getApiJson: URL ${url} is invalid`);
 		}
 		fetch(url, {
 			method: "GET",
-		}).then((response) => {
-			if (response.status === 200) {
-				response
-					.json()
-					.then((json) => {
-						resolve(json as T);
-					})
-					.catch((e) => {
-						reject(`getApiJson: ${e}`);
-					});
-			} else {
-				reject(`getAPIJson: ${url} returned status code ${response.status}`);
-			}
-		});
+		})
+			.then((response) => {
+				if (response.status === 200) {
+					response
+						.json()
+						.then((json) => {
+							resolve(json as T);
+						})
+						.catch((e) => {
+							error(`getApiJson: ${e}`);
+							reject(`getApiJson: ${e}`);
+						});
+				} else {
+					error(`getAPIJson: ${url} returned status code ${response.status}`);
+					reject(`getAPIJson: ${url} returned status code ${response.status}`);
+				}
+			})
+			.catch((e) => {
+				error(`getApiJson: fetch failed: ${e}`);
+				reject(`getApiJson: fetch failed: ${e}`);
+			});
 	});
 };
 
@@ -63,19 +72,22 @@ export const downloadFile = async (
 			dest: destination,
 			uuid: downloadID,
 		});
+	} catch (e) {
+		error(e as string);
+		console.log(e);
 	} finally {
 		unlisten();
 	}
 };
 
 export const downloadFileNoProgress = async (
-  url: string,
-  destination: string,
+	url: string,
+	destination: string,
 ) => {
-  const downloadID = crypto.randomUUID();
-  await invoke<void>("download_file", {
-    url: url,
-    dest: destination,
-    uuid: downloadID,
-  });
+	const downloadID = crypto.randomUUID();
+	await invoke<void>("download_file", {
+		url: url,
+		dest: destination,
+		uuid: downloadID,
+	});
 };
