@@ -915,7 +915,7 @@ pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     };
     let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = Md5::new();
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
@@ -944,7 +944,7 @@ pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
     };
     let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = twox_hash::XxHash64::default();
-    let mut buf = [0u8; 64 * 1024];
+    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
     loop {
         match std::io::Read::read(&mut reader, &mut buf) {
             Ok(0) => break,

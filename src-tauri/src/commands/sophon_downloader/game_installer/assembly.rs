@@ -373,7 +373,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
     let f = File::open(chunk_path)?;
-    let buf_reader = BufReader::with_capacity(64 * 1024, f);
+    let buf_reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
     let mut decoder = zstd::Decoder::new(buf_reader)?;
     let window_log: u32 = if cfg!(target_pointer_width = "64") {
         31
@@ -453,7 +453,7 @@ fn write_from_old_file<W: Write + Seek>(
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
     let f = File::open(old_file_path).map_err(SophonError::Io)?;
-    let mut reader = BufReader::with_capacity(64 * 1024, f);
+    let mut reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
     reader.seek(SeekFrom::Start(old_offset))?;
 
     writer.seek(SeekFrom::Start(new_offset))?;
