@@ -142,56 +142,54 @@ async fn do_download_chunk(
 
     if existing_size >= chunk.chunk_size {
         // Truncate if oversized, then verify
-        if existing_size >= chunk.chunk_size {
-            if existing_size > chunk.chunk_size {
-                // Truncate to expected size: avoids re-downloading when extra
-                // bytes were appended from a previous interrupted write.
-                match tokio::fs::OpenOptions::new().write(true).open(dest).await {
-                    Ok(f) => {
-                        if let Err(e) = f.set_len(chunk.chunk_size).await {
-                            log::warn!(
-                                "Failed to truncate {} to {}: {}; deleting and re-downloading",
-                                chunk.chunk_name,
-                                chunk.chunk_size,
-                                e
-                            );
-                            let _ = tokio::fs::remove_file(dest).await;
-                            existing_size = 0;
-                        } else {
-                            existing_size = chunk.chunk_size;
-                        }
-                    }
-                    Err(e) => {
+        if existing_size > chunk.chunk_size {
+            // Truncate to expected size: avoids re-downloading when extra
+            // bytes were appended from a previous interrupted write.
+            match tokio::fs::OpenOptions::new().write(true).open(dest).await {
+                Ok(f) => {
+                    if let Err(e) = f.set_len(chunk.chunk_size).await {
                         log::warn!(
-                            "Failed to open {} for truncation: {}; deleting and re-downloading",
+                            "Failed to truncate {} to {}: {}; deleting and re-downloading",
                             chunk.chunk_name,
+                            chunk.chunk_size,
                             e
                         );
                         let _ = tokio::fs::remove_file(dest).await;
                         existing_size = 0;
+                    } else {
+                        existing_size = chunk.chunk_size;
                     }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to open {} for truncation: {}; deleting and re-downloading",
+                        chunk.chunk_name,
+                        e
+                    );
+                    let _ = tokio::fs::remove_file(dest).await;
+                    existing_size = 0;
                 }
             }
+        }
 
-            if existing_size >= chunk.chunk_size {
-                if !chunk.chunk_compressed_hash_md5.is_empty() {
-                    if verify_existing_file_hash(dest, &chunk.chunk_compressed_hash_md5).await? {
-                        return Ok(());
-                    }
-                    let _ = tokio::fs::remove_file(dest).await;
-                } else if chunk.chunk_decompressed_hash_md5.is_empty() {
-                    log::warn!(
-                        "Chunk {} has no compressed or decompressed MD5; trusting size match",
-                        chunk.chunk_name
-                    );
+        if existing_size >= chunk.chunk_size {
+            if !chunk.chunk_compressed_hash_md5.is_empty() {
+                if verify_existing_file_hash(dest, &chunk.chunk_compressed_hash_md5).await? {
                     return Ok(());
-                } else {
-                    log::warn!(
-                        "Chunk {} has no compressed MD5; re-downloading for integrity",
-                        chunk.chunk_name
-                    );
-                    let _ = tokio::fs::remove_file(dest).await;
                 }
+                let _ = tokio::fs::remove_file(dest).await;
+            } else if chunk.chunk_decompressed_hash_md5.is_empty() {
+                log::warn!(
+                    "Chunk {} has no compressed or decompressed MD5; trusting size match",
+                    chunk.chunk_name
+                );
+                return Ok(());
+            } else {
+                log::warn!(
+                    "Chunk {} has no compressed MD5; re-downloading for integrity",
+                    chunk.chunk_name
+                );
+                let _ = tokio::fs::remove_file(dest).await;
             }
         }
     }
