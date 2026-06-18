@@ -403,7 +403,7 @@ mod tests {
     /// Test that Nocomp mode returns error when reached in the match arm
     /// (should not happen in normal operation since Nocomp is handled early)
     #[test]
-    fn get_clip_stream_nocomp_in_match_returns_error() {
+    fn get_clip_stream_nocomp_with_comp_length_succeeds() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.bin");
         std::fs::write(&path, b"Hello World!").unwrap();
