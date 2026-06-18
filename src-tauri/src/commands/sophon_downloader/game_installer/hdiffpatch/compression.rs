@@ -119,7 +119,11 @@ pub(crate) fn get_clip_stream(
                 Ok((Box::new(decoder), file_bytes))
             }
         }
-        CompressionMode::Nocomp => unreachable!("handled above"),
+        CompressionMode::Nocomp => {
+            return Err(std::io::Error::other(
+                "Nocomp mode should have been handled above",
+            ));
+        }
     }
 }
 
