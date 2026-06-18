@@ -1628,6 +1628,13 @@ fn apply_hdiff_patch(
         let actual_size = match fs::metadata(&original_path) {
             Ok(m) => m.len(),
             Err(e) => {
+                if is_filtered_asset(cache, asset) {
+                    log::warn!(
+                        "Failed to read metadata for filtered asset {}: {e} — skipping",
+                        asset.target_file_path
+                    );
+                    return Ok(());
+                }
                 log::warn!(
                     "Failed to read metadata for original file {}: {e} — falling back to DownloadOver",
                     original_path.display()
