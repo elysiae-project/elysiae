@@ -76,10 +76,11 @@ pub(crate) fn get_clip_stream(
             // HDiffPatch's "zlib"-tagged compression (per sisong/HDiffPatch
             // compress_plugin_demo.h) uses raw deflate (RFC 1951) emitted via
             // `deflateInit2(... -MAX_WBITS ...)` with a 1-byte `windowBits`
-            // prefix prepended at write time. The prefix byte is consumed by
-            // `comp_size_for_read` in patch_single.rs so the bytes we receive
-            // here are plain raw deflate — no 0x78 0x9C header and no Adler32
-            // trailer. Use DeflateDecoder (not ZlibDecoder) accordingly.
+            // prefix prepended at write time. The prefix byte is compensated
+            // by the caller (`patch_single.rs`) before `get_clip_stream` is
+            // invoked, so the bytes we receive here are plain raw deflate — no
+            // 0x78 0x9C header and no Adler32 trailer. Use DeflateDecoder (not
+            // ZlibDecoder) accordingly.
             let limited = LimitedFile {
                 file,
                 remaining: comp_length,
@@ -329,10 +330,10 @@ mod tests {
         encoder.write_all(original).unwrap();
         let raw_deflate = encoder.finish().unwrap();
 
-        // HDiffPatch prepended 1-byte windowBits=-15 prefix; emulate that the
-        // way `patch_single.rs::comp_size_for_read` would: padding byte is
-        // already compensated before `get_clip_stream` is called, so the bytes
-        // here are pure raw deflate (no header, no Adler32).
+        // HDiffPatch prepends a 1-byte windowBits=-15 prefix; the caller
+        // (`patch_single.rs`) compensates for this before `get_clip_stream`
+        // is called, so the bytes here are pure raw deflate (no header, no
+        // Adler32).
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_zlib.bin");
         std::fs::write(&path, &raw_deflate).unwrap();
