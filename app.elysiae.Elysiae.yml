@@ -12,16 +12,17 @@ writable-sdk: true
 
 finish-args:
   - --socket=wayland
-  # X11 is being dropped from DEs, but is generally expected to still be supported
-  - --socket=fallback-x11
+  - --socket=fallback-x11 # X11 is being dropped from DEs, but is generally expected to still be supported
+  - --socket=pulseaudio # Audio for Proton-run games
   - --device=dri
   - --share=ipc
-  - --share=network
-#  - --filesystem=xdg-run/path:ro
-  - --filesystem=xdg-desktop:create
-  - --filesystem=xdg-data:create
-  - --talk-name=org.freedesktop.portal.Desktop
-  - --talk-name=org.freedesktop.portal.OpenURI
+  - --share=network # Game downloads + caching assets
+  - --filesystem=home # Game installs on host FS (50-150+ GB); also needed if Tauri resolves appDataDir via $HOME
+  - --filesystem=xdg-desktop
+  - --filesystem=xdg-data
+  - --filesystem=xdg-config # Read existing game configs on host
+  - --talk-name=org.freedesktop.portal.Desktop # Required for deep link support
+  - --talk-name=org.freedesktop.portal.OpenURI # Also required for deep link support
 modules:
   - name: Elysiae
     buildsystem: simple
