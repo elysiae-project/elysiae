@@ -1459,6 +1459,8 @@ fn filter_patch_assets_for_removed_features(cache: &FilterCache, assets: &mut [P
     }
 }
 
+/// Apply copyover patch to target file. Path validation is performed by the
+/// caller (`apply_preinstall`) before invoking this function.
 fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -> SophonResult<()> {
     validate_patch_name(&asset.patch_name)?;
     let chunk_path = chunks_dir.join(&asset.patch_name);
@@ -1623,7 +1625,19 @@ fn apply_hdiff_patch(
     if diff_ref_guard.0.is_none()
         && let Some(ref expected_size) = asset.original_file_size
     {
-        let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
+        let actual_size = match fs::metadata(&original_path) {
+            Ok(m) => m.len(),
+            Err(e) => {
+                log::warn!(
+                    "Failed to read metadata for original file {}: {e} — falling back to DownloadOver",
+                    original_path.display()
+                );
+                return Err(SophonError::OriginalFileMissing(format!(
+                    "{} (Metadata unreadable: {e})",
+                    original_path.display()
+                )));
+            }
+        };
         if actual_size != *expected_size {
             if is_filtered_asset(cache, asset) {
                 log::warn!(
