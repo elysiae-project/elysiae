@@ -265,6 +265,7 @@ pub fn assemble_file(
         if chunk.chunk_old_offset >= 0 {
             // Chunk-level reuse: read decompressed data from the existing game
             // file at the old offset instead of downloading & decompressing.
+            debug_assert!(chunk.chunk_old_offset >= 0, "chunk_old_offset must be non-negative");
             let bytes_written = write_from_old_file(
                 &target_path,
                 &mut buf_writer,
