@@ -819,7 +819,7 @@ mod tests {
     #[tokio::test]
     async fn download_chunk_large_content() {
         let server = MockServer::start().await;
-        let data = vec![0xAB_u8; super::super::HASH_BUF_SIZE * 3 + 512];
+        let data = vec![0xAB_u8; super::HASH_BUF_SIZE * 3 + 512];
         let expected_md5 = hex::encode(Md5::digest(&data));
         let chunk = make_chunk("large_chunk", data.len() as u64, &expected_md5);
         let dl_info = make_download_info(&server);
