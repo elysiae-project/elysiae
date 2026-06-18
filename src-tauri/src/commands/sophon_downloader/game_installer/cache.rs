@@ -9,7 +9,7 @@ use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
 
-use super::{MD5_HASH_BUFFER_SIZE, VERIFICATION_CACHE_FILE};
+use super::VERIFICATION_CACHE_FILE;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationEntry {
@@ -181,24 +181,10 @@ pub fn check_file_md5_cached(
     Ok(matches)
 }
 
-// Thread-local buffer reused across `file_md5_hex` calls to avoid
-// allocating + zeroing 256 KiB on every invocation. Mirrors the pattern
-// used in download.rs for compute_file_md5.
-std::thread_local! {
-    static MD5_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
 pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Md5::new();
-
-    let mut buf = MD5_BUF.with(std::cell::RefCell::take);
-    if buf.capacity() < MD5_HASH_BUFFER_SIZE {
-        buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
-    }
-    // Safety: every byte of `buf[..MD5_HASH_BUFFER_SIZE]` is overwritten by
-    // `file.read(&mut buf)` before `hasher.update(&buf[..n])` is called.
-    unsafe { buf.set_len(MD5_HASH_BUFFER_SIZE) };
+    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
 
     loop {
         let n = file.read(&mut buf)?;
@@ -207,9 +193,6 @@ pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-
-    buf.clear();
-    MD5_BUF.with(|cell| cell.replace(buf));
 
     Ok(hex::encode(hasher.finalize()))
 }

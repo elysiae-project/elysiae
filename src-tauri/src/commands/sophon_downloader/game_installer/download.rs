@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
 use super::error::{SophonError, SophonResult};
-use super::{FILE_WRITE_BUFFER_SIZE, MD5_HASH_BUFFER_SIZE, STREAM_POLL_INTERVAL_MS};
+use super::{FILE_WRITE_BUFFER_SIZE, STREAM_POLL_INTERVAL_MS};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
@@ -51,24 +51,10 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
     let start_str = &after_prefix[..dash_pos];
     start_str.parse().ok()
 }
-// Thread-local buffer reused across `compute_file_md5` calls to avoid
-// allocating + zeroing 256 KiB on every invocation. For 5000 chunks verified
-// on resume, this eliminates ~1.28 GB of cumulative allocation churn.
-std::thread_local! {
-    static MD5_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-/// RAII guard that returns the thread-local MD5 buffer to storage on drop.
-struct Md5BufGuard {
-    buf: Vec<u8>,
-}
-
-impl Drop for Md5BufGuard {
-    fn drop(&mut self) {
-        self.buf.clear();
-        MD5_BUF.with(|cell| cell.replace(self.buf.clone()));
-    }
-}
+// Per-call buffer for hash computation. A 256 KiB allocation is negligible
+// compared to the disk I/O cost of reading the file, and avoids the
+// async-safety pitfalls of thread-local RefCell/Mutex across await points.
+const HASH_BUF_SIZE: usize = 256 * 1024;
 
 async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     let mut file = tokio::io::BufReader::with_capacity(
@@ -76,25 +62,14 @@ async fn compute_file_md5(path: &Path) -> SophonResult<String> {
         tokio::fs::File::open(path).await?,
     );
     let mut hasher = Md5::new();
-
-    // Take buffer from thread_local (or get empty default) and ensure capacity
-    let mut buf = MD5_BUF.with(std::cell::RefCell::take);
-    if buf.capacity() < MD5_HASH_BUFFER_SIZE {
-        buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
-    }
-    // Safety: every byte of `buf[..MD5_HASH_BUFFER_SIZE]` is overwritten by
-    // `file.read(&mut buf)` before `hasher.update(&buf[..n])` is called.
-    unsafe { buf.set_len(MD5_HASH_BUFFER_SIZE) };
-
-    // Guard ensures buffer is always returned to thread-local, even on error
-    let mut _guard = Md5BufGuard { buf };
+    let mut buf = vec![0u8; HASH_BUF_SIZE];
 
     loop {
-        let n = file.read(&mut _guard.buf).await?;
+        let n = file.read(&mut buf).await?;
         if n == 0 {
             break;
         }
-        hasher.update(&_guard.buf[..n]);
+        hasher.update(&buf[..n]);
     }
 
     Ok(hex::encode(hasher.finalize()))
@@ -106,26 +81,14 @@ async fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
         tokio::fs::File::open(path).await?,
     );
     let mut hasher = twox_hash::XxHash64::default();
-
-    // Reuse the same thread-local buffer as compute_file_md5 to avoid
-    // allocating + zeroing on every invocation.
-    let mut buf = MD5_BUF.with(std::cell::RefCell::take);
-    if buf.capacity() < super::MD5_HASH_BUFFER_SIZE {
-        buf = Vec::with_capacity(super::MD5_HASH_BUFFER_SIZE);
-    }
-    // Safety: every byte of `buf[..MD5_HASH_BUFFER_SIZE]` is overwritten by
-    // `file.read(&mut buf)` before `hasher.write(&buf[..n])` is called.
-    unsafe { buf.set_len(super::MD5_HASH_BUFFER_SIZE) };
-
-    // Guard ensures buffer is always returned to thread-local, even on error
-    let mut _guard = Md5BufGuard { buf };
+    let mut buf = vec![0u8; HASH_BUF_SIZE];
 
     loop {
-        let n = file.read(&mut _guard.buf).await?;
+        let n = file.read(&mut buf).await?;
         if n == 0 {
             break;
         }
-        std::hash::Hasher::write(&mut hasher, &_guard.buf[..n]);
+        std::hash::Hasher::write(&mut hasher, &buf[..n]);
     }
 
     Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)))
@@ -471,12 +434,7 @@ async fn download_with_resume(
         let existing_file = tokio::fs::File::open(dest).await?;
         let mut reader =
             tokio::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, existing_file);
-        let mut buf = MD5_BUF.with(std::cell::RefCell::take);
-        if buf.capacity() < MD5_HASH_BUFFER_SIZE {
-            buf = Vec::with_capacity(MD5_HASH_BUFFER_SIZE);
-        }
-        // Safety: see compute_file_md5 above for invariants.
-        unsafe { buf.set_len(MD5_HASH_BUFFER_SIZE) };
+        let mut buf = vec![0u8; HASH_BUF_SIZE];
         loop {
             let n = reader.read(&mut buf).await?;
             if n == 0 {
@@ -484,8 +442,6 @@ async fn download_with_resume(
             }
             hasher.update(&buf[..n]);
         }
-        buf.clear();
-        MD5_BUF.with(|cell| cell.replace(buf));
     }
 
     let file = tokio::fs::OpenOptions::new()
@@ -619,7 +575,6 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::super::MD5_HASH_BUFFER_SIZE;
     use super::super::error::SophonError;
     use super::check_available_space;
     use super::download_chunk;
@@ -864,7 +819,7 @@ mod tests {
     #[tokio::test]
     async fn download_chunk_large_content() {
         let server = MockServer::start().await;
-        let data = vec![0xAB_u8; MD5_HASH_BUFFER_SIZE * 3 + 512];
+        let data = vec![0xAB_u8; super::super::HASH_BUF_SIZE * 3 + 512];
         let expected_md5 = hex::encode(Md5::digest(&data));
         let chunk = make_chunk("large_chunk", data.len() as u64, &expected_md5);
         let dl_info = make_download_info(&server);

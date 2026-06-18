@@ -14,7 +14,7 @@ use std::time::Instant;
 use bytes::BytesMut;
 use md5::{Digest, Md5};
 
-use super::MD5_HASH_BUFFER_SIZE;
+use super::FILE_WRITE_BUFFER_SIZE;
 use super::cache::VerificationEntry;
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ fn bench_md5_file_verification() {
     let file = fs::File::open(&file_path).expect("open");
     let mut reader = std::io::BufReader::new(file);
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; MD5_HASH_BUFFER_SIZE];
+    let mut buf = vec![0u8; FILE_WRITE_BUFFER_SIZE];
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
@@ -140,7 +140,7 @@ fn bench_md5_file_verification() {
     println!("  file: {} MiB", file_size / (1024 * 1024));
     println!("  time: {}", fmt_dur(elapsed));
     println!("  throughput: {throughput_mb:.1} MiB/s");
-    println!("  peak buffer: {} KiB", MD5_HASH_BUFFER_SIZE / 1024);
+    println!("  peak buffer: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +161,7 @@ fn bench_download_stream_write() {
     let data = vec![0xCD_u8; network_chunk_size];
 
     let mut file = fs::File::create(&dest).expect("create");
-    let mut buffer = BytesMut::with_capacity(MD5_HASH_BUFFER_SIZE);
+    let mut buffer = BytesMut::with_capacity(FILE_WRITE_BUFFER_SIZE);
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
@@ -170,7 +170,7 @@ fn bench_download_stream_write() {
         let bytes = &data;
         hasher.update(bytes);
         buffer.extend_from_slice(bytes);
-        if buffer.len() >= MD5_HASH_BUFFER_SIZE {
+        if buffer.len() >= FILE_WRITE_BUFFER_SIZE {
             file.write_all(&buffer).expect("write");
             buffer.clear();
         }
@@ -189,7 +189,7 @@ fn bench_download_stream_write() {
         fmt_dur(elapsed)
     );
     println!("  throughput: {throughput_mb:.1} MiB/s");
-    println!("  buffer size: {} KiB", MD5_HASH_BUFFER_SIZE / 1024);
+    println!("  buffer size: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
     println!("  peak buffer memory: {} KiB", buffer.capacity() / 1024);
 }
 
