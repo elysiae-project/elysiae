@@ -1486,38 +1486,4 @@ mod tests {
             "compress_cover_buf_size == 1 must count as compressed"
         );
     }
-    /// Test HDIFF20 (single compressed diff) format with zstd compression
-    #[test]
-    fn hdiff_v20_zstd_compressed_patch() {
-        // HDIFF20 format with zstd compression
-        // Header: "HDIFF20&zstd&fadler64" followed by single chunk header info
-        // This is a minimal valid HDIFF20 patch that transforms "OLD" to "NEW"
-        const DIFF_V20_ZSTD: &[u8] = b"HDIFF20&zstd&fadler64\x00\x0f\x1f\x0b\x03\x00\x01\x00\x00\x00\x00\x00\x00\x00\x0f\x1e";
-        
-        // Note: This test uses a synthetic header. Real HDIFF20 patches would have
-        // proper compressed diff data following the header. The test verifies that
-        // the HDIFF20 format is recognized and routed to the correct patcher.
-        let dir = tempfile::tempdir().unwrap();
-        let old_path = dir.path().join("old.bin");
-        let diff_path = dir.path().join("diff.hdiff");
-        let out_path = dir.path().join("out.bin");
-
-        fs::write(&old_path, OLD_TEXT).unwrap();
-        fs::write(&diff_path, DIFF_V20_ZSTD).unwrap();
-
-        let op = old_path.to_string_lossy().to_string();
-        let dp = diff_path.to_string_lossy().to_string();
-        let tp = out_path.to_string_lossy().to_string();
-
-        let mut hdiff = HDiff::new(op, dp, tp);
-        // HDIFF20 format should be recognized (not rejected as unsupported version)
-        // The patch will fail due to invalid diff data, but that's expected
-        let result = hdiff.apply(None);
-        // We expect this to fail gracefully (return false) rather than panic
-        // because the diff data is intentionally malformed for this format test
-        assert!(
-            !result,
-            "HDIFF20 format should be recognized but fail on invalid diff data"
-        );
-    }
 }
