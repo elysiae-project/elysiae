@@ -28,11 +28,14 @@ impl PatchSingle {
         let hi = &self.header_info;
         let ci = &hi.chunk_info;
 
-        let file = File::open(patch_path)?;
-        let f0 = file.try_clone()?;
-        let f1 = file.try_clone()?;
-        let f2 = file.try_clone()?;
-        let f3 = file.try_clone()?;
+        // Open the patch file separately for each stream to avoid file
+        // position interference. Using try_clone() would share the same
+        // file descriptor and position across all handles, causing corrupted
+        // output when sections are read in parallel.
+        let f0 = File::open(patch_path)?;
+        let f1 = File::open(patch_path)?;
+        let f2 = File::open(patch_path)?;
+        let f3 = File::open(patch_path)?;
 
         // For Zlib-compressed sections, the on-disk layout reserves 1 byte for
         // the windowBits prefix prepended by the zlib plugin. We skip that byte
