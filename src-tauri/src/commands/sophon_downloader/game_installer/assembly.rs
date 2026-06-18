@@ -1276,4 +1276,227 @@ mod tests {
         let combined_hash = hex::encode(Md5::digest(b"abc"));
         assert_eq!(hex::encode(hasher.finalize()), combined_hash);
     }
+
+    /// Test write_from_old_file reads from correct offset and verifies hash
+    #[test]
+    fn write_from_old_file_reads_correct_offset() {
+        use std::io::{Seek, SeekFrom, Write};
+        
+        let dir = tempfile::tempdir().unwrap();
+        let old_file_path = dir.path().join("old_file.bin");
+        
+        // Create old file with known content: "AAAA" at offset 0, "BBBB" at offset 4
+        let mut old_file = fs::File::create(&old_file_path).unwrap();
+        old_file.write_all(b"AAAABBBB").unwrap();
+        drop(old_file);
+        
+        // Create output file
+        let output_path = dir.path().join("output.bin");
+        let mut output_file = fs::File::create(&output_path).unwrap();
+        let mut writer = std::io::BufWriter::new(&mut output_file);
+        
+        // Read 4 bytes from offset 4 (should get "BBBB")
+        let mut transfer_buf = vec![0u8; 1024];
+        let bytes_written = write_from_old_file(
+            &old_file_path,
+            &mut writer,
+            0, // new_offset
+            4, // old_offset
+            4, // expected_size
+            None, // file_hasher
+            &mut transfer_buf,
+            "", // chunk_decompressed_hash_md5 (skip verification)
+        ).unwrap();
+        
+        writer.flush().unwrap();
+        drop(writer);
+        drop(output_file);
+        
+        assert_eq!(bytes_written, 4);
+        let result = fs::read(&output_path).unwrap();
+        assert_eq!(&result, b"BBBB");
+    }
+
+    /// Test write_from_old_file verifies chunk hash correctly
+    #[test]
+    fn write_from_old_file_verifies_chunk_hash() {
+        use md5::{Digest, Md5};
+        
+        let dir = tempfile::tempdir().unwrap();
+        let old_file_path = dir.path().join("old_file.bin");
+        
+        let data = b"test data for hash verification";
+        let expected_md5 = hex::encode(Md5::digest(data));
+        
+        let mut old_file = fs::File::create(&old_file_path).unwrap();
+        old_file.write_all(data).unwrap();
+        drop(old_file);
+        
+        let output_path = dir.path().join("output.bin");
+        let mut output_file = fs::File::create(&output_path).unwrap();
+        let mut writer = std::io::BufWriter::new(&mut output_file);
+        
+        let mut transfer_buf = vec![0u8; 1024];
+        let result = write_from_old_file(
+            &old_file_path,
+            &mut writer,
+            0,
+            0,
+            data.len() as u64,
+            None,
+            &mut transfer_buf,
+            &expected_md5,
+        );
+        
+        assert!(result.is_ok(), "should succeed with correct hash");
+    }
+
+    /// Test write_from_old_file fails on hash mismatch
+    #[test]
+    fn write_from_old_file_hash_mismatch_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_file_path = dir.path().join("old_file.bin");
+        
+        let data = b"test data";
+        let wrong_md5 = "ffffffffffffffffffffffffffffffff"; // Not EMPTY_MD5
+        
+        let mut old_file = fs::File::create(&old_file_path).unwrap();
+        old_file.write_all(data).unwrap();
+        drop(old_file);
+        
+        let output_path = dir.path().join("output.bin");
+        let mut output_file = fs::File::create(&output_path).unwrap();
+        let mut writer = std::io::BufWriter::new(&mut output_file);
+        
+        let mut transfer_buf = vec![0u8; 1024];
+        let result = write_from_old_file(
+            &old_file_path,
+            &mut writer,
+            0,
+            0,
+            data.len() as u64,
+            None,
+            &mut transfer_buf,
+            wrong_md5,
+        );
+        
+        assert!(result.is_err(), "should fail with wrong hash");
+        assert!(matches!(result.unwrap_err(), SophonError::Md5Mismatch { .. }));
+    }
+
+    /// Test write_from_old_file fails when old file is too short
+    #[test]
+    fn write_from_old_file_too_short_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_file_path = dir.path().join("old_file.bin");
+        
+        // Create file with only 5 bytes
+        let data = b"short";
+        let mut old_file = fs::File::create(&old_file_path).unwrap();
+        old_file.write_all(data).unwrap();
+        drop(old_file);
+        
+        let output_path = dir.path().join("output.bin");
+        let mut output_file = fs::File::create(&output_path).unwrap();
+        let mut writer = std::io::BufWriter::new(&mut output_file);
+        
+        let mut transfer_buf = vec![0u8; 1024];
+        // Try to read 10 bytes from a 5-byte file
+        let result = write_from_old_file(
+            &old_file_path,
+            &mut writer,
+            0,
+            0,
+            10, // expected_size > actual size
+            None,
+            &mut transfer_buf,
+            "",
+        );
+        
+        assert!(result.is_err(), "should fail when file is too short");
+    }
+
+    /// Test write_from_old_file fails when old file doesn't exist
+    #[test]
+    fn write_from_old_file_missing_file_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_file_path = dir.path().join("nonexistent.bin");
+        
+        let output_path = dir.path().join("output.bin");
+        let mut output_file = fs::File::create(&output_path).unwrap();
+        let mut writer = std::io::BufWriter::new(&mut output_file);
+        
+        let mut transfer_buf = vec![0u8; 1024];
+        let result = write_from_old_file(
+            &old_file_path,
+            &mut writer,
+            0,
+            0,
+            100,
+            None,
+            &mut transfer_buf,
+            "",
+        );
+        
+        assert!(result.is_err(), "should fail when old file doesn't exist");
+    }
+
+    /// Test assemble_file with chunk_old_offset reuses data from old file
+    #[test]
+    fn assemble_file_reuses_chunk_from_old_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        let chunks_dir = dir.path().join("chunks");
+        let temp_dir = dir.path().join("tmp");
+        fs::create_dir_all(&game_dir).unwrap();
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::create_dir_all(&temp_dir).unwrap();
+        
+        // Create old file with content that will be reused
+        let old_data = b"reused chunk data here!";
+        let target_path = game_dir.join("reused.bin");
+        fs::write(&target_path, old_data).unwrap();
+        
+        let md5 = compute_md5_hex(old_data);
+        
+        // Create asset with chunk_old_offset >= 0 (reuse from old file)
+        let file = SophonManifestAssetProperty {
+            asset_name: "reused.bin".to_string(),
+            asset_chunks: vec![SophonManifestAssetChunk {
+                chunk_name: "not_used".to_string(), // Won't be used due to old_offset
+                chunk_decompressed_hash_md5: md5.clone(),
+                chunk_on_file_offset: 0,
+                chunk_size: 0,
+                chunk_size_decompressed: old_data.len() as u64,
+                chunk_compressed_hash_xxh: 0,
+                chunk_compressed_hash_md5: String::new(),
+                chunk_old_offset: 0, // Reuse from old file at offset 0
+            }],
+            asset_type: 0,
+            asset_size: old_data.len() as u64,
+            asset_hash_md5: md5,
+        };
+        
+        let chunk_refcounts = DashMap::new();
+        let verify_cache = DashMap::new();
+        
+        // This should reuse data from the existing file, not fail due to missing chunk
+        let result = assemble_file(
+            &file,
+            &game_dir,
+            &chunks_dir,
+            &temp_dir,
+            &chunk_refcounts,
+            &verify_cache,
+        );
+        
+        assert!(result.is_ok(), "should succeed with chunk reuse: {:?}", result.err());
+        
+        // Verify the file still has the correct content
+        let result_data = fs::read(&target_path).unwrap();
+        assert_eq!(&result_data, old_data);
+        
+        // Verify no chunk was downloaded (refcount should still be 0)
+        assert!(!chunk_refcounts.contains_key("not_used"));
+    }
 }
