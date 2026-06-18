@@ -28,10 +28,11 @@ impl PatchSingle {
         let hi = &self.header_info;
         let ci = &hi.chunk_info;
 
-        let f0 = File::open(patch_path)?;
-        let f1 = File::open(patch_path)?;
-        let f2 = File::open(patch_path)?;
-        let f3 = File::open(patch_path)?;
+        let file = File::open(patch_path)?;
+        let f0 = file.try_clone()?;
+        let f1 = file.try_clone()?;
+        let f2 = file.try_clone()?;
+        let f3 = file.try_clone()?;
 
         // For Zlib-compressed sections, the on-disk layout reserves 1 byte for
         // the windowBits prefix prepended by the zlib plugin. We skip that byte
