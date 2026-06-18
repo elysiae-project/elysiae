@@ -1,5 +1,6 @@
 [Desktop Entry]
 Name=Elysiae
+Comment="Unified 'Anime Game' Launcher"
 Exec=Elysiae
 Icon=app.elysiae.Elysiae
 Type=Application
