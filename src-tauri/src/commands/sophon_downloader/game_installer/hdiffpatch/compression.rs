@@ -121,9 +121,9 @@ pub(crate) fn get_clip_stream(
             }
         }
         CompressionMode::Nocomp => {
-            return Err(std::io::Error::other(
+            Err(std::io::Error::other(
                 "Nocomp mode should have been handled above",
-            ));
+            ))
         }
     }
 }

@@ -197,13 +197,6 @@ pub async fn fetch_patch_manifest(
     })
 }
 
-fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
-    use std::io::Read;
-    let mut decoder = zstd::Decoder::new(bytes)?;
-    let mut out = Vec::new();
-    decoder.read_to_end(&mut out)?;
-    Ok(out)
-}
 
 #[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
