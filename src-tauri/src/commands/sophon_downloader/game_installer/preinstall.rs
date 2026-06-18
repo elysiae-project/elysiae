@@ -49,6 +49,7 @@ use crate::commands::sophon_downloader::proto_parse::{
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
 const BLANK_FILE_MD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
+const PREINSTALL_STATE_FILE_EXT: &str = ".json";
 /// RAII guard that cleans up a blank diff_ref file when dropped.
 /// Ensures the temp file is removed on all return paths (normal return,
 /// early return, or panic).
@@ -66,9 +67,7 @@ impl DiffRefGuard {
     fn new(path: PathBuf) -> Self {
         Self(Some(path))
     }
-
 }
-const PREINSTALL_STATE_FILE_EXT: &str = ".json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
