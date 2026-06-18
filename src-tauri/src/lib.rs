@@ -46,7 +46,11 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().register_all()?;
+                if !is_flatpak() {
+                    if let Err(e) = app.deep_link().register_all() {
+                        eprintln!("Elysiae: Failed to register deep links: {e}");
+                    }
+                }
             }
             Ok(())
         })
@@ -91,6 +95,11 @@ fn apply_nvidia_wayland_workaround() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         };
     }
+}
+
+#[cfg(target_os = "linux")]
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
 }
 
 #[cfg(target_os = "linux")]

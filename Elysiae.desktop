@@ -1,9 +1,10 @@
 [Desktop Entry]
 Name=Elysiae
-Comment="Unified 'Anime Game' Launcher"
-Exec=Elysiae
+Comment=Unified "Anime Game" Launcher
+Exec=Elysiae %u
 Icon=app.elysiae.Elysiae
 Type=Application
 Categories=Utility
 Terminal=false
 SingleMainWindow=true
+MimeType=x-scheme-handler/elysiae;
