@@ -27,7 +27,7 @@ pub fn run() {
                 .http2_keep_alive_timeout(Duration::from_secs(20))
                 .tcp_keepalive(Duration::from_secs(60))
                 .connect_timeout(Duration::from_secs(15))
-                .read_timeout(Duration::from_secs(30))
+                .read_timeout(Duration::from_secs(600))
                 .user_agent(format!(
                     "{}/{}",
                     env!("CARGO_PKG_NAME"),

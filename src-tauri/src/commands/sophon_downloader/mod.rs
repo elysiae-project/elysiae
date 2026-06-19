@@ -548,13 +548,15 @@ pub async fn sophon_download(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
+  log::warn!("Fetching manifest for game_id={}", game_id);
     emit(&app_handle, SophonProgress::FetchingManifest);
 
     let (installers, tag, manifest_hash) =
         game_installer::build_installers(&client.0, &game_id, &vo_lang)
             .await
             .map_err(|e| {
-                emit_error(&app_handle, &e);
+                log::warn!("build_installers failed: {}", e);
+      emit_error(&app_handle, &e);
                 e.to_string()
             })?;
 
@@ -649,13 +651,15 @@ pub async fn sophon_update(
     let current_tag =
         read_installed_tag(&game_dir).ok_or("No installed version found — cannot update")?;
 
+  log::warn!("Fetching manifest for game_id={}", game_id);
     emit(&app_handle, SophonProgress::FetchingManifest);
 
     let (installers, deleted_files, new_tag, manifest_hash) =
         game_installer::build_update_installers(&client.0, &game_id, &vo_lang, &current_tag)
             .await
             .map_err(|e| {
-                emit_error(&app_handle, &e);
+                log::warn!("build_update_installers failed: {}", e);
+      emit_error(&app_handle, &e);
                 e.to_string()
             })?;
 
@@ -747,14 +751,15 @@ pub async fn sophon_preinstall(
         .resolve(&output_path, BaseDirectory::AppData)
         .map_err(|e| e.to_string())?;
 
+    log::warn!("Fetching manifest for game_id={}", game_id);
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-    let plan = game_installer::build_preinstall_plan(&client.0, &game_id, &vo_lang, &game_dir)
-        .await
-        .map_err(|e| {
-            emit_error(&app_handle, &e);
-            e.to_string()
-        })?;
+  let plan = game_installer::build_preinstall_plan(&client.0, &game_id, &vo_lang, &game_dir)
+    .await
+            .map_err(|e| {
+      log::warn!("build_preinstall_plan failed: {}", e);
+                e.to_string()
+            })?;
 
     let tag = plan.tag.clone();
 
