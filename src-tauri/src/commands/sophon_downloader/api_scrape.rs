@@ -18,7 +18,7 @@ pub struct FrontDoorData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameBranch {
     pub game: GameId,
-    pub main: PackageBranch,
+    pub main: Option<PackageBranch>,
     pub pre_download: Option<PackageBranch>,
 }
 

@@ -129,7 +129,12 @@ pub async fn build_installers(
 ) -> SophonResult<(Vec<SophonInstaller>, String, String)> {
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
-    let build = fetch_build(client, &branch.main, None).await?;
+    let build = fetch_build(
+        client,
+        branch.main.as_ref().ok_or(SophonError::NoGameManifest)?,
+        None,
+    )
+    .await?;
     let tag = build.tag.clone();
 
     let installers = build_installers_from_data(client, &build, vo_lang).await?;
@@ -146,8 +151,16 @@ pub async fn build_update_installers(
     let (branch, _) = fetch_front_door(client, game_id).await?;
 
     let (old_build, new_build) = tokio::try_join!(
-        fetch_build(client, &branch.main, Some(from_tag)),
-        fetch_build(client, &branch.main, None),
+        fetch_build(
+            client,
+            branch.main.as_ref().ok_or(SophonError::NoGameManifest)?,
+            Some(from_tag)
+        ),
+        fetch_build(
+            client,
+            branch.main.as_ref().ok_or(SophonError::NoGameManifest)?,
+            None
+        ),
     )?;
 
     let new_tag = new_build.tag.clone();
@@ -1527,7 +1540,12 @@ pub async fn verify_integrity(
     let tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
 
     let (branch, _) = api::fetch_front_door(client, game_id).await?;
-    let build = api::fetch_build(client, &branch.main, Some(&tag)).await?;
+    let build = api::fetch_build(
+        client,
+        branch.main.as_ref().ok_or(SophonError::NoGameManifest)?,
+        Some(&tag),
+    )
+    .await?;
 
     let qualifying: Vec<&SophonManifestMeta> = build
         .manifests

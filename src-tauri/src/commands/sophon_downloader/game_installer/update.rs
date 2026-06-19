@@ -38,7 +38,8 @@ pub async fn check_update(
         });
     let (branch, pre_download_branch) = front_door?;
 
-    let remote_tag = branch.main.tag.clone();
+    let main_branch = branch.main.as_ref().ok_or(SophonError::NoGameManifest)?;
+    let remote_tag = main_branch.tag.clone();
 
     let update_available = current_tag
         .as_deref()
@@ -47,7 +48,7 @@ pub async fn check_update(
 
     let (update_compressed_size, update_decompressed_size) = if update_available {
         if let Some(ref installed) = current_tag {
-            fetch_diff_sizes(client, &branch.main, installed, &remote_tag, vo_lang).await?
+            fetch_diff_sizes(client, main_branch, installed, &remote_tag, vo_lang).await?
         } else {
             (0, 0)
         }
@@ -271,7 +272,6 @@ mod tests {
         assert!(!vo_lang_matches("", ""));
         assert!(!vo_lang_matches("game", "en"));
     }
-
 
     #[test]
     fn update_info_serde_roundtrip_basic() {
