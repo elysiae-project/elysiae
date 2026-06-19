@@ -38,7 +38,7 @@ pub async fn fetch_front_door(
         .data
         .game_branches
         .into_iter()
-        .find(|b| b.game.id.eq_ignore_ascii_case(game_id))
+        .find(|b| b.game.biz.starts_with(&format!("{}_", game_id)))
         .ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
 
     let pre = branch.pre_download.clone();
