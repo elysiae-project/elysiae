@@ -176,10 +176,13 @@ impl Serialize for Compression {
 
 impl DownloadInfo {
     pub fn url_for(&self, item_name: &str) -> String {
-        // Trim all slashes to avoid double slashes in URL construction
         let prefix = self.url_prefix.trim_end_matches('/');
         let suffix = self.url_suffix.trim_matches('/');
-        format!("{}/{}/{}", prefix, suffix, item_name)
+        if suffix.is_empty() {
+            format!("{}/{}", prefix, item_name)
+        } else {
+            format!("{}/{}/{}", prefix, suffix, item_name)
+        }
     }
 
     pub fn is_compressed(&self) -> bool {
@@ -277,7 +280,11 @@ mod tests {
         let url = dl.url_for("manifest.dat");
         // Check for double slashes not in protocol
         let after_protocol = url.strip_prefix("https://").unwrap_or(&url);
-        assert!(!after_protocol.contains("//"), "URL should not contain double slashes: {}", url);
+        assert!(
+            !after_protocol.contains("//"),
+            "URL should not contain double slashes: {}",
+            url
+        );
         assert_eq!(url, "https://example.com/v1/manifest.dat");
     }
 
@@ -290,7 +297,10 @@ mod tests {
             url_prefix: "https://example.com".to_string(),
             url_suffix: "v1".to_string(),
         };
-        assert_eq!(dl.url_for("manifest.dat"), "https://example.com/v1/manifest.dat");
+        assert_eq!(
+            dl.url_for("manifest.dat"),
+            "https://example.com/v1/manifest.dat"
+        );
     }
 
     #[test]
