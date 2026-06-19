@@ -182,12 +182,13 @@ pub fn check_file_md5_cached(
 }
 
 pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
+    let file = File::open(path)?;
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
+    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
+    let mut buf = vec![0u8; 1024 * 1024];
 
     loop {
-        let n = file.read(&mut buf)?;
+        let n = reader.read(&mut buf)?;
         if n == 0 {
             break;
         }

@@ -911,9 +911,7 @@ async fn process_download_item(
         ctx.downloaded_bytes.load(Ordering::Relaxed)
     };
 
-    if was_actually_downloaded {
-        adaptive.record_bytes(item.chunk.chunk_size);
-    }
+    adaptive.record_bytes(item.chunk.chunk_size);
 
     if let Ok(mut lu) = ctx.last_update.try_lock()
         && lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
