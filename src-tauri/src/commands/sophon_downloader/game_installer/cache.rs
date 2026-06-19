@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -183,18 +183,15 @@ pub fn check_file_md5_cached(
 
 pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
     let file = File::open(path)?;
-    let mut hasher = Md5::new();
-    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
-    let mut buf = vec![0u8; 1024 * 1024];
-
-    loop {
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
+    let len = file.metadata()?.len();
+    if len == 0 {
+        let mut hasher = Md5::new();
+        hasher.update(b"");
+        return Ok(hex::encode(hasher.finalize()));
     }
-
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    let mut hasher = Md5::new();
+    hasher.update(&mmap[..]);
     Ok(hex::encode(hasher.finalize()))
 }
 

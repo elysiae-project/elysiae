@@ -51,43 +51,31 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
     let start_str = &after_prefix[..dash_pos];
     start_str.parse().ok()
 }
-// Per-call buffer for hash computation. A 1 MiB buffer maximises sequential
-// read throughput while keeping memory usage negligible compared to the file.
-const HASH_BUF_SIZE: usize = 1024 * 1024;
-
 fn compute_file_md5(path: &Path) -> SophonResult<String> {
-    use std::io::{BufReader, Read};
-    let mut file =
-        BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, std::fs::File::open(path)?);
-    let mut hasher = Md5::new();
-    let mut buf = vec![0u8; HASH_BUF_SIZE];
-
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    if len == 0 {
+        let mut hasher = Md5::new();
+        hasher.update(b"");
+        return Ok(hex::encode(hasher.finalize()));
     }
-
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    let mut hasher = Md5::new();
+    hasher.update(&mmap[..]);
     Ok(hex::encode(hasher.finalize()))
 }
 
 fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
-    use std::io::{BufReader, Read};
-    let mut file =
-        BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, std::fs::File::open(path)?);
-    let mut hasher = twox_hash::XxHash64::default();
-    let mut buf = vec![0u8; HASH_BUF_SIZE];
-
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        std::hash::Hasher::write(&mut hasher, &buf[..n]);
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    if len == 0 {
+        let mut hasher = twox_hash::XxHash64::default();
+        std::hash::Hasher::write(&mut hasher, b"");
+        return Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)));
     }
-
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    let mut hasher = twox_hash::XxHash64::default();
+    std::hash::Hasher::write(&mut hasher, &mmap[..]);
     Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)))
 }
 
@@ -434,7 +422,7 @@ async fn download_with_resume(
         let existing_file = tokio::fs::File::open(dest).await?;
         let mut reader =
             tokio::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, existing_file);
-        let mut buf = vec![0u8; HASH_BUF_SIZE];
+        let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
         loop {
             let n = reader.read(&mut buf).await?;
             if n == 0 {
@@ -819,7 +807,7 @@ mod tests {
     #[tokio::test]
     async fn download_chunk_large_content() {
         let server = MockServer::start().await;
-        let data = vec![0xAB_u8; super::HASH_BUF_SIZE * 3 + 512];
+        let data = vec![0xAB_u8; 256 * 1024 * 3 + 512];
         let expected_md5 = hex::encode(Md5::digest(&data));
         let chunk = make_chunk("large_chunk", data.len() as u64, &expected_md5);
         let dl_info = make_download_info(&server);
