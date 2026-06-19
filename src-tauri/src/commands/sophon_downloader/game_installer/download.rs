@@ -51,21 +51,19 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
     let start_str = &after_prefix[..dash_pos];
     start_str.parse().ok()
 }
-// Per-call buffer for hash computation. A 256 KiB allocation is negligible
-// compared to the disk I/O cost of reading the file, and avoids the
-// async-safety pitfalls of thread-local RefCell/Mutex across await points.
-const HASH_BUF_SIZE: usize = 256 * 1024;
+// Per-call buffer for hash computation. A 1 MiB buffer maximises sequential
+// read throughput while keeping memory usage negligible compared to the file.
+const HASH_BUF_SIZE: usize = 1024 * 1024;
 
-async fn compute_file_md5(path: &Path) -> SophonResult<String> {
-    let mut file = tokio::io::BufReader::with_capacity(
-        super::FILE_WRITE_BUFFER_SIZE,
-        tokio::fs::File::open(path).await?,
-    );
+fn compute_file_md5(path: &Path) -> SophonResult<String> {
+    use std::io::{BufReader, Read};
+    let mut file =
+        BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, std::fs::File::open(path)?);
     let mut hasher = Md5::new();
     let mut buf = vec![0u8; HASH_BUF_SIZE];
 
     loop {
-        let n = file.read(&mut buf).await?;
+        let n = file.read(&mut buf)?;
         if n == 0 {
             break;
         }
@@ -75,16 +73,15 @@ async fn compute_file_md5(path: &Path) -> SophonResult<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-async fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
-    let mut file = tokio::io::BufReader::with_capacity(
-        super::FILE_WRITE_BUFFER_SIZE,
-        tokio::fs::File::open(path).await?,
-    );
+fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
+    use std::io::{BufReader, Read};
+    let mut file =
+        BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, std::fs::File::open(path)?);
     let mut hasher = twox_hash::XxHash64::default();
     let mut buf = vec![0u8; HASH_BUF_SIZE];
 
     loop {
-        let n = file.read(&mut buf).await?;
+        let n = file.read(&mut buf)?;
         if n == 0 {
             break;
         }
@@ -98,18 +95,23 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
     if expected_hash.is_empty() {
         return Ok(true);
     }
-    let actual = match expected_hash.len() {
-        32 => compute_file_md5(path).await?,
-        16 => compute_file_xxh64(path).await?,
-        _ => {
-            log::warn!(
-                "Unknown hash format (length={}) for verification",
-                expected_hash.len()
-            );
-            return Ok(false);
-        }
-    };
-    Ok(actual == expected_hash.to_ascii_lowercase())
+    let path = path.to_path_buf();
+    let expected_hash = expected_hash.to_ascii_lowercase();
+    tokio::task::spawn_blocking(move || {
+        let actual = match expected_hash.len() {
+            32 => compute_file_md5(&path),
+            16 => compute_file_xxh64(&path),
+            _ => {
+                log::warn!(
+                    "Unknown hash format (length={}) for verification",
+                    expected_hash.len()
+                );
+                return Ok(false);
+            }
+        }?;
+        Ok(actual == expected_hash)
+    })
+    .await?
 }
 
 pub async fn download_chunk(
