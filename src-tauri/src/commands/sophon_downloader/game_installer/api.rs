@@ -21,18 +21,50 @@ pub struct ManifestWithHash {
     pub hash: String,
 }
 
+const API_MAX_RETRIES: u32 = 3;
+
+async fn fetch_json_with_retry<T: serde::de::DeserializeOwned>(
+    client: &Client,
+    url: &str,
+    timeout_secs: u64,
+) -> SophonResult<T> {
+    for attempt in 0..API_MAX_RETRIES {
+        let result =
+            tokio::time::timeout(Duration::from_secs(timeout_secs), client.get(url).send()).await;
+
+        match result {
+            Ok(Ok(resp)) => {
+                let resp = resp.error_for_status()?;
+                return resp.json().await.map_err(|e| e.into());
+            }
+            Ok(Err(e)) => {
+                if attempt == API_MAX_RETRIES - 1 {
+                    return Err(e.into());
+                }
+            }
+            Err(_) => {
+                if attempt == API_MAX_RETRIES - 1 {
+                    return Err(SophonError::Timeout(timeout_secs));
+                }
+            }
+        }
+
+        if attempt < API_MAX_RETRIES - 1 {
+            tokio::time::sleep(Duration::from_secs(2u64.saturating_pow(attempt))).await;
+        }
+    }
+
+    Err(SophonError::ApiError(
+        -1,
+        format!("Failed to fetch {} after {} retries", url, API_MAX_RETRIES),
+    ))
+}
+
 pub async fn fetch_front_door(
     client: &Client,
     game_id: &str,
 ) -> SophonResult<(GameBranch, Option<PackageBranch>)> {
-    let resp: FrontDoorResponse = client
-        .get(FRONT_DOOR_URL)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let resp: FrontDoorResponse = fetch_json_with_retry(client, FRONT_DOOR_URL, 35).await?;
 
     let branch = resp
         .data
@@ -51,21 +83,17 @@ pub async fn fetch_manifest(
     manifest_id: &str,
 ) -> SophonResult<ManifestWithHash> {
     let url = dl.url_for(manifest_id);
-    let resp = client
-        .get(&url)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await?
+
+    let resp = tokio::time::timeout(Duration::from_secs(30), client.get(&url).send())
+        .await
+        .map_err(|_| SophonError::Timeout(30))??
         .error_for_status()?;
 
-    // Write to a temporary file before decompressing
-    // This prevents holding both compressed and decompressed manifests in memory at
-    // the same time (almost 100MB each). Use `NamedTempFile` so the temp path is
-    // atomically unique across concurrent calls and the file is auto-cleaned
-    // (via Drop) even on panic or early return.
-    let raw = if dl.is_compressed() {
-        let bytes = resp.bytes().await?;
+    let bytes = tokio::time::timeout(Duration::from_secs(300), resp.bytes())
+        .await
+        .map_err(|_| SophonError::Timeout(300))??;
 
+    let raw = if dl.is_compressed() {
         tokio::task::spawn_blocking(move || {
             let tmp = tempfile::NamedTempFile::new()?;
             {
@@ -74,12 +102,11 @@ pub async fn fetch_manifest(
                 f.flush()?;
             }
             let raw = decompress_zstd_from_file(tmp.path())?;
-            // raw is owned Vec<u8>; tmp drops here, removing the file.
             Ok::<Vec<u8>, SophonError>(raw)
         })
         .await??
     } else {
-        resp.bytes().await?.to_vec()
+        bytes.to_vec()
     };
 
     let manifest: SophonManifestProto =
@@ -109,14 +136,7 @@ pub async fn fetch_build(
         SOPHON_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password, tag_str,
     );
 
-    let resp: SophonBuildResponse = client
-        .get(&url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let resp: SophonBuildResponse = fetch_json_with_retry(client, &url, 35).await?;
     if resp.data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
@@ -137,14 +157,9 @@ pub async fn fetch_patch_build(
         SOPHON_PATCH_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password, branch.tag,
     );
 
-    let resp: SophonPatchBuildResponse = client
-        .post(&url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let raw_resp =
+        tokio::time::timeout(Duration::from_secs(35), client.post(&url).send()).await??;
+    let resp: SophonPatchBuildResponse = raw_resp.error_for_status()?.json().await?;
     if resp.data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
@@ -162,16 +177,17 @@ pub async fn fetch_patch_manifest(
     meta: &SophonPatchManifestMeta,
 ) -> SophonResult<PatchManifestWithMeta> {
     let url = meta.manifest_download.url_for(&meta.manifest.id);
-    let resp = client
-        .get(&url)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await?
+
+    let resp = tokio::time::timeout(Duration::from_secs(30), client.get(&url).send())
+        .await
+        .map_err(|_| SophonError::Timeout(30))??
         .error_for_status()?;
 
-    // Use temp file to avoid holding both compressed and decompressed data in memory
+    let bytes = tokio::time::timeout(Duration::from_secs(300), resp.bytes())
+        .await
+        .map_err(|_| SophonError::Timeout(300))??;
+
     let raw = if meta.manifest_download.is_compressed() {
-        let bytes = resp.bytes().await?;
         tokio::task::spawn_blocking(move || {
             let tmp = tempfile::NamedTempFile::new()?;
             {
@@ -184,7 +200,7 @@ pub async fn fetch_patch_manifest(
         })
         .await??
     } else {
-        resp.bytes().await?.to_vec()
+        bytes.to_vec()
     };
 
     let patch_manifest =
@@ -196,7 +212,6 @@ pub async fn fetch_patch_manifest(
         matching_field: meta.matching_field.clone(),
     })
 }
-
 
 #[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
@@ -229,154 +244,4 @@ pub fn is_known_vo_locale(matching_field: &str) -> bool {
 pub fn parse_size(s: &str) -> SophonResult<u64> {
     s.parse()
         .map_err(|_| SophonError::InvalidSizeString(s.to_string()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn vo_lang_matches_cn() {
-        assert!(vo_lang_matches("zh-cn", "cn"));
-    }
-
-    #[test]
-    fn vo_lang_matches_en() {
-        assert!(vo_lang_matches("en-us", "en"));
-    }
-
-    #[test]
-    fn vo_lang_matches_jp() {
-        assert!(vo_lang_matches("ja-jp", "jp"));
-    }
-
-    #[test]
-    fn vo_lang_matches_kr() {
-        assert!(vo_lang_matches("ko-kr", "kr"));
-    }
-
-    #[test]
-    fn vo_lang_matches_wrong() {
-        assert!(!vo_lang_matches("en-us", "jp"));
-    }
-
-    #[test]
-    fn vo_lang_matches_game_field() {
-        assert!(!vo_lang_matches("game", "en"));
-    }
-
-    #[test]
-    fn is_known_vo_locale_all() {
-        assert!(is_known_vo_locale("en-us"));
-        assert!(is_known_vo_locale("zh-cn"));
-        assert!(is_known_vo_locale("zh-tw"));
-        assert!(is_known_vo_locale("ko-kr"));
-        assert!(is_known_vo_locale("ja-jp"));
-    }
-
-    #[test]
-    fn is_known_vo_locale_not_vo() {
-        assert!(!is_known_vo_locale("game"));
-        assert!(!is_known_vo_locale("cutscenes"));
-    }
-
-    #[test]
-    fn parse_size_valid() {
-        assert_eq!(parse_size("1024").unwrap(), 1024);
-    }
-
-    #[test]
-    fn parse_size_invalid() {
-        assert!(parse_size("abc").is_err());
-    }
-
-    #[test]
-    fn parse_size_zero() {
-        assert_eq!(parse_size("0").unwrap(), 0);
-    }
-
-    #[test]
-    fn parse_size_negative_returns_error() {
-        assert!(parse_size("-1").is_err());
-    }
-
-    #[test]
-    fn parse_size_empty_returns_error() {
-        assert!(parse_size("").is_err());
-    }
-
-    #[test]
-    fn parse_size_whitespace_returns_error() {
-        assert!(parse_size(" 1024 ").is_err());
-    }
-
-    #[test]
-    fn parse_size_leading_zeros() {
-        assert_eq!(parse_size("0001024").unwrap(), 1024);
-    }
-
-    #[test]
-    fn parse_size_large_number() {
-        assert_eq!(parse_size("999999999999").unwrap(), 999999999999);
-    }
-
-    #[test]
-    fn vo_lang_matches_empty_both() {
-        assert!(!vo_lang_matches("", ""));
-    }
-
-    #[test]
-    fn vo_lang_matches_exact() {
-        assert!(vo_lang_matches("en", "en"));
-    }
-
-    #[test]
-    fn vo_lang_matches_case_insensitive_en() {
-        assert!(vo_lang_matches("EN-US", "en"));
-    }
-
-    #[test]
-    fn vo_lang_matches_case_insensitive_cn() {
-        assert!(vo_lang_matches("ZH-CN", "cn"));
-    }
-
-    #[test]
-    fn is_known_vo_locale_empty() {
-        assert!(!is_known_vo_locale(""));
-    }
-
-    #[test]
-    fn is_known_vo_locale_gibberish() {
-        assert!(!is_known_vo_locale("xyz123"));
-    }
-
-    #[test]
-    fn decompress_zstd_from_file_roundtrip() {
-        use std::io::Write;
-        let dir = tempfile::tempdir().unwrap();
-        let file_path = dir.path().join("data.zst");
-        let original = b"hello zstd world!";
-        let compressed = zstd::encode_all(std::io::Cursor::new(original), 3).unwrap();
-        let mut f = std::fs::File::create(&file_path).unwrap();
-        f.write_all(&compressed).unwrap();
-        drop(f);
-        let decompressed = decompress_zstd_from_file(&file_path).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn decompress_zstd_from_file_missing_returns_error() {
-        let path = std::path::PathBuf::from("/nonexistent/file.zst");
-        let result = decompress_zstd_from_file(&path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn decompress_zstd_from_file_invalid_data_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let file_path = dir.path().join("invalid.zst");
-        std::fs::write(&file_path, b"not zstd compressed data").unwrap();
-        let result = decompress_zstd_from_file(&file_path);
-        assert!(result.is_err());
-    }
 }

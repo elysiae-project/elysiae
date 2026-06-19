@@ -121,6 +121,9 @@ pub enum SophonError {
 
     #[error("Invalid size string: {0}")]
     InvalidSizeString(String),
+
+    #[error("Request timed out after {0} seconds")]
+    Timeout(u64),
 }
 
 impl SophonError {
@@ -154,12 +157,19 @@ impl SophonError {
             | Self::ManifestDecode(_)
             | Self::AssemblyFailed { .. }
             | Self::IndexOutOfBounds { .. }
-            | Self::InvalidSizeString(_) => false,
+            | Self::InvalidSizeString(_)
+            | Self::Timeout(_) => false,
         }
     }
 }
 
 pub type SophonResult<T> = Result<T, SophonError>;
+
+impl From<tokio::time::error::Elapsed> for SophonError {
+    fn from(_: tokio::time::error::Elapsed) -> Self {
+        SophonError::Timeout(0)
+    }
+}
 
 #[cfg(test)]
 mod tests {
