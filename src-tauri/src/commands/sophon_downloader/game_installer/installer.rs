@@ -571,23 +571,15 @@ fn make_assembly_params(
     }
 }
 
-async fn drain_join_set(
-    join_set: &mut tokio::task::JoinSet<Result<SophonResult<()>, tokio::task::JoinError>>,
-) -> SophonResult<()> {
+async fn drain_join_set(join_set: &mut tokio::task::JoinSet<SophonResult<()>>) -> SophonResult<()> {
     let mut first_error: Option<SophonError> = None;
     while let Some(res) = join_set.join_next().await {
         match res {
-            Ok(Ok(Ok(()))) => {}
-            Ok(Ok(Err(e))) => {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
                 log::error!("Assembly task failed: {}", e);
                 if first_error.is_none() {
                     first_error = Some(e);
-                }
-            }
-            Ok(Err(e)) => {
-                log::error!("Assembly task join error: {}", e);
-                if first_error.is_none() {
-                    first_error = Some(SophonError::JoinError(e));
                 }
             }
             Err(e) => {
@@ -656,12 +648,9 @@ fn spawn_assembly_coordinator(
                 }
             } else if let Some(res) = join_set.join_next().await {
                 match res {
-                    Ok(Ok(Ok(()))) => {}
-                    Ok(Ok(Err(e))) => {
-                        log::error!("Assembly task failed: {}", e);
-                    }
+                    Ok(Ok(())) => {}
                     Ok(Err(e)) => {
-                        log::error!("Assembly task join error: {}", e);
+                        log::error!("Assembly task failed: {}", e);
                     }
                     Err(e) => {
                         log::error!("Assembly task join error: {}", e);
