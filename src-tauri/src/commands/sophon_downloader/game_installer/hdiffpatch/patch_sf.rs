@@ -459,14 +459,12 @@ mod tests {
         // Skip 10 bytes, then XOR 2 bytes
         // RLE stream: skip=10, len=2, xor_val=0x11, xor_val=0x22
         // Skip 10 bytes means copy 10 bytes unchanged, then apply XOR
-        let mut rle_buf = Vec::new();
-        // skip=10 encoded as rle varint
-        rle_buf.push(10u8);
-        // len=2
-        rle_buf.push(2u8);
-        // XOR values
-        rle_buf.push(0x11u8);
-        rle_buf.push(0x22u8);
+        let rle_buf = vec![
+            10u8,   // skip=10 encoded as rle varint
+            2u8,    // len=2
+            0x11u8, // XOR values
+            0x22u8,
+        ];
 
         let mut rle0 = Rle0Decoder::new(&rle_buf);
         let mut data = [0x00u8; 12];

@@ -120,11 +120,9 @@ pub(crate) fn get_clip_stream(
                 Ok((Box::new(decoder), file_bytes))
             }
         }
-        CompressionMode::Nocomp => {
-            Err(std::io::Error::other(
-                "Nocomp mode should have been handled above",
-            ))
-        }
+        CompressionMode::Nocomp => Err(std::io::Error::other(
+            "Nocomp mode should have been handled above",
+        )),
     }
 }
 

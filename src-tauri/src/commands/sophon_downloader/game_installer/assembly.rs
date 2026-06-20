@@ -620,8 +620,7 @@ pub async fn spawn_assembly_task(
     });
     match rx.await {
         Ok(result) => result,
-        Err(_) => Err(SophonError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        Err(_) => Err(SophonError::Io(std::io::Error::other(
             "assembly thread cancelled",
         ))),
     }
@@ -1295,7 +1294,7 @@ mod tests {
     /// Test write_from_old_file reads from correct offset and verifies hash
     #[test]
     fn write_from_old_file_reads_correct_offset() {
-        use std::io::{Seek, SeekFrom, Write};
+        use std::io::Write;
 
         let dir = tempfile::tempdir().unwrap();
         let old_file_path = dir.path().join("old_file.bin");

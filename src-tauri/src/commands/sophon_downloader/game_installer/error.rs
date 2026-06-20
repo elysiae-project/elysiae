@@ -254,6 +254,7 @@ mod tests {
         assert!(!msg.is_empty());
     }
 
+    #[allow(deprecated)]
     #[test]
     fn error_display_manifest_decode() {
         let decode_err = prost::DecodeError::new("invalid wire type");
@@ -441,6 +442,7 @@ mod tests {
         assert!(matches!(sophon_err, SophonError::JoinError(_)));
     }
 
+    #[allow(deprecated)]
     #[test]
     fn error_from_manifest_decode() {
         let decode_err = prost::DecodeError::new("test");

@@ -3486,9 +3486,9 @@ mod tests {
     #[test]
     fn retry_delay_first_attempt_is_1000ms() {
         // Base 1000ms + jitter (0-999ms)
-        let delay = retry_delay(0 as u32).as_millis();
+        let delay = retry_delay(0_u32).as_millis();
         assert!(
-            delay >= 1000 && delay < 2000,
+            (1000..2000).contains(&delay),
             "expected 1000-1999, got {}",
             delay
         );
@@ -3497,44 +3497,44 @@ mod tests {
     #[test]
     fn retry_delay_doubles_up_to_fifth_attempt() {
         // attempt 0 -> 1s + jitter
-        let d0 = retry_delay(0 as u32).as_millis();
+        let d0 = retry_delay(0_u32).as_millis();
         assert!(
-            d0 >= 1000 && d0 < 2000,
+            (1000..2000).contains(&d0),
             "attempt 0: expected 1000-1999, got {}",
             d0
         );
         // attempt 1 -> 2s + jitter
-        let d1 = retry_delay(1 as u32).as_millis();
+        let d1 = retry_delay(1_u32).as_millis();
         assert!(
-            d1 >= 2000 && d1 < 3000,
+            (2000..3000).contains(&d1),
             "attempt 1: expected 2000-2999, got {}",
             d1
         );
         // attempt 2 -> 4s + jitter
-        let d2 = retry_delay(2 as u32).as_millis();
+        let d2 = retry_delay(2_u32).as_millis();
         assert!(
-            d2 >= 4000 && d2 < 5000,
+            (4000..5000).contains(&d2),
             "attempt 2: expected 4000-4999, got {}",
             d2
         );
         // attempt 3 -> 8s + jitter
-        let d3 = retry_delay(3 as u32).as_millis();
+        let d3 = retry_delay(3_u32).as_millis();
         assert!(
-            d3 >= 8000 && d3 < 9000,
+            (8000..9000).contains(&d3),
             "attempt 3: expected 8000-8999, got {}",
             d3
         );
         // attempt 4 -> 16s + jitter
-        let d4 = retry_delay(4 as u32).as_millis();
+        let d4 = retry_delay(4_u32).as_millis();
         assert!(
-            d4 >= 16000 && d4 < 17000,
+            (16000..17000).contains(&d4),
             "attempt 4: expected 16000-16999, got {}",
             d4
         );
         // attempt 5 -> 32s, capped to 30s + jitter
-        let d5 = retry_delay(5 as u32).as_millis();
+        let d5 = retry_delay(5_u32).as_millis();
         assert!(
-            d5 >= 30000 && d5 < 31000,
+            (30000..31000).contains(&d5),
             "attempt 5: expected 30000-30999, got {}",
             d5
         );
@@ -3543,21 +3543,21 @@ mod tests {
     #[test]
     fn retry_delay_caps_at_30_seconds_for_larger_attempts() {
         // Capped at 30000 + jitter (up to ~30999ms)
-        let d5 = retry_delay(5 as u32).as_millis();
+        let d5 = retry_delay(5_u32).as_millis();
         assert!(
-            d5 >= 30000 && d5 < 31000,
+            (30000..31000).contains(&d5),
             "attempt 5: expected 30000-30999, got {}",
             d5
         );
-        let d6 = retry_delay(6 as u32).as_millis();
+        let d6 = retry_delay(6_u32).as_millis();
         assert!(
-            d6 >= 30000 && d6 < 31000,
+            (30000..31000).contains(&d6),
             "attempt 6: expected 30000-30999, got {}",
             d6
         );
-        let d50 = retry_delay(50 as u32).as_millis();
+        let d50 = retry_delay(50_u32).as_millis();
         assert!(
-            d50 >= 30000 && d50 < 31000,
+            (30000..31000).contains(&d50),
             "attempt 50: expected 30000-30999, got {}",
             d50
         );
@@ -3567,13 +3567,13 @@ mod tests {
     fn retry_delay_max_attempt_caps_before_multiply() {
         let d10 = retry_delay(10).as_millis();
         assert!(
-            d10 >= 30000 && d10 < 31000,
+            (30000..31000).contains(&d10),
             "attempt 10: expected 30000-30999, got {}",
             d10
         );
         let d100 = retry_delay(100).as_millis();
         assert!(
-            d100 >= 30000 && d100 < 31000,
+            (30000..31000).contains(&d100),
             "attempt 100: expected 30000-30999, got {}",
             d100
         );

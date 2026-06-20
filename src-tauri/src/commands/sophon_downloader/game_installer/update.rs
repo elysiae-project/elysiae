@@ -289,8 +289,8 @@ mod tests {
         };
         let json = serde_json::to_string(&info).unwrap();
         let decoded: UpdateInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded.update_available, true);
-        assert_eq!(decoded.preinstall_available, false);
+        assert!(decoded.update_available);
+        assert!(!decoded.preinstall_available);
         assert_eq!(decoded.current_tag, Some("1.0.0".to_string()));
         assert_eq!(decoded.remote_tag, "2.0.0");
         assert_eq!(decoded.update_compressed_size, 1_000_000);
@@ -312,7 +312,7 @@ mod tests {
         };
         let json = serde_json::to_string(&info).unwrap();
         let decoded: UpdateInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded.preinstall_available, true);
+        assert!(decoded.preinstall_available);
         assert_eq!(decoded.current_tag, None);
         assert_eq!(decoded.preinstall_tag, Some("3.0.0-pre".to_string()));
         assert_eq!(decoded.update_compressed_size, u64::MAX);

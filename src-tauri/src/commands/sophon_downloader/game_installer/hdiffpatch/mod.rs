@@ -5,9 +5,9 @@ mod patch_core;
 mod patch_sf;
 mod patch_single;
 
-use std::path::PathBuf;
 use std::fs::File;
 use std::io::{BufWriter, Read, Seek, Write};
+use std::path::PathBuf;
 
 use parser::BinaryExtensions;
 
@@ -405,7 +405,6 @@ mod tests {
     const NEW_FROM_EMPTY: &[u8] = b"This is brand new content created from nothing!";
     const DIFF_EMPTY_TO_NEW: &[u8] = b"HDIFF13&zstd\x00/\x00\x00\x00\x00\x02\x00\x00\x00/\x00 .This is brand new content created from nothing!";
 
-
     const SAME: &[u8] = b"Identical content on both sides";
     const DIFF_IDENTITY: &[u8] =
         b"HDIFF13&zstd\x00\x1f\x1f\x01\x03\x00\x01\x00\x00\x00\x00\x00\x00\x00\x1f\x1e";
@@ -432,7 +431,8 @@ mod tests {
         result == expected
     }
 
-    /// Test with synthetic hdiff data - may fail due to invalid synthetic fixture
+    /// Test with synthetic hdiff data - may fail due to invalid synthetic
+    /// fixture
     #[test]
     #[ignore = "synthetic hdiff fixture produces invalid patch data"]
     fn hdiff_v13_zstd_text_patch() {
@@ -441,7 +441,8 @@ mod tests {
             "v13 zstd text patch output mismatch"
         );
     }
-    /// Test with synthetic hdiff data - may fail due to invalid synthetic fixture
+    /// Test with synthetic hdiff data - may fail due to invalid synthetic
+    /// fixture
     #[test]
     #[ignore = "synthetic hdiff fixture produces invalid patch data"]
     fn hdiff_v13_zstd_empty_original() {
@@ -472,7 +473,8 @@ mod tests {
         let _ = fs::remove_file(&out_path);
     }
 
-    /// Test with synthetic hdiff data - may fail due to invalid synthetic fixture
+    /// Test with synthetic hdiff data - may fail due to invalid synthetic
+    /// fixture
     #[test]
     #[ignore = "synthetic hdiff fixture produces invalid patch data"]
     fn hdiff_v13_zstd_identity_patch() {
@@ -615,7 +617,11 @@ mod tests {
 
         // Use the same path for both source and dest — should fail
         let path_str = old_path.to_string_lossy().to_string();
-        let mut hdiff = HDiff::new(path_str.clone(), diff_path.to_string_lossy().to_string(), path_str);
+        let mut hdiff = HDiff::new(
+            path_str.clone(),
+            diff_path.to_string_lossy().to_string(),
+            path_str,
+        );
         assert!(
             !hdiff.apply(None),
             "should fail when source and destination are the same file"
@@ -822,11 +828,9 @@ mod tests {
     /// would not). Padding is applied when compress_cover_buf_size > 0.
     #[test]
     fn cover_padding_with_small_compressed_size() {
-        assert!(
-            1 > 0,
-            "compress_cover_buf_size == 1 should trigger padding check"
-        );
-        assert!(!(1 > 1), "check '> 1' would skip padding for size == 1");
+        // Padding is applied when compress_cover_buf_size > 0.
+        // compress_cover_buf_size == 1 triggers padding.
+        // compress_cover_buf_size > 1 also triggers padding (different path).
     }
 
     /// Verify the padding logic for all compression modes
@@ -873,7 +877,7 @@ mod tests {
     fn cover_header_debug_and_clone() {
         let ch = CoverHeader::new(10, 20, 30, 40);
         let _ = format!("{:?}", ch);
-        let cloned = ch.clone();
+        let cloned = ch;
         assert_eq!(ch.old_pos, cloned.old_pos);
         assert_eq!(ch.new_pos, cloned.new_pos);
         assert_eq!(ch.cover_length, cloned.cover_length);

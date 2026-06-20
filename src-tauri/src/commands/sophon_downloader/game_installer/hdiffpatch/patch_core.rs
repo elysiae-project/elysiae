@@ -393,7 +393,11 @@ enum CoverReader<'a> {
 }
 
 impl<'a> CoverHeaderIterator<'a> {
-    pub(crate) fn new(cover_reader: &'a mut dyn Read, cover_size: i64, cover_count: i64) -> std::io::Result<Self> {
+    pub(crate) fn new(
+        cover_reader: &'a mut dyn Read,
+        cover_size: i64,
+        cover_count: i64,
+    ) -> std::io::Result<Self> {
         if cover_count <= 0 {
             return Ok(Self {
                 reader: CoverReader::Buffered {
@@ -680,9 +684,11 @@ mod tests {
 
     #[test]
     fn rle_ref_clip_copy_is_independent() {
-        let mut rle1 = RleRefClip::default();
-        rle1.mem_set_value = 0x42;
-        rle1.mem_set_length = 10;
+        let rle1 = RleRefClip {
+            mem_set_value: 0x42,
+            mem_set_length: 10,
+            ..Default::default()
+        };
 
         let _rle2 = rle1; // Copy (not reference) - verified to be independent
 
@@ -942,8 +948,8 @@ mod tests {
         let old_idx = 16;
 
         // First byte: no overflow
-        buf[rle_idx + 0] = 0x10;
-        buf[old_idx + 0] = 0x20; // 0x10 + 0x20 = 0x30
+        buf[rle_idx] = 0x10;
+        buf[old_idx] = 0x20; // 0x10 + 0x20 = 0x30
 
         // Second byte: boundary case
         buf[rle_idx + 1] = 0xFE;
@@ -967,7 +973,7 @@ mod tests {
             result.is_ok(),
             "tbytes_set_rle_vector_software should succeed"
         );
-        assert_eq!(buf[rle_idx + 0], 0x30, "0x10 + 0x20 should be 0x30");
+        assert_eq!(buf[rle_idx], 0x30, "0x10 + 0x20 should be 0x30");
         assert_eq!(buf[rle_idx + 1], 0x01, "0xFE + 0x03 should wrap to 0x01");
         assert_eq!(buf[rle_idx + 2], 0x80, "0x7F + 0x01 should be 0x80");
     }
