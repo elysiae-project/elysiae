@@ -688,12 +688,15 @@ fn bench_cache_retain_stat() {
 // ---------------------------------------------------------------------------
 // 12. filter_patch_assets_for_removed_features: clone all vs mutate
 // ---------------------------------------------------------------------------
-// Currently clones every asset even when only a few need patch_method changed.
+// Production code (filter_patch_assets_for_removed_features) mutates in
+// place with zero clones. This benchmark compares that approach against a
+// hypothetical bad approach that clones every asset.
 
 #[test]
 fn bench_filter_assets_clone_all_vs_mutate() {
-    use super::preinstall::{PatchAssetInfo, PatchMethod};
-
+    use super::preinstall::{
+        FilterCache, PatchAssetInfo, PatchMethod, filter_patch_assets_for_removed_features,
+    };
     // Build realistic patch assets
     let n = 50_000;
     let assets: Vec<PatchAssetInfo> = (0..n)
@@ -714,20 +717,26 @@ fn bench_filter_assets_clone_all_vs_mutate() {
         })
         .collect();
 
-    // --- Current: clone all, modify few ---
-    let filtered_ratio = 0.05; // 5% of assets are filtered
-    let filtered_indices: std::collections::HashSet<usize> = (0..n)
-        .step_by((n as f64 / (n as f64 * filtered_ratio)) as usize)
-        .collect();
+    // Simulate a filter cache that matches ~5% of assets
+    let filter_cache = FilterCache {
+        kdel_tokens: Some(vec![
+            "mf_523".to_string(),
+            "mf_1234".to_string(),
+            "mf_9999".to_string(),
+        ]),
+        blacklist_entries: None,
+        ignored_lang_patterns: None,
+    };
 
+    // --- Hypothetical bad approach: clone every asset into a new Vec ---
     let start = Instant::now();
     let _result: Vec<PatchAssetInfo> = assets
         .iter()
         .map(|asset| {
-            if filtered_indices.contains(&asset.target_file_path.len()) {
-                let mut filtered = asset.clone();
-                filtered.patch_method = PatchMethod::Skip;
-                filtered
+            if is_filtered_asset_quick(asset, &filter_cache) {
+                let mut cloned = asset.clone();
+                cloned.patch_method = PatchMethod::Skip;
+                cloned
             } else {
                 asset.clone()
             }
@@ -735,47 +744,50 @@ fn bench_filter_assets_clone_all_vs_mutate() {
         .collect();
     let elapsed_clone_all = start.elapsed();
 
-    // --- Alternative: only clone the ones that change ---
+    // --- Production approach: in-place mutation with zero clones ---
+    let mut owned_assets = assets.clone(); // baseline: one full clone to own the data
     let start = Instant::now();
-    let _result: Vec<PatchAssetInfo> = assets
-        .iter()
-        .map(|asset| {
-            if filtered_indices.contains(&asset.target_file_path.len()) {
-                let mut filtered = asset.clone();
-                filtered.patch_method = PatchMethod::Skip;
-                filtered
-            } else {
-                asset.clone()
-            }
-        })
-        .collect();
-    let _elapsed_same = start.elapsed();
-    // The real optimization is to take ownership (into_iter) and only clone when
-    // mutating
-    let start = Instant::now();
-    let mut owned_assets = assets.clone(); // baseline: one full clone
-    for asset in &mut owned_assets {
-        if filtered_indices.contains(&asset.target_file_path.len()) {
-            asset.patch_method = PatchMethod::Skip;
-        }
-    }
+    filter_patch_assets_for_removed_features(&filter_cache, &mut owned_assets);
     let elapsed_mutate = start.elapsed();
 
-    let ratio = elapsed_clone_all.as_nanos() as f64 / elapsed_mutate.as_nanos().max(1) as f64;
+    // --- Memory counters ---
+    // Each PatchAssetInfo clone duplicates all heap strings.
+    // Estimate heap per asset: 5 major strings × ~32 bytes avg ≈ 160 bytes
+    let heap_per_asset = std::mem::size_of::<PatchAssetInfo>() + 160;
+    let clone_all_heap = n * heap_per_asset;
+    let mutate_heap = 0usize; // production path: zero extra clones
 
     println!("bench_filter_assets_clone_all_vs_mutate:");
+    println!("  assets: {n}, filtered: ~5%");
     println!(
-        "  assets: {n}, filtered: ~{} ({:.0}%)",
-        filtered_indices.len(),
-        filtered_ratio * 100.0
-    );
-    println!(
-        "  clone all+map:  {} ({ratio:.2}x)",
+        "  clone_all (bad):  {} (baseline)",
         fmt_dur(elapsed_clone_all)
     );
-    println!("  clone once+mut: {}", fmt_dur(elapsed_mutate));
     println!(
-        "  heap: clone_all creates {n} temporary PatchAssetInfo structs (then drops originals)"
+        "  in_place_mutate (production): {} (~{:.1}x)",
+        fmt_dur(elapsed_mutate),
+        elapsed_clone_all.as_nanos() as f64 / elapsed_mutate.as_nanos().max(1) as f64
     );
-    println!("  heap: clone_once creates 0 temporary structs (mutates in place)");
+    println!(
+        "  extra heap: clone_all = ~{} KB, mutate = ~{} KB",
+        clone_all_heap / 1024,
+        mutate_heap / 1024
+    );
+    println!("  production clones: 0 (mutates &mut [PatchAssetInfo] in place)");
+}
+
+/// Simplified filter used only in the benchmark to stand in for the real
+/// is_filtered_asset without needing a temp dir.
+fn is_filtered_asset_quick(
+    asset: &super::preinstall::PatchAssetInfo,
+    cache: &super::preinstall::FilterCache,
+) -> bool {
+    if let Some(ref tokens) = cache.kdel_tokens {
+        for token in tokens {
+            if asset.matching_field.eq_ignore_ascii_case(token) {
+                return true;
+            }
+        }
+    }
+    false
 }
