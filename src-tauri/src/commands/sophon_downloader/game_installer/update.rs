@@ -66,8 +66,8 @@ pub async fn check_update(
             let tag = pre.tag.clone();
             match fetch_build_sizes(client, pre, vo_lang).await {
                 Ok((cs, ds)) => (true, Some(tag), cs, ds),
-                Err(e) => {
-                    log::warn!("Failed to fetch preinstall sizes: {}", e);
+                Err(err) => {
+                    log::warn!("Failed to fetch preinstall sizes: {}", err);
                     (true, Some(tag), 0, 0)
                 }
             }

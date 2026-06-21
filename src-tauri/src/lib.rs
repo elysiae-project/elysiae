@@ -9,10 +9,7 @@ use crate::commands::sophon_downloader::ActiveDownload;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
     apply_nvidia_wayland_workaround();
-
-    #[cfg(target_os = "linux")]
     apply_webkit_memory_improvements();
 
     tauri::Builder::default()
@@ -77,7 +74,6 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-#[cfg(target_os = "linux")]
 fn apply_webkit_memory_improvements() {
     unsafe {
         std::env::set_var("WEBKIT_FORCE_MEMORY_PRESSURE_SYSTEM", "critical");
@@ -85,7 +81,6 @@ fn apply_webkit_memory_improvements() {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
     if is_nvidia() && is_wayland() {
         println!("Elysiae: Applying NVIDIA Wayland Workaround");
@@ -98,14 +93,12 @@ fn apply_nvidia_wayland_workaround() {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
     // If a NVIDIA graphics card is present, one of these two paths should exist
     std::path::Path::new("/proc/driver/nvidia/version").exists()
         || std::path::Path::new("/dev/nvidia0").exists()
 }
 
-#[cfg(target_os = "linux")]
 fn is_wayland() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("XDG_SESSION_TYPE")

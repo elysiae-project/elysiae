@@ -120,8 +120,8 @@ impl HDiff {
     pub fn apply(&mut self, on_progress: Option<Box<dyn Fn(u64)>>) -> bool {
         match self.apply_inner(on_progress.as_ref().map(|cb| cb.as_ref())) {
             Ok(()) => true,
-            Err(e) => {
-                tauri_plugin_log::log::error!("[HDiff::apply] Error: {e}");
+            Err(err) => {
+                tauri_plugin_log::log::error!("[HDiff::apply] Error: {err}");
                 false
             }
         }
@@ -369,7 +369,7 @@ impl HDiff {
         ];
         for (name, val) in fields {
             if *val < 0 {
-                return Err(format!("{} is negative in diff chunk info", name).into());
+                return Err(format!("{name} is negative in diff chunk info").into());
             }
         }
 

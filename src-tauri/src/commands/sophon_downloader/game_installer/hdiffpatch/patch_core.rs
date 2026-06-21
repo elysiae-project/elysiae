@@ -411,10 +411,10 @@ impl<'a> CoverHeaderIterator<'a> {
         }
         let reader = if cover_size < MAX_MEM_BUFFER_LEN {
             let mut buffer = vec![0u8; cover_size as usize];
-            cover_reader.read_exact(&mut buffer).map_err(|e| {
+            cover_reader.read_exact(&mut buffer).map_err(|err| {
                 std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
-                    format!("failed to read cover data: {}", e),
+                    format!("failed to read cover data: {err}"),
                 )
             })?;
             CoverReader::Buffered {
@@ -459,7 +459,7 @@ impl<'a> Iterator for CoverHeaderIterator<'a> {
                 let inc_old_pos =
                     match read_long_7bit_from_slice(data, offset, K_SIGN_TAG_BIT, p_sign) {
                         Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
+                        Err(err) => return Some(Err(err)),
                     };
                 let old_pos = match if inc_old_pos_sign == 0 {
                     old_pos_back.checked_add(inc_old_pos)
@@ -481,11 +481,11 @@ impl<'a> Iterator for CoverHeaderIterator<'a> {
 
                 let copy_length = match read_long_7bit_from_slice(data, offset, 0, 0) {
                     Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
+                    Err(err) => return Some(Err(err)),
                 };
                 let cover_length = match read_long_7bit_from_slice(data, offset, 0, 0) {
                     Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
+                    Err(err) => return Some(Err(err)),
                 };
                 if copy_length < 0 || cover_length < 0 {
                     return Some(Err(std::io::Error::other(
@@ -533,7 +533,7 @@ impl<'a> Iterator for CoverHeaderIterator<'a> {
                 let inc_old_pos_sign = p_sign >> (8 - K_SIGN_TAG_BIT);
                 let inc_old_pos = match reader.read_long_7bit_tagged(K_SIGN_TAG_BIT, p_sign) {
                     Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
+                    Err(err) => return Some(Err(err)),
                 };
                 let old_pos = match if inc_old_pos_sign == 0 {
                     old_pos_back.checked_add(inc_old_pos)
@@ -555,11 +555,11 @@ impl<'a> Iterator for CoverHeaderIterator<'a> {
 
                 let copy_length = match reader.read_long_7bit() {
                     Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
+                    Err(err) => return Some(Err(err)),
                 };
                 let cover_length = match reader.read_long_7bit() {
                     Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
+                    Err(err) => return Some(Err(err)),
                 };
                 if copy_length < 0 || cover_length < 0 {
                     return Some(Err(std::io::Error::other(

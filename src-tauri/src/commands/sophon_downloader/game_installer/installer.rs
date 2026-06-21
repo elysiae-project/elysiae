@@ -576,22 +576,22 @@ async fn drain_join_set(join_set: &mut tokio::task::JoinSet<SophonResult<()>>) -
     while let Some(res) = join_set.join_next().await {
         match res {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                log::error!("Assembly task failed: {}", e);
+            Ok(Err(err)) => {
+                log::error!("Assembly task failed: {err}");
                 if first_error.is_none() {
-                    first_error = Some(e);
+                    first_error = Some(err);
                 }
             }
-            Err(e) => {
-                log::error!("Assembly task join error: {}", e);
+            Err(err) => {
+                log::error!("Assembly task join error: {err}");
                 if first_error.is_none() {
-                    first_error = Some(SophonError::JoinError(e));
+                    first_error = Some(SophonError::JoinError(err));
                 }
             }
         }
     }
     match first_error {
-        Some(e) => Err(e),
+        Some(err) => Err(err),
         None => Ok(()),
     }
 }
@@ -649,11 +649,11 @@ fn spawn_assembly_coordinator(
             } else if let Some(res) = join_set.join_next().await {
                 match res {
                     Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        log::error!("Assembly task failed: {}", e);
+                    Ok(Err(err)) => {
+                        log::error!("Assembly task failed: {err}");
                     }
-                    Err(e) => {
-                        log::error!("Assembly task join error: {}", e);
+                    Err(err) => {
+                        log::error!("Assembly task join error: {err}");
                     }
                 }
             }
@@ -753,11 +753,11 @@ async fn download_chunk_with_retries(
                 // Discard the corrupted payload. Resuming a Range download from
                 // a corrupted tail would still fail MD5 verification because we
                 // would append new bytes on top of garbage. Start fresh.
-                if let Err(e) = tokio::fs::remove_file(dest).await {
+                if let Err(err) = tokio::fs::remove_file(dest).await {
                     log::warn!(
                         "Failed to discard corrupted chunk {} before retry: {}",
                         item.chunk.chunk_name,
-                        e
+                        err
                     );
                 }
                 if cancelable_sleep(handle, retry_delay(hash_failures))
@@ -769,13 +769,13 @@ async fn download_chunk_with_retries(
                 // Don't count against network retries — corrupted data is
                 // not a network error. Continue to re-download the chunk.
             }
-            Err(e) => {
-                if !e.is_retryable() {
-                    return Err(e);
+            Err(err) => {
+                if !err.is_retryable() {
+                    return Err(err);
                 }
                 network_attempts += 1;
                 if network_attempts < MAX_RETRIES {
-                    let err_msg = e.to_string();
+                    let err_msg = err.to_string();
                     (ctx.updater)(SophonProgress::Warning {
                         message: format!(
                             "Chunk {} failed (attempt {}/{}): {err_msg}",
@@ -792,7 +792,7 @@ async fn download_chunk_with_retries(
                     return Err(SophonError::DownloadFailed {
                         chunk: item.chunk.chunk_name.clone(),
                         attempts: MAX_RETRIES,
-                        error: e.to_string(),
+                        error: err.to_string(),
                     });
                 }
                 // Don't delete the partial file here - the inner layer
@@ -883,9 +883,9 @@ async fn process_download_item(
         let dc = Arc::clone(&ctx.downloaded_chunks);
         let saver = Arc::clone(&ctx.state_saver);
         let prev_handle = {
-            let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+            let mut guard = ctx.last_save.lock().unwrap_or_else(|err| {
                 log::error!("last_save mutex poisoned, recovering");
-                e.into_inner()
+                err.into_inner()
             });
             guard.take()
         };
@@ -894,9 +894,9 @@ async fn process_download_item(
         }
         let new_handle = tokio::task::spawn_blocking(move || saver(&dc));
         {
-            let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+            let mut guard = ctx.last_save.lock().unwrap_or_else(|err| {
                 log::error!("last_save mutex poisoned, recovering");
-                e.into_inner()
+                err.into_inner()
             });
             *guard = Some(new_handle);
         }
@@ -1003,11 +1003,11 @@ async fn finalize_install(
         let cd = Arc::clone(&ctx.chunks_dir);
         #[allow(unused_must_use)]
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = fs::remove_dir_all(&*cd) {
+            if let Err(err) = fs::remove_dir_all(&*cd) {
                 log::warn!(
                     "Failed to remove chunks directory {} on cancel: {}",
                     cd.display(),
-                    e
+                    err
                 );
             }
         })
@@ -1029,7 +1029,7 @@ async fn finalize_install(
                 total - assembled,
             );
         } else {
-            log::info!("Sophon install: all {} files assembled successfully", total);
+            log::info!("Sophon install: all {total} files assembled successfully");
         }
     }
 
@@ -1038,14 +1038,14 @@ async fn finalize_install(
         let saver = Arc::clone(&ctx.state_saver);
         tokio::task::spawn_blocking(move || saver(&dc))
             .await
-            .unwrap_or_else(|e| {
-                log::error!("Final state save join error: {e}");
+            .unwrap_or_else(|err| {
+                log::error!("Final state save join error: {err}");
             });
     }
 
     {
-        if let Err(e) = cache::save_verification_cache(&ctx.game_dir, &ctx.verify_cache) {
-            log::warn!("Failed to save verification cache: {}", e);
+        if let Err(err) = cache::save_verification_cache(&ctx.game_dir, &ctx.verify_cache) {
+            log::warn!("Failed to save verification cache: {err}");
         }
     }
 
@@ -1053,13 +1053,14 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &deleted_files {
-                if let Err(e) = validate_asset_name(rel) {
-                    log::warn!("Skipping deleted file with invalid path: {e}");
+                if let Err(err) = validate_asset_name(rel) {
+                    log::warn!("Skipping deleted file with invalid path: {err}");
                     continue;
                 }
                 let path = gd.join(rel);
-                if let Err(e) = fs::remove_file(&path) {
-                    log::warn!("Failed to delete file {}: {}", path.display(), e);
+                if let Err(err) = fs::remove_file(&path) {
+                    let path_display = path.display();
+                    log::warn!("Failed to delete file {path_display}: {err}");
                 }
             }
         })
@@ -1082,18 +1083,18 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::game_filters::write_hkrpg_audio_lang_record(&gd, &vl) {
-                log::warn!("Failed to write hkrpg audio language record: {}", e);
+            if let Err(err) = super::game_filters::write_hkrpg_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hkrpg audio language record: {err}");
             }
         })
         .await?;
         let gd = ctx.game_dir.clone();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::game_filters::write_hkrpg_app_info(&gd) {
-                log::warn!("Failed to write hkrpg app.info: {}", e);
+            if let Err(err) = super::game_filters::write_hkrpg_app_info(&gd) {
+                log::warn!("Failed to write hkrpg app.info: {err}");
             }
-            if let Err(e) = super::game_filters::write_hkrpg_binary_version_files(&gd) {
-                log::warn!("Failed to write hkrpg binary version files: {}", e);
+            if let Err(err) = super::game_filters::write_hkrpg_binary_version_files(&gd) {
+                log::warn!("Failed to write hkrpg binary version files: {err}");
             }
         })
         .await?;
@@ -1101,8 +1102,8 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::game_filters::write_hk4e_audio_lang_record(&gd, &vl) {
-                log::warn!("Failed to write hk4e audio language record: {}", e);
+            if let Err(err) = super::game_filters::write_hk4e_audio_lang_record(&gd, &vl) {
+                log::warn!("Failed to write hk4e audio language record: {err}");
             }
         })
         .await?;
@@ -1110,8 +1111,8 @@ async fn finalize_install(
         let vl = vo_langs.to_vec();
         let af = Arc::clone(&ctx.all_files);
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::game_filters::write_pkg_version_from_manifest(&gd, &af, &vl) {
-                log::warn!("Failed to write hk4e pkg_version: {}", e);
+            if let Err(err) = super::game_filters::write_pkg_version_from_manifest(&gd, &af, &vl) {
+                log::warn!("Failed to write hk4e pkg_version: {err}");
             }
         })
         .await?;
@@ -1119,8 +1120,8 @@ async fn finalize_install(
         let gd = ctx.game_dir.clone();
         let vl = vo_langs.to_vec();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = super::game_filters::write_nap_audio_lang_records(&gd, &vl) {
-                log::warn!("Failed to write nap audio language records: {}", e);
+            if let Err(err) = super::game_filters::write_nap_audio_lang_records(&gd, &vl) {
+                log::warn!("Failed to write nap audio language records: {err}");
             }
         })
         .await?;
@@ -1144,7 +1145,7 @@ fn chunk_still_valid_for_resume(chunk_name: &str, chunk_size: u64, chunks_dir: &
     if !validate_chunk_name(chunk_name) {
         return false;
     }
-    let chunk_path = chunks_dir.join(format!("{}.zstd", chunk_name));
+    let chunk_path = chunks_dir.join(format!("{chunk_name}.zstd"));
     match std::fs::metadata(&chunk_path) {
         Ok(meta) => meta.len() == chunk_size,
         Err(_) => false,
@@ -1172,9 +1173,9 @@ pub async fn install(
     for installer in &installers {
         for asset in &installer.manifest.assets {
             if asset.is_directory() {
-                if let Err(e) = validate_asset_name(&asset.asset_name) {
+                if let Err(err) = validate_asset_name(&asset.asset_name) {
                     log::warn!(
-                        "Skipping directory with invalid asset_name \"{}\": {e}",
+                        "Skipping directory with invalid asset_name \"{}\": {err}",
                         asset.asset_name
                     );
                     continue;
@@ -1327,9 +1328,9 @@ pub async fn install(
                 indices.insert(file_idx);
                 pre_assembled += 1;
             } else {
-                if let Err(e) = validate_asset_name(&file.asset_name) {
+                if let Err(err) = validate_asset_name(&file.asset_name) {
                     log::warn!(
-                        "Skipping file with invalid asset_name \"{}\": {e}",
+                        "Skipping file with invalid asset_name \"{}\": {err}",
                         file.asset_name
                     );
                     continue;
@@ -1460,9 +1461,9 @@ pub async fn install(
             speed_bps: 0.0,
             eta_seconds: 0.0,
         });
-        *ctx.last_update.lock().unwrap_or_else(|e| {
+        *ctx.last_update.lock().unwrap_or_else(|err| {
             log::error!("last_update mutex poisoned, recovering");
-            e.into_inner()
+            err.into_inner()
         }) = Instant::now();
     }
 
@@ -1483,9 +1484,9 @@ pub async fn install(
 
     {
         let handle = {
-            let mut guard = ctx.last_save.lock().unwrap_or_else(|e| {
+            let mut guard = ctx.last_save.lock().unwrap_or_else(|err| {
                 log::error!("last_save mutex poisoned, recovering");
-                e.into_inner()
+                err.into_inner()
             });
             guard.take()
         };
@@ -1577,8 +1578,8 @@ pub async fn verify_integrity(
 
     for (scanned, (asset, chunk_download)) in all_assets.into_iter().enumerate() {
         let scanned = (scanned + 1) as u64;
-        if let Err(e) = validate_asset_name(&asset.asset_name) {
-            log::warn!("Skipping file with invalid asset_name during verification: {e}");
+        if let Err(err) = validate_asset_name(&asset.asset_name) {
+            log::warn!("Skipping file with invalid asset_name during verification: {err}");
             continue;
         }
         let file_path = game_dir.join(&asset.asset_name);
@@ -1605,7 +1606,7 @@ pub async fn verify_integrity(
                 ),
             });
 
-            if let Err(e) = redownload_asset(
+            if let Err(err) = redownload_asset(
                 client,
                 asset,
                 chunk_download,
@@ -1617,8 +1618,9 @@ pub async fn verify_integrity(
             )
             .await
             {
+                let asset_name = &asset.asset_name;
                 emit(SophonProgress::Error {
-                    message: format!("Failed to re-download {}: {}", asset.asset_name, e),
+                    message: format!("Failed to re-download {asset_name}: {err}"),
                 });
             }
         }
@@ -1672,8 +1674,9 @@ async fn redownload_asset(
             .unwrap_or(false);
 
         if needs_download {
+            let chunk_name = &chunk.chunk_name;
             emit(SophonProgress::Warning {
-                message: format!("Re-downloading chunk {}", chunk.chunk_name),
+                message: format!("Re-downloading chunk {chunk_name}"),
             });
             download::download_chunk(client, chunk_download, chunk, &chunk_path, None).await?;
         }

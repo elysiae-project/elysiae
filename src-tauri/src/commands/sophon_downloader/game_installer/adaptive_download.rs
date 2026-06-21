@@ -91,7 +91,10 @@ impl AdaptiveSemaphore {
     }
 
     pub fn adjust(&self) -> usize {
-        let mut window_start = self.window_start.lock().unwrap_or_else(|e| e.into_inner());
+        let mut window_start = self
+            .window_start
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let now = Instant::now();
         let elapsed = now.duration_since(*window_start).as_secs_f64();
 
@@ -276,7 +279,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -293,7 +299,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -301,7 +310,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(100 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -320,7 +332,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -329,7 +344,10 @@ mod tests {
 
         sem.window_bytes.fetch_add(1, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -397,7 +415,10 @@ mod tests {
             sem.window_bytes
                 .fetch_add(bytes_per_window, Ordering::Relaxed);
             {
-                let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+                let mut ws = sem
+                    .window_start
+                    .lock()
+                    .unwrap_or_else(|err| err.into_inner());
                 *ws = Instant::now() - window_duration;
             }
             sem.adjust();
@@ -471,7 +492,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         let old_target = sem.current_target();
@@ -494,7 +518,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -510,7 +537,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         let first = sem.adjust();
@@ -524,7 +554,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
@@ -533,7 +566,10 @@ mod tests {
         sem.window_bytes
             .fetch_add(400 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();

@@ -34,7 +34,7 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
     {
         let cache_stem = cache_path.file_stem();
         for entry in entries.flatten() {
-            if entry.path().extension().is_some_and(|e| e == "tmp")
+            if entry.path().extension().is_some_and(|ext| ext == "tmp")
                 && cache_stem == entry.path().file_stem()
             {
                 let _ = fs::remove_file(entry.path());
@@ -139,7 +139,7 @@ pub fn check_file_md5_cached(
             cache.remove(&cache_key);
             return Ok(false);
         }
-        Err(e) => return Err(e),
+        Err(err) => return Err(err),
     };
     let mtime = metadata
         .modified()?
@@ -449,18 +449,18 @@ mod tests {
             let c = Arc::clone(&cache);
             handles.push(std::thread::spawn(move || {
                 for j in 0..100 {
-                    let key = format!("key-{}-{}", i, j);
+                    let key = format!("key-{i}-{j}");
                     c.insert(
                         key.clone(),
                         VerificationEntry {
                             size: i as u64 + j as u64,
-                            md5: format!("md5-{}-{}", i, j),
+                            md5: format!("md5-{i}-{j}"),
                             mtime_secs: i as u64 * 100 + j as u64,
                         },
                     );
                     if let Some(entry) = c.get(&key) {
                         assert_eq!(entry.size, i as u64 + j as u64);
-                        assert_eq!(entry.md5, format!("md5-{}-{}", i, j));
+                        assert_eq!(entry.md5, format!("md5-{i}-{j}"));
                     }
                 }
             }));

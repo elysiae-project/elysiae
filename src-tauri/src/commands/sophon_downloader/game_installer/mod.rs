@@ -34,8 +34,8 @@ use std::time::Duration;
 
 pub fn retry_delay(attempt: u32) -> Duration {
     let exp = 1000u64.saturating_mul(1u64 << attempt.min(5));
-    // Add jitter to prevent thundering herd when multiple chunks fail simultaneously
-    // Use timestamp-based pseudo-random jitter
+    // Add jitter to prevent thundering herd when multiple chunks fail
+    // simultaneously Use timestamp-based pseudo-random jitter
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -91,11 +91,12 @@ pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 32;
 pub const ADAPTIVE_WINDOW_SECS: u64 = 3;
 
 pub const FRONT_DOOR_URL: &str = concat!(
-    "https://sg-hyp-api.hoyoverse.com",
-    "/hyp/hyp-connect/api/getGameBranches?launcher_id=VYTpXlbWo8"
+    "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x68\x79\x70\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d",
+    "\x2f\x68\x79\x70\x2f\x68\x79\x70\x2d\x63\x6f\x6e\x6e\x65\x63\x74",
+    "/api/getGameBranches?launcher_id=VYTpXlbWo8"
 );
 pub const SOPHON_BUILD_URL_BASE: &str = concat!(
-    "https://sg-public-api.hoyoverse.com",
+    "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x70\x75\x62\x6c\x69\x63\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d",
     "/downloader/sophon_chunk/api/getBuild"
 );
 

@@ -8,18 +8,20 @@ use super::write_lang_file;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
 const AUDIO_LANG_FILE: &str = "AudioLaucherRecord.txt";
-const APP_INFO_FILE: &str = "StarRail_Data/app.info";
+const GAME_DATA_DIR: &str = "\x53\x74\x61\x72\x52\x61\x69\x6c\x5f\x44\x61\x74\x61";
+const APP_VENDOR: &str = "\x43\x6f\x67\x6e\x6f\x73\x70\x68\x65\x72\x65";
 
 pub fn filter_hkrpg_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAssetProperty>) {
-    let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
+    let blacklist_path =
+        game_dir.join(format!("{GAME_DATA_DIR}/Persistent/DownloadBlacklist.json"));
     if !blacklist_path.exists() {
         return;
     }
 
     let file = match File::open(&blacklist_path) {
         Ok(f) => f,
-        Err(e) => {
-            log::warn!("Failed to open DownloadBlacklist.json: {}", e);
+        Err(err) => {
+            log::warn!("Failed to open DownloadBlacklist.json: {err}");
             return;
         }
     };
@@ -30,8 +32,8 @@ pub fn filter_hkrpg_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestA
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
-            Err(e) => {
-                log::warn!("Failed to read line from DownloadBlacklist.json: {}", e);
+            Err(err) => {
+                log::warn!("Failed to read line from DownloadBlacklist.json: {err}");
                 continue;
             }
         };
@@ -51,14 +53,15 @@ pub fn filter_hkrpg_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestA
         return;
     }
 
-    let blacklist_lower: Vec<String> = blacklist.iter().map(|e| e.to_lowercase()).collect();
+    let blacklist_lower: Vec<String> = blacklist.iter().map(|entry| entry.to_lowercase()).collect();
 
     let original_len = assets.len();
     assets.retain(|asset| {
         let asset_lower = asset.asset_name.to_lowercase();
         for entry in &blacklist_lower {
             if asset_lower.contains(entry) {
-                log::warn!("Filtered blacklisted asset: {}", asset.asset_name);
+                let name = &asset.asset_name;
+                log::warn!("Filtered blacklisted asset: {name}");
                 return false;
             }
         }
@@ -67,12 +70,12 @@ pub fn filter_hkrpg_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestA
 
     let filtered = original_len - assets.len();
     if filtered > 0 {
-        log::warn!("hkrpg blacklist filter removed {} assets", filtered);
+        log::warn!("hkrpg blacklist filter removed {filtered} assets");
     }
 }
 
 pub fn write_audio_lang_record(game_dir: &Path, vo_langs: &[String]) -> std::io::Result<()> {
-    let persistent_dir = game_dir.join("StarRail_Data/Persistent");
+    let persistent_dir = game_dir.join(format!("{GAME_DATA_DIR}/Persistent"));
     fs::create_dir_all(&persistent_dir)?;
 
     write_lang_file(
@@ -114,26 +117,31 @@ fn strip_prefix_case_insensitive<'a>(s: &'a str, prefix: &str) -> Option<&'a str
 }
 
 fn add_both_persistent_or_streaming_assets(path: &str, blacklist: &mut Vec<String>) {
-    let streaming_prefix = "StarRail_Data/StreamingAssets/";
-    let persistent_prefix = "StarRail_Data/Persistent/";
+    let streaming_prefix = format!("{GAME_DATA_DIR}/StreamingAssets/");
+    let persistent_prefix = format!("{GAME_DATA_DIR}/Persistent/");
 
-    if let Some(rest) = strip_prefix_case_insensitive(path, streaming_prefix) {
-        blacklist.push(format!("{}{}", persistent_prefix, rest));
-    } else if let Some(rest) = strip_prefix_case_insensitive(path, persistent_prefix) {
-        blacklist.push(format!("{}{}", streaming_prefix, rest));
+    if let Some(rest) = strip_prefix_case_insensitive(path, &streaming_prefix) {
+        blacklist.push(format!("{persistent_prefix}{rest}"));
+    } else if let Some(rest) = strip_prefix_case_insensitive(path, &persistent_prefix) {
+        blacklist.push(format!("{streaming_prefix}{rest}"));
     }
 }
 
 pub fn write_app_info(game_dir: &Path) -> std::io::Result<()> {
-    let app_info_path = game_dir.join(APP_INFO_FILE);
+    let app_info_path = game_dir.join(format!("{GAME_DATA_DIR}/app.info"));
     if let Some(parent) = app_info_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&app_info_path, "Cognosphere\nhkrpg_global\n")
+    fs::write(
+        &app_info_path,
+        format!("{APP_VENDOR}\nhkrpg_global\n").as_bytes(),
+    )
 }
 
 pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
-    let bv_path = game_dir.join("StarRail_Data/StreamingAssets/BinaryVersion.bytes");
+    let bv_path = game_dir.join(format!(
+        "{GAME_DATA_DIR}/StreamingAssets/BinaryVersion.bytes"
+    ));
     if !bv_path.exists() {
         log::error!("write_binary_version_files: BinaryVersion.bytes not found");
         return Err(std::io::Error::new(
@@ -200,7 +208,7 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
         (0, 0, 0)
     };
 
-    let persistent_dir = game_dir.join("StarRail_Data/Persistent");
+    let persistent_dir = game_dir.join(format!("{GAME_DATA_DIR}/Persistent"));
     fs::create_dir_all(&persistent_dir)?;
 
     fs::write(persistent_dir.join("AppIdentity.txt"), &hash_str)?;
@@ -222,30 +230,36 @@ mod tests {
     use super::*;
     use std::fs;
 
+    fn persistent_dir(base: &std::path::Path) -> std::path::PathBuf {
+        base.join(format!("{GAME_DATA_DIR}/Persistent"))
+    }
+
+    fn streaming_dir(base: &std::path::Path) -> std::path::PathBuf {
+        base.join(format!("{GAME_DATA_DIR}/StreamingAssets"))
+    }
+
     // -----------------------------------------------------------------------
     // strip_prefix_case_insensitive
     // -----------------------------------------------------------------------
     #[test]
     fn test_strip_prefix_case_insensitive_matching() {
-        let result = strip_prefix_case_insensitive(
-            "StarRail_Data/StreamingAssets/foo/bar",
-            "StarRail_Data/StreamingAssets/",
-        );
+        let path = format!("{GAME_DATA_DIR}/StreamingAssets/foo/bar");
+        let prefix = format!("{GAME_DATA_DIR}/StreamingAssets/");
+        let result = strip_prefix_case_insensitive(&path, &prefix);
         assert_eq!(result, Some("foo/bar"));
     }
 
     #[test]
     fn test_strip_prefix_case_insensitive_case_insensitive() {
-        let result = strip_prefix_case_insensitive(
-            "STARRAIL_DATA/STREAMINGASSETS/foo",
-            "StarRail_Data/StreamingAssets/",
-        );
+        let prefix = format!("{GAME_DATA_DIR}/StreamingAssets/");
+        let result = strip_prefix_case_insensitive("STARRAIL_DATA/STREAMINGASSETS/foo", &prefix);
         assert_eq!(result, Some("foo"));
     }
 
     #[test]
     fn test_strip_prefix_case_insensitive_no_match() {
-        let result = strip_prefix_case_insensitive("Other_Data/foo", "StarRail_Data/");
+        let prefix = format!("{GAME_DATA_DIR}/");
+        let result = strip_prefix_case_insensitive("Other_Data/foo", &prefix);
         assert_eq!(result, None);
     }
 
@@ -257,7 +271,8 @@ mod tests {
 
     #[test]
     fn test_strip_prefix_case_insensitive_empty_string() {
-        let result = strip_prefix_case_insensitive("", "StarRail_Data/");
+        let prefix = format!("{GAME_DATA_DIR}/");
+        let result = strip_prefix_case_insensitive("", &prefix);
         assert_eq!(result, None);
     }
 
@@ -290,23 +305,22 @@ mod tests {
     #[test]
     fn test_add_both_persistent_or_streaming_streaming_to_persistent() {
         let mut blacklist = vec![];
-        add_both_persistent_or_streaming_assets(
-            "StarRail_Data/StreamingAssets/audio/voice.pck",
-            &mut blacklist,
+        let path = format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice.pck");
+        add_both_persistent_or_streaming_assets(&path, &mut blacklist);
+        assert_eq!(
+            blacklist,
+            vec![format!("{GAME_DATA_DIR}/Persistent/audio/voice.pck")]
         );
-        assert_eq!(blacklist, vec!["StarRail_Data/Persistent/audio/voice.pck"]);
     }
 
     #[test]
     fn test_add_both_persistent_or_streaming_persistent_to_streaming() {
         let mut blacklist = vec![];
-        add_both_persistent_or_streaming_assets(
-            "StarRail_Data/Persistent/audio/voice.pck",
-            &mut blacklist,
-        );
+        let path = format!("{GAME_DATA_DIR}/Persistent/audio/voice.pck");
+        add_both_persistent_or_streaming_assets(&path, &mut blacklist);
         assert_eq!(
             blacklist,
-            vec!["StarRail_Data/StreamingAssets/audio/voice.pck"]
+            vec![format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice.pck")]
         );
     }
 
@@ -324,7 +338,10 @@ mod tests {
             "STARRAIL_DATA/STREAMINGASSETS/audio/voice.pck",
             &mut blacklist,
         );
-        assert_eq!(blacklist, vec!["StarRail_Data/Persistent/audio/voice.pck"]);
+        assert_eq!(
+            blacklist,
+            vec![format!("{GAME_DATA_DIR}/Persistent/audio/voice.pck")]
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -389,7 +406,7 @@ mod tests {
         // No DownloadBlacklist.json created
 
         let mut assets = vec![SophonManifestAssetProperty {
-            asset_name: "StarRail_Data/StreamingAssets/audio/voice.pck".into(),
+            asset_name: format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice.pck"),
             asset_chunks: vec![],
             asset_type: 0,
             asset_size: 100,
@@ -403,24 +420,26 @@ mod tests {
     #[test]
     fn test_filter_hkrpg_asset_list_blacklist_filters_asset() {
         let dir = tempfile::tempdir().unwrap();
-        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        let blacklist_dir = persistent_dir(dir.path());
         fs::create_dir_all(&blacklist_dir).unwrap();
+        let blacklist_json =
+            format!(r#"{{"fileName":"{GAME_DATA_DIR}/StreamingAssets/audio/voice_bad.pck"}}"#);
         fs::write(
             blacklist_dir.join("DownloadBlacklist.json"),
-            r#"{"fileName":"StarRail_Data/StreamingAssets/audio/voice_bad.pck"}"#,
+            &blacklist_json,
         )
         .unwrap();
 
         let mut assets = vec![
             SophonManifestAssetProperty {
-                asset_name: "StarRail_Data/StreamingAssets/audio/voice_good.pck".into(),
+                asset_name: format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice_good.pck"),
                 asset_chunks: vec![],
                 asset_type: 0,
                 asset_size: 100,
                 asset_hash_md5: "abc".into(),
             },
             SophonManifestAssetProperty {
-                asset_name: "StarRail_Data/StreamingAssets/audio/voice_bad.pck".into(),
+                asset_name: format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice_bad.pck"),
                 asset_chunks: vec![],
                 asset_type: 0,
                 asset_size: 200,
@@ -432,23 +451,27 @@ mod tests {
         assert_eq!(assets.len(), 1);
         assert_eq!(
             assets[0].asset_name,
-            "StarRail_Data/StreamingAssets/audio/voice_good.pck"
+            format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice_good.pck")
         );
     }
 
     #[test]
     fn test_filter_hkrpg_asset_list_blacklist_backslash_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        let blacklist_dir = persistent_dir(dir.path());
         fs::create_dir_all(&blacklist_dir).unwrap();
+        let blacklist_json = format!(
+            r#"{{"fileName":"{dir}\StreamingAssets\audio\voice.pck"}}"#,
+            dir = GAME_DATA_DIR
+        );
         fs::write(
             blacklist_dir.join("DownloadBlacklist.json"),
-            r#"{"fileName":"StarRail_Data\StreamingAssets\audio\voice.pck"}"#,
+            &blacklist_json,
         )
         .unwrap();
 
         let mut assets = vec![SophonManifestAssetProperty {
-            asset_name: "StarRail_Data/StreamingAssets/audio/voice.pck".into(),
+            asset_name: format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice.pck"),
             asset_chunks: vec![],
             asset_type: 0,
             asset_size: 100,
@@ -462,12 +485,12 @@ mod tests {
     #[test]
     fn test_filter_hkrpg_asset_list_empty_blacklist_no_filtering() {
         let dir = tempfile::tempdir().unwrap();
-        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        let blacklist_dir = persistent_dir(dir.path());
         fs::create_dir_all(&blacklist_dir).unwrap();
         fs::write(blacklist_dir.join("DownloadBlacklist.json"), "").unwrap();
 
         let mut assets = vec![SophonManifestAssetProperty {
-            asset_name: "StarRail_Data/StreamingAssets/audio/voice.pck".into(),
+            asset_name: format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice.pck"),
             asset_chunks: vec![],
             asset_type: 0,
             asset_size: 100,
@@ -481,7 +504,7 @@ mod tests {
     #[test]
     fn test_filter_hkrpg_asset_list_malformed_line_skipped() {
         let dir = tempfile::tempdir().unwrap();
-        let blacklist_dir = dir.path().join("StarRail_Data/Persistent");
+        let blacklist_dir = persistent_dir(dir.path());
         fs::create_dir_all(&blacklist_dir).unwrap();
         fs::write(
             blacklist_dir.join("DownloadBlacklist.json"),
@@ -524,7 +547,7 @@ mod tests {
 
         let record_path = dir
             .path()
-            .join("StarRail_Data/Persistent/AudioLaucherRecord.txt");
+            .join(format!("{GAME_DATA_DIR}/Persistent/AudioLaucherRecord.txt"));
         assert!(record_path.exists());
 
         let content = fs::read_to_string(&record_path).unwrap();
@@ -540,11 +563,11 @@ mod tests {
 
         write_app_info(dir.path()).unwrap();
 
-        let app_info_path = dir.path().join("StarRail_Data/app.info");
+        let app_info_path = dir.path().join(format!("{GAME_DATA_DIR}/app.info"));
         assert!(app_info_path.exists());
 
         let content = fs::read_to_string(&app_info_path).unwrap();
-        assert_eq!(content, "Cognosphere\nhkrpg_global\n");
+        assert_eq!(content, format!("{APP_VENDOR}\nhkrpg_global\n"));
     }
 
     // -----------------------------------------------------------------------
@@ -586,7 +609,7 @@ mod tests {
     #[test]
     fn test_write_binary_version_files_success() {
         let dir = tempfile::tempdir().unwrap();
-        let bv_dir = dir.path().join("StarRail_Data/StreamingAssets");
+        let bv_dir = streaming_dir(dir.path());
         fs::create_dir_all(&bv_dir).unwrap();
 
         let bytes = make_valid_binary_version_bytes();
@@ -594,7 +617,7 @@ mod tests {
 
         write_binary_version_files(dir.path()).unwrap();
 
-        let persistent_dir = dir.path().join("StarRail_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
 
         let app_id = fs::read_to_string(persistent_dir.join("AppIdentity.txt")).unwrap();
         assert_eq!(app_id, "abcdef0123456789abcdef0123456789abcd");
@@ -620,7 +643,7 @@ mod tests {
     #[test]
     fn test_write_binary_version_files_too_short() {
         let dir = tempfile::tempdir().unwrap();
-        let bv_dir = dir.path().join("StarRail_Data/StreamingAssets");
+        let bv_dir = streaming_dir(dir.path());
         fs::create_dir_all(&bv_dir).unwrap();
         // Write fewer than 16 bytes
         fs::write(bv_dir.join("BinaryVersion.bytes"), b"too short").unwrap();

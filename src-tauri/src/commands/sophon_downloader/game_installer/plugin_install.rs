@@ -42,7 +42,7 @@ fn write_plugin_version(game_dir: &Path, key: &str, value: &str) -> std::io::Res
     // the synchronous I/O section; no await points exist inside this function.
     let _lock = PLUGIN_VERSION_LOCK
         .lock()
-        .unwrap_or_else(|e| e.into_inner());
+        .unwrap_or_else(|err| err.into_inner());
     let path = game_dir.join(PLUGIN_VERSIONS_FILE);
     let mut versions = read_plugin_versions(game_dir);
     versions.insert(key.to_string(), value.to_string());
@@ -162,7 +162,7 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
     let file = File::open(zip_path)?;
     let reader = BufReader::new(file);
     let mut archive =
-        ZipArchive::new(reader).map_err(|e| SophonError::Decompression(e.to_string()))?;
+        ZipArchive::new(reader).map_err(|err| SophonError::Decompression(err.to_string()))?;
 
     if archive.len() > ZIP_MAX_ENTRIES {
         return Err(SophonError::Decompression(format!(
@@ -179,7 +179,7 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
-            .map_err(|e| SophonError::Decompression(e.to_string()))?;
+            .map_err(|err| SophonError::Decompression(err.to_string()))?;
 
         // Reject symlink entries outright — silently treating a symlink-target
         // string as the contents of a regular file is a data-integrity bug and
@@ -244,11 +244,11 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
             // escapes game_dir, this is a symlink-traversal attack.
             if !out_path.canonicalize()?.starts_with(&canonical_game) {
                 log::warn!("Skipping path traversal attempt: {:?}", out_path);
-                if let Err(e) = fs::remove_dir_all(&out_path) {
+                if let Err(err) = fs::remove_dir_all(&out_path) {
                     log::warn!(
                         "Failed to clean up symlink-traversal directory {}: {}",
                         out_path.display(),
-                        e
+                        err
                     );
                 }
                 continue;
@@ -269,7 +269,6 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
             // Preserve Unix mode bits from the ZIP entry when present so that
             // shipped executables retain their +x bit instead of falling back
             // to the umask (which on many distros is 0o644).
-            #[cfg(unix)]
             if let Some(mode) = entry.unix_mode() {
                 use std::os::unix::fs::PermissionsExt;
                 let _ = fs::set_permissions(&out_path, fs::Permissions::from_mode(mode & 0o7777));
@@ -285,7 +284,7 @@ fn cleanup_dxsetup(game_dir: &Path) {
     if dxsetup_dir.is_dir()
         && let Err(e) = fs::remove_dir_all(&dxsetup_dir)
     {
-        log::warn!("Failed to clean up DXSETUP directory: {}", e);
+        log::warn!("Failed to clean up DXSETUP directory: {e}");
     }
 }
 
@@ -312,8 +311,8 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
         if let Some(ref expected_md5) = entry.md5 {
             let computed = match cache::file_md5_hex(&file_path) {
                 Ok(md5) => md5,
-                Err(e) => {
-                    log::warn!("Failed to compute MD5 for {}: {}", entry.path, e);
+                Err(err) => {
+                    log::warn!("Failed to compute MD5 for {}: {}", entry.path, err);
                     return false;
                 }
             };
@@ -348,24 +347,24 @@ async fn install_single_plugin(
     }
 
     let raw_filename = pkg.url.rsplit('/').next().unwrap_or("plugin.zip");
-    if let Err(e) = super::assembly::validate_asset_name(raw_filename) {
-        log::warn!("Refusing plugin URL with unsafe filename: {e}");
+    if let Err(err) = super::assembly::validate_asset_name(raw_filename) {
+        log::warn!("Refusing plugin URL with unsafe filename: {err}");
         return Err(SophonError::PathTraversal(PathBuf::from(raw_filename)));
     }
     let zip_path = game_dir.join(raw_filename);
 
     download_zip(client, &pkg.url, &zip_path, &pkg.md5, updater).await?;
 
-    if let Err(e) = extract_zip(&zip_path, game_dir) {
+    if let Err(err) = extract_zip(&zip_path, game_dir) {
         let _ = fs::remove_file(&zip_path);
-        return Err(e);
+        return Err(err);
     }
 
     if !verify_validation(game_dir, &pkg.validation) {
         let _ = fs::remove_file(&zip_path);
         for entry in &pkg.validation {
-            if let Err(e) = super::assembly::validate_asset_name(&entry.path) {
-                log::warn!("Skipping cleanup of invalid validation path: {e}");
+            if let Err(err) = super::assembly::validate_asset_name(&entry.path) {
+                log::warn!("Skipping cleanup of invalid validation path: {err}");
                 continue;
             }
             let _ = fs::remove_file(game_dir.join(&entry.path));
@@ -377,10 +376,11 @@ async fn install_single_plugin(
 
     cleanup_dxsetup(game_dir);
 
+    let plugin_id = &plugin.plugin_id;
     let safe_version = plugin.version.replace(['\n', '\r'], "");
     write_plugin_version(
         game_dir,
-        &format!("plugin_{}_version", plugin.plugin_id),
+        &format!("plugin_{plugin_id}_version"),
         &safe_version,
     )?;
 
@@ -412,10 +412,11 @@ pub async fn install_plugins(
             total_plugins: total,
         });
 
-        if let Err(e) =
+        if let Err(err) =
             install_single_plugin(client, game_dir, plugin, &plugin.plugin_pkg, &updater).await
         {
-            log::warn!("Plugin {} installation failed: {}", plugin.plugin_id, e);
+            let plugin_id = &plugin.plugin_id;
+            log::warn!("Plugin {plugin_id} installation failed: {err}");
         }
     }
 
@@ -443,8 +444,8 @@ async fn install_single_sdk(
         .rsplit('/')
         .next()
         .unwrap_or("sdk.zip");
-    if let Err(e) = super::assembly::validate_asset_name(raw_filename) {
-        log::warn!("Refusing SDK URL with unsafe filename: {e}");
+    if let Err(err) = super::assembly::validate_asset_name(raw_filename) {
+        log::warn!("Refusing SDK URL with unsafe filename: {err}");
         return Err(SophonError::PathTraversal(PathBuf::from(raw_filename)));
     }
     let zip_path = game_dir.join(raw_filename);
@@ -458,16 +459,16 @@ async fn install_single_sdk(
     )
     .await?;
 
-    if let Err(e) = extract_zip(&zip_path, game_dir) {
+    if let Err(err) = extract_zip(&zip_path, game_dir) {
         let _ = fs::remove_file(&zip_path);
-        return Err(e);
+        return Err(err);
     }
 
     if !verify_validation(game_dir, &sdk.channel_sdk_pkg.validation) {
         let _ = fs::remove_file(&zip_path);
         for entry in &sdk.channel_sdk_pkg.validation {
-            if let Err(e) = super::assembly::validate_asset_name(&entry.path) {
-                log::warn!("Skipping cleanup of invalid validation path: {e}");
+            if let Err(err) = super::assembly::validate_asset_name(&entry.path) {
+                log::warn!("Skipping cleanup of invalid validation path: {err}");
                 continue;
             }
             let _ = fs::remove_file(game_dir.join(&entry.path));
@@ -508,8 +509,8 @@ pub async fn install_channel_sdks(
             total_sdks: total,
         });
 
-        if let Err(e) = install_single_sdk(client, game_dir, sdk, &updater).await {
-            log::warn!("SDK {} installation failed: {}", sdk.game.id, e);
+        if let Err(err) = install_single_sdk(client, game_dir, sdk, &updater).await {
+            log::warn!("SDK {} installation failed: {}", sdk.game.id, err);
         }
     }
 

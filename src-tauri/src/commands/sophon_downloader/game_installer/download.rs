@@ -137,12 +137,12 @@ async fn do_download_chunk(
             // bytes were appended from a previous interrupted write.
             match tokio::fs::OpenOptions::new().write(true).open(dest).await {
                 Ok(f) => {
-                    if let Err(e) = f.set_len(chunk.chunk_size).await {
+                    if let Err(err) = f.set_len(chunk.chunk_size).await {
                         log::warn!(
                             "Failed to truncate {} to {}: {}; deleting and re-downloading",
                             chunk.chunk_name,
                             chunk.chunk_size,
-                            e
+                            err
                         );
                         let _ = tokio::fs::remove_file(dest).await;
                         existing_size = 0;
@@ -150,11 +150,11 @@ async fn do_download_chunk(
                         existing_size = chunk.chunk_size;
                     }
                 }
-                Err(e) => {
+                Err(err) => {
                     log::warn!(
                         "Failed to open {} for truncation: {}; deleting and re-downloading",
                         chunk.chunk_name,
-                        e
+                        err
                     );
                     let _ = tokio::fs::remove_file(dest).await;
                     existing_size = 0;
@@ -186,7 +186,7 @@ async fn do_download_chunk(
 
     if existing_size > 0 && existing_size < chunk.chunk_size {
         // Try to resume with Range request
-        let range_header = format!("bytes={}-", existing_size);
+        let range_header = format!("bytes={existing_size}-");
         let resp = client
             .get(url)
             .header(reqwest::header::RANGE, range_header)
@@ -288,9 +288,9 @@ async fn download_full_file_with_response(
                         });
                     }
                     hasher.update(&bytes);
-                    if let Err(e) = file.write_all(&bytes).await {
+                    if let Err(err) = file.write_all(&bytes).await {
                         let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Io(e));
+                        return Err(SophonError::Io(err));
                     }
                     if let Some(handle) = handle
                         && handle.is_cancelled()
@@ -326,9 +326,9 @@ async fn download_full_file_with_response(
         }
     }
 
-    if let Err(e) = file.flush().await {
+    if let Err(err) = file.flush().await {
         let _ = tokio::fs::remove_file(dest).await;
-        return Err(SophonError::Io(e));
+        return Err(SophonError::Io(err));
     }
 
     if total_len != chunk.chunk_size {
@@ -465,9 +465,9 @@ async fn download_with_resume(
                             actual: total_len,
                         });
                     }
-                    if let Err(e) = file.write_all(&bytes).await {
+                    if let Err(err) = file.write_all(&bytes).await {
                         let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Io(e));
+                        return Err(SophonError::Io(err));
                     }
                     hasher.update(&bytes);
                     if let Some(handle) = handle
@@ -495,9 +495,9 @@ async fn download_with_resume(
         }
     }
 
-    if let Err(e) = file.flush().await {
+    if let Err(err) = file.flush().await {
         let _ = tokio::fs::remove_file(dest).await;
-        return Err(SophonError::Io(e));
+        return Err(SophonError::Io(err));
     }
 
     if total_len != expected_total {

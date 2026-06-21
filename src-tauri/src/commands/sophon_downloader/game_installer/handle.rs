@@ -37,15 +37,12 @@ impl DownloadHandle {
     pub fn pause(&self) {
         // Use compare_exchange to avoid race with concurrent cancel.
         // Cancellation is terminal — never overwrite it with PAUSED.
-        while let Err(current) = self
-            .state
-            .compare_exchange(
-                STATE_RUNNING,
-                STATE_PAUSED,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-        {
+        while let Err(current) = self.state.compare_exchange(
+            STATE_RUNNING,
+            STATE_PAUSED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
             // If we lost the race to something other than RUNNING, give up.
             // STATE_CANCELLED is terminal; STATE_PAUSED means already paused.
             if current != STATE_RUNNING {
@@ -92,7 +89,7 @@ impl DownloadHandle {
             STATE_PAUSED => ControlState::Paused,
             STATE_CANCELLED => ControlState::Cancelled,
             raw => {
-                log::error!("DownloadHandle in invalid state: {}", raw);
+                log::error!("DownloadHandle in invalid state: {raw}");
                 ControlState::Cancelled
             }
         }

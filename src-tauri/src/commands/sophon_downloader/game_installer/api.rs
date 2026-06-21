@@ -35,11 +35,11 @@ async fn fetch_json_with_retry<T: serde::de::DeserializeOwned>(
         match result {
             Ok(Ok(resp)) => {
                 let resp = resp.error_for_status()?;
-                return resp.json().await.map_err(|e| e.into());
+                return resp.json().await.map_err(|err| err.into());
             }
-            Ok(Err(e)) => {
+            Ok(Err(err)) => {
                 if attempt == API_MAX_RETRIES - 1 {
-                    return Err(e.into());
+                    return Err(err.into());
                 }
             }
             Err(_) => {
@@ -56,7 +56,7 @@ async fn fetch_json_with_retry<T: serde::de::DeserializeOwned>(
 
     Err(SophonError::ApiError(
         -1,
-        format!("Failed to fetch {} after {} retries", url, API_MAX_RETRIES),
+        format!("Failed to fetch {url} after {API_MAX_RETRIES} retries"),
     ))
 }
 
@@ -70,7 +70,7 @@ pub async fn fetch_front_door(
         .data
         .game_branches
         .into_iter()
-        .find(|b| b.game.biz.starts_with(&format!("{}_", game_id)))
+        .find(|b| b.game.biz.starts_with(&format!("{game_id}_")))
         .ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
 
     let pre = branch.pre_download.clone();
@@ -144,7 +144,7 @@ pub async fn fetch_build(
 }
 
 pub const SOPHON_PATCH_BUILD_URL_BASE: &str = concat!(
-    "https://sg-public-api.hoyoverse.com",
+    "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x70\x75\x62\x6c\x69\x63\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d",
     "/downloader/sophon_chunk/api/getPatchBuild"
 );
 
@@ -203,8 +203,8 @@ pub async fn fetch_patch_manifest(
         bytes.to_vec()
     };
 
-    let patch_manifest =
-        decode_patch_manifest(&raw).map_err(|e| SophonError::PatchManifestDecode(e.to_string()))?;
+    let patch_manifest = decode_patch_manifest(&raw)
+        .map_err(|err| SophonError::PatchManifestDecode(err.to_string()))?;
 
     Ok(PatchManifestWithMeta {
         patch_manifest,

@@ -1,8 +1,8 @@
 //! Sophon game downloader module.
 //!
 //! This module implements the Sophon chunk-based download system used by
-//! HoYoverse games. It handles downloading, assembling, and updating game files
-//! using a manifest-based approach with zstd-compressed chunks.
+//! "Anime Game Studio" games. It handles downloading, assembling, and updating
+//! game files using a manifest-based approach with zstd-compressed chunks.
 
 pub mod api_scrape;
 pub mod game_installer;
@@ -63,9 +63,9 @@ const DOWNLOAD_STATE_FILE: &str = ".sophon_download_state";
 fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
     app.path()
         .app_data_dir()
-        .map_err(|e| {
-            log::error!("app_data_dir resolution failed: {}", e);
-            e
+        .map_err(|err| {
+            log::error!("app_data_dir resolution failed: {err}");
+            err
         })
         .ok()
         .map(|p| p.join(DOWNLOAD_STATE_FILE))
@@ -78,14 +78,14 @@ fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
 pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(), String> {
     let Some(path) = download_state_path(app) else {
         let msg = "Failed to resolve download state path".to_string();
-        log::error!("{}", msg);
+        log::error!("{msg}");
         return Err(msg);
     };
     if let Some(parent) = path.parent()
         && let Err(e) = fs::create_dir_all(parent)
     {
         let msg = format!("Failed to create download state directory: {}", e);
-        log::error!("{}", msg);
+        log::error!("{msg}");
         return Err(msg);
     }
     match serde_json::to_string(state) {
@@ -93,24 +93,24 @@ pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(),
             static SAVE_COUNTER: AtomicU64 = AtomicU64::new(0);
             let seq = SAVE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
             let tmp_path = path.with_extension(format!("save-{seq}.tmp"));
-            if let Err(e) = fs::write(&tmp_path, &json) {
-                let msg = format!("Failed to write temp download state: {}", e);
-                log::error!("{}", msg);
+            if let Err(err) = fs::write(&tmp_path, &json) {
+                let msg = format!("Failed to write temp download state: {}", err);
+                log::error!("{msg}");
                 return Err(msg);
             }
-            if let Err(e) = fs::rename(&tmp_path, &path) {
-                let msg = format!("Failed to rename download state file: {}", e);
-                log::error!("{}", msg);
-                if let Err(e) = fs::remove_file(&tmp_path) {
-                    log::debug!("Failed to clean up temp state file: {}", e);
+            if let Err(err) = fs::rename(&tmp_path, &path) {
+                let msg = format!("Failed to rename download state file: {}", err);
+                log::error!("{msg}");
+                if let Err(err) = fs::remove_file(&tmp_path) {
+                    log::debug!("Failed to clean up temp state file: {err}");
                 }
                 return Err(msg);
             }
             Ok(())
         }
-        Err(e) => {
-            let msg = format!("Failed to serialize download state: {}", e);
-            log::error!("{}", msg);
+        Err(err) => {
+            let msg = format!("Failed to serialize download state: {}", err);
+            log::error!("{msg}");
             Err(msg)
         }
     }
@@ -128,18 +128,18 @@ pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
 pub(crate) fn load_download_state_from(path: &Path) -> Option<DownloadState> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
-        Err(e) => {
+        Err(err) => {
             log::warn!(
                 "Failed to read download state file {}: {}",
                 path.display(),
-                e
+                err
             );
             return None;
         }
     };
     match serde_json::from_str(&content) {
         Ok(state) => Some(state),
-        Err(e) => preserve_corrupted_state(path, &e),
+        Err(err) => preserve_corrupted_state(path, &err),
     }
 }
 
@@ -191,8 +191,8 @@ pub fn clear_download_state(app: &AppHandle) {
 fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     let game_dir = match app.path().resolve(output_path, BaseDirectory::AppData) {
         Ok(p) => p,
-        Err(e) => {
-            log::warn!("Failed to resolve game dir for chunk cleanup: {}", e);
+        Err(err) => {
+            log::warn!("Failed to resolve game dir for chunk cleanup: {err}");
             return false;
         }
     };
@@ -200,11 +200,11 @@ fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     match fs::remove_dir_all(&chunks_dir) {
         Ok(()) => true,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(e) => {
+        Err(err) => {
             log::warn!(
                 "Failed to delete chunks directory {}: {}",
                 chunks_dir.display(),
-                e
+                err
             );
             false
         }
@@ -528,7 +528,7 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
             && let Err(e) = fs::rename(&tmp_path, &path)
         {
             let _ = fs::remove_file(&tmp_path);
-            log::error!("Failed to rename state file: {}", e);
+            log::error!("Failed to rename state file: {e}");
         }
     })
 }
@@ -546,18 +546,18 @@ pub async fn sophon_download(
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
-  log::warn!("Fetching manifest for game_id={}", game_id);
+    log::warn!("Fetching manifest for game_id={game_id}");
     emit(&app_handle, SophonProgress::FetchingManifest);
 
     let (installers, tag, manifest_hash) =
         game_installer::build_installers(&client.0, &game_id, &vo_lang)
             .await
-            .map_err(|e| {
-                log::warn!("build_installers failed: {}", e);
-      emit_error(&app_handle, &e);
-                e.to_string()
+            .map_err(|err| {
+                log::warn!("build_installers failed: {err}");
+                emit_error(&app_handle, &err);
+                err.to_string()
             })?;
 
     let state = DownloadState {
@@ -608,28 +608,29 @@ pub async fn sophon_download(
             let plugin_emit = app_handle.clone();
             let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
                 Arc::new(move |p| emit(&plugin_emit, p));
-            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+            if let Err(err) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
                 let u = plugin_updater.clone();
                 move |p| u(p)
             })
             .await
             {
-                log::warn!("Plugin installation failed: {}", e);
-                emit_error(&app_handle, &e);
+                log::warn!("Plugin installation failed: {err}");
+                emit_error(&app_handle, &err);
             }
-            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
-                let u = plugin_updater.clone();
-                move |p| u(p)
-            })
-            .await
+            if let Err(err) =
+                game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                    let u = plugin_updater.clone();
+                    move |p| u(p)
+                })
+                .await
             {
-                log::warn!("Channel SDK installation failed: {}", e);
-                emit_error(&app_handle, &e);
+                log::warn!("Channel SDK installation failed: {err}");
+                emit_error(&app_handle, &err);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(e) => install_result(Err(e), &app_handle),
+        Err(err) => install_result(Err(err), &app_handle),
     }
 }
 
@@ -646,21 +647,21 @@ pub async fn sophon_update(
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let current_tag =
         read_installed_tag(&game_dir).ok_or("No installed version found — cannot update")?;
 
-  log::warn!("Fetching manifest for game_id={}", game_id);
+    log::warn!("Fetching manifest for game_id={game_id}");
     emit(&app_handle, SophonProgress::FetchingManifest);
 
     let (installers, deleted_files, new_tag, manifest_hash) =
         game_installer::build_update_installers(&client.0, &game_id, &vo_lang, &current_tag)
             .await
-            .map_err(|e| {
-                log::warn!("build_update_installers failed: {}", e);
-      emit_error(&app_handle, &e);
-                e.to_string()
+            .map_err(|err| {
+                log::warn!("build_update_installers failed: {err}");
+                emit_error(&app_handle, &err);
+                err.to_string()
             })?;
 
     let state = DownloadState {
@@ -711,28 +712,29 @@ pub async fn sophon_update(
             let plugin_emit = app_handle.clone();
             let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
                 Arc::new(move |p| emit(&plugin_emit, p));
-            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+            if let Err(err) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
                 let u = plugin_updater.clone();
                 move |p| u(p)
             })
             .await
             {
-                log::warn!("Plugin installation failed: {}", e);
-                emit_error(&app_handle, &e);
+                log::warn!("Plugin installation failed: {err}");
+                emit_error(&app_handle, &err);
             }
-            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
-                let u = plugin_updater.clone();
-                move |p| u(p)
-            })
-            .await
+            if let Err(err) =
+                game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                    let u = plugin_updater.clone();
+                    move |p| u(p)
+                })
+                .await
             {
-                log::warn!("Channel SDK installation failed: {}", e);
-                emit_error(&app_handle, &e);
+                log::warn!("Channel SDK installation failed: {err}");
+                emit_error(&app_handle, &err);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(e) => install_result(Err(e), &app_handle),
+        Err(err) => install_result(Err(err), &app_handle),
     }
 }
 
@@ -749,17 +751,17 @@ pub async fn sophon_preinstall(
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
-    log::warn!("Fetching manifest for game_id={}", game_id);
+    log::warn!("Fetching manifest for game_id={game_id}");
     emit(&app_handle, SophonProgress::FetchingManifest);
 
-  let plan = game_installer::build_preinstall_plan(&client.0, &game_id, &vo_lang, &game_dir)
-    .await
-            .map_err(|e| {
-      log::warn!("build_preinstall_plan failed: {}", e);
-                e.to_string()
-            })?;
+    let plan = game_installer::build_preinstall_plan(&client.0, &game_id, &vo_lang, &game_dir)
+        .await
+        .map_err(|err| {
+            log::warn!("build_preinstall_plan failed: {err}");
+            err.to_string()
+        })?;
 
     let tag = plan.tag.clone();
 
@@ -803,7 +805,7 @@ pub async fn sophon_preinstall(
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(e) => install_result(Err(e), &app_handle),
+        Err(err) => install_result(Err(err), &app_handle),
     }
 }
 
@@ -819,12 +821,12 @@ pub async fn sophon_apply_preinstall(
     // controlling the frontend (or a supply-chain compromised bundle)
     // could pass "..\..\etc\cron.daily/evil" to access files outside
     // game_dir. Reject any component that would produce path traversal.
-    game_installer::validate_asset_name(&preinstall_tag).map_err(|e| e.to_string())?;
+    game_installer::validate_asset_name(&preinstall_tag).map_err(|err| err.to_string())?;
 
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let updater: Arc<dyn Fn(SophonProgress) + Send + Sync> = Arc::new({
         let app = app_handle.clone();
@@ -863,7 +865,7 @@ pub async fn sophon_resume_download(
     let game_dir = app_handle
         .path()
         .resolve(&state.output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let game_id = state.game_id.clone();
     let prev_chunks = state.downloaded_chunks.clone();
@@ -887,9 +889,9 @@ pub async fn sophon_resume_download(
             &game_dir,
         )
         .await
-        .map_err(|e| {
-            emit_error(&app_handle, &e);
-            e.to_string()
+        .map_err(|err| {
+            emit_error(&app_handle, &err);
+            err.to_string()
         })?;
 
         let resumed_state = DownloadState {
@@ -928,7 +930,7 @@ pub async fn sophon_resume_download(
                 emit(&app_handle, SophonProgress::Finished);
                 Ok(())
             }
-            Err(e) => install_result(Err(e), &app_handle),
+            Err(err) => install_result(Err(err), &app_handle),
         };
     }
 
@@ -937,9 +939,9 @@ pub async fn sophon_resume_download(
             let (installers, tag, new_manifest_hash) =
                 game_installer::build_installers(&client.0, &state.game_id, &state.vo_lang)
                     .await
-                    .map_err(|e| {
-                        emit_error(&app_handle, &e);
-                        e.to_string()
+                    .map_err(|err| {
+                        emit_error(&app_handle, &err);
+                        err.to_string()
                     })?;
             (installers, vec![], tag, new_manifest_hash)
         }
@@ -955,9 +957,9 @@ pub async fn sophon_resume_download(
                     &ct,
                 )
                 .await
-                .map_err(|e| {
-                    emit_error(&app_handle, &e);
-                    e.to_string()
+                .map_err(|err| {
+                    emit_error(&app_handle, &err);
+                    err.to_string()
                 })?;
             (installers, deleted_files, tag, new_manifest_hash)
         }
@@ -1021,28 +1023,29 @@ pub async fn sophon_resume_download(
             let plugin_emit = app_handle.clone();
             let plugin_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> =
                 Arc::new(move |p| emit(&plugin_emit, p));
-            if let Err(e) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
+            if let Err(err) = game_installer::install_plugins(&client.0, &game_dir, &game_id, {
                 let u = plugin_updater.clone();
                 move |p| u(p)
             })
             .await
             {
-                log::warn!("Plugin installation failed: {}", e);
-                emit_error(&app_handle, &e);
+                log::warn!("Plugin installation failed: {err}");
+                emit_error(&app_handle, &err);
             }
-            if let Err(e) = game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
-                let u = plugin_updater.clone();
-                move |p| u(p)
-            })
-            .await
+            if let Err(err) =
+                game_installer::install_channel_sdks(&client.0, &game_dir, &game_id, {
+                    let u = plugin_updater.clone();
+                    move |p| u(p)
+                })
+                .await
             {
-                log::warn!("Channel SDK installation failed: {}", e);
-                emit_error(&app_handle, &e);
+                log::warn!("Channel SDK installation failed: {err}");
+                emit_error(&app_handle, &err);
             }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
-        Err(e) => install_result(Err(e), &app_handle),
+        Err(err) => install_result(Err(err), &app_handle),
     }
 }
 
@@ -1100,7 +1103,7 @@ pub async fn sophon_check_update(
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     map_sophon_error(
         game_installer::check_update(&client.0, &game_id, &vo_lang, &game_dir).await,
@@ -1121,7 +1124,7 @@ pub async fn sophon_verify_integrity(
     let game_dir = app_handle
         .path()
         .resolve(&output_path, BaseDirectory::AppData)
-        .map_err(|e| e.to_string())?;
+        .map_err(|err| err.to_string())?;
 
     let app_clone = app_handle.clone();
     map_sophon_error(
@@ -1134,8 +1137,8 @@ pub async fn sophon_verify_integrity(
 }
 
 fn emit(app: &AppHandle, progress: SophonProgress) {
-    if let Err(e) = app.emit("sophon://progress", progress) {
-        log::error!("Failed to emit progress event: {}", e);
+    if let Err(err) = app.emit("sophon://progress", progress) {
+        log::error!("Failed to emit progress event: {err}");
     }
 }
 
@@ -1153,9 +1156,9 @@ fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<()
     match result {
         Ok(()) => Ok(()),
         Err(SophonError::Cancelled) => Ok(()),
-        Err(e) => {
-            emit_error(app, &e);
-            Err(e.to_string())
+        Err(err) => {
+            emit_error(app, &err);
+            Err(err.to_string())
         }
     }
 }
@@ -1163,9 +1166,9 @@ fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<()
 /// Maps a `SophonResult<T>` to `Result<T, String>` while emitting a structured
 /// error event for the frontend. Useful for intermediate non-terminal errors.
 fn map_sophon_error<T>(result: Result<T, SophonError>, app: &AppHandle) -> Result<T, String> {
-    result.map_err(|e| {
-        emit_error(app, &e);
-        e.to_string()
+    result.map_err(|err| {
+        emit_error(app, &err);
+        err.to_string()
     })
 }
 

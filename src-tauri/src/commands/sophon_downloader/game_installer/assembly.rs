@@ -45,7 +45,7 @@ pub fn decrement_chunk_refcount(
         if *count == 0 {
             drop(count);
             chunk_refcounts.remove(chunk_name);
-            let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_name)));
+            let _ = fs::remove_file(chunks_dir.join(format!("{chunk_name}.zstd")));
         }
     }
 }
@@ -59,7 +59,7 @@ pub fn cleanup_tmp_files(dir: &Path) -> std::io::Result<()> {
         let path = entry.path();
         if path.is_dir() {
             cleanup_tmp_files(&path)?;
-        } else if path.extension().map(|e| e == "tmp").unwrap_or(false) {
+        } else if path.extension().map(|ext| ext == "tmp").unwrap_or(false) {
             let _ = fs::remove_file(&path);
         }
     }
@@ -309,13 +309,13 @@ pub fn assemble_file(
         }
     }
 
-    buf_writer.flush().map_err(|e| {
+    buf_writer.flush().map_err(|err| {
         let _ = fs::remove_file(&tmp_path);
-        SophonError::Io(e)
+        SophonError::Io(err)
     })?;
-    let out_file = buf_writer.into_inner().map_err(|e| {
+    let out_file = buf_writer.into_inner().map_err(|err| {
         let _ = fs::remove_file(&tmp_path);
-        SophonError::Io(e.into_error())
+        SophonError::Io(err.into_error())
     })?;
     drop(out_file);
 
@@ -340,18 +340,19 @@ pub fn assemble_file(
         }
     }
 
-    if let Err(e) = fs::rename(&tmp_path, &target_path) {
-        if e.raw_os_error() == Some(libc::EXDEV) || e.kind() == std::io::ErrorKind::CrossesDevices {
-            log::warn!("rename EXDEV; falling back to copy + unlink: {}", e);
+    if let Err(err) = fs::rename(&tmp_path, &target_path) {
+        if err.raw_os_error() == Some(libc::EXDEV)
+            || err.kind() == std::io::ErrorKind::CrossesDevices
+        {
+            log::warn!("rename EXDEV; falling back to copy + unlink: {err}");
             fs::copy(&tmp_path, &target_path)?;
             let _ = fs::remove_file(&tmp_path);
         } else {
             let _ = fs::remove_file(&tmp_path);
-            return Err(SophonError::Io(e));
+            return Err(SophonError::Io(err));
         }
     }
 
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(mut perms) = fs::metadata(&target_path).map(|m| m.permissions()) {
@@ -587,9 +588,9 @@ pub fn run_assembly_task(
         &chunk_refcounts,
         &verify_cache,
     )
-    .map_err(|e| SophonError::AssemblyFailed {
+    .map_err(|err| SophonError::AssemblyFailed {
         file: file.asset_name.clone(),
-        error: e.to_string(),
+        error: err.to_string(),
     })?;
 
     let count = assembled_files.fetch_add(1, Ordering::Relaxed) + 1;
@@ -724,7 +725,7 @@ mod tests {
 
     fn make_chunk_file(chunks_dir: &Path, chunk_name: &str, data: &[u8]) {
         let compressed = zstd::encode_all(data, 0).unwrap();
-        fs::write(chunks_dir.join(format!("{}.zstd", chunk_name)), &compressed).unwrap();
+        fs::write(chunks_dir.join(format!("{chunk_name}.zstd")), &compressed).unwrap();
     }
 
     fn compute_md5_hex(data: &[u8]) -> String {

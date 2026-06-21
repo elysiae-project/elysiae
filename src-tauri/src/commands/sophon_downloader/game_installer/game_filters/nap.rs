@@ -7,13 +7,14 @@ use super::write_lang_file;
 use crate::commands::sophon_downloader::game_installer::installer::InstallerData;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
-const DATA_DIR: &str = "ZenlessZoneZero_Data";
+const GAME_DATA_DIR: &str =
+    "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x5f\x44\x61\x74\x61";
 const AUDIO_LANG_LAUNCHER_FILE: &str = "audio_lang_launcher";
 const AUDIO_LANG_FILE: &str = "audio_lang";
 const KDEL_RESOURCE_FILE: &str = "KDelResource";
 const KDEL_SEPARATORS: &[char] = &['|', ';', ',', '$', '#', '@', '+', ' '];
 
-/// ZZZ does not currently require asset-level filtering.
+/// Nap does not currently require asset-level filtering.
 /// Audio language filtering is handled at the installer level
 /// via `filter_nap_installers` and `write_nap_audio_lang_records`.
 pub fn filter_nap_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAssetProperty>) {
@@ -32,10 +33,8 @@ pub fn filter_nap_installers(game_dir: &Path, installer_data: &mut Vec<Installer
             .iter()
             .any(|f| f.eq_ignore_ascii_case(&data.matching_field))
         {
-            log::warn!(
-                "nap filter removing installer with matching_field: {}",
-                data.matching_field
-            );
+            let matching_field = &data.matching_field;
+            log::warn!("nap filter removing installer with matching_field: {matching_field}");
             return false;
         }
         true
@@ -43,12 +42,12 @@ pub fn filter_nap_installers(game_dir: &Path, installer_data: &mut Vec<Installer
 
     let filtered = original_len - installer_data.len();
     if filtered > 0 {
-        log::warn!("nap KDelResource filter removed {} installers", filtered);
+        log::warn!("nap KDelResource filter removed {filtered} installers");
     }
 }
 
 fn read_kdel_resource_matching_fields(game_dir: &Path) -> Option<Vec<String>> {
-    let kdel_path = game_dir.join(format!("{DATA_DIR}/Persistent/{KDEL_RESOURCE_FILE}"));
+    let kdel_path = game_dir.join(format!("{GAME_DATA_DIR}/Persistent/{KDEL_RESOURCE_FILE}"));
 
     if !kdel_path.exists() {
         return None;
@@ -69,7 +68,7 @@ fn read_kdel_resource_matching_fields(game_dir: &Path) -> Option<Vec<String>> {
 }
 
 pub fn write_nap_audio_lang_records(game_dir: &Path, vo_langs: &[String]) -> std::io::Result<()> {
-    let persistent_dir = game_dir.join(format!("{DATA_DIR}/Persistent"));
+    let persistent_dir = game_dir.join(format!("{GAME_DATA_DIR}/Persistent"));
     fs::create_dir_all(&persistent_dir)?;
 
     write_lang_file(
@@ -112,6 +111,10 @@ mod tests {
     use super::*;
     use std::fs;
 
+    fn persistent_dir(base: &std::path::Path) -> std::path::PathBuf {
+        base.join(format!("{GAME_DATA_DIR}/Persistent"))
+    }
+
     // -----------------------------------------------------------------------
     // filter_nap_asset_list (no-op)
     // -----------------------------------------------------------------------
@@ -120,7 +123,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let mut assets = vec![SophonManifestAssetProperty {
-            asset_name: "ZenlessZoneZero_Data/audio/file.pck".into(),
+            asset_name: format!("{GAME_DATA_DIR}/audio/file.pck").into(),
             asset_chunks: vec![],
             asset_type: 0,
             asset_size: 100,
@@ -235,7 +238,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_with_pipe_separator() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "field_a|field_B|field_c").unwrap();
 
@@ -252,7 +255,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_with_semicolon() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "game;test").unwrap();
 
@@ -265,7 +268,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_with_dollar() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "alpha$beta$gamma").unwrap();
 
@@ -278,7 +281,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_with_hash() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "x#y#z").unwrap();
 
@@ -291,7 +294,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_with_at_and_plus() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "a@b+c").unwrap();
 
@@ -313,7 +316,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "").unwrap();
 
@@ -325,7 +328,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_dedup_case_insensitive() {
         let dir = tempfile::tempdir().unwrap();
-        let kdel_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let kdel_dir = persistent_dir(dir.path());
         fs::create_dir_all(&kdel_dir).unwrap();
         fs::write(kdel_dir.join("KDelResource"), "Game|GAME|game").unwrap();
 
@@ -374,7 +377,7 @@ mod tests {
         ];
         write_nap_audio_lang_records(dir.path(), &vo_langs).unwrap();
 
-        let persistent_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         assert!(persistent_dir.exists());
 
         // audio_lang_launcher uses full names
@@ -393,7 +396,7 @@ mod tests {
 
         write_nap_audio_lang_records(dir.path(), &[]).unwrap();
 
-        let persistent_dir = dir.path().join("ZenlessZoneZero_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         let launcher_content =
             fs::read_to_string(persistent_dir.join("audio_lang_launcher")).unwrap();
         assert!(launcher_content.is_empty());

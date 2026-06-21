@@ -126,7 +126,6 @@ mod tests {
         assert!(target <= ASSEMBLY_CONCURRENCY);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn available_ram_mb_reads_proc_meminfo() {
         let mb = available_ram_mb();

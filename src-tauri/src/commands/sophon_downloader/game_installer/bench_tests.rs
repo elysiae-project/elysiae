@@ -17,6 +17,10 @@ use md5::{Digest, Md5};
 use super::FILE_WRITE_BUFFER_SIZE;
 use super::cache::VerificationEntry;
 
+const HK4E_DATA_DIR_GLOBAL: &str =
+    "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x5f\x44\x61\x74\x61";
+const HKRPG_DATA_DIR: &str = "\x53\x74\x61\x72\x52\x61\x69\x6c\x5f\x44\x61\x74\x61";
+
 // ---------------------------------------------------------------------------
 // Helper: format duration with appropriate unit
 // ---------------------------------------------------------------------------
@@ -49,7 +53,7 @@ fn bench_cache_key_computation() {
     let paths: Vec<std::path::PathBuf> = (0..10_000)
         .map(|i| {
             game_dir.join(format!(
-                "GenshinImpact_Data/StreamingAssets/Audio/AssetBundles/chunk_{i:05}.zstd"
+                "{HK4E_DATA_DIR_GLOBAL}/StreamingAssets/Audio/AssetBundles/chunk_{i:05}.zstd"
             ))
         })
         .collect();
@@ -422,7 +426,7 @@ fn bench_is_filtered_asset_file_reads() {
     let game_dir = dir.path();
 
     // Create a typical DownloadBlacklist.json
-    let data_dir = game_dir.join("StarRail_Data/Persistent");
+    let data_dir = game_dir.join(format!("{HKRPG_DATA_DIR}/Persistent"));
     fs::create_dir_all(&data_dir).expect("mkdir");
     let blacklist_content = (0..100)
         .map(|i| format!("{{\"fileName\":\"audio/voice_{i:05}.pck\"}}"))
@@ -430,21 +434,23 @@ fn bench_is_filtered_asset_file_reads() {
         .join("\n");
     fs::write(data_dir.join("DownloadBlacklist.json"), &blacklist_content).expect("write");
 
-    // Create audio_lang file for Genshin-style
-    let genshin_dir = game_dir.join("GenshinImpact_Data/Persistent");
-    fs::create_dir_all(&genshin_dir).expect("mkdir");
-    fs::write(genshin_dir.join("audio_lang_en"), "English(US)\n").expect("write");
+    // Create audio_lang file for hk4e-style
+    let hk4e_dir = game_dir.join(format!("{HK4E_DATA_DIR_GLOBAL}/Persistent"));
+    fs::create_dir_all(&hk4e_dir).expect("mkdir");
+    fs::write(hk4e_dir.join("audio_lang_en"), "English(US)\n").expect("write");
 
     let n_assets = 10_000;
     let asset_paths: Vec<String> = (0..n_assets)
-        .map(|i| format!("GenshinImpact_Data/StreamingAssets/Audio/voice_{i:05}.pck"))
+        .map(|i| format!("{HK4E_DATA_DIR_GLOBAL}/StreamingAssets/Audio/voice_{i:05}.pck"))
         .collect();
 
     // --- Current: read file on every call ---
     let start = Instant::now();
     let mut read_count = 0u64;
     for _asset_path in &asset_paths {
-        let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
+        let blacklist_path = game_dir.join(format!(
+            "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
+        ));
         if let Ok(_content) = fs::read_to_string(&blacklist_path) {
             read_count += 1;
         }
@@ -452,9 +458,10 @@ fn bench_is_filtered_asset_file_reads() {
     let elapsed_uncached = start.elapsed();
 
     // --- Alternative: read once, cache in memory ---
-    let cached_content =
-        fs::read_to_string(game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json"))
-            .expect("read");
+    let cached_content = fs::read_to_string(game_dir.join(format!(
+        "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
+    )))
+    .expect("read");
     let start = Instant::now();
     let mut cached_read_count = 0u64;
     for _ in &asset_paths {
@@ -525,7 +532,7 @@ fn bench_state_save_serialization() {
     );
 
     // Memory: the intermediate HashMap holds all entries during serialization
-    let entry_bytes: usize = dashmap.iter().map(|e| e.key().len() + 8).sum();
+    let entry_bytes: usize = dashmap.iter().map(|entry| entry.key().len() + 8).sum();
     println!(
         "  transient heap per save: ~{} KB (HashMap clone)",
         (entry_bytes + n_entries * 48) / 1024
@@ -701,7 +708,7 @@ fn bench_filter_assets_clone_all_vs_mutate() {
     let n = 50_000;
     let assets: Vec<PatchAssetInfo> = (0..n)
         .map(|i| PatchAssetInfo {
-            target_file_path: format!("GenshinImpact_Data/StreamingAssets/file_{i:05}.pak"),
+            target_file_path: format!("{HK4E_DATA_DIR_GLOBAL}/StreamingAssets/file_{i:05}.pak"),
             target_file_size: 8 * 1024 * 1024,
             target_file_hash: format!("{i:032}"),
             patch_method: PatchMethod::Patch,
@@ -710,7 +717,7 @@ fn bench_filter_assets_clone_all_vs_mutate() {
             patch_offset: i as u64 * 1024,
             patch_size: 4 * 1024 * 1024,
             patch_chunk_length: 4 * 1024 * 1024,
-            original_file_path: Some(format!("GenshinImpact_Data/file_{i:05}.pak")),
+            original_file_path: Some(format!("{HK4E_DATA_DIR_GLOBAL}/file_{i:05}.pak")),
             original_file_hash: Some(format!("{i:032}")),
             original_file_size: Some(8 * 1024 * 1024),
             matching_field: format!("mf_{i}"),

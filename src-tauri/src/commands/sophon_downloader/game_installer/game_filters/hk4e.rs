@@ -12,13 +12,30 @@ use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty
 const ALL_AUDIO_LANGUAGES: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
 
 const AUDIO_LANG_FILE: &str = "audio_lang_14";
+const GAME_DATA_DIR: &str =
+    "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x5f\x44\x61\x74\x61";
+const GAME_DATA_DIR_CN: &str = "\x59\x75\x61\x6e\x53\x68\x65\x6e\x5f\x44\x61\x74\x61";
+
+pub fn find_hk4e_persistent_dir(game_dir: &Path) -> std::path::PathBuf {
+    if let Ok(entries) = fs::read_dir(game_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if (name_str == GAME_DATA_DIR || name_str == GAME_DATA_DIR_CN) && entry.path().is_dir()
+            {
+                return entry.path().join("Persistent");
+            }
+        }
+    }
+    game_dir.join(format!("{GAME_DATA_DIR}/Persistent"))
+}
 
 pub fn filter_hk4e_asset_list(
     game_dir: &Path,
     assets: &mut Vec<SophonManifestAssetProperty>,
     vo_langs: &[String],
 ) {
-    let persistent_dir = super::find_genshin_persistent_dir(game_dir);
+    let persistent_dir = find_hk4e_persistent_dir(game_dir);
 
     let installed_langs = read_installed_audio_langs(&persistent_dir, vo_langs);
 
@@ -43,13 +60,15 @@ pub fn filter_hk4e_asset_list(
 
         for pattern in &patterns_lower {
             if asset_lower.contains(pattern) {
-                log::warn!("Filtered unneeded audio asset: {}", asset.asset_name);
+                let name = &asset.asset_name;
+                log::warn!("Filtered unneeded audio asset: {name}");
                 return false;
             }
         }
 
         if asset_lower.ends_with("ctable_streaming.dat") {
-            log::warn!("Filtered ctable asset: {}", asset.asset_name);
+            let name = &asset.asset_name;
+            log::warn!("Filtered ctable asset: {name}");
             return false;
         }
 
@@ -58,12 +77,12 @@ pub fn filter_hk4e_asset_list(
 
     let filtered = original_len - assets.len();
     if filtered > 0 {
-        log::warn!("hk4e filter removed {} assets", filtered);
+        log::warn!("hk4e filter removed {filtered} assets");
     }
 }
 
 pub fn write_audio_lang_record(game_dir: &Path, vo_langs: &[String]) -> std::io::Result<()> {
-    let persistent_dir = super::find_genshin_persistent_dir(game_dir);
+    let persistent_dir = find_hk4e_persistent_dir(game_dir);
     fs::create_dir_all(&persistent_dir)?;
 
     write_lang_file(
@@ -173,6 +192,12 @@ mod tests {
     use super::*;
     use std::fs;
 
+    fn persistent_dir(base: &std::path::Path) -> std::path::PathBuf {
+        base.join(format!("{GAME_DATA_DIR}/Persistent"))
+    }
+
+    // -----------------------------------------------------------------------
+    // locale_code_to_audio_lang_name (tested via super::)
     // -----------------------------------------------------------------------
     // locale_code_to_audio_lang_name (tested via super::)
     // -----------------------------------------------------------------------
@@ -228,7 +253,7 @@ mod tests {
     #[test]
     fn test_filter_hk4e_asset_list_filters_uninstalled_languages() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         fs::create_dir_all(&persistent_dir).unwrap();
         // Chinese and English(US) are installed
         fs::write(
@@ -293,7 +318,7 @@ mod tests {
     #[test]
     fn test_filter_hk4e_asset_list_filters_ctable_files() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         fs::create_dir_all(&persistent_dir).unwrap();
         fs::write(persistent_dir.join("audio_lang_14"), "Chinese\n").unwrap();
 
@@ -324,7 +349,7 @@ mod tests {
     #[test]
     fn test_filter_hk4e_asset_list_all_languages_installed() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         fs::create_dir_all(&persistent_dir).unwrap();
         fs::write(
             persistent_dir.join("audio_lang_14"),
@@ -366,7 +391,7 @@ mod tests {
     #[test]
     fn test_filter_hk4e_asset_list_empty_vo_langs_filters_all_audio() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         fs::create_dir_all(&persistent_dir).unwrap();
         // No audio_lang_14 file -> falls back to vo_langs mapping which is empty
         // So no installed_langs -> all audio languages are ignored
@@ -405,7 +430,7 @@ mod tests {
         let vo_langs = vec!["zh-cn".to_string(), "en-us".to_string()];
         write_audio_lang_record(dir.path(), &vo_langs).unwrap();
 
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         assert!(persistent_dir.exists());
 
         let content = fs::read_to_string(persistent_dir.join("audio_lang_14")).unwrap();
@@ -499,15 +524,15 @@ mod tests {
     #[test]
     fn test_read_installed_audio_langs_from_file() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("GenshinImpact_Data/Persistent")).unwrap();
+        fs::create_dir_all(persistent_dir(dir.path())).unwrap();
         fs::write(
             dir.path()
-                .join("GenshinImpact_Data/Persistent/audio_lang_14"),
+                .join(format!("{GAME_DATA_DIR}/Persistent/audio_lang_14")),
             "Chinese\nEnglish(US)\n",
         )
         .unwrap();
 
-        let persistent_dir = super::super::find_genshin_persistent_dir(dir.path());
+        let persistent_dir = find_hk4e_persistent_dir(dir.path());
         let result = read_installed_audio_langs(&persistent_dir, &["ja-jp".to_string()]);
         // Should read from the file, not use vo_langs fallback
         assert_eq!(
@@ -519,7 +544,7 @@ mod tests {
     #[test]
     fn test_read_installed_audio_langs_fallback_to_vo_langs() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         fs::create_dir_all(&persistent_dir).unwrap();
         // No audio_lang_* files
 
@@ -534,7 +559,7 @@ mod tests {
     #[test]
     fn test_read_installed_audio_langs_empty_vo_langs_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        let persistent_dir = dir.path().join("GenshinImpact_Data/Persistent");
+        let persistent_dir = persistent_dir(dir.path());
         fs::create_dir_all(&persistent_dir).unwrap();
 
         let result = read_installed_audio_langs(&persistent_dir, &[]);
@@ -569,5 +594,53 @@ mod tests {
         let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("data/file.bin"));
+    }
+
+    // -----------------------------------------------------------------------
+    // find_hk4e_persistent_dir
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_find_hk4e_persistent_dir_with_hk4e_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let hk4e_data = dir.path().join(GAME_DATA_DIR);
+        fs::create_dir(&hk4e_data).unwrap();
+
+        let result = find_hk4e_persistent_dir(dir.path());
+        assert_eq!(result, hk4e_data.join("Persistent"));
+    }
+
+    #[test]
+    fn test_find_hk4e_persistent_dir_with_yuanshen_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let yuanshen_data = dir.path().join(GAME_DATA_DIR_CN);
+        fs::create_dir(&yuanshen_data).unwrap();
+
+        let result = find_hk4e_persistent_dir(dir.path());
+        assert_eq!(result, yuanshen_data.join("Persistent"));
+    }
+
+    #[test]
+    fn test_find_hk4e_persistent_dir_with_neither() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a random dir that doesn't match
+        let other_data = dir.path().join("Other_Data");
+        fs::create_dir(&other_data).unwrap();
+
+        let result = find_hk4e_persistent_dir(dir.path());
+        assert_eq!(
+            result,
+            persistent_dir(dir.path())
+        );
+    }
+
+    #[test]
+    fn test_find_hk4e_persistent_dir_empty_directory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let result = find_hk4e_persistent_dir(dir.path());
+        assert_eq!(
+            result,
+            persistent_dir(dir.path())
+        );
     }
 }

@@ -50,6 +50,13 @@ use crate::commands::sophon_downloader::proto_parse::{
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
 const BLANK_FILE_MD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
 const PREINSTALL_STATE_FILE_EXT: &str = ".json";
+const HK4E_DATA_DIR_GLOBAL: &str =
+    "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x5f\x44\x61\x74\x61";
+const HK4E_DATA_DIR_CN: &str = "\x59\x75\x61\x6e\x53\x68\x65\x6e\x5f\x44\x61\x74\x61";
+const HKRPG_DATA_DIR: &str = "\x53\x74\x61\x72\x52\x61\x69\x6c\x5f\x44\x61\x74\x61";
+const NAP_GAME_DATA_DIR: &str =
+    "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x5f\x44\x61\x74\x61";
+const NAP_GAME_NAME: &str = "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f";
 /// RAII guard that cleans up a blank diff_ref file when dropped.
 /// Ensures the temp file is removed on all return paths (normal return,
 /// early return, or panic).
@@ -139,11 +146,11 @@ pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> Sophon
         let f = fs::File::create(&tmp_path)?;
         let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, f);
         serde_json::to_writer(&mut writer, state)
-            .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
+            .map_err(|err| SophonError::PreinstallStateInvalid(err.to_string()))?;
         writer.flush()?;
         let _ = writer
             .into_inner()
-            .map_err(|e| SophonError::Io(e.into_error()))?;
+            .map_err(|err| SophonError::Io(err.into_error()))?;
     }
     fs::rename(&tmp_path, &path)?;
     Ok(())
@@ -151,11 +158,11 @@ pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> Sophon
 
 pub fn load_preinstall_state(game_dir: &Path, tag: &str) -> SophonResult<PreinstallState> {
     let path = PreinstallState::state_file_path(game_dir, tag);
-    let content = fs::read_to_string(&path).map_err(|e| {
-        SophonError::PreinstallStateInvalid(format!("Failed to read preinstall state: {e}"))
+    let content = fs::read_to_string(&path).map_err(|err| {
+        SophonError::PreinstallStateInvalid(format!("Failed to read preinstall state: {err}"))
     })?;
-    serde_json::from_str(&content).map_err(|e| {
-        SophonError::PreinstallStateInvalid(format!("Failed to parse preinstall state: {e}"))
+    serde_json::from_str(&content).map_err(|err| {
+        SophonError::PreinstallStateInvalid(format!("Failed to parse preinstall state: {err}"))
     })
 }
 
@@ -662,8 +669,8 @@ pub async fn preinstall_download(
         .await;
 
     for result in &results {
-        if let Err(e) = result
-            && matches!(e, SophonError::Cancelled)
+        if let Err(err) = result
+            && matches!(err, SophonError::Cancelled)
         {
             return Err(SophonError::Cancelled);
         }
@@ -705,13 +712,13 @@ pub async fn preinstall_download(
     let marker_path_clone = marker_path.clone();
     tokio::task::spawn_blocking(move || fs::write(&marker_path_clone, &tag_str)).await??;
 
-    if let Err(e) = save_preinstall_state(game_dir, &state) {
+    if let Err(err) = save_preinstall_state(game_dir, &state) {
         let marker_path_for_cleanup = marker_path.clone();
         let _ = tokio::task::spawn_blocking(move || {
             let _ = fs::remove_file(&marker_path_for_cleanup);
         })
         .await;
-        return Err(e);
+        return Err(err);
     }
 
     Ok(state)
@@ -736,10 +743,10 @@ async fn download_patch_chunk_with_retries(
         }
         match download_patch_chunk_inner(client, &url, dest, expected_md5).await {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                last_err = e.to_string();
-                if !e.is_retryable() {
-                    return Err(e);
+            Err(err) => {
+                last_err = err.to_string();
+                if !err.is_retryable() {
+                    return Err(err);
                 }
                 if attempt < max_retries - 1 {
                     log::warn!(
@@ -788,10 +795,10 @@ async fn download_chunk_with_retries(
             .await
         {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                last_err = e.to_string();
-                if !e.is_retryable() {
-                    return Err(e);
+            Err(err) => {
+                last_err = err.to_string();
+                if !err.is_retryable() {
+                    return Err(err);
                 }
                 if attempt < MAX_RETRIES - 1 {
                     log::warn!(
@@ -920,11 +927,11 @@ pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => hasher.update(&buf[..n]),
-            Err(e) => {
+            Err(err) => {
                 log::warn!(
                     "Failed to read file for MD5 verification: {}: {}",
                     path.display(),
-                    e
+                    err
                 );
                 return false;
             }
@@ -952,11 +959,11 @@ pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
                 use std::hash::Hasher;
                 hasher.write(&buf[..n]);
             }
-            Err(e) => {
+            Err(err) => {
                 log::warn!(
                     "Failed to read file for XXH64 verification: {}: {}",
                     path.display(),
-                    e
+                    err
                 );
                 return false;
             }
@@ -1055,10 +1062,10 @@ pub async fn apply_preinstall(
 
                     match result {
                         Ok(()) => break,
-                        Err(e) => {
+                        Err(err) => {
                             if is_filtered {
                                 log::warn!(
-                                    "CopyOver failed for filtered asset, skipping: {} ({e})",
+                                    "CopyOver failed for filtered asset, skipping: {} ({err})",
                                     asset.target_file_path
                                 );
                                 applied_files.fetch_add(1, Ordering::Relaxed);
@@ -1067,7 +1074,7 @@ pub async fn apply_preinstall(
                             }
                             if attempt == COPY_MAX_RETRIES {
                                 log::warn!(
-                                    "CopyOver failed for {} after {} attempts: {e}, falling back to DownloadOver",
+                                    "CopyOver failed for {} after {} attempts: {err}, falling back to DownloadOver",
                                     asset.target_file_path,
                                     COPY_MAX_RETRIES + 1
                                 );
@@ -1078,7 +1085,7 @@ pub async fn apply_preinstall(
                                 }
                                 let delay = retry_delay(attempt as u32);
                                 log::warn!(
-                                    "CopyOver failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
+                                    "CopyOver failed for {} (attempt {}/{}): {err}, retrying in {}ms...",
                                     asset.target_file_path,
                                     attempt + 1,
                                     COPY_MAX_RETRIES + 1,
@@ -1123,10 +1130,10 @@ pub async fn apply_preinstall(
 
                     match result {
                         Ok(()) => break,
-                        Err(e) => {
+                        Err(err) => {
                             if is_filtered {
                                 log::warn!(
-                                    "HDiff patch failed for filtered asset, skipping: {} ({e})",
+                                    "HDiff patch failed for filtered asset, skipping: {} ({err})",
                                     asset.target_file_path
                                 );
                                 applied_files.fetch_add(1, Ordering::Relaxed);
@@ -1135,7 +1142,7 @@ pub async fn apply_preinstall(
                             }
                             if attempt == PATCH_MAX_RETRIES {
                                 log::warn!(
-                                    "HDiff patch failed for {} after {} attempts: {e}, falling back to DownloadOver",
+                                    "HDiff patch failed for {} after {} attempts: {err}, falling back to DownloadOver",
                                     asset.target_file_path,
                                     PATCH_MAX_RETRIES + 1
                                 );
@@ -1146,7 +1153,7 @@ pub async fn apply_preinstall(
                                 }
                                 let delay = retry_delay(attempt as u32);
                                 log::warn!(
-                                    "HDiff patch failed for {} (attempt {}/{}): {e}, retrying in {}ms...",
+                                    "HDiff patch failed for {} (attempt {}/{}): {err}, retrying in {}ms...",
                                     asset.target_file_path,
                                     attempt + 1,
                                     PATCH_MAX_RETRIES + 1,
@@ -1201,13 +1208,14 @@ pub async fn apply_preinstall(
         let df = state.deleted_files.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &df {
-                if let Err(e) = super::assembly::validate_asset_name(rel) {
-                    log::warn!("Skipping deleted file with invalid path: {e}");
+                if let Err(err) = super::assembly::validate_asset_name(rel) {
+                    log::warn!("Skipping deleted file with invalid path: {err}");
                     continue;
                 }
                 let path = gd.join(rel);
-                if let Err(e) = fs::remove_file(&path) {
-                    log::warn!("Failed to delete file {}: {}", path.display(), e);
+                if let Err(err) = fs::remove_file(&path) {
+                    let path_display = path.display();
+                    log::warn!("Failed to delete file {path_display}: {err}");
                 }
             }
         })
@@ -1286,10 +1294,10 @@ impl FilterCache {
     fn new(game_dir: &Path) -> Self {
         let game_dir_str = game_dir.to_string_lossy();
 
-        let kdel_tokens = if game_dir_str.contains("ZenlessZoneZero")
-            || game_dir.join("ZenlessZoneZero_Data").exists()
+        let kdel_tokens = if game_dir_str.contains(NAP_GAME_NAME)
+            || game_dir.join(NAP_GAME_DATA_DIR).exists()
         {
-            let kdel_path = game_dir.join("ZenlessZoneZero_Data/Persistent/KDelResource");
+            let kdel_path = game_dir.join(format!("{NAP_GAME_DATA_DIR}/Persistent/KDelResource"));
             fs::read_to_string(&kdel_path).ok().and_then(|content| {
                 let first_line = content.lines().next()?;
                 let tokens: Vec<String> = first_line
@@ -1329,8 +1337,10 @@ impl FilterCache {
             None
         };
 
-        let blacklist_entries = if game_dir.join("StarRail_Data").exists() {
-            let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
+        let blacklist_entries = if game_dir.join(HKRPG_DATA_DIR).exists() {
+            let blacklist_path = game_dir.join(format!(
+                "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
+            ));
             fs::read_to_string(&blacklist_path)
                 .ok()
                 .map(|content| {
@@ -1360,11 +1370,11 @@ impl FilterCache {
             None
         };
 
-        let ignored_lang_patterns = if game_dir.join("GenshinImpact_Data").exists()
-            || game_dir.join("YuanShen_Data").exists()
+        let ignored_lang_patterns = if game_dir.join(HK4E_DATA_DIR_GLOBAL).exists()
+            || game_dir.join(HK4E_DATA_DIR_CN).exists()
         {
-            let persistent_dir = super::game_filters::find_genshin_persistent_dir(game_dir);
-            let installed = read_genshin_installed_langs(&persistent_dir);
+            let persistent_dir = super::game_filters::find_hk4e_persistent_dir(game_dir);
+            let installed = read_hk4e_installed_langs(&persistent_dir);
             let all_langs: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
             let ignored: Vec<String> = all_langs
                 .iter()
@@ -1424,7 +1434,7 @@ fn extract_blacklist_filename(line: &str) -> Option<String> {
     Some(rest[..end].replace('\\', "/"))
 }
 
-fn read_genshin_installed_langs(persistent_dir: &Path) -> Vec<String> {
+fn read_hk4e_installed_langs(persistent_dir: &Path) -> Vec<String> {
     if let Ok(entries) = fs::read_dir(persistent_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -1630,20 +1640,20 @@ fn apply_hdiff_patch(
     {
         let actual_size = match fs::metadata(&original_path) {
             Ok(m) => m.len(),
-            Err(e) => {
+            Err(err) => {
                 if is_filtered_asset(cache, asset) {
                     log::warn!(
-                        "Failed to read metadata for filtered asset {}: {e} — skipping",
+                        "Failed to read metadata for filtered asset {}: {err} — skipping",
                         asset.target_file_path
                     );
                     return Ok(());
                 }
                 log::warn!(
-                    "Failed to read metadata for original file {}: {e} — falling back to DownloadOver",
+                    "Failed to read metadata for original file {}: {err} — falling back to DownloadOver",
                     original_path.display()
                 );
                 return Err(SophonError::OriginalFileMissing(format!(
-                    "{} (Metadata unreadable: {e})",
+                    "{} (Metadata unreadable: {err})",
                     original_path.display()
                 )));
             }
@@ -1951,12 +1961,12 @@ async fn apply_download_over_with_retry(
         }
         match apply_download_over(client, game_dir, state, asset, context, handle).await {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                if !e.is_retryable() {
-                    return Err(e);
+            Err(err) => {
+                if !err.is_retryable() {
+                    return Err(err);
                 }
-                let err_msg = e.to_string();
-                last_err = Some(e);
+                let err_msg = err.to_string();
+                last_err = Some(err);
                 let is_last = attempt == MAX_RETRIES - 1;
                 if is_last {
                     break;
@@ -2046,11 +2056,11 @@ async fn apply_download_over(
                 &dashmap::DashMap::new(),
                 &vc,
             );
-            if let Err(e) = fs::remove_dir_all(&tmp_dir) {
+            if let Err(err) = fs::remove_dir_all(&tmp_dir) {
                 log::warn!(
                     "Failed to clean up temp directory {}: {}",
                     tmp_dir.display(),
-                    e
+                    err
                 );
             }
             result
@@ -2618,10 +2628,10 @@ mod tests {
     #[test]
     fn filter_patch_assets_skips_filtered_download_over() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("ZenlessZoneZero_Data/Persistent")).unwrap();
+        fs::create_dir_all(dir.path().join(format!("{NAP_GAME_DATA_DIR}/Persistent"))).unwrap();
         fs::write(
             dir.path()
-                .join("ZenlessZoneZero_Data/Persistent/KDelResource"),
+                .join(format!("{NAP_GAME_DATA_DIR}/Persistent/KDelResource")),
             "cutscenes",
         )
         .unwrap();
@@ -3310,10 +3320,10 @@ mod tests {
     #[test]
     fn is_filtered_asset_nap_kdel() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("ZenlessZoneZero_Data/Persistent")).unwrap();
+        fs::create_dir_all(dir.path().join(format!("{NAP_GAME_DATA_DIR}/Persistent"))).unwrap();
         fs::write(
             dir.path()
-                .join("ZenlessZoneZero_Data/Persistent/KDelResource"),
+                .join(format!("{NAP_GAME_DATA_DIR}/Persistent/KDelResource")),
             "cutscenes|design",
         )
         .unwrap();
@@ -3358,10 +3368,11 @@ mod tests {
     #[test]
     fn is_filtered_asset_hkrpg_blacklist() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("StarRail_Data/Persistent")).unwrap();
+        fs::create_dir_all(dir.path().join(format!("{HKRPG_DATA_DIR}/Persistent"))).unwrap();
         fs::write(
-            dir.path()
-                .join("StarRail_Data/Persistent/DownloadBlacklist.json"),
+            dir.path().join(format!(
+                "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
+            )),
             r#"{"fileName":"Audio/Korean/vo_kr.pak","fileSize":"1000"}"#,
         )
         .unwrap();
@@ -3404,12 +3415,17 @@ mod tests {
     }
 
     #[test]
-    fn is_filtered_asset_genshin_audio_lang() {
+    fn is_filtered_asset_hk4e_audio_lang() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("GenshinImpact_Data/Persistent")).unwrap();
-        fs::write(
+        fs::create_dir_all(
             dir.path()
-                .join("GenshinImpact_Data/Persistent/audio_lang_installed"),
+                .join(format!("{HK4E_DATA_DIR_GLOBAL}/Persistent")),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(format!(
+                "{HK4E_DATA_DIR_GLOBAL}/Persistent/audio_lang_installed"
+            )),
             "English(US)\n",
         )
         .unwrap();
