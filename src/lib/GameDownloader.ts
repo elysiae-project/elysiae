@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
-import { broadcastNotification } from "./Desktop";
+import { broadcastNotification, createDesktopShortcut } from "./Desktop";
 import { exists } from "./Fs";
 import { protonExec, protonJadeiteExec } from "./ProtonManager";
 import { getOption } from "./Settings";
@@ -33,6 +33,7 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 		await broadcastNotification(
 			`${variantToGameName[game]} Has Finished Downloading`,
 		);
+		await createDesktopShortcut(game);
 	}
 };
 
@@ -47,9 +48,13 @@ export const runGame = async (game: Variants): Promise<void> => {
 		variantToGameCode[game],
 		variantToExeName[game],
 	);
-	game === Variants.HKRPG
-		? await protonJadeiteExec(gamePath)
-		: await protonExec(gamePath);
+	if (await exists(gamePath)) {
+		game === Variants.HKRPG
+			? await protonJadeiteExec(gamePath)
+			: await protonExec(gamePath);
+	} else {
+		await downloadGame(game);
+	}
 };
 
 /** Pause Sophon Chunk Download */

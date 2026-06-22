@@ -19,14 +19,14 @@
         "minHeight": 700,
         "minWidth": 1200,
         "maxHeight": 700,
-        "maxWidth": 1200,
+        "maxWidth": 1200, 
         "decorations": false,
         "shadow": false,
         "transparent": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src asset: https: ; video-src asset: https:",
+      "csp": null,
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**"]
@@ -47,5 +47,12 @@
     },
     "active": true,
     "targets": "app"
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["elysiae"]
+      }
+    }
   }
 }

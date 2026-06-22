@@ -6,6 +6,9 @@ use tauri::{Manager, command};
 use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
+use std::env;
+use tauri::Manager;
+use tauri::command;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +16,13 @@ pub fn run() {
     apply_webkit_memory_improvements();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.unminimize().ok();
+                window.set_focus().ok();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
@@ -36,12 +46,6 @@ pub fn run() {
         .manage(ActiveDownload(tokio::sync::Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                window.unminimize().ok();
-                window.set_focus().ok();
-            }
-        }))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
@@ -51,7 +55,19 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|_app| Ok(()))
+        .plugin(disable_shortcuts())
+        .setup(|app| {
+            #[cfg(target_os = "linux")]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if !is_flatpak() {
+                    if let Err(e) = app.deep_link().register_all() {
+                        eprintln!("Elysiae: Failed to register deep links: {e}");
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
@@ -93,6 +109,12 @@ fn apply_nvidia_wayland_workaround() {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+#[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
     // If a NVIDIA graphics card is present, one of these two paths should exist
     std::path::Path::new("/proc/driver/nvidia/version").exists()

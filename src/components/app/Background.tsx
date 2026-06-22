@@ -39,14 +39,7 @@ const BackgroundVideo = ({ src }: { src: string | null }) => {
 			animate={{ opacity: visible ? 1 : 0 }}
 			transition={{ duration: 0.4 }}
 		>
-			<video
-				ref={ref}
-				class="background"
-				autoPlay
-				muted
-				playsInline
-				loop
-			/>
+			<video ref={ref} class="background" autoPlay muted playsInline loop />
 		</motion.div>
 	);
 };

@@ -12,12 +12,17 @@ writable-sdk: true
 
 finish-args:
   - --socket=wayland
-  # X11 is being dropped from DEs, but is generally expected to still be supported
-  - --socket=fallback-x11
+  - --socket=fallback-x11 # X11 is being dropped from DEs, but is generally expected to still be supported
+  - --socket=pulseaudio # Audio for Proton-run games
   - --device=dri
   - --share=ipc
-  - --share=network
-  - --filesystem=xdg-run/path
+  - --share=network # Game downloads + caching assets
+  - --filesystem=home:create
+  - --filesystem=xdg-desktop:create
+  - --filesystem=xdg-data:create
+  - --filesystem=xdg-config:create # Read existing game configs on host
+  - --talk-name=org.freedesktop.portal.Desktop # Required for deep link support
+  - --talk-name=org.freedesktop.portal.OpenURI # Also required for deep link support
 modules:
   - name: Elysiae
     buildsystem: simple

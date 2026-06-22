@@ -67,9 +67,10 @@ export const DownloadProgress = () => {
 		}
 	}, [state.protonSetupPhase]);
 
-	const protonDownloadedMB = (state.protonSetupDownloadedBytes / 1024 ** 2).toFixed(
-		1,
-	);
+	const protonDownloadedMB = (
+		state.protonSetupDownloadedBytes /
+		1024 ** 2
+	).toFixed(1);
 	const protonTotalMB = (state.protonSetupDownloadTotal / 1024 ** 2).toFixed(1);
 
 	const derived = useMemo(() => {
