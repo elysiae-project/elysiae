@@ -270,14 +270,17 @@ export type Settings = {
 	isFirstLaunch: boolean;
 	lastUsedVersion: string;
 	voLanguage: string;
+	createShortcuts: boolean;
+	autoUpdate: boolean;
+	autoPreload: boolean;
 	installedComponents: InstalledComponentsData;
 	cachedBackgrounds: SettingsCachedBackgrounds;
-}
+};
 
 export type InstalledComponentsData = {
 	proton: string | null;
 	jadeite: string | null;
-}
+};
 
 // New format for cached backgrounds. will remove older CachedBackground type later
 export type SettingsCachedBackgrounds = {
@@ -285,7 +288,7 @@ export type SettingsCachedBackgrounds = {
 		type: "video" | "image";
 		path: string;
 	}[];
-}
+};
 
 type BaseOption<T, V> = {
 	name: string;
