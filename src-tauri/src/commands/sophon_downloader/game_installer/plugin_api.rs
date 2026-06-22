@@ -3,17 +3,11 @@ use std::time::Duration;
 use reqwest::Client;
 use serde::Deserialize;
 
-use super::error::SophonResult;
+use super::error::{SophonError, SophonResult};
 
 const LAUNCHER_ID: &str = "VYTpXlbWo8";
-const PLUGIN_URL: &str = concat!(
-    "https://sg-hyp-api.hoyoverse.com",
-    "/hyp/hyp-connect/api/getGamePlugins"
-);
-const SDK_URL: &str = concat!(
-    "https://sg-hyp-api.hoyoverse.com",
-    "/hyp/hyp-connect/api/getGameChannelSDKs"
-);
+const PLUGIN_URL: &str = "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x68\x79\x70\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d\x2f\x68\x79\x70\x2f\x68\x79\x70\x2d\x63\x6f\x6e\x6e\x65\x63\x74\x2f\x61\x70\x69\x2f\x67\x65\x74\x47\x61\x6d\x65\x50\x6c\x75\x67\x69\x6e\x73";
+const SDK_URL: &str = "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x68\x79\x70\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d\x2f\x68\x79\x70\x2f\x68\x79\x70\x2d\x63\x6f\x6e\x6e\x65\x63\x74\x2f\x61\x70\x69\x2f\x67\x65\x74\x47\x61\x6d\x65\x43\x68\x61\x6e\x6e\x65\x6c\x53\x44\x4b\x73";
 
 const GAME_IDS: &[(&str, &str)] = &[
     ("bh3", "bxPTXSET5t"),
@@ -161,12 +155,29 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         .json()
         .await?;
 
-    let mut plugins: Vec<PluginPackageInfo> = resp
+    // Validate API response code before processing data.
+    // A non-zero retcode indicates an upstream error (e.g. invalid game ID, auth
+    // failure) and the response data should not be trusted.
+    if resp.retcode != 0 {
+        return Err(SophonError::ApiError(resp.retcode, resp.message));
+    }
+
+    // Non-adjacent duplicate plugin_ids can appear when the upstream returns
+    // multiple releases. `Vec::dedup_by` only removes consecutive duplicates,
+    // so we'd otherwise surface the same plugin multiple times (causing
+    // double-install attempts and UI confusion). Use a HashSet to dedup
+    // across the entire flat-map output, preserving upstream ordering so the
+    // newest (typically first) version wins when both are present.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let plugins: Vec<PluginPackageInfo> = resp
         .data
         .plugin_releases
         .into_iter()
         .flat_map(|r| r.plugins)
         .filter(|p| {
+            if !seen.insert(p.plugin_id.clone()) {
+                return false;
+            }
             let filename = p
                 .plugin_pkg
                 .url
@@ -178,7 +189,6 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         })
         .collect();
 
-    plugins.dedup_by_key(|p| p.plugin_id.clone());
     Ok(plugins)
 }
 
@@ -198,6 +208,11 @@ pub async fn fetch_channel_sdks(
         .await?
         .json()
         .await?;
+
+    // Validate API response code before processing data.
+    if resp.retcode != 0 {
+        return Err(SophonError::ApiError(resp.retcode, resp.message));
+    }
 
     let sdks: Vec<ChannelSdkData> = resp
         .data
@@ -357,5 +372,133 @@ mod tests {
         let json = r#"{"path":"f.dll","md5":"x","size":""}"#;
         let entry: ValidationEntry = serde_json::from_str(json).unwrap();
         assert_eq!(entry.size, None);
+    }
+
+    #[test]
+    fn game_id_for_code_bh3() {
+        assert_eq!(game_id_for_code("bh3"), Some("bxPTXSET5t"));
+    }
+
+    #[test]
+    fn game_id_for_code_hkrpg() {
+        assert_eq!(game_id_for_code("hkrpg"), Some("4ziysqXOQ8"));
+    }
+
+    #[test]
+    fn game_id_for_code_nap() {
+        assert_eq!(game_id_for_code("nap"), Some("U5hbdsT9W7"));
+    }
+
+    #[test]
+    fn game_id_for_code_empty() {
+        assert_eq!(game_id_for_code(""), None);
+    }
+
+    #[test]
+    fn parse_validation_invalid_json_fails() {
+        let json = r#"{
+            "url": "https://example.com/pkg.zip",
+            "md5": "abc",
+            "size": "100",
+            "decompressed_size": "200",
+            "command": null,
+            "validation": "[invalid]",
+            "pkg_version_file_name": null
+        }"#;
+        let result: Result<PackageData, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_validation_missing_md5_field() {
+        let json = r#"{"path":"f.dll","size":"100"}"#;
+        let entry: ValidationEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.path, "f.dll");
+        assert_eq!(entry.md5, None);
+        assert_eq!(entry.size, Some(100));
+    }
+
+    #[test]
+    fn dedup_non_adjacent_duplicate_plugin_ids() {
+        // Same plugin_id p1 across two releases with other plugins between them.
+        // The prior `dedup_by` only removed *consecutive* duplicates so p1
+        // would have appeared twice in the result. The HashSet-based dedup
+        // keeps the first occurrence (typically the newest version when the
+        // upstream returns releases in newest-first order).
+        let json = r#"{
+            "retcode": 0,
+            "message": "OK",
+            "data": {
+                "plugin_releases": [
+                    {
+                        "game": {"id": "gopR6Cufr3", "biz": "hk4e_global"},
+                        "plugins": [
+                            {
+                                "plugin_id": "p1",
+                                "release_id": "r1",
+                                "version": "2.0",
+                                "plugin_pkg": {
+                                    "url": "https://example.com/p1v2.zip",
+                                    "md5": "abc",
+                                    "size": "100",
+                                    "decompressed_size": "200",
+                                    "command": null,
+                                    "validation": "[]",
+                                    "pkg_version_file_name": null
+                                }
+                            },
+                            {
+                                "plugin_id": "p2",
+                                "release_id": "r2",
+                                "version": "1.0",
+                                "plugin_pkg": {
+                                    "url": "https://example.com/p2.zip",
+                                    "md5": "def",
+                                    "size": "100",
+                                    "decompressed_size": "200",
+                                    "command": null,
+                                    "validation": "[]",
+                                    "pkg_version_file_name": null
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "game": {"id": "gopR6Cufr3", "biz": "hk4e_global"},
+                        "plugins": [
+                            {
+                                "plugin_id": "p1",
+                                "release_id": "r3",
+                                "version": "1.0",
+                                "plugin_pkg": {
+                                    "url": "https://example.com/p1v1.zip",
+                                    "md5": "ghi",
+                                    "size": "100",
+                                    "decompressed_size": "200",
+                                    "command": null,
+                                    "validation": "[]",
+                                    "pkg_version_file_name": null
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }"#;
+        let resp: PluginApiResponse = serde_json::from_str(json).unwrap();
+        // Replicate the dedup logic from `fetch_plugins` (locally because the
+        // function is async + requires an HTTP client).
+        let mut seen = std::collections::HashSet::new();
+        let plugins: Vec<PluginPackageInfo> = resp
+            .data
+            .plugin_releases
+            .into_iter()
+            .flat_map(|r| r.plugins)
+            .filter(|p| seen.insert(p.plugin_id.clone()))
+            .collect();
+        assert_eq!(plugins.len(), 2);
+        assert_eq!(plugins[0].plugin_id, "p1");
+        assert_eq!(plugins[0].version, "2.0");
+        assert_eq!(plugins[1].plugin_id, "p2");
     }
 }

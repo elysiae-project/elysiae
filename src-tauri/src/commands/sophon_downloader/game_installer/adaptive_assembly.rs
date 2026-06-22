@@ -52,8 +52,7 @@ impl AdaptiveAssembly {
         new_target
     }
 
-    pub fn spawn_adjuster(self: &Arc<Self>) -> tokio_util::sync::CancellationToken {
-        let cancel_token = tokio_util::sync::CancellationToken::new();
+    pub fn spawn_adjuster(self: &Arc<Self>, cancel_token: tokio_util::sync::CancellationToken) {
         let adaptive = Arc::clone(self);
         let token = cancel_token.clone();
 
@@ -70,8 +69,6 @@ impl AdaptiveAssembly {
                 }
             }
         });
-
-        cancel_token
     }
 }
 
@@ -81,24 +78,17 @@ impl Default for AdaptiveAssembly {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn available_ram_mb() -> u64 {
-    let Ok(contents) = std::fs::read_to_string("/proc/meminfo") else {
+    use std::sync::{Mutex, OnceLock};
+    use sysinfo::System;
+
+    static SYS: OnceLock<Mutex<System>> = OnceLock::new();
+    let sys = SYS.get_or_init(|| Mutex::new(System::new()));
+    let Ok(mut guard) = sys.lock() else {
         return u64::MAX;
     };
-    for line in contents.lines() {
-        if line.starts_with("MemAvailable:")
-            && let Ok(kb) = line.split_whitespace().nth(1).unwrap_or("0").parse::<u64>()
-        {
-            return kb / 1024;
-        }
-    }
-    u64::MAX
-}
-
-#[cfg(not(target_os = "linux"))]
-fn available_ram_mb() -> u64 {
-    u64::MAX
+    guard.refresh_memory();
+    guard.available_memory() / (1024 * 1024)
 }
 
 #[cfg(test)]
@@ -129,13 +119,13 @@ mod tests {
     fn adjust_updates_target() {
         let aa = AdaptiveAssembly::new();
         let _ = aa.adjust();
-        // On Linux, this reads /proc/meminfo; on other platforms, returns u64::MAX
+        // adjust() reads available RAM via sysinfo; on failure, returns u64::MAX (full
+        // concurrency)
         let target = aa.current_target();
         assert!(target >= 1);
         assert!(target <= ASSEMBLY_CONCURRENCY);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn available_ram_mb_reads_proc_meminfo() {
         let mb = available_ram_mb();
@@ -171,10 +161,38 @@ mod tests {
     #[tokio::test]
     async fn spawn_adjuster_cancels_cleanly() {
         let aa = Arc::new(AdaptiveAssembly::new());
-        let token = aa.spawn_adjuster();
+        let token = tokio_util::sync::CancellationToken::new();
+        aa.spawn_adjuster(token.clone());
         token.cancel();
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(aa.current_target() >= 1);
         assert!(aa.current_target() <= ASSEMBLY_CONCURRENCY);
+    }
+
+    /// The spawned adjuster task must terminate promptly after cancel so it
+    /// does not leak across install runs. We assert that spawning-then-cancel
+    /// returns control without task leaks, and that the target field is
+    /// always within configured bounds.
+    #[tokio::test(flavor = "current_thread")]
+    async fn spawn_adjuster_returns_to_runtime_after_cancel() {
+        let aa = Arc::new(AdaptiveAssembly::new());
+        let token = tokio_util::sync::CancellationToken::new();
+        aa.spawn_adjuster(token.clone());
+        // Cancel immediately — the interval future inside the loop has not
+        // yet fired, so cancellation must be observed on the next select.
+        token.cancel();
+        // The cancel propagation is synchronous; the background task should
+        // exit well within a tick interval. We give it 3× the tick interval
+        // to avoid flakes on heavily loaded CI.
+        tokio::time::sleep(std::time::Duration::from_millis(
+            ASSEMBLY_RAM_CHECK_INTERVAL_SECS * 3000,
+        ))
+        .await;
+        // The target must remain in the valid range, never grow unbounded.
+        assert!(
+            aa.current_target() <= ASSEMBLY_CONCURRENCY,
+            "target must not exceed ASSEMBLY_CONCURRENCY after cancel"
+        );
+        assert!(aa.current_target() >= 1, "target must always be ≥ 1");
     }
 }

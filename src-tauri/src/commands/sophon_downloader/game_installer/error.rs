@@ -24,9 +24,6 @@ pub enum SophonError {
         tokio::task::JoinError,
     ),
 
-    #[error("Semaphore error: {0}")]
-    Semaphore(String),
-
     #[error("Failed to decode manifest")]
     ManifestDecode(
         #[from]
@@ -75,9 +72,6 @@ pub enum SophonError {
     #[error("No preinstall available")]
     NoPreinstallAvailable,
 
-    #[error("Preinstall marker not found for tag: {0}")]
-    PreinstallMarkerNotFound(String),
-
     #[error("Download cancelled")]
     Cancelled,
 
@@ -91,18 +85,11 @@ pub enum SophonError {
     #[error("Failed to assemble file {file}: {error}")]
     AssemblyFailed { file: String, error: String },
 
-    #[error("JSON error")]
-    Json(
-        #[from]
-        #[source]
-        serde_json::Error,
-    ),
-
-    #[error("Front-door branch index out of range")]
-    BranchIndexOutOfRange,
-
     #[error("{kind} index {index} out of bounds")]
     IndexOutOfBounds { kind: &'static str, index: usize },
+
+    #[error("API returned error (retcode={0}): {1}")]
+    ApiError(i32, String),
 
     #[error("Plugin validation failed: {0}")]
     PluginValidationFailed(String),
@@ -122,29 +109,67 @@ pub enum SophonError {
     #[error("Preinstall state file corrupted or missing: {0}")]
     PreinstallStateInvalid(String),
 
-    #[error(
-        "Patch data out of bounds: offset {offset} + length {length} exceeds chunk size {chunk_size}"
-    )]
-    PatchDataOutOfBounds {
-        offset: u64,
-        length: u64,
-        chunk_size: u64,
+    #[error("No space available at {path}: need {needed}, have {available}")]
+    NoSpaceAvailable {
+        path: String,
+        needed: u64,
+        available: u64,
     },
+
+    #[error("Resume failed: {message}")]
+    ResumeFailed { message: String },
+
+    #[error("Invalid size string: {0}")]
+    InvalidSizeString(String),
+
+    #[error("Request timed out after {0} seconds")]
+    Timeout(u64),
 }
 
-impl From<tokio::sync::AcquireError> for SophonError {
-    fn from(err: tokio::sync::AcquireError) -> Self {
-        SophonError::Semaphore(err.to_string())
-    }
-}
-
-impl From<SophonError> for String {
-    fn from(err: SophonError) -> Self {
-        err.to_string()
+impl SophonError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Http(_)
+            | Self::Io(_)
+            | Self::Md5Mismatch { .. }
+            | Self::SizeMismatch { .. }
+            | Self::ResumeFailed { .. }
+            | Self::DownloadFailed { .. }
+            | Self::Decompression(_) => true,
+            Self::Cancelled
+            | Self::NoManifests
+            | Self::NoGameManifest
+            | Self::NoVoiceManifest(_)
+            | Self::NoInstalledVersion
+            | Self::NoPreinstallAvailable
+            | Self::PathTraversal(_)
+            | Self::InvalidAssetName(_)
+            | Self::NoSpaceAvailable { .. }
+            | Self::PatchManifestDecode(_)
+            | Self::PluginValidationFailed(_)
+            | Self::HDiffPatchFailed { .. }
+            | Self::OriginalFileMissing(_)
+            | Self::PreinstallStateInvalid(_)
+            | Self::PatchChunkNotFound(_)
+            | Self::ApiError(_, _)
+            | Self::UnknownGameId(_)
+            | Self::JoinError(_)
+            | Self::ManifestDecode(_)
+            | Self::AssemblyFailed { .. }
+            | Self::IndexOutOfBounds { .. }
+            | Self::InvalidSizeString(_)
+            | Self::Timeout(_) => false,
+        }
     }
 }
 
 pub type SophonResult<T> = Result<T, SophonError>;
+
+impl From<tokio::time::error::Elapsed> for SophonError {
+    fn from(_: tokio::time::error::Elapsed) -> Self {
+        SophonError::Timeout(0)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -197,18 +222,318 @@ mod tests {
     }
 
     #[test]
-    fn error_from_semaphore_acquire() {
-        let sophon_err = SophonError::Semaphore("no permits available".to_string());
-        assert!(matches!(sophon_err, SophonError::Semaphore(_)));
+    fn error_to_string() {
+        let s = SophonError::Cancelled.to_string();
+        assert_eq!(s, "Download cancelled");
+        let s = SophonError::PathTraversal(PathBuf::from("/bad/path")).to_string();
+        assert!(s.contains("/bad/path"));
+        let s = SophonError::NoManifests.to_string();
+        assert!(!s.is_empty());
+    }
+
+    #[tokio::test]
+    async fn error_display_http() {
+        let result = reqwest::Client::new()
+            .get("https://192.0.2.1:1/nonexistent")
+            .timeout(std::time::Duration::from_millis(1))
+            .send()
+            .await;
+        let reqwest_err = result.unwrap_err();
+        let err = SophonError::Http(reqwest_err);
+        let msg = err.to_string();
+        assert!(!msg.is_empty());
     }
 
     #[test]
-    fn error_into_string() {
-        let s: String = SophonError::Cancelled.into();
-        assert_eq!(s, "Download cancelled");
-        let s: String = SophonError::PathTraversal(PathBuf::from("/bad/path")).into();
-        assert!(s.contains("/bad/path"));
-        let s: String = SophonError::NoManifests.into();
-        assert!(!s.is_empty());
+    fn error_display_join_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.spawn(async { panic!("intentional panic") });
+        let result = rt.block_on(handle);
+        let err = SophonError::JoinError(result.unwrap_err());
+        let msg = err.to_string();
+        assert!(!msg.is_empty());
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn error_display_manifest_decode() {
+        let decode_err = prost::DecodeError::new("invalid wire type");
+        let err = SophonError::ManifestDecode(decode_err);
+        let msg = err.to_string();
+        assert!(msg.contains("manifest"), "msg={msg}");
+    }
+
+    #[test]
+    fn error_display_decompression() {
+        let err = SophonError::Decompression("zstd error".to_string());
+        assert_eq!(err.to_string(), "Failed to decompress data: zstd error");
+    }
+
+    #[test]
+    fn error_display_invalid_asset_name() {
+        let err = SophonError::InvalidAssetName("file\0.txt".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("file"), "msg={msg}");
+    }
+
+    #[test]
+    fn error_display_unknown_game_id() {
+        let err = SophonError::UnknownGameId("xyz".to_string());
+        assert_eq!(err.to_string(), "Unknown game ID: xyz");
+    }
+
+    #[test]
+    fn error_display_no_manifests() {
+        assert_eq!(
+            SophonError::NoManifests.to_string(),
+            "API returned no manifests"
+        );
+    }
+
+    #[test]
+    fn error_display_no_game_manifest() {
+        assert_eq!(
+            SophonError::NoGameManifest.to_string(),
+            "No game manifest found"
+        );
+    }
+
+    #[test]
+    fn error_display_no_voice_manifest() {
+        let err = SophonError::NoVoiceManifest("ja-jp".to_string());
+        assert_eq!(
+            err.to_string(),
+            "No voice manifest found for language: ja-jp"
+        );
+    }
+
+    #[test]
+    fn error_display_no_installed_version() {
+        assert_eq!(
+            SophonError::NoInstalledVersion.to_string(),
+            "No installed version found"
+        );
+    }
+
+    #[test]
+    fn error_display_no_preinstall_available() {
+        assert_eq!(
+            SophonError::NoPreinstallAvailable.to_string(),
+            "No preinstall available"
+        );
+    }
+
+    #[test]
+    fn error_display_download_failed() {
+        let err = SophonError::DownloadFailed {
+            chunk: "chunk_001".to_string(),
+            attempts: 3,
+            error: "timeout".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("chunk_001"));
+        assert!(msg.contains("3"));
+        assert!(msg.contains("timeout"));
+    }
+
+    #[test]
+    fn error_display_assembly_failed() {
+        let err = SophonError::AssemblyFailed {
+            file: "data.pak".to_string(),
+            error: "md5 mismatch".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("data.pak"));
+        assert!(msg.contains("md5 mismatch"));
+    }
+
+    #[test]
+    fn error_display_index_out_of_bounds() {
+        let err = SophonError::IndexOutOfBounds {
+            kind: "file_idx",
+            index: 42,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("file_idx"));
+        assert!(msg.contains("42"));
+    }
+
+    #[test]
+    fn error_display_plugin_validation_failed() {
+        let err = SophonError::PluginValidationFailed("checksum mismatch".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn error_display_patch_manifest_decode() {
+        let err = SophonError::PatchManifestDecode("truncated data".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("truncated data"));
+    }
+
+    #[test]
+    fn error_display_hdiff_patch_failed() {
+        let err = SophonError::HDiffPatchFailed {
+            file: "data.bin".to_string(),
+            error: "corrupt diff".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("data.bin"));
+        assert!(msg.contains("corrupt diff"));
+    }
+
+    #[test]
+    fn error_display_original_file_missing() {
+        let err = SophonError::OriginalFileMissing("old/data.bin".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("old/data.bin"));
+    }
+
+    #[test]
+    fn error_display_patch_chunk_not_found() {
+        let err = SophonError::PatchChunkNotFound("patch_001.hdiff".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("patch_001.hdiff"));
+    }
+
+    #[test]
+    fn error_display_preinstall_state_invalid() {
+        let err = SophonError::PreinstallStateInvalid("corrupted json".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("corrupted json"));
+    }
+
+    #[test]
+    fn error_display_no_space_available() {
+        let err = SophonError::NoSpaceAvailable {
+            path: "/game".to_string(),
+            needed: 1_000_000_000,
+            available: 500_000_000,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("/game"));
+        assert!(msg.contains("1000000000"));
+        assert!(msg.contains("500000000"));
+    }
+
+    #[test]
+    fn error_display_resume_failed() {
+        let err = SophonError::ResumeFailed {
+            message: "file size changed".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("file size changed"));
+    }
+
+    #[test]
+    fn error_display_invalid_size_string() {
+        let err = SophonError::InvalidSizeString("abc".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("abc"));
+    }
+
+    #[test]
+    fn error_from_join_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.spawn(async { panic!("fail") });
+        let join_err = rt.block_on(handle).unwrap_err();
+        let sophon_err: SophonError = join_err.into();
+        assert!(matches!(sophon_err, SophonError::JoinError(_)));
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn error_from_manifest_decode() {
+        let decode_err = prost::DecodeError::new("test");
+        let sophon_err: SophonError = decode_err.into();
+        assert!(matches!(sophon_err, SophonError::ManifestDecode(_)));
+    }
+
+    #[test]
+    fn error_impl_std_error() {
+        use std::error::Error;
+        let err = SophonError::NoManifests;
+        assert!(err.source().is_none());
+        let err = SophonError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn is_retryable_transient_errors() {
+        assert!(
+            SophonError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
+                .is_retryable()
+        );
+        assert!(
+            SophonError::Md5Mismatch {
+                item: "f".into(),
+                expected: "a".into(),
+                actual: "b".into()
+            }
+            .is_retryable()
+        );
+        assert!(
+            SophonError::SizeMismatch {
+                item: "f".into(),
+                expected: 100,
+                actual: 50
+            }
+            .is_retryable()
+        );
+        assert!(
+            SophonError::ResumeFailed {
+                message: "test".into()
+            }
+            .is_retryable()
+        );
+        assert!(
+            SophonError::DownloadFailed {
+                chunk: "c".into(),
+                attempts: 3,
+                error: "e".into()
+            }
+            .is_retryable()
+        );
+        assert!(SophonError::Decompression("bad".into()).is_retryable());
+    }
+
+    #[tokio::test]
+    async fn is_retryable_http() {
+        let err = reqwest::Client::new()
+            .get("https://192.0.2.1:1")
+            .timeout(std::time::Duration::from_millis(1))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(SophonError::Http(err).is_retryable());
+    }
+
+    #[test]
+    fn is_retryable_fatal_errors() {
+        assert!(!SophonError::Cancelled.is_retryable());
+        assert!(!SophonError::NoManifests.is_retryable());
+        assert!(!SophonError::NoGameManifest.is_retryable());
+        assert!(!SophonError::PathTraversal("p".into()).is_retryable());
+        assert!(!SophonError::InvalidAssetName("a".into()).is_retryable());
+        assert!(
+            !SophonError::NoSpaceAvailable {
+                path: "p".into(),
+                needed: 1,
+                available: 0
+            }
+            .is_retryable()
+        );
+        assert!(!SophonError::PatchManifestDecode("bad".into()).is_retryable());
+        assert!(!SophonError::PluginValidationFailed("bad".into()).is_retryable());
+        assert!(
+            !SophonError::HDiffPatchFailed {
+                file: "f".into(),
+                error: "e".into()
+            }
+            .is_retryable()
+        );
+        assert!(!SophonError::OriginalFileMissing("f".into()).is_retryable());
+        assert!(!SophonError::ApiError(400, "bad".into()).is_retryable());
     }
 }
