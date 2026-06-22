@@ -119,142 +119,151 @@ export const DownloadProvider = ({
 	}, []);
 
 	useEffect(() => {
-		const unlisten = listen("sophon://progress", (event) => {
-			const payload = event.payload as SophonProgress;
+		let cleanupFn: (() => void) | undefined;
+		let isCancelled = false;
 
-			setState((prev) => {
-				switch (payload.type) {
-					case "fetchingManifest":
-						return {
-							...prev,
-							isFetchingManifest: true,
-							isCalculatingDownloads: false,
-							isPaused: false,
-							isDownloading: false,
-							isAssembling: false,
-							isVerifying: false,
-							isError: false,
-							isFinished: false,
-							isResumable: false,
-							resumeInfo: null,
-							downloadingGame:
-								prev.downloadingGame ?? downloadingGameRef.current,
-							errorMessage: "",
-							warningMessage: "",
-						};
-					case "calculatingDownloads":
-						return {
-							...prev,
-							isFetchingManifest: false,
-							isCalculatingDownloads: true,
-							isPaused: false,
-							isDownloading: false,
-							isAssembling: false,
-							isVerifying: false,
-							isError: false,
-							isFinished: false,
-							downloadingGame:
-								prev.downloadingGame ?? downloadingGameRef.current,
-							checkedFiles: payload.checked_files,
-							totalFiles: payload.total_files,
-						};
-					case "downloading":
-						return {
-							...prev,
-							isDownloading: true,
-							isPaused: false,
-							isFetchingManifest: false,
-							isCalculatingDownloads: false,
-							downloadingGame:
-								prev.downloadingGame ?? downloadingGameRef.current,
-							downloadedBytes: payload.downloaded_bytes,
-							downloadTotal: payload.total_bytes,
-							speedBps: payload.speed_bps,
-							etaSeconds: payload.eta_seconds,
-						};
-					case "paused":
-						return {
-							...prev,
-							isPaused: true,
-							downloadedBytes: payload.downloaded_bytes,
-							downloadTotal: payload.total_bytes,
-							speedBps: 0,
-							etaSeconds: 0,
-						};
-					case "assembling":
-						return {
-							...prev,
-							isAssembling: true,
-							isFetchingManifest: false,
-							assembledFiles: payload.assembled_files,
-							totalFiles: payload.total_files,
-						};
-					case "verifying":
-						return {
-							...prev,
-							isVerifying: true,
-							isPaused: false,
-							isDownloading: false,
-							isAssembling: false,
-							isFetchingManifest: false,
-							isError: false,
-							isFinished: false,
-							scannedFiles: payload.scanned_files,
-							totalFiles: payload.total_files,
-							errorCount: payload.error_count,
-						};
-					case "warning":
-						return {
-							...prev,
-							warningMessage: payload.message,
-						};
-					case "error":
-						return {
-							...prev,
-							isError: true,
-							isPaused: false,
-							isDownloading: false,
-							isAssembling: false,
-							isFetchingManifest: false,
-							isVerifying: false,
-							isInstallingPlugins: false,
-							errorMessage: payload.message,
-						};
-					case "installingPlugins":
-						return {
-							...prev,
-							isInstallingPlugins: true,
-							isDownloading: false,
-							isAssembling: false,
-							isVerifying: false,
-							isFetchingManifest: false,
-							pluginName: payload.current_plugin,
-							pluginProgress: `Installing plugins: ${payload.current_plugin} (${payload.total_plugins})`,
-						};
-					case "downloadingPlugin":
-						return {
-							...prev,
-							isInstallingPlugins: true,
-							isDownloading: true,
-							isAssembling: false,
-							isVerifying: false,
-							isFetchingManifest: false,
-							pluginName: payload.name,
-							downloadedBytes: payload.downloaded_bytes,
-							downloadTotal: payload.total_bytes,
-							pluginProgress: `Downloading plugin: ${payload.name}`,
-						};
-					case "finished":
-						return {
-							...initialState,
-							isFinished: true,
-						};
-				}
+		(async () => {
+			const unlisten = await listen("sophon://progress", (event) => {
+				const payload = event.payload as SophonProgress;
+
+				setState((prev) => {
+					switch (payload.type) {
+						case "fetchingManifest":
+							return {
+								...prev,
+								isFetchingManifest: true,
+								isCalculatingDownloads: false,
+								isPaused: false,
+								isDownloading: false,
+								isAssembling: false,
+								isVerifying: false,
+								isError: false,
+								isFinished: false,
+								isResumable: false,
+								resumeInfo: null,
+								downloadingGame:
+									prev.downloadingGame ?? downloadingGameRef.current,
+								errorMessage: "",
+								warningMessage: "",
+							};
+						case "calculatingDownloads":
+							return {
+								...prev,
+								isFetchingManifest: false,
+								isCalculatingDownloads: true,
+								isPaused: false,
+								isDownloading: false,
+								isAssembling: false,
+								isVerifying: false,
+								isError: false,
+								isFinished: false,
+								downloadingGame:
+									prev.downloadingGame ?? downloadingGameRef.current,
+								checkedFiles: payload.checked_files,
+								totalFiles: payload.total_files,
+							};
+						case "downloading":
+							return {
+								...prev,
+								isDownloading: true,
+								isPaused: false,
+								isFetchingManifest: false,
+								isCalculatingDownloads: false,
+								downloadingGame:
+									prev.downloadingGame ?? downloadingGameRef.current,
+								downloadedBytes: payload.downloaded_bytes,
+								downloadTotal: payload.total_bytes,
+								speedBps: payload.speed_bps,
+								etaSeconds: payload.eta_seconds,
+							};
+						case "paused":
+							return {
+								...prev,
+								isPaused: true,
+								downloadedBytes: payload.downloaded_bytes,
+								downloadTotal: payload.total_bytes,
+								speedBps: 0,
+								etaSeconds: 0,
+							};
+						case "assembling":
+							return {
+								...prev,
+								isAssembling: true,
+								isFetchingManifest: false,
+								assembledFiles: payload.assembled_files,
+								totalFiles: payload.total_files,
+							};
+						case "verifying":
+							return {
+								...prev,
+								isVerifying: true,
+								isPaused: false,
+								isDownloading: false,
+								isAssembling: false,
+								isFetchingManifest: false,
+								isError: false,
+								isFinished: false,
+								scannedFiles: payload.scanned_files,
+								totalFiles: payload.total_files,
+								errorCount: payload.error_count,
+							};
+						case "warning":
+							return {
+								...prev,
+								warningMessage: payload.message,
+							};
+						case "error":
+							return {
+								...prev,
+								isError: true,
+								isPaused: false,
+								isDownloading: false,
+								isAssembling: false,
+								isFetchingManifest: false,
+								isVerifying: false,
+								isInstallingPlugins: false,
+								errorMessage: payload.message,
+							};
+						case "installingPlugins":
+							return {
+								...prev,
+								isInstallingPlugins: true,
+								isDownloading: false,
+								isAssembling: false,
+								isVerifying: false,
+								isFetchingManifest: false,
+								pluginName: payload.current_plugin,
+								pluginProgress: `Installing plugins: ${payload.current_plugin} (${payload.total_plugins})`,
+							};
+						case "downloadingPlugin":
+							return {
+								...prev,
+								isInstallingPlugins: true,
+								isDownloading: true,
+								isAssembling: false,
+								isVerifying: false,
+								isFetchingManifest: false,
+								pluginName: payload.name,
+								downloadedBytes: payload.downloaded_bytes,
+								downloadTotal: payload.total_bytes,
+								pluginProgress: `Downloading plugin: ${payload.name}`,
+							};
+						case "finished":
+							return {
+								...initialState,
+								isFinished: true,
+							};
+					}
+				});
 			});
-		});
+			if (!isCancelled) {
+				cleanupFn = unlisten;
+			}
+		})();
 
 		return () => {
-			unlisten.then((fn) => fn());
+			isCancelled = true;
+			cleanupFn?.();
 		};
 	}, []);
 
