@@ -284,7 +284,7 @@ export type SettingsCachedBackgrounds = {
 	[key in Variants]: {
 		type: "video" | "image";
 		path: string;
-	}
+	}[];
 }
 
 type BaseOption<T, V> = {
