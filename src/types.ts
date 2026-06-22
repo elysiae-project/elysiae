@@ -22,15 +22,6 @@ export enum BhServers {
 
 export type GameCodes = "bh3" | "hk4e" | "hkrpg" | "nap";
 export type AppModules = "proton" | "jadeite";
-export type AppOptions =
-	| "isFirstLaunch"
-	| "lastUsedVersion"
-	| "cachedBackgrounds"
-	| "selectedGame"
-	| "voLanguage"
-	| "blockNotifications"
-	| "installedComponents";
-
 export type ComponentSize = "xs" | "sm" | "md" | "lg" | "xl";
 
 // Game
@@ -273,6 +264,28 @@ export type ModalProps = {
 };
 
 // Settings / Options
+
+export type Settings = {
+	version: number;
+	isFirstLaunch: boolean;
+	lastUsedVersion: string;
+	voLanguage: string;
+	installedComponents: InstalledComponentsData;
+	cachedBackgrounds: SettingsCachedBackgrounds;
+}
+
+export type InstalledComponentsData = {
+	proton: string | null;
+	jadeite: string | null;
+}
+
+// New format for cached backgrounds. will remove older CachedBackground type later
+export type SettingsCachedBackgrounds = {
+	[key in Variants]: {
+		type: "video" | "image";
+		path: string;
+	}
+}
 
 type BaseOption<T, V> = {
 	name: string;

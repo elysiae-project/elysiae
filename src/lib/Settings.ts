@@ -1,7 +1,7 @@
 import { resolveResource } from "@tauri-apps/api/path";
 import { error } from "@tauri-apps/plugin-log";
 import { load, type Store } from "@tauri-apps/plugin-store";
-import type { AppOptions } from "../types";
+import type { Settings } from "../types";
 
 let store: Store | undefined;
 
@@ -26,7 +26,7 @@ const loadStore = async (): Promise<Store> => {
 };
 
 export const getOption = async <T = unknown>(
-	key: AppOptions,
+	key: keyof Settings,
 ): Promise<T | undefined> => {
 	if (!store) {
 		store = await loadStore();
@@ -35,7 +35,7 @@ export const getOption = async <T = unknown>(
 };
 
 export const setOption = async <T = unknown>(
-	key: AppOptions,
+	key: keyof Settings,
 	value: T,
 ): Promise<void> => {
 	if (!store) {
