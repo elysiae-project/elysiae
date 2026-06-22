@@ -1809,7 +1809,7 @@ fn apply_hdiff_patch(
             };
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: format!("HDiff thread panicked: {}", error_msg),
+                error: format!("HDiff thread panicked: {error_msg}"),
             })
         }
     }
@@ -1903,7 +1903,7 @@ fn apply_hdiff_patch_from_files(
             };
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: format!("HDiff thread panicked (from files): {}", error_msg),
+                error: format!("HDiff thread panicked (from files): {error_msg}"),
             })
         }
     }

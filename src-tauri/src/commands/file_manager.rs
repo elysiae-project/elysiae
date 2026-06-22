@@ -52,7 +52,7 @@ pub async fn extract_file(
                 .extract(&full_dest)
                 .map_err(|err| err.to_string())?;
         } else {
-            return Err(format!("Unsupported archive format: {}", path_str));
+            return Err(format!("Unsupported archive format: {path_str}"));
         }
 
         flatten(&full_dest)?;

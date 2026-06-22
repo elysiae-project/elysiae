@@ -82,9 +82,9 @@ pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(),
         return Err(msg);
     };
     if let Some(parent) = path.parent()
-        && let Err(e) = fs::create_dir_all(parent)
+        && let Err(err) = fs::create_dir_all(parent)
     {
-        let msg = format!("Failed to create download state directory: {}", e);
+        let msg = format!("Failed to create download state directory: {err}");
         log::error!("{msg}");
         return Err(msg);
     }
@@ -94,12 +94,12 @@ pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(),
             let seq = SAVE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
             let tmp_path = path.with_extension(format!("save-{seq}.tmp"));
             if let Err(err) = fs::write(&tmp_path, &json) {
-                let msg = format!("Failed to write temp download state: {}", err);
+                let msg = format!("Failed to write temp download state: {err}");
                 log::error!("{msg}");
                 return Err(msg);
             }
             if let Err(err) = fs::rename(&tmp_path, &path) {
-                let msg = format!("Failed to rename download state file: {}", err);
+                let msg = format!("Failed to rename download state file: {err}");
                 log::error!("{msg}");
                 if let Err(err) = fs::remove_file(&tmp_path) {
                     log::debug!("Failed to clean up temp state file: {err}");
@@ -109,7 +109,7 @@ pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(),
             Ok(())
         }
         Err(err) => {
-            let msg = format!("Failed to serialize download state: {}", err);
+            let msg = format!("Failed to serialize download state: {err}");
             log::error!("{msg}");
             Err(msg)
         }
@@ -842,7 +842,7 @@ pub async fn sophon_apply_preinstall(
         &apply_handle,
     )
     .await
-    .or_else(|e| match e {
+    .or_else(|err| match err {
         SophonError::Cancelled => Ok(()),
         other => {
             emit_error(&app_handle, &other);

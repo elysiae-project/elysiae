@@ -31,7 +31,7 @@ pub async fn download_file(
         .map_err(|err| err.to_string())?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("download_file: HTTP {} for {}", status, url));
+        return Err(format!("download_file: HTTP {status} for {url}"));
     }
     let total = response.content_length().unwrap_or(0);
     let mut file = tokio::fs::File::create(&full_path)
@@ -54,7 +54,7 @@ pub async fn download_file(
             last_emitted = Instant::now();
             app_handle
                 .emit(
-                    &format!("download://progress/{}", uuid),
+                    &format!("download://progress/{uuid}"),
                     DownloadProgress {
                         progress: downloaded_bytes,
                         total,
@@ -66,7 +66,7 @@ pub async fn download_file(
     file.flush().await.map_err(|err| err.to_string())?;
     app_handle
         .emit(
-            &format!("download://progress/{}", uuid),
+            &format!("download://progress/{uuid}"),
             DownloadProgress {
                 progress: downloaded_bytes,
                 total,

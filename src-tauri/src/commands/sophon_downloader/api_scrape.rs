@@ -179,9 +179,9 @@ impl DownloadInfo {
         let prefix = self.url_prefix.trim_end_matches('/');
         let suffix = self.url_suffix.trim_matches('/');
         if suffix.is_empty() {
-            format!("{}/{}", prefix, item_name)
+            format!("{prefix}/{item_name}")
         } else {
-            format!("{}/{}/{}", prefix, suffix, item_name)
+            format!("{prefix}/{suffix}/{item_name}")
         }
     }
 

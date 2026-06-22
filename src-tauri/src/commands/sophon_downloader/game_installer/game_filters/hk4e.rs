@@ -627,10 +627,7 @@ mod tests {
         fs::create_dir(&other_data).unwrap();
 
         let result = find_hk4e_persistent_dir(dir.path());
-        assert_eq!(
-            result,
-            persistent_dir(dir.path())
-        );
+        assert_eq!(result, persistent_dir(dir.path()));
     }
 
     #[test]
@@ -638,9 +635,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let result = find_hk4e_persistent_dir(dir.path());
-        assert_eq!(
-            result,
-            persistent_dir(dir.path())
-        );
+        assert_eq!(result, persistent_dir(dir.path()));
     }
 }

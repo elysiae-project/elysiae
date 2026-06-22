@@ -215,7 +215,7 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
     fs::write(persistent_dir.join("DownloadedFullAssets.txt"), &hash_str)?;
     fs::write(
         persistent_dir.join("InstallVersion.bin"),
-        format!("{},{major}.{minor}.{patch}", hash_str),
+        format!("{hash_str},{major}.{minor}.{patch}"),
     )?;
 
     log::info!(
