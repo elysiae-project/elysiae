@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { fetch } from "@tauri-apps/plugin-http";
 import { error } from "@tauri-apps/plugin-log";
 
 /**
@@ -11,6 +12,7 @@ export const getApiJson = async <T>(url: string): Promise<T> => {
 		if (!isURLValid(url)) {
 			error(`getApiJson: URL ${url} is invalid`);
 			reject(`getApiJson: URL ${url} is invalid`);
+			return;
 		}
 		fetch(url, {
 			method: "GET",
@@ -73,8 +75,8 @@ export const downloadFile = async (
 			uuid: downloadID,
 		});
 	} catch (e) {
-		error(e as string);
-		console.log(e);
+		error(`downloadFile: ${e}`);
+		throw e;
 	} finally {
 		unlisten();
 	}
