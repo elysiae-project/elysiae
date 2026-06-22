@@ -1,4 +1,4 @@
-// Protobuf data fetched from the Sophon protocol (Hi3Helper.Sophon)
+// Protobuf data fetched from the Sophon protocol
 use prost::Message;
 
 // Top level of the protobuf

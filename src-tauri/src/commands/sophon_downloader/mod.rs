@@ -1,7 +1,7 @@
 //! Sophon game downloader module.
 //!
 //! This module implements the Sophon chunk-based download system used by
-//! "Anime Game Studio" games. It handles downloading, assembling, and updating
+//! supported games. It handles downloading, assembling, and updating
 //! game files using a manifest-based approach with zstd-compressed chunks.
 
 pub mod api_scrape;
