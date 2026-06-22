@@ -1499,7 +1499,7 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     }
     if magic_buf == HDIFF_MAGIC.as_ref() {
         let safe_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
-        let diff_temp = game_dir.join(format!("patching/{}.diff", safe_name));
+        let diff_temp = game_dir.join(format!("patching/{safe_name}.diff"));
         {
             if let Some(parent) = diff_temp.parent() {
                 fs::create_dir_all(parent)?;
@@ -1548,7 +1548,7 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
     let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
     // Use both hash AND path to avoid collisions when target_file_hash is
     // empty (which would produce the same safe_hash "" for multiple assets).
-    let temp_path = game_dir.join(format!("patching/copyover_{}_{}.tmp", safe_path, safe_hash));
+    let temp_path = game_dir.join(format!("patching/copyover_{safe_path}_{safe_hash}.tmp"));
     chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
     {
         let file = fs::File::create(&temp_path)?;
@@ -1608,7 +1608,7 @@ fn apply_hdiff_patch(
             || asset.original_file_size == Some(0);
         if is_blank {
             let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
-            let diff_ref = game_dir.join(format!("patching/{}.diff_ref", safe_patch_name));
+            let diff_ref = game_dir.join(format!("patching/{safe_patch_name}.diff_ref"));
             if let Some(parent) = diff_ref.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -1716,7 +1716,7 @@ fn apply_hdiff_patch(
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
     }
 
-    let diff_temp = game_dir.join(format!("patching/{}.diff", safe_patch_name));
+    let diff_temp = game_dir.join(format!("patching/{safe_patch_name}.diff"));
     let _ = fs::remove_file(&diff_temp);
     {
         let mut chunk_file = fs::File::open(&chunk_path)?;
@@ -1748,7 +1748,7 @@ fn apply_hdiff_patch(
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
     let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
-    let temp_output = game_dir.join(format!("patching/{}_{}.tmp.out", safe_path, safe_hash));
+    let temp_output = game_dir.join(format!("patching/{safe_path}_{safe_hash}.tmp.out"));
     let _ = fs::remove_file(&temp_output);
 
     if let Some(parent) = temp_output.parent() {
@@ -1823,7 +1823,7 @@ fn apply_hdiff_patch_from_files(
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
 
     let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
-    let empty_original_path = game_dir.join(format!("patching/{}.diff_ref", safe_patch_name));
+    let empty_original_path = game_dir.join(format!("patching/{safe_patch_name}.diff_ref"));
     {
         if let Some(parent) = empty_original_path.parent() {
             fs::create_dir_all(parent)?;
@@ -1844,7 +1844,7 @@ fn apply_hdiff_patch_from_files(
 
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
     let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
-    let temp_output = game_dir.join(format!("patching/{}_{}.tmp.out", safe_path, safe_hash));
+    let temp_output = game_dir.join(format!("patching/{safe_path}_{safe_hash}.tmp.out"));
     let _ = fs::remove_file(&temp_output);
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;

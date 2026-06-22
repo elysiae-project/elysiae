@@ -455,9 +455,9 @@ mod tests {
     #[test]
     fn hdiff_v13_zstd_large_binary() {
         let fixture_dir = "/tmp/hdiff_test";
-        let old_path = format!("{}/old_large.bin", fixture_dir);
-        let diff_path = format!("{}/large_zstd.hdiff", fixture_dir);
-        let out_path = format!("{}/output_large_test.bin", fixture_dir);
+        let old_path = format!("{fixture_dir}/old_large.bin");
+        let diff_path = format!("{fixture_dir}/large_zstd.hdiff");
+        let out_path = format!("{fixture_dir}/output_large_test.bin");
 
         if !std::path::Path::new(&old_path).exists() {
             eprintln!("skipping: large binary test fixtures not present at {fixture_dir}");
@@ -468,7 +468,7 @@ mod tests {
         assert!(hdiff.apply(None), "large binary patch apply failed");
 
         let result = fs::read(&out_path).unwrap();
-        let expected = fs::read(format!("{}/new_large.bin", fixture_dir)).unwrap();
+        let expected = fs::read(format!("{fixture_dir}/new_large.bin")).unwrap();
         assert_eq!(result, expected, "large binary patch output mismatch");
         let _ = fs::remove_file(&out_path);
     }
