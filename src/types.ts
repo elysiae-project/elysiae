@@ -270,6 +270,7 @@ export type Settings = {
 	isFirstLaunch: boolean;
 	lastUsedVersion: string;
 	voLanguage: string;
+	blockNotifications: boolean;
 	createShortcuts: boolean;
 	autoUpdate: boolean;
 	autoPreload: boolean;
