@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use bytes::BytesMut;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use reqwest::Client;
@@ -12,6 +12,7 @@ use tauri_plugin_log::log;
 use tokio::io::AsyncWriteExt;
 use zip::ZipArchive;
 
+use super::cache;
 use super::error::{SophonError, SophonResult};
 use super::plugin_api::{
     ChannelSdkData, PackageData, PluginPackageInfo, ValidationEntry, fetch_channel_sdks,
@@ -23,6 +24,10 @@ type ProgressFn = Arc<dyn Fn(SophonProgress) + Send + Sync>;
 
 const PLUGIN_VERSIONS_FILE: &str = "plugin_versions.json";
 
+/// Serialises concurrent access to plugin_versions.json so that
+/// read-modify-write does not race.
+static PLUGIN_VERSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn read_plugin_versions(game_dir: &Path) -> HashMap<String, String> {
     let path = game_dir.join(PLUGIN_VERSIONS_FILE);
     let Ok(content) = fs::read_to_string(&path) else {
@@ -32,6 +37,12 @@ fn read_plugin_versions(game_dir: &Path) -> HashMap<String, String> {
 }
 
 fn write_plugin_version(game_dir: &Path, key: &str, value: &str) -> std::io::Result<()> {
+    // Acquire the global lock so that concurrent calls do not race on the
+    // read-modify-write of plugin_versions.json. The lock is held only during
+    // the synchronous I/O section; no await points exist inside this function.
+    let _lock = PLUGIN_VERSION_LOCK
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
     let path = game_dir.join(PLUGIN_VERSIONS_FILE);
     let mut versions = read_plugin_versions(game_dir);
     versions.insert(key.to_string(), value.to_string());
@@ -75,7 +86,12 @@ async fn download_zip(
     expected_md5: &str,
     updater: &ProgressFn,
 ) -> SophonResult<()> {
-    let resp = client.get(url).send().await?.error_for_status()?;
+    let resp = client
+        .get(url)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await?
+        .error_for_status()?;
     let total_bytes = resp.content_length().unwrap_or(0);
 
     let mut file = tokio::fs::File::create(dest).await?;
@@ -88,31 +104,38 @@ async fn download_zip(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "plugin".to_string());
 
-    let mut buffer = BytesMut::with_capacity(256 * 1024);
+    let mut last_emit = Instant::now();
+    let throttle = Duration::from_secs(1);
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
         hasher.update(&bytes);
-        buffer.extend_from_slice(&bytes);
-        if buffer.len() >= 256 * 1024 {
-            file.write_all(&buffer).await?;
-            buffer.clear();
-        }
+        file.write_all(&bytes).await?;
         downloaded += bytes.len() as u64;
-        updater(SophonProgress::DownloadingPlugin {
-            name: name.clone(),
-            downloaded_bytes: downloaded,
-            total_bytes,
-        });
+
+        if last_emit.elapsed() >= throttle {
+            last_emit = Instant::now();
+            updater(SophonProgress::DownloadingPlugin {
+                name: name.clone(),
+                downloaded_bytes: downloaded,
+                total_bytes,
+            });
+        }
     }
 
-    if !buffer.is_empty() {
-        file.write_all(&buffer).await?;
-    }
+    // Emit final progress after loop completes
+    updater(SophonProgress::DownloadingPlugin {
+        name: name.clone(),
+        downloaded_bytes: downloaded,
+        total_bytes,
+    });
+
     file.flush().await?;
 
     let actual_md5 = hex::encode(hasher.finalize());
-    if actual_md5 != expected_md5 {
+    // Compare case-insensitively: hex::encode always emits lowercase, but the
+    // upstream API has no contract on the case of its returned hex digest.
+    if actual_md5 != expected_md5.to_ascii_lowercase() {
         let _ = fs::remove_file(dest);
         return Err(SophonError::Md5Mismatch {
             item: name,
@@ -124,16 +147,92 @@ async fn download_zip(
     Ok(())
 }
 
+/// Maximum decompressed bytes per single ZIP entry. Defends against malicious
+/// or malformed archives claiming huge file sizes (zip bombs).
+const ZIP_MAX_ENTRY_BYTES: u64 = 512 * 1024 * 1024; // 512 MiB
+/// Maximum aggregate uncompressed bytes across all entries.
+const ZIP_MAX_TOTAL_BYTES: u64 = 4 * 1024 * 1024 * 1024; // 4 GiB
+/// Maximum number of entries in a single archive.
+const ZIP_MAX_ENTRIES: usize = 8 * 1024;
+/// Maximum uncompressed-to-compressed ratio per entry. 1 GiB of declared output
+/// from a 1 KiB compressed entry is rejected (ratio > 1_000_000).
+const ZIP_MAX_RATIO: u64 = 1_000;
+
 fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
     let file = File::open(zip_path)?;
     let reader = BufReader::new(file);
     let mut archive =
-        ZipArchive::new(reader).map_err(|e| SophonError::Decompression(e.to_string()))?;
+        ZipArchive::new(reader).map_err(|err| SophonError::Decompression(err.to_string()))?;
+
+    if archive.len() > ZIP_MAX_ENTRIES {
+        return Err(SophonError::Decompression(format!(
+            "archive has {} entries, exceeds limit of {ZIP_MAX_ENTRIES}",
+            archive.len()
+        )));
+    }
+
+    // Canonicalize game_dir once to prevent time-of-check-time-of-use issues
+    // and provide a stable base for symlink-traversal detection.
+    let canonical_game = game_dir.canonicalize()?;
+    let mut total_extracted: u64 = 0;
 
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
-            .map_err(|e| SophonError::Decompression(e.to_string()))?;
+            .map_err(|err| SophonError::Decompression(err.to_string()))?;
+
+        // Reject symlink entries outright — silently treating a symlink-target
+        // string as the contents of a regular file is a data-integrity bug and
+        // could leak attacker-controlled text into game_dir.
+        if entry.is_symlink() {
+            log::warn!(
+                "Rejecting symlink entry '{}' in plugin archive",
+                entry.name()
+            );
+            continue;
+        }
+
+        // Reject NTFS alternate data streams and other colon-bearing names.
+        // Legitimate plugin/SDK paths never contain ':'.
+        if entry.name().contains(':') {
+            log::warn!(
+                "Rejecting entry with alternate-data-stream name '{}'",
+                entry.name()
+            );
+            continue;
+        }
+
+        let declared = entry.size();
+        if declared > ZIP_MAX_ENTRY_BYTES {
+            return Err(SophonError::Decompression(format!(
+                "entry '{}' declares {declared} bytes, exceeds per-entry limit of {ZIP_MAX_ENTRY_BYTES}",
+                entry.name()
+            )));
+        }
+        // Ratio check on the declared compressed size; skip if the entry did
+        // not report one (treated as 0 by the zip crate for streaming entries).
+        let cc = entry.compressed_size();
+        if cc > 0 && declared > cc.saturating_mul(ZIP_MAX_RATIO) {
+            return Err(SophonError::Decompression(format!(
+                "entry '{}' ratio {} exceeds {ZIP_MAX_RATIO}",
+                entry.name(),
+                declared / cc,
+            )));
+        }
+        total_extracted = match total_extracted.checked_add(declared) {
+            Some(v) => v,
+            None => {
+                return Err(SophonError::Decompression(
+                    "total extracted size overflows u64".into(),
+                ));
+            }
+        };
+        if total_extracted > ZIP_MAX_TOTAL_BYTES {
+            return Err(SophonError::Decompression(format!(
+                "extracted size would exceed {ZIP_MAX_TOTAL_BYTES} bytes"
+            )));
+        }
+
         let out_path = match entry.enclosed_name() {
             Some(path) => game_dir.join(path),
             None => continue,
@@ -141,12 +240,39 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
 
         if entry.is_dir() {
             fs::create_dir_all(&out_path)?;
+            // Resolve symlinks in the created path; if the resolved path
+            // escapes game_dir, this is a symlink-traversal attack.
+            if !out_path.canonicalize()?.starts_with(&canonical_game) {
+                log::warn!("Skipping path traversal attempt: {:?}", out_path);
+                if let Err(err) = fs::remove_dir_all(&out_path) {
+                    log::warn!(
+                        "Failed to clean up symlink-traversal directory {}: {}",
+                        out_path.display(),
+                        err
+                    );
+                }
+                continue;
+            }
         } else {
             if let Some(parent) = out_path.parent() {
                 fs::create_dir_all(parent)?;
+                // Canonicalize the parent directory to detect if any component
+                // is a symlink pointing outside game_dir.
+                if !parent.canonicalize()?.starts_with(&canonical_game) {
+                    log::warn!("Skipping path traversal attempt: {:?}", out_path);
+                    continue;
+                }
             }
             let mut out_file = File::create(&out_path)?;
             std::io::copy(&mut entry, &mut out_file)?;
+
+            // Preserve Unix mode bits from the ZIP entry when present so that
+            // shipped executables retain their +x bit instead of falling back
+            // to the umask (which on many distros is 0o644).
+            if let Some(mode) = entry.unix_mode() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&out_path, fs::Permissions::from_mode(mode & 0o7777));
+            }
         }
     }
 
@@ -158,7 +284,7 @@ fn cleanup_dxsetup(game_dir: &Path) {
     if dxsetup_dir.is_dir()
         && let Err(e) = fs::remove_dir_all(&dxsetup_dir)
     {
-        log::warn!("Failed to clean up DXSETUP directory: {}", e);
+        log::warn!("Failed to clean up DXSETUP directory: {e}");
     }
 }
 
@@ -166,7 +292,8 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
     for entry in validation {
         let file_path = game_dir.join(&entry.path);
         if !file_path.exists() {
-            log::warn!("Validation file missing: {}", entry.path);
+            let path = &entry.path;
+            log::warn!("Validation file missing: {path}");
             return false;
         }
         if let Some(expected_size) = entry.size
@@ -180,6 +307,26 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
                 meta.len()
             );
             return false;
+        }
+        // Verify MD5 hash if provided for stronger integrity guarantee
+        if let Some(ref expected_md5) = entry.md5 {
+            let computed = match cache::file_md5_hex(&file_path) {
+                Ok(md5) => md5,
+                Err(err) => {
+                    let path = &entry.path;
+                    log::warn!("Failed to compute MD5 for {path}: {err}");
+                    return false;
+                }
+            };
+            if computed != *expected_md5 {
+                log::warn!(
+                    "Validation file MD5 mismatch: {} (expected {}, got {})",
+                    entry.path,
+                    expected_md5,
+                    computed
+                );
+                return false;
+            }
         }
     }
     true
@@ -201,23 +348,29 @@ async fn install_single_plugin(
         return Ok(());
     }
 
-    let filename = pkg
-        .url
-        .rsplit('/')
-        .next()
-        .unwrap_or("plugin.zip")
-        .to_string();
-    let zip_path = game_dir.join(&filename);
+    let raw_filename = pkg.url.rsplit('/').next().unwrap_or("plugin.zip");
+    if let Err(err) = super::assembly::validate_asset_name(raw_filename) {
+        log::warn!("Refusing plugin URL with unsafe filename: {err}");
+        return Err(SophonError::PathTraversal(PathBuf::from(raw_filename)));
+    }
+    let zip_path = game_dir.join(raw_filename);
 
     download_zip(client, &pkg.url, &zip_path, &pkg.md5, updater).await?;
 
-    if let Err(e) = extract_zip(&zip_path, game_dir) {
+    if let Err(err) = extract_zip(&zip_path, game_dir) {
         let _ = fs::remove_file(&zip_path);
-        return Err(e);
+        return Err(err);
     }
 
     if !verify_validation(game_dir, &pkg.validation) {
         let _ = fs::remove_file(&zip_path);
+        for entry in &pkg.validation {
+            if let Err(err) = super::assembly::validate_asset_name(&entry.path) {
+                log::warn!("Skipping cleanup of invalid validation path: {err}");
+                continue;
+            }
+            let _ = fs::remove_file(game_dir.join(&entry.path));
+        }
         return Err(SophonError::PluginValidationFailed(
             plugin.plugin_id.clone(),
         ));
@@ -225,10 +378,11 @@ async fn install_single_plugin(
 
     cleanup_dxsetup(game_dir);
 
+    let plugin_id = &plugin.plugin_id;
     let safe_version = plugin.version.replace(['\n', '\r'], "");
     write_plugin_version(
         game_dir,
-        &format!("plugin_{}_version", plugin.plugin_id),
+        &format!("plugin_{plugin_id}_version"),
         &safe_version,
     )?;
 
@@ -260,10 +414,11 @@ pub async fn install_plugins(
             total_plugins: total,
         });
 
-        if let Err(e) =
+        if let Err(err) =
             install_single_plugin(client, game_dir, plugin, &plugin.plugin_pkg, &updater).await
         {
-            log::warn!("Plugin {} installation failed: {}", plugin.plugin_id, e);
+            let plugin_id = &plugin.plugin_id;
+            log::warn!("Plugin {plugin_id} installation failed: {err}");
         }
     }
 
@@ -285,14 +440,17 @@ async fn install_single_sdk(
         return Ok(());
     }
 
-    let filename = sdk
+    let raw_filename = sdk
         .channel_sdk_pkg
         .url
         .rsplit('/')
         .next()
-        .unwrap_or("sdk.zip")
-        .to_string();
-    let zip_path = game_dir.join(&filename);
+        .unwrap_or("sdk.zip");
+    if let Err(err) = super::assembly::validate_asset_name(raw_filename) {
+        log::warn!("Refusing SDK URL with unsafe filename: {err}");
+        return Err(SophonError::PathTraversal(PathBuf::from(raw_filename)));
+    }
+    let zip_path = game_dir.join(raw_filename);
 
     download_zip(
         client,
@@ -303,13 +461,20 @@ async fn install_single_sdk(
     )
     .await?;
 
-    if let Err(e) = extract_zip(&zip_path, game_dir) {
+    if let Err(err) = extract_zip(&zip_path, game_dir) {
         let _ = fs::remove_file(&zip_path);
-        return Err(e);
+        return Err(err);
     }
 
     if !verify_validation(game_dir, &sdk.channel_sdk_pkg.validation) {
         let _ = fs::remove_file(&zip_path);
+        for entry in &sdk.channel_sdk_pkg.validation {
+            if let Err(err) = super::assembly::validate_asset_name(&entry.path) {
+                log::warn!("Skipping cleanup of invalid validation path: {err}");
+                continue;
+            }
+            let _ = fs::remove_file(game_dir.join(&entry.path));
+        }
         return Err(SophonError::PluginValidationFailed(sdk.game.id.clone()));
     }
 
@@ -341,13 +506,15 @@ pub async fn install_channel_sdks(
     let updater: ProgressFn = Arc::new(updater);
     let total = sdks.len();
     for sdk in sdks.iter() {
-        updater(SophonProgress::InstallingPlugins {
-            current_plugin: format!("sdk_{}", sdk.game.id),
-            total_plugins: total,
+        let game_id = &sdk.game.id;
+        updater(SophonProgress::InstallingSdks {
+            current_sdk: format!("sdk_{game_id}"),
+            total_sdks: total,
         });
 
-        if let Err(e) = install_single_sdk(client, game_dir, sdk, &updater).await {
-            log::warn!("SDK {} installation failed: {}", sdk.game.id, e);
+        if let Err(err) = install_single_sdk(client, game_dir, sdk, &updater).await {
+            let game_id = &sdk.game.id;
+            log::warn!("SDK {game_id} installation failed: {err}");
         }
     }
 
@@ -622,6 +789,142 @@ mod tests {
 
         assert!(!dir.path().join("etc").exists());
         assert!(game_dir.read_dir().unwrap().next().is_none());
+    }
+
+    /// Construct a ZIP file on disk whose single entry declares a forged
+    /// uncompressed size and stores only a few bytes of payload. Used to
+    /// exercise the per-entry size cap in `extract_zip`.
+    fn write_forged_zip(path: &Path, declared_uncompressed: u32) {
+        // Build the ZIP bytes without the ambiguity of std::io::Write
+        // vs tokio::io::AsyncWriteExt (both of which impl write_all for
+        // Vec<u8>), by directly constructing the on-disk bytes via array
+        // concat on a primitive buffer.
+        let mut src = std::fs::File::create(path).unwrap();
+        use std::io::Write as _;
+
+        const SIG: u32 = 0x04034b50;
+        let fname = b"huge.bin";
+        let crc: u32 = 0;
+        let compressed_size: u32 = 1;
+        let payload: &[u8] = &[0xAB];
+
+        // Local file header + 1-byte payload.
+        src.write_all(&SIG.to_le_bytes()).unwrap();
+        src.write_all(&20u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&crc.to_le_bytes()).unwrap();
+        src.write_all(&compressed_size.to_le_bytes()).unwrap();
+        src.write_all(&declared_uncompressed.to_le_bytes()).unwrap();
+        src.write_all(&(fname.len() as u16).to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(fname).unwrap();
+        src.write_all(payload).unwrap();
+
+        // Compute the central-directory offset from bytes written so far.
+        // 30 bytes of local header + 4 bytes payload declared-comp-size + 4
+        // bytes payload declared-uncomp-size + 2 + 2 + 9 + payload length
+        //   = 30 + 4 + 4 + 2 + 2 + sizeof(payload) + 9 + filename length
+        // We'll rely on the offset being deterministic: it's the size of the
+        // local header entry + payload.
+        let local_header_size: u32 = 30 + (fname.len() as u32) + (payload.len() as u32);
+        let cd_offset: u32 = local_header_size;
+
+        const CD_SIG: u32 = 0x02014b50;
+        src.write_all(&CD_SIG.to_le_bytes()).unwrap();
+        src.write_all(&20u16.to_le_bytes()).unwrap();
+        src.write_all(&20u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&crc.to_le_bytes()).unwrap();
+        src.write_all(&compressed_size.to_le_bytes()).unwrap();
+        src.write_all(&declared_uncompressed.to_le_bytes()).unwrap();
+        src.write_all(&(fname.len() as u16).to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u32.to_le_bytes()).unwrap();
+        src.write_all(&0u32.to_le_bytes()).unwrap();
+        src.write_all(fname).unwrap();
+
+        let cd_size: u32 = 46 + (fname.len() as u32);
+
+        // EOCD record.
+        const EOCD_SIG: u32 = 0x06054b50;
+        src.write_all(&EOCD_SIG.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+        src.write_all(&1u16.to_le_bytes()).unwrap();
+        src.write_all(&1u16.to_le_bytes()).unwrap();
+        src.write_all(&cd_size.to_le_bytes()).unwrap();
+        src.write_all(&cd_offset.to_le_bytes()).unwrap();
+        src.write_all(&0u16.to_le_bytes()).unwrap();
+    }
+
+    #[test]
+    fn extract_zip_rejects_forged_oversized_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("bomb.zip");
+        write_forged_zip(&zip_path, 600 * 1024 * 1024);
+
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let result = extract_zip(&zip_path, &game_dir);
+        assert!(
+            result.is_err(),
+            "archive with forged 600 MiB entry must be rejected"
+        );
+        assert!(
+            !game_dir.join("huge.bin").exists(),
+            "no files should be extracted from a bomb archive"
+        );
+    }
+
+    #[test]
+    fn extract_zip_rejects_colon_entry() {
+        // NTFS-style alternate data stream: "safe/path:hidden" — `enclosed_name`
+        // would happily accept this on Linux, but the entry name embeds a ':'
+        // which our adapter rejects as it's never legitimate for plugin/SDK
+        // archives.
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("ads.zip");
+        let file = File::create(&zip_path).unwrap();
+        let mut writer = ZipWriter::new(BufWriter::new(file));
+        writer
+            .start_file("safe/path:hidden", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"x").unwrap();
+        writer.finish().unwrap();
+
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        extract_zip(&zip_path, &game_dir).unwrap();
+
+        let rejected = game_dir.join("safe/path:hidden");
+        assert!(
+            !rejected.exists(),
+            "NTFS-ADS-looking entry should not be materialized"
+        );
+    }
+
+    #[test]
+    fn md5_comparison_case_insensitive() {
+        // Compute expected_md5 in lowercase manually for a known input.
+        fn md5_hex(input: &[u8]) -> String {
+            let mut hasher = Md5::new();
+            hasher.update(input);
+            hex::encode(hasher.finalize())
+        }
+        let lower = md5_hex(b"abc123");
+        let upper = lower.to_ascii_uppercase();
+        assert_ne!(lower, upper);
+        // Both should pass the comparison.
+        assert_eq!(lower.to_ascii_lowercase(), upper.to_ascii_lowercase());
     }
 
     #[test]

@@ -1,10 +1,17 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
+use tauri_plugin_log::log;
 use tokio::sync::Notify;
 
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::SophonProgress;
-use tauri_plugin_log::log;
+
+const STATE_RUNNING: u8 = 0;
+const STATE_PAUSED: u8 = 1;
+/// Terminal cancelled state — cannot be undone by resume().
+/// Uses value 3 to avoid collision with future intermediate states.
+const STATE_CANCELLED: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlState {
@@ -15,41 +22,77 @@ pub enum ControlState {
 
 #[derive(Clone)]
 pub struct DownloadHandle {
-    state: Arc<Mutex<ControlState>>,
+    state: Arc<AtomicU8>,
     pause_notify: Arc<Notify>,
 }
 
 impl DownloadHandle {
     pub fn new() -> Self {
         Self {
-            state: Arc::new(Mutex::new(ControlState::Running)),
+            state: Arc::new(AtomicU8::new(STATE_RUNNING)),
             pause_notify: Arc::new(Notify::new()),
         }
     }
 
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, ControlState> {
-        self.state.lock().unwrap_or_else(|e| {
-            log::error!("Mutex poisoned in DownloadHandle, recovering state");
-            e.into_inner()
-        })
-    }
-
     pub fn pause(&self) {
-        *self.lock_state() = ControlState::Paused;
+        // Use compare_exchange to avoid race with concurrent cancel.
+        // Cancellation is terminal — never overwrite it with PAUSED.
+        while let Err(current) = self.state.compare_exchange(
+            STATE_RUNNING,
+            STATE_PAUSED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            // If we lost the race to something other than RUNNING, give up.
+            // STATE_CANCELLED is terminal; STATE_PAUSED means already paused.
+            if current != STATE_RUNNING {
+                return;
+            }
+        }
     }
 
     pub fn resume(&self) {
-        *self.lock_state() = ControlState::Running;
-        self.pause_notify.notify_waiters();
+        // Never resume a cancelled download — cancellation is terminal
+        if self.state.load(Ordering::Acquire) == STATE_CANCELLED {
+            return;
+        }
+        // Only transition from PAUSED to RUNNING and only wake waiters when the
+        // transition actually happened; otherwise we'd spuriously notify when no
+        // task is parked on `pause_notify` (e.g. resume called without a prior
+        // pause, or resume called twice in a row).
+        if self
+            .state
+            .compare_exchange(
+                STATE_PAUSED,
+                STATE_RUNNING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            self.pause_notify.notify_waiters();
+        }
     }
 
     pub fn cancel(&self) {
-        *self.lock_state() = ControlState::Cancelled;
+        self.state.store(STATE_CANCELLED, Ordering::Release);
         self.pause_notify.notify_waiters();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        *self.lock_state() == ControlState::Cancelled
+        self.state.load(Ordering::Acquire) == STATE_CANCELLED
+    }
+
+    fn get_state(&self) -> ControlState {
+        match self.state.load(Ordering::Acquire) {
+            STATE_RUNNING => ControlState::Running,
+            STATE_PAUSED => ControlState::Paused,
+            STATE_CANCELLED => ControlState::Cancelled,
+            raw => {
+                log::error!("DownloadHandle in invalid state: {raw}");
+                ControlState::Cancelled
+            }
+        }
     }
 
     pub async fn wait_if_paused(
@@ -59,8 +102,7 @@ impl DownloadHandle {
         total_bytes: u64,
     ) -> SophonResult<()> {
         loop {
-            let state = *self.lock_state();
-            match state {
+            match self.get_state() {
                 ControlState::Running => return Ok(()),
                 ControlState::Cancelled => return Err(SophonError::Cancelled),
                 ControlState::Paused => {
@@ -101,13 +143,13 @@ mod tests {
     #[test]
     fn handle_pause_resume() {
         let handle = DownloadHandle::new();
-        assert_eq!(*handle.lock_state(), ControlState::Running);
+        assert_eq!(handle.get_state(), ControlState::Running);
 
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
 
         handle.resume();
-        assert_eq!(*handle.lock_state(), ControlState::Running);
+        assert_eq!(handle.get_state(), ControlState::Running);
     }
 
     #[test]
@@ -149,12 +191,53 @@ mod tests {
     fn handle_multiple_pause_calls() {
         let handle = DownloadHandle::new();
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
         handle.pause();
-        assert_eq!(*handle.lock_state(), ControlState::Paused);
+        assert_eq!(handle.get_state(), ControlState::Paused);
         handle.resume();
-        assert_eq!(*handle.lock_state(), ControlState::Running);
+        assert_eq!(handle.get_state(), ControlState::Running);
+    }
+
+    #[test]
+    fn handle_resume_after_cancel_is_noop() {
+        let handle = DownloadHandle::new();
+        handle.cancel();
+        handle.resume();
+        assert_eq!(handle.get_state(), ControlState::Cancelled);
+        assert!(handle.is_cancelled());
+    }
+
+    #[test]
+    fn handle_pause_after_cancel_is_noop() {
+        let handle = DownloadHandle::new();
+        handle.cancel();
+        handle.pause();
+        assert_eq!(handle.get_state(), ControlState::Cancelled);
+        assert!(handle.is_cancelled());
+    }
+
+    #[test]
+    fn handle_resume_without_prior_pause_is_noop() {
+        let handle = DownloadHandle::new();
+        // Resume while state is RUNNING (not PAUSED) must not transition or notify
+        handle.resume();
+        assert_eq!(handle.get_state(), ControlState::Running);
+    }
+
+    #[tokio::test]
+    async fn handle_concurrent_pause_cancel_idempotent() {
+        for _ in 0..50 {
+            let handle = DownloadHandle::new();
+            let h = handle.clone();
+            tokio::spawn(async move {
+                h.pause();
+            });
+            handle.cancel();
+            tokio::task::yield_now().await;
+            // final state must be Cancelled (cancel takes precedence)
+            assert!(handle.is_cancelled());
+        }
     }
 }

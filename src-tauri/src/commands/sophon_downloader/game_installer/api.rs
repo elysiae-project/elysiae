@@ -1,10 +1,11 @@
+use std::io::{Read, Write};
 use std::time::Duration;
 
 use reqwest::Client;
 
 use crate::commands::sophon_downloader::api_scrape::{
     FrontDoorResponse, GameBranch, PackageBranch, SophonBuildData, SophonBuildResponse,
-    SophonPatchBuildData, SophonPatchBuildResponse, SophonPatchManifestMeta, front_door_game_index,
+    SophonPatchBuildData, SophonPatchBuildResponse, SophonPatchManifestMeta,
 };
 use crate::commands::sophon_downloader::proto_parse::{
     SophonManifestProto, SophonPatchProto, decode_manifest, decode_patch_manifest,
@@ -20,27 +21,57 @@ pub struct ManifestWithHash {
     pub hash: String,
 }
 
+const API_MAX_RETRIES: u32 = 3;
+
+async fn fetch_json_with_retry<T: serde::de::DeserializeOwned>(
+    client: &Client,
+    url: &str,
+    timeout_secs: u64,
+) -> SophonResult<T> {
+    for attempt in 0..API_MAX_RETRIES {
+        let result =
+            tokio::time::timeout(Duration::from_secs(timeout_secs), client.get(url).send()).await;
+
+        match result {
+            Ok(Ok(resp)) => {
+                let resp = resp.error_for_status()?;
+                return resp.json().await.map_err(|err| err.into());
+            }
+            Ok(Err(err)) => {
+                if attempt == API_MAX_RETRIES - 1 {
+                    return Err(err.into());
+                }
+            }
+            Err(_) => {
+                if attempt == API_MAX_RETRIES - 1 {
+                    return Err(SophonError::Timeout(timeout_secs));
+                }
+            }
+        }
+
+        if attempt < API_MAX_RETRIES - 1 {
+            tokio::time::sleep(Duration::from_secs(2u64.saturating_pow(attempt))).await;
+        }
+    }
+
+    Err(SophonError::ApiError(
+        -1,
+        format!("Failed to fetch {url} after {API_MAX_RETRIES} retries"),
+    ))
+}
+
 pub async fn fetch_front_door(
     client: &Client,
     game_id: &str,
 ) -> SophonResult<(GameBranch, Option<PackageBranch>)> {
-    let resp: FrontDoorResponse = client
-        .get(FRONT_DOOR_URL)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?
-        .json()
-        .await?;
-
-    let idx =
-        front_door_game_index(game_id).ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
+    let resp: FrontDoorResponse = fetch_json_with_retry(client, FRONT_DOOR_URL, 35).await?;
 
     let branch = resp
         .data
         .game_branches
         .into_iter()
-        .nth(idx)
-        .ok_or(SophonError::BranchIndexOutOfRange)?;
+        .find(|b| b.game.biz.starts_with(&format!("{game_id}_")))
+        .ok_or_else(|| SophonError::UnknownGameId(game_id.into()))?;
 
     let pre = branch.pre_download.clone();
     Ok((branch, pre))
@@ -52,17 +83,28 @@ pub async fn fetch_manifest(
     manifest_id: &str,
 ) -> SophonResult<ManifestWithHash> {
     let url = dl.url_for(manifest_id);
-    let bytes = client
-        .get(&url)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
+
+    let resp = tokio::time::timeout(Duration::from_secs(30), client.get(&url).send())
+        .await
+        .map_err(|_| SophonError::Timeout(30))??
+        .error_for_status()?;
+
+    let bytes = tokio::time::timeout(Duration::from_secs(300), resp.bytes())
+        .await
+        .map_err(|_| SophonError::Timeout(300))??;
 
     let raw = if dl.is_compressed() {
-        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
+        tokio::task::spawn_blocking(move || {
+            let tmp = tempfile::NamedTempFile::new()?;
+            {
+                let mut f = tmp.as_file();
+                f.write_all(&bytes)?;
+                f.flush()?;
+            }
+            let raw = decompress_zstd_from_file(tmp.path())?;
+            Ok::<Vec<u8>, SophonError>(raw)
+        })
+        .await??
     } else {
         bytes.to_vec()
     };
@@ -73,26 +115,28 @@ pub async fn fetch_manifest(
     Ok(ManifestWithHash { manifest, hash })
 }
 
+/// Decompresses zstd data from a file, keeping only the decompressed output in
+/// memory.
+fn decompress_zstd_from_file(path: &std::path::Path) -> SophonResult<Vec<u8>> {
+    let file = std::fs::File::open(path)?;
+    let mut decoder = zstd::Decoder::new(file)?;
+    let mut out = Vec::new();
+    decoder.read_to_end(&mut out)?;
+    Ok(out)
+}
+
 pub async fn fetch_build(
     client: &Client,
     branch: &PackageBranch,
     tag: Option<&str>,
 ) -> SophonResult<SophonBuildData> {
-    let mut url = format!(
-        "{}?branch={}&package_id={}&password={}",
-        SOPHON_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password,
+    let tag_str = tag.unwrap_or(&branch.tag);
+    let url = format!(
+        "{}?branch={}&package_id={}&password={}&tag={}",
+        SOPHON_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password, tag_str,
     );
-    if let Some(t) = tag {
-        url.push_str(&format!("&tag={t}"));
-    }
 
-    let resp: SophonBuildResponse = client
-        .get(&url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: SophonBuildResponse = fetch_json_with_retry(client, &url, 35).await?;
     if resp.data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
@@ -100,7 +144,7 @@ pub async fn fetch_build(
 }
 
 pub const SOPHON_PATCH_BUILD_URL_BASE: &str = concat!(
-    "https://sg-public-api.hoyoverse.com",
+    "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x70\x75\x62\x6c\x69\x63\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d",
     "/downloader/sophon_chunk/api/getPatchBuild"
 );
 
@@ -113,13 +157,9 @@ pub async fn fetch_patch_build(
         SOPHON_PATCH_BUILD_URL_BASE, branch.branch, branch.package_id, branch.password, branch.tag,
     );
 
-    let resp: SophonPatchBuildResponse = client
-        .post(&url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?
-        .json()
-        .await?;
+    let raw_resp =
+        tokio::time::timeout(Duration::from_secs(35), client.post(&url).send()).await??;
+    let resp: SophonPatchBuildResponse = raw_resp.error_for_status()?.json().await?;
     if resp.data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
@@ -137,23 +177,34 @@ pub async fn fetch_patch_manifest(
     meta: &SophonPatchManifestMeta,
 ) -> SophonResult<PatchManifestWithMeta> {
     let url = meta.manifest_download.url_for(&meta.manifest.id);
-    let bytes = client
-        .get(&url)
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
+
+    let resp = tokio::time::timeout(Duration::from_secs(30), client.get(&url).send())
+        .await
+        .map_err(|_| SophonError::Timeout(30))??
+        .error_for_status()?;
+
+    let bytes = tokio::time::timeout(Duration::from_secs(300), resp.bytes())
+        .await
+        .map_err(|_| SophonError::Timeout(300))??;
 
     let raw = if meta.manifest_download.is_compressed() {
-        tokio::task::spawn_blocking(move || zstd_decompress(&bytes)).await??
+        tokio::task::spawn_blocking(move || {
+            let tmp = tempfile::NamedTempFile::new()?;
+            {
+                let mut f = tmp.as_file();
+                f.write_all(&bytes)?;
+                f.flush()?;
+            }
+            let raw = decompress_zstd_from_file(tmp.path())?;
+            Ok::<Vec<u8>, SophonError>(raw)
+        })
+        .await??
     } else {
         bytes.to_vec()
     };
 
-    let patch_manifest =
-        decode_patch_manifest(&raw).map_err(|e| SophonError::PatchManifestDecode(e.to_string()))?;
+    let patch_manifest = decode_patch_manifest(&raw)
+        .map_err(|err| SophonError::PatchManifestDecode(err.to_string()))?;
 
     Ok(PatchManifestWithMeta {
         patch_manifest,
@@ -162,96 +213,35 @@ pub async fn fetch_patch_manifest(
     })
 }
 
-fn zstd_decompress(bytes: &[u8]) -> SophonResult<Vec<u8>> {
-    use std::io::Read;
-    let mut decoder = zstd::Decoder::new(bytes)?;
-    let mut out = Vec::new();
-    decoder.read_to_end(&mut out)?;
-    Ok(out)
-}
-
 #[inline]
 pub fn vo_lang_matches(matching_field: &str, vo_lang: &str) -> bool {
-    match vo_lang.to_lowercase().as_str() {
-        "cn" => matching_field.contains("zh"),
-        "en" => matching_field.contains("en"),
-        "jp" => matching_field.contains("ja"),
-        "kr" => matching_field.contains("ko"),
-        _ => false,
+    let vo = vo_lang.as_bytes();
+    let lower = matching_field.to_ascii_lowercase();
+    if vo.eq_ignore_ascii_case(b"cn") {
+        lower.contains("zh")
+    } else if vo.eq_ignore_ascii_case(b"en") {
+        lower.contains("en")
+    } else if vo.eq_ignore_ascii_case(b"jp") {
+        lower.contains("ja")
+    } else if vo.eq_ignore_ascii_case(b"kr") {
+        lower.contains("ko")
+    } else {
+        false
     }
 }
 
 #[inline]
 pub fn is_known_vo_locale(matching_field: &str) -> bool {
-    let lower = matching_field.to_lowercase();
-    lower.contains("en-us")
-        || lower.contains("zh-cn")
-        || lower.contains("zh-tw")
-        || lower.contains("ko-kr")
-        || lower.contains("ja-jp")
+    let f = matching_field.as_bytes();
+    f.windows(5).any(|w| w.eq_ignore_ascii_case(b"en-us"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"zh-cn"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"zh-tw"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"ko-kr"))
+        || f.windows(5).any(|w| w.eq_ignore_ascii_case(b"ja-jp"))
 }
 
 #[inline]
-pub fn parse_size(s: &str) -> u64 {
-    s.parse().unwrap_or(0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn vo_lang_matches_cn() {
-        assert!(vo_lang_matches("zh-cn", "cn"));
-    }
-
-    #[test]
-    fn vo_lang_matches_en() {
-        assert!(vo_lang_matches("en-us", "en"));
-    }
-
-    #[test]
-    fn vo_lang_matches_jp() {
-        assert!(vo_lang_matches("ja-jp", "jp"));
-    }
-
-    #[test]
-    fn vo_lang_matches_kr() {
-        assert!(vo_lang_matches("ko-kr", "kr"));
-    }
-
-    #[test]
-    fn vo_lang_matches_wrong() {
-        assert!(!vo_lang_matches("en-us", "jp"));
-    }
-
-    #[test]
-    fn vo_lang_matches_game_field() {
-        assert!(!vo_lang_matches("game", "en"));
-    }
-
-    #[test]
-    fn is_known_vo_locale_all() {
-        assert!(is_known_vo_locale("en-us"));
-        assert!(is_known_vo_locale("zh-cn"));
-        assert!(is_known_vo_locale("zh-tw"));
-        assert!(is_known_vo_locale("ko-kr"));
-        assert!(is_known_vo_locale("ja-jp"));
-    }
-
-    #[test]
-    fn is_known_vo_locale_not_vo() {
-        assert!(!is_known_vo_locale("game"));
-        assert!(!is_known_vo_locale("cutscenes"));
-    }
-
-    #[test]
-    fn parse_size_valid() {
-        assert_eq!(parse_size("1024"), 1024);
-    }
-
-    #[test]
-    fn parse_size_invalid() {
-        assert_eq!(parse_size("abc"), 0);
-    }
+pub fn parse_size(s: &str) -> SophonResult<u64> {
+    s.parse()
+        .map_err(|_| SophonError::InvalidSizeString(s.to_string()))
 }

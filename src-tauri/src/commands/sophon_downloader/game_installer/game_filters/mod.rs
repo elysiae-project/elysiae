@@ -3,8 +3,8 @@ mod hkrpg;
 mod nap;
 
 pub use hk4e::{
-    filter_hk4e_asset_list, write_audio_lang_record as write_hk4e_audio_lang_record,
-    write_pkg_version_from_manifest,
+    filter_hk4e_asset_list, find_hk4e_persistent_dir,
+    write_audio_lang_record as write_hk4e_audio_lang_record, write_pkg_version_from_manifest,
 };
 pub use hkrpg::{
     filter_hkrpg_asset_list, write_app_info as write_hkrpg_app_info,
@@ -52,4 +52,119 @@ pub(crate) fn write_lang_file(
     file.write_all(content.as_bytes())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // -----------------------------------------------------------------------
+    // write_lang_file
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_write_lang_file_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        let vo_langs = vec!["en-us".to_string(), "ja-jp".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            "ja-jp" => Some("Japanese"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\nJapanese\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_append_to_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+        fs::write(&path, "Chinese\n").unwrap();
+
+        let vo_langs = vec!["en-us".to_string(), "ja-jp".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            "ja-jp" => Some("Japanese"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "Chinese\nEnglish(US)\nJapanese\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_does_not_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+        fs::write(&path, "English(US)\n").unwrap();
+
+        let vo_langs = vec!["en-us".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_empty_vo_langs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        write_lang_file(&path, &[], |_| -> Option<&'static str> { None }).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_write_lang_file_skips_none_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        let vo_langs = vec![
+            "en-us".to_string(),
+            "unknown".to_string(),
+            "ja-jp".to_string(),
+        ];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            "ja-jp" => Some("Japanese"),
+            "unknown" => None,
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\nJapanese\n");
+    }
+
+    #[test]
+    fn test_write_lang_file_mapper_en_us() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lang_file.txt");
+
+        let vo_langs = vec!["en-us".to_string()];
+
+        write_lang_file(&path, &vo_langs, |locale| match locale {
+            "en-us" => Some("English(US)"),
+            _ => None,
+        })
+        .unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "English(US)\n");
+    }
 }

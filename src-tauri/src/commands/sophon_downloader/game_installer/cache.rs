@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use dashmap::DashMap;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
+use tauri_plugin_log::log;
 
-use super::{MD5_HASH_BUFFER_SIZE, VERIFICATION_CACHE_FILE};
+use super::VERIFICATION_CACHE_FILE;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationEntry {
@@ -24,18 +25,73 @@ struct VerificationCacheSerializable {
 
 pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationEntry> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+
+    // Clean up any leftover .tmp files from a previous crash (the
+    // atomic-write pattern in save_verification_cache writes to a .tmp
+    // before rename; if the process crashed during rename, the .tmp lingers).
+    if let Some(parent) = cache_path.parent()
+        && let Ok(entries) = parent.read_dir()
+    {
+        let cache_stem = cache_path.file_stem();
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|ext| ext == "tmp")
+                && cache_stem == entry.path().file_stem()
+            {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+
     let serializable: VerificationCacheSerializable = match File::open(&cache_path) {
-        Ok(f) => serde_json::from_reader(f).unwrap_or_else(|_| VerificationCacheSerializable {
-            files: HashMap::new(),
+        Ok(f) => serde_json::from_reader(std::io::BufReader::new(f)).unwrap_or_else(|_| {
+            VerificationCacheSerializable {
+                files: HashMap::new(),
+            }
         }),
         Err(_) => VerificationCacheSerializable {
             files: HashMap::new(),
         },
     };
-    let cache = DashMap::new();
+    // Size cap: if cache is excessively large, evict oldest entries rather than
+    // clearing everything. Trims down to half the maximum to avoid immediate
+    // re-trimming. Collect keys to remove BEFORE consuming serializable.files.
+    const MAX_CACHE_ENTRIES: usize = 200_000;
+    let trim_keys: Vec<String> = if serializable.files.len() > MAX_CACHE_ENTRIES {
+        let count = serializable.files.len();
+        let to_trim: Vec<_> = serializable
+            .files
+            .keys()
+            .take(count - MAX_CACHE_ENTRIES / 2)
+            .cloned()
+            .collect();
+        let trim_len = to_trim.len();
+        log::warn!(
+            "Verification cache has {count} entries (max {MAX_CACHE_ENTRIES}), trimming {trim_len} entries",
+        );
+        to_trim
+    } else {
+        Vec::new()
+    };
+
+    let cache: DashMap<String, VerificationEntry> = DashMap::new();
     for (k, v) in serializable.files {
         cache.insert(k, v);
     }
+
+    for key in &trim_keys {
+        cache.remove(key);
+    }
+    if !trim_keys.is_empty() {
+        let cache_len = cache.len();
+        log::debug!("Trimmed verification cache to {cache_len} entries");
+    }
+
+    // Stale entries (where the file no longer exists on disk) are not eagerly
+    // pruned here because doing so would require an O(n) filesystem stat storm on
+    // startup. Instead, stale entries are naturally handled lazily during the next
+    // `check_file_md5_cached` call, where `path.metadata()` returns `NotFound` for
+    // missing files, causing a cache miss and re-validation.
+
     cache
 }
 
@@ -49,11 +105,13 @@ pub fn save_verification_cache(
         files: cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().clone()))
-            .collect(),
+            .collect::<std::collections::HashMap<_, _>>(),
     };
     {
         let f = File::create(&tmp_path)?;
-        serde_json::to_writer(f, &serializable)?;
+        let mut writer = std::io::BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, f);
+        serde_json::to_writer(&mut writer, &serializable)?;
+        writer.flush()?;
     }
     fs::rename(&tmp_path, &cache_path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp_path);
@@ -65,13 +123,22 @@ pub fn check_file_md5_cached(
     path: &Path,
     expected_size: u64,
     expected_md5: &str,
+    game_dir: &Path,
     cache: &DashMap<String, VerificationEntry>,
 ) -> io::Result<bool> {
-    let path_str = path.to_string_lossy().to_string();
+    let cache_key = path
+        .strip_prefix(game_dir)
+        .unwrap_or(path)
+        .display()
+        .to_string();
     let metadata = match path.metadata() {
         Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(e),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File deleted - evict stale entry if present
+            cache.remove(&cache_key);
+            return Ok(false);
+        }
+        Err(err) => return Err(err),
     };
     let mtime = metadata
         .modified()?
@@ -79,7 +146,7 @@ pub fn check_file_md5_cached(
         .unwrap_or_default()
         .as_secs();
 
-    if let Some(entry) = cache.get(&path_str)
+    if let Some(entry) = cache.get(&cache_key)
         && entry.size == expected_size
         && entry.md5 == expected_md5
         && entry.mtime_secs == mtime
@@ -88,6 +155,8 @@ pub fn check_file_md5_cached(
     }
 
     if metadata.len() != expected_size {
+        // Size mismatch - evict stale entry
+        cache.remove(&cache_key);
         return Ok(false);
     }
 
@@ -96,29 +165,32 @@ pub fn check_file_md5_cached(
 
     if matches {
         cache.insert(
-            path_str,
+            cache_key,
             VerificationEntry {
                 size: expected_size,
                 md5: expected_md5.to_string(),
                 mtime_secs: mtime,
             },
         );
+    } else {
+        // MD5 mismatch - evict stale entry to avoid repeated computation
+        cache.remove(&cache_key);
     }
 
     Ok(matches)
 }
 
-fn file_md5_hex(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Md5::new();
-    let mut buf = [0u8; MD5_HASH_BUFFER_SIZE];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
+pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
+    let file = File::open(path)?;
+    let len = file.metadata()?.len();
+    if len == 0 {
+        let mut hasher = Md5::new();
+        hasher.update(b"");
+        return Ok(hex::encode(hasher.finalize()));
     }
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    let mut hasher = Md5::new();
+    hasher.update(&mmap[..]);
     Ok(hex::encode(hasher.finalize()))
 }
 
@@ -148,9 +220,18 @@ mod tests {
     #[test]
     fn save_load_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
+        // Create actual files so load_verification_cache doesn't prune them as stale
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let f1 = game_dir.join("file1");
+        let f2 = game_dir.join("file2");
+        let f3 = game_dir.join("file3");
+        fs::write(&f1, b"a").unwrap();
+        fs::write(&f2, b"bb").unwrap();
+        fs::write(&f3, b"ccc").unwrap();
         let cache = DashMap::new();
         cache.insert(
-            "/path/to/file1".to_string(),
+            "file1".to_string(),
             VerificationEntry {
                 size: 100,
                 md5: "abc123".to_string(),
@@ -158,7 +239,7 @@ mod tests {
             },
         );
         cache.insert(
-            "/path/to/file2".to_string(),
+            "file2".to_string(),
             VerificationEntry {
                 size: 200,
                 md5: "def456".to_string(),
@@ -166,24 +247,24 @@ mod tests {
             },
         );
         cache.insert(
-            "/path/to/file3".to_string(),
+            "file3".to_string(),
             VerificationEntry {
                 size: 300,
                 md5: "ghi789".to_string(),
                 mtime_secs: 3000,
             },
         );
-        save_verification_cache(dir.path(), &cache).unwrap();
-        let loaded = load_verification_cache(dir.path());
+        save_verification_cache(&game_dir, &cache).unwrap();
+        let loaded = load_verification_cache(&game_dir);
         assert_eq!(loaded.len(), 3);
-        let e1 = loaded.get("/path/to/file1").unwrap();
+        let e1 = loaded.get("file1").unwrap();
         assert_eq!(e1.size, 100);
         assert_eq!(e1.md5, "abc123");
         assert_eq!(e1.mtime_secs, 1000);
-        let e2 = loaded.get("/path/to/file2").unwrap();
+        let e2 = loaded.get("file2").unwrap();
         assert_eq!(e2.size, 200);
         assert_eq!(e2.md5, "def456");
-        let e3 = loaded.get("/path/to/file3").unwrap();
+        let e3 = loaded.get("file3").unwrap();
         assert_eq!(e3.size, 300);
         assert_eq!(e3.md5, "ghi789");
     }
@@ -193,7 +274,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = DashMap::new();
         let missing = dir.path().join("nonexistent.dat");
-        let result = check_file_md5_cached(&missing, 10, "abc", &cache).unwrap();
+        let result = check_file_md5_cached(&missing, 10, "abc", dir.path(), &cache).unwrap();
         assert!(!result);
     }
 
@@ -215,15 +296,20 @@ mod tests {
             hasher.update(b"hello world");
             hex::encode(hasher.finalize())
         };
+        let rel_path = file_path
+            .strip_prefix(dir.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         cache.insert(
-            file_path.to_string_lossy().to_string(),
+            rel_path,
             VerificationEntry {
                 size: 11,
                 md5: md5.clone(),
                 mtime_secs: mtime,
             },
         );
-        let result = check_file_md5_cached(&file_path, 11, &md5, &cache).unwrap();
+        let result = check_file_md5_cached(&file_path, 11, &md5, dir.path(), &cache).unwrap();
         assert!(result);
     }
 
@@ -240,15 +326,20 @@ mod tests {
             .unwrap()
             .as_secs();
         let cache = DashMap::new();
+        let rel_path = file_path
+            .strip_prefix(dir.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         cache.insert(
-            file_path.to_string_lossy().to_string(),
+            rel_path,
             VerificationEntry {
                 size: 11,
                 md5: "old_md5".to_string(),
                 mtime_secs: mtime,
             },
         );
-        let result = check_file_md5_cached(&file_path, 20, "old_md5", &cache).unwrap();
+        let result = check_file_md5_cached(&file_path, 20, "old_md5", dir.path(), &cache).unwrap();
         assert!(!result);
     }
 
@@ -270,8 +361,13 @@ mod tests {
             hasher.update(b"hello world");
             hex::encode(hasher.finalize())
         };
+        let rel_path = file_path
+            .strip_prefix(dir.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         cache.insert(
-            file_path.to_string_lossy().to_string(),
+            rel_path,
             VerificationEntry {
                 size: 11,
                 md5: "stale_cached_md5".to_string(),
@@ -280,7 +376,8 @@ mod tests {
         );
         let wrong_expected = "wrong_expected_md5";
         assert_ne!(wrong_expected, &actual_md5);
-        let result = check_file_md5_cached(&file_path, 11, wrong_expected, &cache).unwrap();
+        let result =
+            check_file_md5_cached(&file_path, 11, wrong_expected, dir.path(), &cache).unwrap();
         assert!(!result);
     }
 
@@ -303,10 +400,15 @@ mod tests {
             hex::encode(hasher.finalize())
         };
         assert!(cache.is_empty());
-        let result = check_file_md5_cached(&file_path, 11, &md5, &cache).unwrap();
+        let result = check_file_md5_cached(&file_path, 11, &md5, dir.path(), &cache).unwrap();
         assert!(result);
         assert_eq!(cache.len(), 1);
-        let entry = cache.get(&file_path.to_string_lossy().to_string()).unwrap();
+        let rel_path = file_path
+            .strip_prefix(dir.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let entry = cache.get(&rel_path).unwrap();
         assert_eq!(entry.size, 11);
         assert_eq!(entry.md5, md5);
         assert_eq!(entry.mtime_secs, mtime);
@@ -315,22 +417,26 @@ mod tests {
     #[test]
     fn save_verification_cache_atomic_write() {
         let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        // Create the file on disk so load_verification_cache doesn't prune it
+        fs::write(game_dir.join("file"), b"x").unwrap();
         let cache = DashMap::new();
         cache.insert(
-            "/path/to/file".to_string(),
+            "file".to_string(),
             VerificationEntry {
                 size: 42,
                 md5: "deadbeef".to_string(),
                 mtime_secs: 999,
             },
         );
-        let tmp_path = dir.path().join(format!("{}.tmp", VERIFICATION_CACHE_FILE));
+        let tmp_path = game_dir.join(format!("{VERIFICATION_CACHE_FILE}.tmp"));
         assert!(!tmp_path.exists());
-        save_verification_cache(dir.path(), &cache).unwrap();
+        save_verification_cache(&game_dir, &cache).unwrap();
         assert!(!tmp_path.exists());
-        let cache_path = dir.path().join(VERIFICATION_CACHE_FILE);
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
         assert!(cache_path.exists());
-        let loaded = load_verification_cache(dir.path());
+        let loaded = load_verification_cache(&game_dir);
         assert_eq!(loaded.len(), 1);
     }
 
@@ -342,18 +448,18 @@ mod tests {
             let c = Arc::clone(&cache);
             handles.push(std::thread::spawn(move || {
                 for j in 0..100 {
-                    let key = format!("key-{}-{}", i, j);
+                    let key = format!("key-{i}-{j}");
                     c.insert(
                         key.clone(),
                         VerificationEntry {
                             size: i as u64 + j as u64,
-                            md5: format!("md5-{}-{}", i, j),
+                            md5: format!("md5-{i}-{j}"),
                             mtime_secs: i as u64 * 100 + j as u64,
                         },
                     );
                     if let Some(entry) = c.get(&key) {
                         assert_eq!(entry.size, i as u64 + j as u64);
-                        assert_eq!(entry.md5, format!("md5-{}-{}", i, j));
+                        assert_eq!(entry.md5, format!("md5-{i}-{j}"));
                     }
                 }
             }));
@@ -375,7 +481,85 @@ mod tests {
             hasher.update(b"");
             hex::encode(hasher.finalize())
         };
-        let result = check_file_md5_cached(&file_path, 0, &md5, &cache).unwrap();
+        let result = check_file_md5_cached(&file_path, 0, &md5, dir.path(), &cache).unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn load_verification_cache_loads_stale_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+        let stale = serde_json::to_string(&VerificationCacheSerializable {
+            files: HashMap::from([(
+                "nonexistent.bin".to_string(),
+                VerificationEntry {
+                    size: 100,
+                    md5: "abc".to_string(),
+                    mtime_secs: 1000,
+                },
+            )]),
+        })
+        .unwrap();
+        fs::write(&cache_path, &stale).unwrap();
+        let loaded = load_verification_cache(&game_dir);
+        assert_eq!(loaded.len(), 1, "stale entries are kept (lazy pruning)");
+    }
+
+    #[test]
+    fn load_verification_cache_keeps_all_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+        let data = serde_json::to_string(&VerificationCacheSerializable {
+            files: HashMap::from([
+                (
+                    "a.bin".to_string(),
+                    VerificationEntry {
+                        size: 1,
+                        md5: "m1".to_string(),
+                        mtime_secs: 10,
+                    },
+                ),
+                (
+                    "b.bin".to_string(),
+                    VerificationEntry {
+                        size: 2,
+                        md5: "m2".to_string(),
+                        mtime_secs: 20,
+                    },
+                ),
+            ]),
+        })
+        .unwrap();
+        fs::write(&cache_path, &data).unwrap();
+        let loaded = load_verification_cache(&game_dir);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded.get("a.bin").unwrap().size, 1);
+        assert_eq!(loaded.get("b.bin").unwrap().size, 2);
+    }
+
+    #[test]
+    fn save_verification_cache_writes_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let game_dir = dir.path().join("game");
+        fs::create_dir_all(&game_dir).unwrap();
+        let cache = DashMap::new();
+        cache.insert(
+            "f".to_string(),
+            VerificationEntry {
+                size: 42,
+                md5: "abc".to_string(),
+                mtime_secs: 999,
+            },
+        );
+        save_verification_cache(&game_dir, &cache).unwrap();
+        let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
+        assert!(cache_path.exists());
+        let content = fs::read_to_string(&cache_path).unwrap();
+        assert!(content.contains("f"));
+        assert!(content.contains("42"));
     }
 }

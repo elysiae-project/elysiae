@@ -2,13 +2,14 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tauri_plugin_log::log;
+use tokio::sync::{Notify, Semaphore, SemaphorePermit};
 
 use super::*;
 
-const EWMA_ALPHA: f64 = 0.3;
+const EWMA_ALPHA: f64 = 0.25;
 const THROUGHPUT_SCALE: f64 = 1000.0;
-const BEST_DECAY: f64 = 0.95;
+const BEST_DECAY: f64 = 0.99;
 
 pub struct AdaptivePermit<'a> {
     _permit: SemaphorePermit<'a>,
@@ -23,9 +24,9 @@ impl Drop for AdaptivePermit<'_> {
 
 pub struct AdaptiveSemaphore {
     semaphore: Semaphore,
+    notify: Notify,
     target: AtomicUsize,
     active: AtomicUsize,
-    total_bytes: AtomicU64,
     ewma_throughput_mbps: AtomicU64,
     best_throughput_mbps: AtomicU64,
     window_start: Mutex<Instant>,
@@ -34,11 +35,12 @@ pub struct AdaptiveSemaphore {
 
 impl AdaptiveSemaphore {
     pub fn new() -> Self {
+        let initial = adaptive_max_concurrency().min(ADAPTIVE_INITIAL_CONCURRENCY);
         Self {
-            semaphore: Semaphore::new(ADAPTIVE_INITIAL_CONCURRENCY),
-            target: AtomicUsize::new(ADAPTIVE_INITIAL_CONCURRENCY),
+            semaphore: Semaphore::new(initial),
+            notify: Notify::new(),
+            target: AtomicUsize::new(initial),
             active: AtomicUsize::new(0),
-            total_bytes: AtomicU64::new(0),
             ewma_throughput_mbps: AtomicU64::new(0),
             best_throughput_mbps: AtomicU64::new(0),
             window_start: Mutex::new(Instant::now()),
@@ -47,20 +49,30 @@ impl AdaptiveSemaphore {
     }
 
     pub async fn acquire(&self) -> AdaptivePermit<'_> {
-        let permit = self
-            .semaphore
-            .acquire()
-            .await
-            .expect("adaptive semaphore closed unexpectedly");
-        self.active.fetch_add(1, Ordering::AcqRel);
-        AdaptivePermit {
-            _permit: permit,
-            adaptive: self,
+        loop {
+            let permit = match self.semaphore.acquire().await {
+                Ok(p) => p,
+                Err(_) => {
+                    log::error!("adaptive semaphore closed unexpectedly");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
+            let active = self.active.fetch_add(1, Ordering::AcqRel) + 1;
+            let target = self.target.load(Ordering::Acquire);
+            if active <= target {
+                return AdaptivePermit {
+                    _permit: permit,
+                    adaptive: self,
+                };
+            }
+            self.active.fetch_sub(1, Ordering::AcqRel);
+            drop(permit);
+            self.notify.notified().await;
         }
     }
 
     pub fn record_bytes(&self, bytes: u64) {
-        self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
         self.window_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
@@ -79,7 +91,10 @@ impl AdaptiveSemaphore {
     }
 
     pub fn adjust(&self) -> usize {
-        let mut window_start = self.window_start.lock().unwrap_or_else(|e| e.into_inner());
+        let mut window_start = self
+            .window_start
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let now = Instant::now();
         let elapsed = now.duration_since(*window_start).as_secs_f64();
 
@@ -92,7 +107,7 @@ impl AdaptiveSemaphore {
         let throughput_bps = window_bytes as f64 / elapsed;
         let throughput_mbps = throughput_bps / 1_048_576.0;
 
-        let prev_ewma_raw = self.ewma_throughput_mbps.load(Ordering::Relaxed);
+        let prev_ewma_raw = self.ewma_throughput_mbps.load(Ordering::Acquire);
         let prev_ewma = prev_ewma_raw as f64 / THROUGHPUT_SCALE;
         let new_ewma = if prev_ewma == 0.0 {
             throughput_mbps
@@ -100,9 +115,9 @@ impl AdaptiveSemaphore {
             EWMA_ALPHA * throughput_mbps + (1.0 - EWMA_ALPHA) * prev_ewma
         };
         self.ewma_throughput_mbps
-            .store((new_ewma * THROUGHPUT_SCALE) as u64, Ordering::Relaxed);
+            .store((new_ewma * THROUGHPUT_SCALE) as u64, Ordering::Release);
 
-        let best_raw = self.best_throughput_mbps.load(Ordering::Relaxed);
+        let best_raw = self.best_throughput_mbps.load(Ordering::Acquire);
         let best = if best_raw == 0 {
             0.0
         } else {
@@ -113,7 +128,7 @@ impl AdaptiveSemaphore {
         let effective_best = if new_ewma > best { new_ewma } else { best };
         self.best_throughput_mbps.store(
             (effective_best * THROUGHPUT_SCALE) as u64,
-            Ordering::Relaxed,
+            Ordering::Release,
         );
 
         let current = self.target.load(Ordering::Acquire);
@@ -122,40 +137,29 @@ impl AdaptiveSemaphore {
         if new_target > current {
             let delta = new_target - current;
             self.semaphore.add_permits(delta);
-        } else if new_target < current {
-            let delta = current - new_target;
-            self.remove_permits(delta);
         }
 
         self.target.store(new_target, Ordering::Release);
+        self.notify.notify_one();
         *window_start = now;
         new_target
     }
 
-    fn remove_permits(&self, count: usize) {
-        for _ in 0..count {
-            match self.semaphore.try_acquire() {
-                Ok(permit) => permit.forget(),
-                Err(_) => break,
-            }
-        }
-    }
-
     fn calculate_new_target(current: usize, ewma: f64, prev_ewma: f64, best: f64) -> usize {
         if best > 0.0 && ewma >= best * 0.8 {
-            if current < ADAPTIVE_MAX_CONCURRENCY * 3 / 4 {
-                let increase = (current / 4).max(4);
-                (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+            if current < adaptive_max_concurrency() * 3 / 4 {
+                let increase = (current / 2).max(8);
+                (current + increase).min(adaptive_max_concurrency())
             } else {
-                let increase = (current / 16).max(1);
-                (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+                let increase = (current / 8).max(4);
+                (current + increase).min(adaptive_max_concurrency())
             }
         } else if best == 0.0 && prev_ewma == 0.0 && ewma > 0.0 {
-            let increase = (current / 2).max(4);
-            (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+            let increase = (current / 2).max(8);
+            (current + increase).min(adaptive_max_concurrency())
         } else if prev_ewma > 0.0 && ewma >= prev_ewma * 0.9 {
-            let increase = (current / 16).max(1);
-            (current + increase).min(ADAPTIVE_MAX_CONCURRENCY)
+            let increase = (current / 8).max(4);
+            (current + increase).min(adaptive_max_concurrency())
         } else if prev_ewma > 0.0 && ewma < prev_ewma * 0.7 {
             let decreased = (current * 7) / 10;
             decreased.max(ADAPTIVE_MIN_CONCURRENCY)
@@ -178,27 +182,43 @@ mod tests {
     #[test]
     fn new_semaphore_has_initial_target() {
         let sem = AdaptiveSemaphore::new();
-        assert_eq!(sem.current_target(), ADAPTIVE_INITIAL_CONCURRENCY);
+        let expected = adaptive_max_concurrency().min(ADAPTIVE_INITIAL_CONCURRENCY);
+        assert_eq!(sem.current_target(), expected);
         assert_eq!(sem.current_active(), 0);
     }
 
     #[test]
-    fn calculate_new_target_ramp_up_aggressive() {
-        let target = AdaptiveSemaphore::calculate_new_target(16, 100.0, 80.0, 100.0);
-        assert_eq!(target, 20); // 16 + max(4, 4) = 20
+    fn calculate_new_target_ramp_up_near_max() {
+        // Pick a current at or above 3/4 of the adaptive max to trigger gentle ramp-up
+        let max = super::adaptive_max_concurrency();
+        let current = if max > 1 { (max * 3 / 4).max(1) } else { 1 };
+        let increase = (current / 8).max(4);
+        let expected = (current + increase).min(max);
+        let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
+        assert_eq!(target, expected);
     }
 
     #[test]
-    fn calculate_new_target_ramp_up_near_max() {
-        let target = AdaptiveSemaphore::calculate_new_target(56, 100.0, 80.0, 100.0);
-        assert_eq!(target, 59); // 56 >= 48 (3/4 of 64), gentle: 56 + max(1, 3) = 59
+    fn calculate_new_target_ramp_up_aggressive() {
+        // Pick a current well below 3/4 of the adaptive max to trigger aggressive
+        // ramp-up
+        let max = super::adaptive_max_concurrency();
+        let current = if max > 2 { max / 2 } else { 1 };
+        let increase = (current / 2).max(8);
+        let expected = (current + increase).min(max);
+        let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
+        assert_eq!(target, expected);
     }
 
     #[test]
     fn calculate_new_target_stable_gentle_increase() {
-        let target = AdaptiveSemaphore::calculate_new_target(20, 45.0, 50.0, 100.0);
+        let max = super::adaptive_max_concurrency();
+        let current = if max > 2 { max / 2 } else { 1 };
         // ewma (45) >= prev_ewma * 0.9 (45) → stable, gentle increase
-        assert_eq!(target, 21); // 20 + max(1, 1) = 21
+        let increase = (current / 8).max(4);
+        let expected = (current + increase).min(max);
+        let target = AdaptiveSemaphore::calculate_new_target(current, 45.0, 50.0, 100.0);
+        assert_eq!(target, expected);
     }
 
     #[test]
@@ -218,7 +238,7 @@ mod tests {
     #[test]
     fn calculate_new_target_respects_max() {
         let target = AdaptiveSemaphore::calculate_new_target(63, 100.0, 80.0, 100.0);
-        assert_eq!(target, ADAPTIVE_MAX_CONCURRENCY); // capped at 64
+        assert_eq!(target, super::adaptive_max_concurrency()); // capped at adaptive max
     }
 
     #[test]
@@ -237,9 +257,18 @@ mod tests {
 
     #[test]
     fn calculate_new_target_zero_best_explores() {
-        let target = AdaptiveSemaphore::calculate_new_target(16, 50.0, 0.0, 0.0);
+        let max = super::adaptive_max_concurrency();
+        // Use a current strictly below the max so there is always room to increase
+        let current = if max > 1 { max / 2 } else { 1 };
+        let target = AdaptiveSemaphore::calculate_new_target(current, 50.0, 0.0, 0.0);
         // best=0, so ewma >= 0.8*best (0) is true → ramp-up
-        assert!(target > 16);
+        let increase = (current / 2).max(8); // initial exploration with aggressive ramp-up
+        let expected = (current + increase).min(max);
+        assert!(
+            target > current,
+            "expected {target} > {current} with max={max}"
+        );
+        assert_eq!(target, expected);
     }
 
     #[test]
@@ -250,14 +279,17 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
 
         let ewma_raw = sem.ewma_throughput_mbps.load(Ordering::Relaxed);
         let ewma = ewma_raw as f64 / THROUGHPUT_SCALE;
-        assert!(ewma > 90.0 && ewma < 110.0); // ~100 MiB/s
+        assert!(ewma > 60.0 && ewma < 74.0); // ~66.7 MiB/s: 200MB / 3s
     }
 
     #[test]
@@ -267,23 +299,30 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
 
         sem.window_bytes
             .fetch_add(100 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
 
         let ewma_raw = sem.ewma_throughput_mbps.load(Ordering::Relaxed);
         let ewma = ewma_raw as f64 / THROUGHPUT_SCALE;
-        // First: 100 MiB/s. Second: 50 MiB/s. EWMA = 0.3*50 + 0.7*100 = 85
-        assert!(ewma > 80.0 && ewma < 90.0);
+        // First: ~66.7 MiB/s. Second: ~33.3 MiB/s. EWMA = 0.25*33.3 + 0.75*66.7 = 58.3
+        // MiB/s
+        assert!(ewma > 52.0 && ewma < 65.0);
     }
 
     #[test]
@@ -293,8 +332,11 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
         let best_after_first =
@@ -302,8 +344,11 @@ mod tests {
 
         sem.window_bytes.fetch_add(1, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
         let best_after_second =
@@ -349,7 +394,6 @@ mod tests {
         let sem = AdaptiveSemaphore::new();
         sem.record_bytes(100);
         sem.record_bytes(200);
-        assert_eq!(sem.total_bytes.load(Ordering::Relaxed), 300);
         assert_eq!(sem.window_bytes.load(Ordering::Relaxed), 300);
     }
 
@@ -358,19 +402,23 @@ mod tests {
         let sem = AdaptiveSemaphore::new();
         // Window hasn't elapsed, so adjust should return current target unchanged
         let result = sem.adjust();
-        assert_eq!(result, ADAPTIVE_INITIAL_CONCURRENCY);
+        let expected = adaptive_max_concurrency().min(ADAPTIVE_INITIAL_CONCURRENCY);
+        assert_eq!(result, expected);
     }
 
     #[test]
     fn ewma_convergence_after_repeated_identical_throughput() {
         let sem = AdaptiveSemaphore::new();
         let bytes_per_window = 200 * 1024 * 1024;
-        let window_duration = std::time::Duration::from_secs(2);
+        let window_duration = std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         for _ in 0..5 {
             sem.window_bytes
                 .fetch_add(bytes_per_window, Ordering::Relaxed);
             {
-                let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
+                let mut ws = sem
+                    .window_start
+                    .lock()
+                    .unwrap_or_else(|err| err.into_inner());
                 *ws = Instant::now() - window_duration;
             }
             sem.adjust();
@@ -383,11 +431,17 @@ mod tests {
 
     #[test]
     fn aimd_increase_at_exactly_80_percent_of_best() {
+        let max = super::adaptive_max_concurrency();
         let best = 100.0;
         let ewma = best * 0.8;
         let prev_ewma = 90.0;
-        let target = AdaptiveSemaphore::calculate_new_target(16, ewma, prev_ewma, best);
-        assert!(target > 16);
+        // Use a current strictly below max so there is room to increase
+        let current = if max > 1 { max / 2 } else { 1 };
+        let target = AdaptiveSemaphore::calculate_new_target(current, ewma, prev_ewma, best);
+        assert!(
+            target > current,
+            "expected {target} > {current} with max={max}"
+        );
     }
 
     #[test]
@@ -405,9 +459,13 @@ mod tests {
 
     #[test]
     fn calculate_new_target_at_exact_max_boundary() {
-        let target =
-            AdaptiveSemaphore::calculate_new_target(ADAPTIVE_MAX_CONCURRENCY, 100.0, 80.0, 100.0);
-        assert_eq!(target, ADAPTIVE_MAX_CONCURRENCY);
+        let target = AdaptiveSemaphore::calculate_new_target(
+            super::adaptive_max_concurrency(),
+            100.0,
+            80.0,
+            100.0,
+        );
+        assert_eq!(target, super::adaptive_max_concurrency());
     }
 
     #[tokio::test]
@@ -434,8 +492,11 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         let old_target = sem.current_target();
         let new_target = sem.adjust();
@@ -451,23 +512,17 @@ mod tests {
     }
 
     #[test]
-    fn remove_permits_reduces_available() {
-        let sem = AdaptiveSemaphore::new();
-        let available_before = sem.semaphore.available_permits();
-        sem.remove_permits(4);
-        let available_after = sem.semaphore.available_permits();
-        assert_eq!(available_after, available_before - 4);
-    }
-
-    #[test]
     fn record_bytes_window_isolation() {
         let sem = AdaptiveSemaphore::new();
         sem.record_bytes(500);
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
         let window_bytes_after = sem.window_bytes.load(Ordering::Relaxed);
@@ -482,8 +537,11 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         let first = sem.adjust();
         let second = sem.adjust();
@@ -496,8 +554,11 @@ mod tests {
         sem.window_bytes
             .fetch_add(200 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
         let best_after_low =
@@ -505,8 +566,11 @@ mod tests {
         sem.window_bytes
             .fetch_add(400 * 1024 * 1024, Ordering::Relaxed);
         {
-            let mut ws = sem.window_start.lock().unwrap_or_else(|e| e.into_inner());
-            *ws = Instant::now() - std::time::Duration::from_secs(2);
+            let mut ws = sem
+                .window_start
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            *ws = Instant::now() - std::time::Duration::from_secs(super::ADAPTIVE_WINDOW_SECS);
         }
         sem.adjust();
         let best_after_high =

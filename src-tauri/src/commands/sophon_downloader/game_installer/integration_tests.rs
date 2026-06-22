@@ -10,12 +10,16 @@ async fn fetch_front_door_returns_valid_response() {
     let (branch, _pre) = fetch_front_door(&client, "hk4e")
         .await
         .expect("fetch_front_door should succeed");
+    let main = branch
+        .main
+        .as_ref()
+        .expect("branch should have main package");
     assert!(
-        !branch.main.password.is_empty(),
+        !main.password.is_empty(),
         "branch password should be non-empty"
     );
     assert!(
-        !branch.main.package_id.is_empty(),
+        !main.package_id.is_empty(),
         "package_id should be non-empty"
     );
 }
@@ -27,9 +31,16 @@ async fn fetch_build_returns_manifests() {
     let (branch, _) = fetch_front_door(&client, "hk4e")
         .await
         .expect("fetch_front_door should succeed");
-    let build = fetch_build(&client, &branch.main, None)
-        .await
-        .expect("fetch_build should succeed");
+    let build = fetch_build(
+        &client,
+        branch
+            .main
+            .as_ref()
+            .expect("branch should have main package"),
+        None,
+    )
+    .await
+    .expect("fetch_build should succeed");
     assert!(
         !build.manifests.is_empty(),
         "build data should contain manifests"
@@ -43,9 +54,16 @@ async fn fetch_manifest_decodes_successfully() {
     let (branch, _) = fetch_front_door(&client, "hk4e")
         .await
         .expect("fetch_front_door should succeed");
-    let build = fetch_build(&client, &branch.main, None)
-        .await
-        .expect("fetch_build should succeed");
+    let build = fetch_build(
+        &client,
+        branch
+            .main
+            .as_ref()
+            .expect("branch should have main package"),
+        None,
+    )
+    .await
+    .expect("fetch_build should succeed");
     let meta = &build.manifests[0];
     let result = fetch_manifest(&client, &meta.manifest_download, &meta.manifest.id)
         .await
@@ -63,9 +81,16 @@ async fn decode_manifest_with_real_data() {
     let (branch, _) = fetch_front_door(&client, "hk4e")
         .await
         .expect("fetch_front_door should succeed");
-    let build = fetch_build(&client, &branch.main, None)
-        .await
-        .expect("fetch_build should succeed");
+    let build = fetch_build(
+        &client,
+        branch
+            .main
+            .as_ref()
+            .expect("branch should have main package"),
+        None,
+    )
+    .await
+    .expect("fetch_build should succeed");
     let meta = &build.manifests[0];
     let result = fetch_manifest(&client, &meta.manifest_download, &meta.manifest.id)
         .await
@@ -87,9 +112,16 @@ async fn download_chunk_from_cdn() {
     let (branch, _) = fetch_front_door(&client, "hk4e")
         .await
         .expect("fetch_front_door should succeed");
-    let build = fetch_build(&client, &branch.main, None)
-        .await
-        .expect("fetch_build should succeed");
+    let build = fetch_build(
+        &client,
+        branch
+            .main
+            .as_ref()
+            .expect("branch should have main package"),
+        None,
+    )
+    .await
+    .expect("fetch_build should succeed");
     let meta = &build.manifests[0];
     let result = fetch_manifest(&client, &meta.manifest_download, &meta.manifest.id)
         .await
@@ -126,9 +158,16 @@ async fn compute_content_manifest_hash_with_real_manifest() {
     let (branch, _) = fetch_front_door(&client, "hk4e")
         .await
         .expect("fetch_front_door should succeed");
-    let build = fetch_build(&client, &branch.main, None)
-        .await
-        .expect("fetch_build should succeed");
+    let build = fetch_build(
+        &client,
+        branch
+            .main
+            .as_ref()
+            .expect("branch should have main package"),
+        None,
+    )
+    .await
+    .expect("fetch_build should succeed");
     let meta = &build.manifests[0];
     let result = fetch_manifest(&client, &meta.manifest_download, &meta.manifest.id)
         .await
@@ -154,12 +193,16 @@ async fn front_door_all_known_games() {
         let (branch, _) = fetch_front_door(&client, game_id)
             .await
             .expect("fetch_front_door should succeed for {game_id}");
+        let main = branch
+            .main
+            .as_ref()
+            .expect("branch should have main package");
         assert!(
-            !branch.main.password.is_empty(),
+            !main.password.is_empty(),
             "branch password should be non-empty for {game_id}"
         );
         assert!(
-            !branch.main.package_id.is_empty(),
+            !main.package_id.is_empty(),
             "package_id should be non-empty for {game_id}"
         );
     }

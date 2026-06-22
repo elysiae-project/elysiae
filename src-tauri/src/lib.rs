@@ -1,17 +1,15 @@
+use std::env;
+use std::time::Duration;
+
+use tauri::{Manager, command};
+
 use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
-use tauri::command;
-use std::env;
-use tauri::Manager;
-
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
     apply_nvidia_wayland_workaround();
-
-    #[cfg(target_os = "linux")]
     apply_webkit_memory_improvements();
 
     tauri::Builder::default()
@@ -19,7 +17,19 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
-                .pool_max_idle_per_host(64)
+                .pool_max_idle_per_host(4)
+                .tcp_nodelay(true)
+                .http2_adaptive_window(true)
+                .http2_keep_alive_interval(Duration::from_secs(30))
+                .http2_keep_alive_timeout(Duration::from_secs(20))
+                .tcp_keepalive(Duration::from_secs(60))
+                .connect_timeout(Duration::from_secs(15))
+                .read_timeout(Duration::from_secs(600))
+                .user_agent(format!(
+                    "{}/{}",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION")
+                ))
                 .build()
                 .unwrap(),
         )) // Required for sophon chunk downloading
@@ -31,7 +41,8 @@ pub fn run() {
                 window.unminimize().ok();
                 window.set_focus().ok();
             }
-        }))        .plugin(
+        }))
+        .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
@@ -40,10 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(disable_shortcuts())
-        .setup(|_app| {
-            Ok(())
-        })
+        .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
             file_downloader::download_file,
             file_manager::extract_file,
@@ -66,7 +74,6 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-#[cfg(target_os = "linux")]
 fn apply_webkit_memory_improvements() {
     unsafe {
         std::env::set_var("WEBKIT_FORCE_MEMORY_PRESSURE_SYSTEM", "critical");
@@ -74,7 +81,6 @@ fn apply_webkit_memory_improvements() {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn apply_nvidia_wayland_workaround() {
     if is_nvidia() && is_wayland() {
         println!("Elysiae: Applying NVIDIA Wayland Workaround");
@@ -87,37 +93,17 @@ fn apply_nvidia_wayland_workaround() {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn is_nvidia() -> bool {
     // If a NVIDIA graphics card is present, one of these two paths should exist
     std::path::Path::new("/proc/driver/nvidia/version").exists()
         || std::path::Path::new("/dev/nvidia0").exists()
 }
 
-#[cfg(target_os = "linux")]
 fn is_wayland() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok()
         || std::env::var("XDG_SESSION_TYPE")
             .map(|v| v.to_lowercase() == "wayland")
             .unwrap_or(false)
-}
-
-#[cfg(debug_assertions)]
-fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    use tauri_plugin_prevent_default::Flags;
-
-    tauri_plugin_prevent_default::Builder::new()
-        .with_flags(Flags::empty())
-        .build()
-}
-
-#[cfg(not(debug_assertions))]
-fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    use tauri_plugin_prevent_default::Flags;
-
-    tauri_plugin_prevent_default::Builder::new()
-        .with_flags(Flags::all())
-        .build()
 }
 
 #[command]

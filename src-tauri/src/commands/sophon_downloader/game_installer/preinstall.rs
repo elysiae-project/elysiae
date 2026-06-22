@@ -1,31 +1,80 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
+use std::io::{BufWriter, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+
+thread_local! {
+    /// Reusable per-thread copy buffer. The copyover preinstall path streams
+    /// each chunk from a downloaded file into a target temp file; allocating
+    /// a fresh `FILE_WRITE_BUFFER_SIZE` byte vector per asset is wasteful.
+    static COPY_BUFFER: std::cell::RefCell<Vec<u8>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn borrow_copy_buffer<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Vec<u8>) -> R,
+{
+    COPY_BUFFER.with(|cell| f(&mut cell.borrow_mut()))
+}
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
+use dashmap::{DashMap, DashSet};
+
 use futures_util::StreamExt;
+use futures_util::future::try_join_all;
 use md5::{Digest as _, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter as TokioBufWriter};
+use tokio::time::{Duration, timeout};
 
 use super::api::{
-    fetch_build, fetch_front_door, fetch_patch_build, fetch_patch_manifest, is_known_vo_locale,
-    vo_lang_matches,
+    fetch_build, fetch_front_door, fetch_manifest, fetch_patch_build, fetch_patch_manifest,
+    is_known_vo_locale, vo_lang_matches,
 };
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::read_installed_tag;
+use super::{MAX_RETRIES, cancelable_sleep, retry_delay};
 use crate::commands::sophon_downloader::api_scrape::{
-    DownloadInfo, SophonManifestMeta, SophonPatchManifestMeta,
+    DownloadInfo, SophonBuildData, SophonManifestMeta, SophonPatchManifestMeta,
+};
+use crate::commands::sophon_downloader::proto_parse::{
+    SophonManifestAssetChunk, SophonManifestProto, SophonPatchAssetChunk, SophonPatchAssetProperty,
 };
 
 const HDIFF_MAGIC: &[u8; 5] = b"HDIFF";
+const BLANK_FILE_MD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
 const PREINSTALL_STATE_FILE_EXT: &str = ".json";
+const HK4E_DATA_DIR_GLOBAL: &str =
+    "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x5f\x44\x61\x74\x61";
+const HK4E_DATA_DIR_CN: &str = "\x59\x75\x61\x6e\x53\x68\x65\x6e\x5f\x44\x61\x74\x61";
+const HKRPG_DATA_DIR: &str = "\x53\x74\x61\x72\x52\x61\x69\x6c\x5f\x44\x61\x74\x61";
+const NAP_GAME_DATA_DIR: &str =
+    "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x5f\x44\x61\x74\x61";
+const NAP_GAME_NAME: &str = "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f";
+/// RAII guard that cleans up a blank diff_ref file when dropped.
+/// Ensures the temp file is removed on all return paths (normal return,
+/// early return, or panic).
+struct DiffRefGuard(Option<PathBuf>);
+
+impl Drop for DiffRefGuard {
+    fn drop(&mut self) {
+        if let Some(ref path) = self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+impl DiffRefGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,11 +142,15 @@ impl PreinstallState {
 pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> SophonResult<()> {
     let path = PreinstallState::state_file_path(game_dir, &state.tag);
     let tmp_path = path.with_extension("json.tmp");
-    let json = serde_json::to_string(state)
-        .map_err(|e| SophonError::PreinstallStateInvalid(e.to_string()))?;
     {
-        let mut f = fs::File::create(&tmp_path)?;
-        f.write_all(json.as_bytes())?;
+        let f = fs::File::create(&tmp_path)?;
+        let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, f);
+        serde_json::to_writer(&mut writer, state)
+            .map_err(|err| SophonError::PreinstallStateInvalid(err.to_string()))?;
+        writer.flush()?;
+        let _ = writer
+            .into_inner()
+            .map_err(|err| SophonError::Io(err.into_error()))?;
     }
     fs::rename(&tmp_path, &path)?;
     Ok(())
@@ -105,11 +158,11 @@ pub fn save_preinstall_state(game_dir: &Path, state: &PreinstallState) -> Sophon
 
 pub fn load_preinstall_state(game_dir: &Path, tag: &str) -> SophonResult<PreinstallState> {
     let path = PreinstallState::state_file_path(game_dir, tag);
-    let content = fs::read_to_string(&path).map_err(|e| {
-        SophonError::PreinstallStateInvalid(format!("Failed to read preinstall state: {e}"))
+    let content = fs::read_to_string(&path).map_err(|err| {
+        SophonError::PreinstallStateInvalid(format!("Failed to read preinstall state: {err}"))
     })?;
-    serde_json::from_str(&content).map_err(|e| {
-        SophonError::PreinstallStateInvalid(format!("Failed to parse preinstall state: {e}"))
+    serde_json::from_str(&content).map_err(|err| {
+        SophonError::PreinstallStateInvalid(format!("Failed to parse preinstall state: {err}"))
     })
 }
 
@@ -126,6 +179,39 @@ pub struct PreinstallPlan {
     pub main_chunk_download: DownloadInfo,
     pub tag: String,
     pub main_manifest_ids: Vec<(String, String)>,
+}
+
+/// Validates that all i64 fields from the patch protobuf are non-negative,
+/// preventing silent wrapping when cast to u64.
+fn validate_patch_chunk_fields(chunk: &SophonPatchAssetChunk, asset_name: &str) -> bool {
+    if chunk.patch_size < 0 {
+        log::warn!("Skipping chunk with negative patch_size for asset {asset_name}");
+        return false;
+    }
+    if chunk.patch_offset < 0 {
+        log::warn!("Skipping chunk with negative patch_offset for asset {asset_name}");
+        return false;
+    }
+    if chunk.patch_length < 0 {
+        log::warn!("Skipping chunk with negative patch_length for asset {asset_name}");
+        return false;
+    }
+    if chunk.original_file_length < 0 {
+        log::warn!("Skipping chunk with negative original_file_length for asset {asset_name}");
+        return false;
+    }
+    true
+}
+
+fn validate_patch_asset_fields(asset: &SophonPatchAssetProperty) -> bool {
+    if asset.asset_size < 0 {
+        log::warn!(
+            "Skipping asset with negative asset_size: {}",
+            asset.asset_name
+        );
+        return false;
+    }
+    true
 }
 
 pub async fn build_preinstall_plan(
@@ -172,7 +258,7 @@ pub async fn build_preinstall_plan(
     let mut main_manifest_ids: Vec<(String, String)> = Vec::new();
     let mut main_chunk_download: Option<DownloadInfo> = None;
 
-    for (_field, meta) in &main_by_field {
+    for meta in main_by_field.values() {
         main_manifest_ids.push((meta.matching_field.clone(), meta.manifest.id.clone()));
         if main_chunk_download.is_none() && meta.matching_field == "game" {
             main_chunk_download = Some(meta.chunk_download.clone());
@@ -194,8 +280,27 @@ pub async fn build_preinstall_plan(
     let mut unique_chunks: Vec<PatchChunkInfo> = Vec::new();
     let mut diff_download: Option<DownloadInfo> = None;
 
-    for patch_meta in &qualifying_patch {
-        let result = fetch_patch_manifest(client, patch_meta).await?;
+    let fetch_futures: Vec<_> = qualifying_patch
+        .iter()
+        .map(|meta| fetch_patch_manifest(client, meta))
+        .collect();
+    let patch_results = try_join_all(fetch_futures).await?;
+
+    let total_patch_assets: usize = patch_results
+        .iter()
+        .map(|r| r.patch_manifest.patch_assets.len())
+        .fold(0usize, |acc, len| acc.saturating_add(len));
+    const MAX_PREINSTALL_ASSETS: usize = 1_000_000;
+    if total_patch_assets > MAX_PREINSTALL_ASSETS {
+        log::warn!(
+            "Preinstall manifest has {} assets, exceeding safe limit of {}",
+            total_patch_assets,
+            MAX_PREINSTALL_ASSETS
+        );
+    }
+    all_patch_assets.reserve(total_patch_assets.min(MAX_PREINSTALL_ASSETS));
+
+    for result in patch_results {
         let patch_manifest = result.patch_manifest;
         let matching_field = result.matching_field;
 
@@ -218,6 +323,9 @@ pub async fn build_preinstall_plan(
                         Some(c) => c,
                         None => {
                             if has_main_entry {
+                                if !validate_patch_asset_fields(asset_prop) {
+                                    continue;
+                                }
                                 all_patch_assets.push(PatchAssetInfo {
                                     target_file_path: asset_prop.asset_name.clone(),
                                     target_file_size: asset_prop.asset_size as u64,
@@ -243,6 +351,13 @@ pub async fn build_preinstall_plan(
                             continue;
                         }
                     };
+
+                    if !validate_patch_asset_fields(asset_prop) {
+                        continue;
+                    }
+                    if !validate_patch_chunk_fields(chunk, &asset_prop.asset_name) {
+                        continue;
+                    }
 
                     let (method, original_file_path, original_file_hash, original_file_size) =
                         if chunk.original_file_name.is_empty() {
@@ -282,6 +397,9 @@ pub async fn build_preinstall_plan(
                 }
                 None if has_main_entry => {
                     seen_patch_targets.insert(asset_prop.asset_name.clone());
+                    if !validate_patch_asset_fields(asset_prop) {
+                        continue;
+                    }
                     all_patch_assets.push(PatchAssetInfo {
                         target_file_path: asset_prop.asset_name.clone(),
                         target_file_size: asset_prop.asset_size as u64,
@@ -324,6 +442,40 @@ pub async fn build_preinstall_plan(
 
     let diff_download = diff_download.ok_or(SophonError::NoGameManifest)?;
 
+    // Main-asset sweep: walk every main-manifest asset and emit DownloadOver
+    // for any file not already covered by the patch manifest. Without this,
+    // brand-new files introduced in the target version are silently dropped
+    // from the preinstall plan.
+    for (matching_field, meta) in main_by_field.iter() {
+        let manifest_result =
+            fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        for asset in &manifest_result.manifest.assets {
+            if asset.is_directory() {
+                seen_patch_targets.insert(asset.asset_name.clone());
+                continue;
+            }
+            if seen_patch_targets.contains(asset.asset_name.as_str()) {
+                continue;
+            }
+            all_patch_assets.push(PatchAssetInfo {
+                target_file_path: asset.asset_name.clone(),
+                target_file_size: asset.asset_size,
+                target_file_hash: asset.asset_hash_md5.clone(),
+                patch_method: PatchMethod::DownloadOver,
+                patch_name: String::new(),
+                patch_hash: String::new(),
+                patch_offset: 0,
+                patch_size: 0,
+                patch_chunk_length: 0,
+                original_file_path: None,
+                original_file_hash: None,
+                original_file_size: None,
+                matching_field: matching_field.to_string(),
+            });
+            seen_patch_targets.insert(asset.asset_name.clone());
+        }
+    }
+
     Ok(PreinstallPlan {
         patch_assets: all_patch_assets,
         deleted_files: all_deleted_files,
@@ -341,6 +493,7 @@ fn patching_chunk_dir(game_dir: &Path) -> PathBuf {
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn preinstall_download(
     client: &Client,
     plan: &PreinstallPlan,
@@ -349,7 +502,7 @@ pub async fn preinstall_download(
     vo_lang: &str,
     handle: DownloadHandle,
     updater: ProgressUpdater,
-    state_saver: Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>,
+    state_saver: super::installer::StateSaver,
     resume_chunks: HashMap<String, u64>,
 ) -> SophonResult<PreinstallState> {
     let chunks_dir = patching_chunk_dir(game_dir);
@@ -360,7 +513,11 @@ pub async fn preinstall_download(
 
     let installed_tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
 
-    let total_bytes: u64 = plan.unique_chunks.iter().map(|c| c.patch_size).sum();
+    let total_bytes: u64 = plan
+        .unique_chunks
+        .iter()
+        .map(|c| c.patch_size)
+        .fold(0u64, |acc, x| acc.saturating_add(x));
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let resume_offset: u64 = {
         let existing: u64 = plan
@@ -368,13 +525,17 @@ pub async fn preinstall_download(
             .iter()
             .filter(|c| resume_chunks.contains_key(&c.patch_name))
             .map(|c| c.patch_size)
-            .sum();
+            .fold(0u64, |acc, x| acc.saturating_add(x));
         existing
     };
 
-    let already_downloaded: HashSet<String> = resume_chunks.keys().cloned().collect();
-    let mut downloaded_chunks: HashSet<String> = already_downloaded.clone();
-    let mut chunk_bytes_map: HashMap<String, u64> = resume_chunks.clone();
+    let downloaded_chunks: Arc<DashSet<String>> = Arc::new(resume_chunks.keys().cloned().collect());
+    let chunk_bytes_map: Arc<DashMap<String, u64>> = Arc::new(DashMap::new());
+    for (k, v) in resume_chunks {
+        chunk_bytes_map.insert(k, v);
+    }
+
+    super::download::check_available_space(&chunks_dir, total_bytes)?;
 
     updater(SophonProgress::Downloading {
         downloaded_bytes: resume_offset,
@@ -383,79 +544,141 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
-    let start = Instant::now();
-    let mut last_update = Instant::now();
+    let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
+    let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
+    let max_concurrency = super::adaptive_max_concurrency();
+    let last_speed_bytes = Arc::new(AtomicU64::new(0));
+    let last_speed_time = Arc::new(std::sync::Mutex::new(Instant::now()));
 
-    for chunk_info in &plan.unique_chunks {
-        if handle.is_cancelled() {
-            return Err(SophonError::Cancelled);
-        }
+    let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
+    let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
+        .map(|chunk_info| {
+            let client = client.clone();
+            let diff_download = plan.diff_download.clone();
+            let chunks_dir = chunks_dir.clone();
+            let handle = handle.clone();
+            let updater = Arc::clone(&updater);
+            let downloaded_bytes = Arc::clone(&downloaded_bytes);
+            let downloaded_chunks = Arc::clone(&downloaded_chunks);
+            let chunk_bytes_map = Arc::clone(&chunk_bytes_map);
+            let state_saver = Arc::clone(&state_saver);
+            let last_update = Arc::clone(&last_update);
+            let chunks_since_save = Arc::clone(&chunks_since_save);
+            let last_speed_bytes = Arc::clone(&last_speed_bytes);
+            let last_speed_time = Arc::clone(&last_speed_time);
+            let already_downloaded_chunk = chunk_bytes_map.contains_key(&chunk_info.patch_name);
 
-        handle
-            .wait_if_paused(
-                &*updater,
-                downloaded_bytes.load(Ordering::Relaxed) + resume_offset,
-                total_bytes,
-            )
-            .await?;
+            async move {
+                if handle.is_cancelled() {
+                    return Err(SophonError::Cancelled);
+                }
 
-        let chunk_path = chunks_dir.join(&chunk_info.patch_name);
+                handle
+                    .wait_if_paused(
+                        &*updater,
+                        downloaded_bytes.load(Ordering::Relaxed) + resume_offset,
+                        total_bytes,
+                    )
+                    .await?;
 
-        let needs_download =
-            if chunk_path.exists() && verify_chunk_md5(&chunk_path, &chunk_info.patch_md5) {
-                downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                if !already_downloaded.contains(&chunk_info.patch_name) {
+                validate_patch_name(&chunk_info.patch_name)?;
+
+                let chunk_path = chunks_dir.join(&chunk_info.patch_name);
+
+                let needs_download = if chunk_path.exists()
+                    && verify_file_hash(&chunk_path, &chunk_info.patch_md5)
+                {
+                    downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
+                    if !already_downloaded_chunk {
+                        downloaded_chunks.insert(chunk_info.patch_name.clone());
+                        chunk_bytes_map
+                            .insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
+                    }
+                    false
+                } else {
+                    true
+                };
+
+                if needs_download {
+                    download_patch_chunk_with_retries(
+                        &client,
+                        &diff_download,
+                        &chunk_info.patch_name,
+                        &chunk_path,
+                        &chunk_info.patch_md5,
+                        10,
+                        &handle,
+                    )
+                    .await?;
+
+                    downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
                     downloaded_chunks.insert(chunk_info.patch_name.clone());
                     chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                 }
-                continue;
-            } else {
-                true
-            };
 
-        if needs_download {
-            download_patch_chunk_with_retries(
-                client,
-                &plan.diff_download,
-                &chunk_info.patch_name,
-                &chunk_path,
-                4,
-            )
-            .await?;
+                let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
+                {
+                    if let Ok(mut lu) = last_update.try_lock()
+                        && lu.elapsed()
+                            >= std::time::Duration::from_millis(super::PROGRESS_UPDATE_INTERVAL_MS)
+                    {
+                        let speed_bps = if let Ok(mut lst) = last_speed_time.try_lock() {
+                            let window_elapsed = lst.elapsed().as_secs_f64();
+                            if window_elapsed >= 1.0 {
+                                let window_bytes =
+                                    db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
+                                let window_speed = window_bytes as f64 / window_elapsed;
+                                last_speed_bytes.store(db, Ordering::Relaxed);
+                                *lst = Instant::now();
+                                window_speed
+                            } else {
+                                0.0
+                            }
+                        } else {
+                            0.0
+                        };
+                        let remaining = total_bytes.saturating_sub(db);
+                        let eta = if speed_bps > 0.0 {
+                            remaining as f64 / speed_bps
+                        } else {
+                            0.0
+                        };
 
-            downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-            downloaded_chunks.insert(chunk_info.patch_name.clone());
-            chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
-        }
+                        updater(SophonProgress::Downloading {
+                            downloaded_bytes: db,
+                            total_bytes,
+                            speed_bps,
+                            eta_seconds: eta,
+                        });
+                        *lu = Instant::now();
+                    }
+                }
 
-        let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
-        {
-            let elapsed = last_update.elapsed();
-            if elapsed >= std::time::Duration::from_millis(super::PROGRESS_UPDATE_INTERVAL_MS) {
-                let total_elapsed = start.elapsed().as_secs_f64();
-                let speed_bps = if total_elapsed > 0.0 {
-                    db as f64 / total_elapsed
-                } else {
-                    0.0
-                };
-                let remaining = total_bytes.saturating_sub(db);
-                let eta = if speed_bps > 0.0 {
-                    remaining as f64 / speed_bps
-                } else {
-                    0.0
-                };
-                updater(SophonProgress::Downloading {
-                    downloaded_bytes: db,
-                    total_bytes,
-                    speed_bps,
-                    eta_seconds: eta,
-                });
-                last_update = Instant::now();
+                let save_count = chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
+                if save_count.is_multiple_of(
+                    crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL as usize,
+                ) {
+                    state_saver(&chunk_bytes_map);
+                }
+
+                Ok(())
             }
-        }
+        })
+        .buffer_unordered(max_concurrency)
+        .collect()
+        .await;
 
-        state_saver(&chunk_bytes_map);
+    for result in &results {
+        if let Err(err) = result
+            && matches!(err, SophonError::Cancelled)
+        {
+            return Err(SophonError::Cancelled);
+        }
     }
+    results.into_iter().find(|r| r.is_err()).transpose()?;
+
+    // Final save to ensure all downloaded chunks are persisted
+    state_saver(&chunk_bytes_map);
 
     updater(SophonProgress::Downloading {
         downloaded_bytes: total_bytes,
@@ -464,6 +687,13 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
+    let downloaded_chunks: HashSet<String> = match Arc::try_unwrap(downloaded_chunks) {
+        Ok(set) => set.into_iter().collect(),
+        Err(arc) => {
+            log::warn!("downloaded_chunks DashSet still has references, using iter");
+            arc.iter().map(|r| r.clone()).collect()
+        }
+    };
     let state = PreinstallState {
         tag: plan.tag.clone(),
         game_id: game_id.to_string(),
@@ -477,15 +707,18 @@ pub async fn preinstall_download(
         main_manifest_ids: plan.main_manifest_ids.clone(),
     };
 
-    save_preinstall_state(game_dir, &state)?;
+    let tag_str = plan.tag.to_string();
+    let marker_path = PreinstallState::marker_file_path(game_dir, &tag_str);
+    let marker_path_clone = marker_path.clone();
+    tokio::task::spawn_blocking(move || fs::write(&marker_path_clone, &tag_str)).await??;
 
-    {
-        let gd = game_dir.to_path_buf();
-        let tag_str = plan.tag.clone();
-        tokio::task::spawn_blocking(move || {
-            fs::write(PreinstallState::marker_file_path(&gd, &tag_str), &tag_str)
+    if let Err(err) = save_preinstall_state(game_dir, &state) {
+        let marker_path_for_cleanup = marker_path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = fs::remove_file(&marker_path_for_cleanup);
         })
-        .await??;
+        .await;
+        return Err(err);
     }
 
     Ok(state)
@@ -496,16 +729,25 @@ async fn download_patch_chunk_with_retries(
     diff_download: &DownloadInfo,
     patch_name: &str,
     dest: &Path,
+    expected_md5: &str,
     max_retries: u32,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
+    validate_patch_name(patch_name)?;
     let url = diff_download.url_for(patch_name);
     let mut last_err = String::new();
 
     for attempt in 0..max_retries {
-        match download_patch_chunk_inner(client, &url, dest).await {
+        if handle.is_cancelled() {
+            return Err(SophonError::Cancelled);
+        }
+        match download_patch_chunk_inner(client, &url, dest, expected_md5).await {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                last_err = e.to_string();
+            Err(err) => {
+                last_err = err.to_string();
+                if !err.is_retryable() {
+                    return Err(err);
+                }
                 if attempt < max_retries - 1 {
                     log::warn!(
                         "Patch chunk {} failed (attempt {}/{}): {last_err}",
@@ -513,7 +755,17 @@ async fn download_patch_chunk_with_retries(
                         attempt + 1,
                         max_retries
                     );
-                    let _ = fs::remove_file(dest);
+                    let delay = retry_delay(attempt);
+                    if cancelable_sleep(handle, delay).await.is_err() {
+                        return Err(SophonError::Cancelled);
+                    }
+                } else {
+                    log::warn!(
+                        "Patch chunk {} failed (final attempt {}/{}): {last_err}",
+                        patch_name,
+                        attempt + 1,
+                        max_retries
+                    );
                 }
             }
         }
@@ -526,35 +778,218 @@ async fn download_patch_chunk_with_retries(
     })
 }
 
-async fn download_patch_chunk_inner(client: &Client, url: &str, dest: &Path) -> SophonResult<()> {
-    let resp = client.get(url).send().await?.error_for_status()?;
-    let mut stream = resp.bytes_stream();
-    let mut file = tokio::fs::File::create(dest).await?;
+async fn download_chunk_with_retries(
+    client: &Client,
+    chunk_download: &DownloadInfo,
+    chunk: &SophonManifestAssetChunk,
+    dest: &Path,
+    handle: &DownloadHandle,
+) -> SophonResult<()> {
+    let mut last_err = String::new();
 
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk?;
-        file.write_all(&bytes).await?;
+    for attempt in 0..MAX_RETRIES {
+        if handle.is_cancelled() {
+            return Err(SophonError::Cancelled);
+        }
+        match super::download::download_chunk(client, chunk_download, chunk, dest, Some(handle))
+            .await
+        {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                last_err = err.to_string();
+                if !err.is_retryable() {
+                    return Err(err);
+                }
+                if attempt < MAX_RETRIES - 1 {
+                    log::warn!(
+                        "Chunk {} failed (attempt {}/{}): {last_err}",
+                        chunk.chunk_name,
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    let delay = retry_delay(attempt);
+                    if cancelable_sleep(handle, delay).await.is_err() {
+                        return Err(SophonError::Cancelled);
+                    }
+                } else {
+                    log::warn!(
+                        "Chunk {} failed (final attempt {}/{}): {last_err}",
+                        chunk.chunk_name,
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                }
+            }
+        }
+    }
+
+    Err(SophonError::DownloadFailed {
+        chunk: chunk.chunk_name.clone(),
+        attempts: MAX_RETRIES,
+        error: last_err,
+    })
+}
+
+async fn download_patch_chunk_inner(
+    client: &Client,
+    url: &str,
+    dest: &Path,
+    expected_md5: &str,
+) -> SophonResult<()> {
+    let resp = client
+        .get(url)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?
+        .error_for_status()?;
+    let content_length: Option<u64> = resp
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+    let mut stream = resp.bytes_stream();
+    let file = tokio::fs::File::create(dest).await?;
+    let mut file = TokioBufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
+    let mut hasher = Md5::new();
+    let mut total_len = 0u64;
+
+    loop {
+        match timeout(Duration::from_millis(20000), stream.next()).await {
+            Ok(Some(chunk)) => {
+                let bytes = chunk?;
+                if bytes.is_empty() && content_length.is_none_or(|expected| total_len < expected) {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "corrupted compressed data: empty chunk while data remaining",
+                    )));
+                }
+                total_len += bytes.len() as u64;
+                if let Some(expected_len) = content_length
+                    && total_len > expected_len
+                {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::SizeMismatch {
+                        item: dest.display().to_string(),
+                        expected: expected_len,
+                        actual: total_len,
+                    });
+                }
+                hasher.update(&bytes);
+                file.write_all(&bytes).await?;
+            }
+            Ok(None) => break,
+            Err(_) => {
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(SophonError::DownloadFailed {
+                    chunk: dest.display().to_string(),
+                    attempts: 1,
+                    error: "Stream timed out while downloading chunk".to_string(),
+                });
+            }
+        }
     }
     file.flush().await?;
+
+    if let Some(expected_len) = content_length
+        && total_len != expected_len
+    {
+        let _ = tokio::fs::remove_file(dest).await;
+        return Err(SophonError::SizeMismatch {
+            item: dest.display().to_string(),
+            expected: expected_len,
+            actual: total_len,
+        });
+    }
+
+    if !expected_md5.is_empty() {
+        let actual = hex::encode(hasher.finalize());
+        if actual != expected_md5 {
+            let _ = tokio::fs::remove_file(dest).await;
+            return Err(SophonError::Md5Mismatch {
+                item: dest.display().to_string(),
+                expected: expected_md5.to_string(),
+                actual,
+            });
+        }
+    }
     Ok(())
 }
 
-fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
+pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     let Ok(file) = fs::File::open(path) else {
         return false;
     };
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = Md5::new();
-    let mut buf = [0u8; 1024 * 1024];
+    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => hasher.update(&buf[..n]),
-            Err(_) => return false,
+            Err(err) => {
+                log::warn!(
+                    "Failed to read file for MD5 verification: {}: {}",
+                    path.display(),
+                    err
+                );
+                return false;
+            }
         }
     }
     let actual = hex::encode(hasher.finalize());
     actual == expected_md5
+}
+
+pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
+    let Ok(file) = fs::File::open(path) else {
+        log::warn!(
+            "Failed to open file for XXH64 verification: {}",
+            path.display()
+        );
+        return false;
+    };
+    let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
+    let mut hasher = twox_hash::XxHash64::default();
+    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
+    loop {
+        match std::io::Read::read(&mut reader, &mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                use std::hash::Hasher;
+                hasher.write(&buf[..n]);
+            }
+            Err(err) => {
+                log::warn!(
+                    "Failed to read file for XXH64 verification: {}: {}",
+                    path.display(),
+                    err
+                );
+                return false;
+            }
+        }
+    }
+    let actual = format!("{:016x}", std::hash::Hasher::finish(&hasher));
+    actual == expected_xxh64
+}
+
+pub(super) fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
+    if expected_hash.is_empty() {
+        return true;
+    }
+    let normalized = expected_hash.to_ascii_lowercase();
+    match normalized.len() {
+        32 => verify_chunk_md5(path, &normalized),
+        16 => verify_chunk_xxh64(path, &normalized),
+        _ => {
+            log::warn!(
+                "Unknown hash format (length={}): {}",
+                expected_hash.len(),
+                expected_hash
+            );
+            false
+        }
+    }
 }
 
 pub async fn apply_preinstall(
@@ -562,8 +997,9 @@ pub async fn apply_preinstall(
     game_dir: &Path,
     preinstall_tag: &str,
     updater: ProgressUpdater,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
-    let state = load_preinstall_state(game_dir, preinstall_tag)?;
+    let mut state = load_preinstall_state(game_dir, preinstall_tag)?;
 
     let current_tag = read_installed_tag(game_dir).ok_or(SophonError::NoInstalledVersion)?;
 
@@ -578,9 +1014,16 @@ pub async fn apply_preinstall(
     let total_files = state.patch_assets.len() as u64;
     let applied_files = Arc::new(AtomicU64::new(0u64));
 
-    let filtered_assets = filter_patch_assets_for_removed_features(game_dir, &state);
+    let game_dir_owned = game_dir.to_path_buf();
+    let filter_cache = tokio::task::spawn_blocking(move || FilterCache::new(&game_dir_owned))
+        .await
+        .unwrap_or_else(|_| FilterCache::new(game_dir));
+    filter_patch_assets_for_removed_features(&filter_cache, &mut state.patch_assets);
 
-    for asset in &filtered_assets {
+    let download_over_context =
+        fetch_download_over_context(client, &state.game_id, &state.vo_lang).await?;
+
+    for asset in &state.patch_assets {
         if asset.patch_method == PatchMethod::Skip {
             applied_files.fetch_add(1, Ordering::Relaxed);
             log::warn!(
@@ -602,53 +1045,153 @@ pub async fn apply_preinstall(
             continue;
         }
 
+        let is_filtered = is_filtered_asset(&filter_cache, asset);
+
         match asset.patch_method {
             PatchMethod::CopyOver => {
-                let gd = game_dir.to_path_buf();
-                let cd = chunks_dir.to_path_buf();
-                let a = asset.clone();
-                let result =
-                    tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await?;
-                if let Err(ref e) = result {
-                    if is_filtered_asset(game_dir, asset) {
-                        log::warn!(
-                            "CopyOver failed for filtered asset, skipping: {} ({e})",
-                            asset.target_file_path
-                        );
-                        applied_files.fetch_add(1, Ordering::Relaxed);
-                        continue;
+                const COPY_MAX_RETRIES: usize = 4;
+                let mut fallback_to_download = false;
+                let mut skip_progress = false;
+
+                for attempt in 0..=COPY_MAX_RETRIES {
+                    let gd = game_dir.to_path_buf();
+                    let cd = chunks_dir.to_path_buf();
+                    let a = asset.clone();
+                    let result =
+                        tokio::task::spawn_blocking(move || apply_copy_over(&gd, &cd, &a)).await?;
+
+                    match result {
+                        Ok(()) => break,
+                        Err(err) => {
+                            if is_filtered {
+                                log::warn!(
+                                    "CopyOver failed for filtered asset, skipping: {} ({err})",
+                                    asset.target_file_path
+                                );
+                                applied_files.fetch_add(1, Ordering::Relaxed);
+                                skip_progress = true;
+                                break;
+                            }
+                            if attempt == COPY_MAX_RETRIES {
+                                log::warn!(
+                                    "CopyOver failed for {} after {} attempts: {err}, falling back to DownloadOver",
+                                    asset.target_file_path,
+                                    COPY_MAX_RETRIES + 1
+                                );
+                                fallback_to_download = true;
+                            } else {
+                                if handle.is_cancelled() {
+                                    return Err(SophonError::Cancelled);
+                                }
+                                let delay = retry_delay(attempt as u32);
+                                log::warn!(
+                                    "CopyOver failed for {} (attempt {}/{}): {err}, retrying in {}ms...",
+                                    asset.target_file_path,
+                                    attempt + 1,
+                                    COPY_MAX_RETRIES + 1,
+                                    delay.as_millis()
+                                );
+                                if cancelable_sleep(handle, delay).await.is_err() {
+                                    return Err(SophonError::Cancelled);
+                                }
+                            }
+                        }
                     }
-                    log::warn!(
-                        "CopyOver failed for {}: {e}, falling back to DownloadOver",
-                        asset.target_file_path
-                    );
-                    apply_download_over(client, game_dir, &state, &asset).await?;
+                }
+
+                if skip_progress {
+                    continue;
+                }
+                if fallback_to_download {
+                    apply_download_over_with_retry(
+                        client,
+                        game_dir,
+                        &state,
+                        asset,
+                        &download_over_context,
+                        handle,
+                    )
+                    .await?;
                 }
             }
             PatchMethod::Patch => {
-                let gd = game_dir.to_path_buf();
-                let cd = chunks_dir.to_path_buf();
-                let a = asset.clone();
-                let result =
-                    tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a)).await?;
-                if let Err(ref e) = result {
-                    if is_filtered_asset(game_dir, asset) {
-                        log::warn!(
-                            "HDiff patch failed for filtered asset, skipping: {} ({e})",
-                            asset.target_file_path
-                        );
-                        applied_files.fetch_add(1, Ordering::Relaxed);
-                        continue;
+                const PATCH_MAX_RETRIES: usize = 4;
+                let mut fallback_to_download = false;
+                let mut skip_progress = false;
+
+                for attempt in 0..=PATCH_MAX_RETRIES {
+                    let gd = game_dir.to_path_buf();
+                    let cd = chunks_dir.to_path_buf();
+                    let a = asset.clone();
+                    let fc = filter_cache.clone();
+                    let result =
+                        tokio::task::spawn_blocking(move || apply_hdiff_patch(&gd, &cd, &a, &fc))
+                            .await?;
+
+                    match result {
+                        Ok(()) => break,
+                        Err(err) => {
+                            if is_filtered {
+                                log::warn!(
+                                    "HDiff patch failed for filtered asset, skipping: {} ({err})",
+                                    asset.target_file_path
+                                );
+                                applied_files.fetch_add(1, Ordering::Relaxed);
+                                skip_progress = true;
+                                break;
+                            }
+                            if attempt == PATCH_MAX_RETRIES {
+                                log::warn!(
+                                    "HDiff patch failed for {} after {} attempts: {err}, falling back to DownloadOver",
+                                    asset.target_file_path,
+                                    PATCH_MAX_RETRIES + 1
+                                );
+                                fallback_to_download = true;
+                            } else {
+                                if handle.is_cancelled() {
+                                    return Err(SophonError::Cancelled);
+                                }
+                                let delay = retry_delay(attempt as u32);
+                                log::warn!(
+                                    "HDiff patch failed for {} (attempt {}/{}): {err}, retrying in {}ms...",
+                                    asset.target_file_path,
+                                    attempt + 1,
+                                    PATCH_MAX_RETRIES + 1,
+                                    delay.as_millis()
+                                );
+                                if cancelable_sleep(handle, delay).await.is_err() {
+                                    return Err(SophonError::Cancelled);
+                                }
+                            }
+                        }
                     }
-                    log::warn!(
-                        "HDiff patch failed for {}: {e}, falling back to DownloadOver",
-                        asset.target_file_path
-                    );
-                    apply_download_over(client, game_dir, &state, &asset).await?;
+                }
+
+                if skip_progress {
+                    continue;
+                }
+                if fallback_to_download {
+                    apply_download_over_with_retry(
+                        client,
+                        game_dir,
+                        &state,
+                        asset,
+                        &download_over_context,
+                        handle,
+                    )
+                    .await?;
                 }
             }
             PatchMethod::DownloadOver => {
-                apply_download_over(client, game_dir, &state, asset).await?;
+                apply_download_over_with_retry(
+                    client,
+                    game_dir,
+                    &state,
+                    asset,
+                    &download_over_context,
+                    handle,
+                )
+                .await?;
             }
             PatchMethod::Remove | PatchMethod::Skip => {}
         }
@@ -665,9 +1208,14 @@ pub async fn apply_preinstall(
         let df = state.deleted_files.clone();
         tokio::task::spawn_blocking(move || {
             for rel in &df {
+                if let Err(err) = super::assembly::validate_asset_name(rel) {
+                    log::warn!("Skipping deleted file with invalid path: {err}");
+                    continue;
+                }
                 let path = gd.join(rel);
-                if path.exists() {
-                    let _ = fs::remove_file(&path);
+                if let Err(err) = fs::remove_file(&path) {
+                    let path_display = path.display();
+                    log::warn!("Failed to delete file {path_display}: {err}");
                 }
             }
         })
@@ -693,11 +1241,36 @@ pub async fn apply_preinstall(
 }
 
 fn validate_asset_path(game_dir: &Path, asset_path: &str) -> SophonResult<PathBuf> {
-    let path = game_dir.join(asset_path);
-    if asset_path.starts_with('/') || asset_path.starts_with('\\') || asset_path.contains("..") {
-        return Err(SophonError::PathTraversal(path));
+    super::assembly::validate_asset_name(asset_path)?;
+    Ok(game_dir.join(asset_path))
+}
+
+fn validate_patch_name(patch_name: &str) -> SophonResult<()> {
+    if patch_name.is_empty() {
+        return Err(SophonError::InvalidAssetName(
+            "patch_name cannot be empty".into(),
+        ));
     }
-    Ok(path)
+    if patch_name.contains('\0') {
+        return Err(SophonError::InvalidAssetName(
+            "patch_name cannot contain null bytes".into(),
+        ));
+    }
+    let mut chars = patch_name.chars();
+    if let (Some(first), Some(':')) = (chars.next(), chars.next())
+        && first.is_ascii_alphabetic()
+    {
+        return Err(SophonError::PathTraversal(patch_name.into()));
+    }
+    if patch_name.starts_with('/')
+        || patch_name.starts_with('\\')
+        || patch_name.starts_with("./")
+        || patch_name.starts_with(".\\")
+        || patch_name.split(&['/', '\\']).any(|c| c == "..")
+    {
+        return Err(SophonError::PathTraversal(patch_name.into()));
+    }
+    Ok(())
 }
 
 fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) -> bool {
@@ -707,53 +1280,145 @@ fn is_file_already_patched(path: &Path, expected_size: u64, expected_md5: &str) 
     if metadata.len() != expected_size {
         return false;
     }
-    verify_chunk_md5(path, expected_md5)
+    verify_file_hash(path, expected_md5)
 }
 
-fn is_filtered_asset(game_dir: &Path, asset: &PatchAssetInfo) -> bool {
-    let asset_lower = asset.target_file_path.to_lowercase();
-    let game_dir_str = game_dir.to_string_lossy();
+#[derive(Clone)]
+pub(super) struct FilterCache {
+    pub(super) kdel_tokens: Option<Vec<String>>,
+    pub(super) blacklist_entries: Option<Vec<String>>,
+    pub(super) ignored_lang_patterns: Option<Vec<String>>,
+}
 
-    if game_dir_str.contains("ZenlessZoneZero") || game_dir.join("ZenlessZoneZero_Data").exists() {
-        let kdel_path = game_dir.join("ZenlessZoneZero_Data/Persistent/KDelResource");
-        if let Ok(content) = fs::read_to_string(&kdel_path) {
-            if let Some(first_line) = content.lines().next() {
-                for token in first_line.split(&['|', ';', ',', '$', '#', '@', '+', ' '][..]) {
-                    let trimmed = token.trim_matches(&['|', ';', ',', '$', '#', '@', '+', ' '][..]);
-                    if !trimmed.is_empty() && asset.matching_field.eq_ignore_ascii_case(trimmed) {
-                        return true;
-                    }
+impl FilterCache {
+    fn new(game_dir: &Path) -> Self {
+        let game_dir_str = game_dir.to_string_lossy();
+
+        let kdel_tokens = if game_dir_str.contains(NAP_GAME_NAME)
+            || game_dir.join(NAP_GAME_DATA_DIR).exists()
+        {
+            let kdel_path = game_dir.join(format!("{NAP_GAME_DATA_DIR}/Persistent/KDelResource"));
+            fs::read_to_string(&kdel_path).ok().and_then(|content| {
+                let first_line = content.lines().next()?;
+                let tokens: Vec<String> = first_line
+                    .split(|c: char| {
+                        c == '|'
+                            || c == ';'
+                            || c == ','
+                            || c == '$'
+                            || c == '#'
+                            || c == '@'
+                            || c == '+'
+                            || c == ' '
+                    })
+                    .map(|token| {
+                        token
+                            .trim_matches(|c: char| {
+                                c == '|'
+                                    || c == ';'
+                                    || c == ','
+                                    || c == '$'
+                                    || c == '#'
+                                    || c == '@'
+                                    || c == '+'
+                                    || c == ' '
+                            })
+                            .to_string()
+                    })
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                if tokens.is_empty() {
+                    None
+                } else {
+                    Some(tokens)
                 }
-            }
+            })
+        } else {
+            None
+        };
+
+        let blacklist_entries = if game_dir.join(HKRPG_DATA_DIR).exists() {
+            let blacklist_path = game_dir.join(format!(
+                "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
+            ));
+            fs::read_to_string(&blacklist_path)
+                .ok()
+                .map(|content| {
+                    let mut entries: Vec<String> = content
+                        .lines()
+                        .filter_map(extract_blacklist_filename)
+                        .map(|name| name.to_lowercase())
+                        .collect();
+                    // Generate cross-path variants (Persistent ↔ StreamingAssets)
+                    let variants: Vec<String> = entries
+                        .iter()
+                        .flat_map(|entry| {
+                            if entry.contains("persistent/") {
+                                vec![entry.replace("persistent/", "streamingassets/")]
+                            } else if entry.contains("streamingassets/") {
+                                vec![entry.replace("streamingassets/", "persistent/")]
+                            } else {
+                                vec![]
+                            }
+                        })
+                        .collect();
+                    entries.extend(variants);
+                    entries
+                })
+                .and_then(|entries| Some(entries).filter(|e| !e.is_empty()))
+        } else {
+            None
+        };
+
+        let ignored_lang_patterns = if game_dir.join(HK4E_DATA_DIR_GLOBAL).exists()
+            || game_dir.join(HK4E_DATA_DIR_CN).exists()
+        {
+            let persistent_dir = super::game_filters::find_hk4e_persistent_dir(game_dir);
+            let installed = read_hk4e_installed_langs(&persistent_dir);
+            let all_langs: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
+            let ignored: Vec<String> = all_langs
+                .iter()
+                .filter(|lang| !installed.iter().any(|inst| inst == **lang))
+                .map(|lang| format!("/{lang}/").to_lowercase())
+                .collect();
+            Some(ignored)
+        } else {
+            None
+        };
+
+        FilterCache {
+            kdel_tokens,
+            blacklist_entries,
+            ignored_lang_patterns,
         }
     }
+}
 
-    if game_dir.join("StarRail_Data").exists() {
-        let blacklist_path = game_dir.join("StarRail_Data/Persistent/DownloadBlacklist.json");
-        if let Ok(content) = fs::read_to_string(&blacklist_path) {
-            for line in content.lines() {
-                if let Some(file_name) = extract_blacklist_filename(line) {
-                    if asset_lower.contains(&file_name.to_lowercase()) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    if game_dir.join("GenshinImpact_Data").exists() || game_dir.join("YuanShen_Data").exists() {
-        let persistent_dir = find_genshin_persistent_dir(game_dir);
-        let installed_langs = read_genshin_installed_langs(&persistent_dir);
-        let all_langs: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
-        let ignored_langs: Vec<&str> = all_langs
-            .iter()
-            .filter(|lang| !installed_langs.iter().any(|installed| installed == **lang))
-            .copied()
-            .collect();
-
-        for lang in &ignored_langs {
-            if asset_lower.contains(&format!("/{lang}/").to_lowercase()) {
+fn is_filtered_asset(cache: &FilterCache, asset: &PatchAssetInfo) -> bool {
+    if let Some(ref tokens) = cache.kdel_tokens {
+        for token in tokens {
+            if asset.matching_field.eq_ignore_ascii_case(token) {
                 return true;
+            }
+        }
+    }
+
+    if cache.blacklist_entries.is_some() || cache.ignored_lang_patterns.is_some() {
+        let asset_lower = asset.target_file_path.to_lowercase();
+
+        if let Some(ref entries) = cache.blacklist_entries {
+            for entry in entries {
+                if asset_lower.contains(entry.as_str()) {
+                    return true;
+                }
+            }
+        }
+
+        if let Some(ref patterns) = cache.ignored_lang_patterns {
+            for pattern in patterns {
+                if asset_lower.contains(pattern.as_str()) {
+                    return true;
+                }
             }
         }
     }
@@ -769,37 +1434,22 @@ fn extract_blacklist_filename(line: &str) -> Option<String> {
     Some(rest[..end].replace('\\', "/"))
 }
 
-fn find_genshin_persistent_dir(game_dir: &Path) -> PathBuf {
-    if let Ok(entries) = fs::read_dir(game_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if (name_str == "GenshinImpact_Data" || name_str == "YuanShen_Data")
-                && entry.path().is_dir()
-            {
-                return entry.path().join("Persistent");
-            }
-        }
-    }
-    game_dir.join("GenshinImpact_Data/Persistent")
-}
-
-fn read_genshin_installed_langs(persistent_dir: &Path) -> Vec<String> {
+fn read_hk4e_installed_langs(persistent_dir: &Path) -> Vec<String> {
     if let Ok(entries) = fs::read_dir(persistent_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.starts_with("audio_lang_") {
-                if let Ok(content) = fs::read_to_string(entry.path()) {
-                    let langs: Vec<String> = content
-                        .lines()
-                        .map(|l| l.trim())
-                        .filter(|l| !l.is_empty())
-                        .map(|l| l.to_string())
-                        .collect();
-                    if !langs.is_empty() {
-                        return langs;
-                    }
+            if name_str.starts_with("audio_lang_")
+                && let Ok(content) = fs::read_to_string(entry.path())
+            {
+                let langs: Vec<String> = content
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty())
+                    .map(|l| l.to_string())
+                    .collect();
+                if !langs.is_empty() {
+                    return langs;
                 }
             }
         }
@@ -807,57 +1457,135 @@ fn read_genshin_installed_langs(persistent_dir: &Path) -> Vec<String> {
     vec!["English(US)".to_string()]
 }
 
-fn filter_patch_assets_for_removed_features(
-    game_dir: &Path,
-    state: &PreinstallState,
-) -> Vec<PatchAssetInfo> {
-    state
-        .patch_assets
-        .iter()
-        .map(|asset| {
-            let should_skip = matches!(
-                asset.patch_method,
-                PatchMethod::DownloadOver | PatchMethod::Patch
-            ) && is_filtered_asset(game_dir, asset);
-            if should_skip {
-                let mut filtered = asset.clone();
-                filtered.patch_method = PatchMethod::Skip;
-                filtered
-            } else {
-                asset.clone()
-            }
-        })
-        .collect()
+pub(super) fn filter_patch_assets_for_removed_features(
+    cache: &FilterCache,
+    assets: &mut [PatchAssetInfo],
+) {
+    for asset in assets.iter_mut() {
+        if matches!(
+            asset.patch_method,
+            PatchMethod::CopyOver | PatchMethod::DownloadOver | PatchMethod::Patch
+        ) && is_filtered_asset(cache, asset)
+        {
+            asset.patch_method = PatchMethod::Skip;
+        }
+    }
 }
 
+/// Apply copyover patch to target file. Path validation is performed by the
+/// caller (`apply_preinstall`) before invoking this function.
 fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -> SophonResult<()> {
+    validate_patch_name(&asset.patch_name)?;
     let chunk_path = chunks_dir.join(&asset.patch_name);
     if !chunk_path.exists() {
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
+    }
+    if !asset.patch_hash.is_empty() && !verify_file_hash(&chunk_path, &asset.patch_hash) {
+        return Err(SophonError::Md5Mismatch {
+            item: asset.patch_name.clone(),
+            expected: asset.patch_hash.clone(),
+            actual: "(computed)".to_string(),
+        });
     }
 
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
     let mut chunk_file = fs::File::open(&chunk_path)?;
     chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
 
-    let mut data = vec![0u8; asset.patch_chunk_length as usize];
-    chunk_file.read_exact(&mut data)?;
-
-    if data.starts_with(HDIFF_MAGIC) {
-        return apply_hdiff_patch_with_empty_original(game_dir, &data, asset);
+    // Check if this is an HDiff patch by reading just the magic bytes
+    let mut magic_buf = [0u8; HDIFF_MAGIC.len()];
+    if asset.patch_chunk_length >= HDIFF_MAGIC.len() as u64 {
+        chunk_file.read_exact(&mut magic_buf)?;
+    }
+    if magic_buf == HDIFF_MAGIC.as_ref() {
+        let safe_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+        let diff_temp = game_dir.join(format!("patching/{safe_name}.diff"));
+        {
+            if let Some(parent) = diff_temp.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let diff_file = fs::File::create(&diff_temp)?;
+            let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, diff_file);
+            writer.write_all(HDIFF_MAGIC.as_ref())?;
+            let remaining = asset.patch_chunk_length - HDIFF_MAGIC.len() as u64;
+            let mut limited = (&mut chunk_file).take(remaining);
+            borrow_copy_buffer(|copy_buf| -> std::io::Result<()> {
+                if copy_buf.len() < super::FILE_WRITE_BUFFER_SIZE {
+                    copy_buf.resize(super::FILE_WRITE_BUFFER_SIZE, 0);
+                }
+                loop {
+                    let n = limited.read(copy_buf)?;
+                    if n == 0 {
+                        break;
+                    }
+                    writer.write_all(&copy_buf[..n])?;
+                }
+                Ok(())
+            })?;
+            writer.flush()?;
+        }
+        let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            apply_hdiff_patch_from_files(game_dir, &diff_temp, asset)
+        }));
+        let _ = fs::remove_file(&diff_temp);
+        match patch_result {
+            Ok(result) => return result,
+            Err(_) => {
+                return Err(SophonError::HDiffPatchFailed {
+                    file: asset.target_file_path.clone(),
+                    error: "HDiff patch panicked".to_string(),
+                });
+            }
+        }
     }
 
+    // Stream copy: seek back past magic bytes and copy all chunk data
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let temp_path = target_path.with_extension("temp");
+    let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+    let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
+    // Use both hash AND path to avoid collisions when target_file_hash is
+    // empty (which would produce the same safe_hash "" for multiple assets).
+    let temp_path = game_dir.join(format!("patching/copyover_{safe_path}_{safe_hash}.tmp"));
+    chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
     {
-        let mut file = fs::File::create(&temp_path)?;
-        file.write_all(&data)?;
+        let file = fs::File::create(&temp_path)?;
+        let mut writer = BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
+        let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
+        borrow_copy_buffer(|copy_buf| -> std::io::Result<()> {
+            if copy_buf.len() < super::FILE_WRITE_BUFFER_SIZE {
+                copy_buf.resize(super::FILE_WRITE_BUFFER_SIZE, 0);
+            }
+            loop {
+                let n = limited.read(copy_buf)?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&copy_buf[..n])?;
+            }
+            Ok(())
+        })?;
+        writer.flush()?;
     }
-    if target_path.exists() {
-        let _ = fs::remove_file(&target_path);
+    let actual_size = fs::metadata(&temp_path)?.len();
+    if actual_size != asset.target_file_size {
+        let _ = fs::remove_file(&temp_path);
+        return Err(SophonError::SizeMismatch {
+            item: asset.target_file_path.clone(),
+            expected: asset.target_file_size,
+            actual: actual_size,
+        });
+    }
+    if !asset.target_file_hash.is_empty() && !verify_file_hash(&temp_path, &asset.target_file_hash)
+    {
+        let _ = fs::remove_file(&temp_path);
+        return Err(SophonError::Md5Mismatch {
+            item: asset.target_file_path.clone(),
+            expected: asset.target_file_hash.clone(),
+            actual: "(computed)".to_string(),
+        });
     }
     fs::rename(&temp_path, &target_path)?;
 
@@ -868,105 +1596,197 @@ fn apply_hdiff_patch(
     game_dir: &Path,
     chunks_dir: &Path,
     asset: &PatchAssetInfo,
+    cache: &FilterCache,
 ) -> SophonResult<()> {
     let original_path = match &asset.original_file_path {
         Some(p) => validate_asset_path(game_dir, p)?,
         None => validate_asset_path(game_dir, &asset.target_file_path)?,
     };
-
+    let mut diff_ref_guard: DiffRefGuard = DiffRefGuard(None);
     if !original_path.exists() {
-        if is_filtered_asset(game_dir, asset) {
+        let is_blank = asset.original_file_hash.as_deref() == Some(BLANK_FILE_MD5)
+            || asset.original_file_size == Some(0);
+        if is_blank {
+            let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+            let diff_ref = game_dir.join(format!("patching/{safe_patch_name}.diff_ref"));
+            if let Some(parent) = diff_ref.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::File::create(&diff_ref)?;
+            if !verify_file_hash(&diff_ref, BLANK_FILE_MD5) {
+                return Err(SophonError::HDiffPatchFailed {
+                    file: asset.target_file_path.clone(),
+                    error: format!(
+                        "Blank diff_ref file hash mismatch for created empty file at {diff_ref:?}"
+                    ),
+                });
+            }
+            diff_ref_guard = DiffRefGuard::new(diff_ref);
+        } else if is_filtered_asset(cache, asset) {
             log::warn!(
                 "Original file missing for filtered asset, skipping: {}",
                 asset.target_file_path
             );
             return Ok(());
+        } else {
+            return Err(SophonError::OriginalFileMissing(
+                original_path.to_string_lossy().to_string(),
+            ));
         }
+    }
+
+    if diff_ref_guard.0.is_none()
+        && let Some(ref expected_size) = asset.original_file_size
+    {
+        let actual_size = match fs::metadata(&original_path) {
+            Ok(m) => m.len(),
+            Err(err) => {
+                if is_filtered_asset(cache, asset) {
+                    log::warn!(
+                        "Failed to read metadata for filtered asset {}: {err} — skipping",
+                        asset.target_file_path
+                    );
+                    return Ok(());
+                }
+                log::warn!(
+                    "Failed to read metadata for original file {}: {err} — falling back to DownloadOver",
+                    original_path.display()
+                );
+                return Err(SophonError::OriginalFileMissing(format!(
+                    "{} (Metadata unreadable: {err})",
+                    original_path.display()
+                )));
+            }
+        };
+        if actual_size != *expected_size {
+            if is_filtered_asset(cache, asset) {
+                log::warn!(
+                    "Original file size mismatch for filtered asset, skipping: {}",
+                    asset.target_file_path
+                );
+                return Ok(());
+            }
+            log::warn!(
+                "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
+                original_path.display(),
+                expected_size,
+                actual_size
+            );
+            let _ = fs::remove_file(&original_path);
+            return Err(SophonError::OriginalFileMissing(format!(
+                "{} (Size mismatch: expected {expected_size}, got {actual_size})",
+                original_path.display()
+            )));
+        }
+    }
+    if let Some(ref expected_md5) = asset.original_file_hash
+        && diff_ref_guard.0.is_none()
+        && original_path.exists()
+        && !expected_md5.is_empty()
+        && !verify_file_hash(&original_path, expected_md5)
+        && is_filtered_asset(cache, asset)
+    {
+        log::warn!(
+            "Original file MD5 mismatch for filtered asset, skipping: {}",
+            asset.target_file_path
+        );
+        return Ok(());
+    }
+    if let Some(ref expected_md5) = asset.original_file_hash
+        && diff_ref_guard.0.is_none()
+        && original_path.exists()
+        && !expected_md5.is_empty()
+        && !verify_file_hash(&original_path, expected_md5)
+        && !is_filtered_asset(cache, asset)
+    {
+        log::warn!(
+            "Original file MD5 mismatch for {} — deleting and falling back to DownloadOver",
+            original_path.display()
+        );
+        let _ = fs::remove_file(&original_path);
         return Err(SophonError::OriginalFileMissing(
             original_path.to_string_lossy().to_string(),
         ));
     }
 
-    if let Some(ref expected_size) = asset.original_file_size {
-        if original_path.exists() {
-            let actual_size = fs::metadata(&original_path).map(|m| m.len()).unwrap_or(0);
-            if actual_size != *expected_size {
-                if is_filtered_asset(game_dir, asset) {
-                    log::warn!(
-                        "Original file size mismatch for filtered asset, skipping: {}",
-                        asset.target_file_path
-                    );
-                    return Ok(());
-                }
-                return Err(SophonError::OriginalFileMissing(format!(
-                    "Size mismatch for {}: expected {}, got {}",
-                    original_path.display(),
-                    expected_size,
-                    actual_size
-                )));
-            }
-        }
-    }
-    if let Some(ref expected_md5) = asset.original_file_hash {
-        if original_path.exists() && !expected_md5.is_empty() {
-            if !verify_chunk_md5(&original_path, expected_md5) {
-                if is_filtered_asset(game_dir, asset) {
-                    log::warn!(
-                        "Original file MD5 mismatch for filtered asset, skipping: {}",
-                        asset.target_file_path
-                    );
-                    return Ok(());
-                }
-                return Err(SophonError::OriginalFileMissing(format!(
-                    "MD5 mismatch for {}",
-                    original_path.display()
-                )));
-            }
-        }
-    }
-
+    let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+    validate_patch_name(&asset.patch_name)?;
     let chunk_path = chunks_dir.join(&asset.patch_name);
     if !chunk_path.exists() {
         return Err(SophonError::PatchChunkNotFound(asset.patch_name.clone()));
     }
 
-    let diff_temp = game_dir.join(format!("patching/{}.diff", asset.patch_name));
+    let diff_temp = game_dir.join(format!("patching/{safe_patch_name}.diff"));
+    let _ = fs::remove_file(&diff_temp);
     {
         let mut chunk_file = fs::File::open(&chunk_path)?;
         chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
-        let mut data = vec![0u8; asset.patch_chunk_length as usize];
-        chunk_file.read_exact(&mut data)?;
 
         if let Some(parent) = diff_temp.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut diff_file = fs::File::create(&diff_temp)?;
-        diff_file.write_all(&data)?;
+        let diff_file = fs::File::create(&diff_temp)?;
+        let mut writer =
+            std::io::BufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, diff_file);
+        let mut limited = (&mut chunk_file).take(asset.patch_chunk_length);
+        borrow_copy_buffer(|copy_buf| -> std::io::Result<()> {
+            if copy_buf.len() < super::FILE_WRITE_BUFFER_SIZE {
+                copy_buf.resize(super::FILE_WRITE_BUFFER_SIZE, 0);
+            }
+            loop {
+                let n = limited.read(copy_buf)?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&copy_buf[..n])?;
+            }
+            Ok(())
+        })?;
+        writer.flush()?;
     }
 
-    let target_path = game_dir.join(&asset.target_file_path);
-    let temp_output = target_path.with_extension("temp");
+    let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
+    let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+    let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
+    let temp_output = game_dir.join(format!("patching/{safe_path}_{safe_hash}.tmp.out"));
+    let _ = fs::remove_file(&temp_output);
 
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let op = original_path.to_string_lossy().to_string();
-    let dp = diff_temp.to_string_lossy().to_string();
-    let tp = temp_output.to_string_lossy().to_string();
+    let effective_original = diff_ref_guard.0.as_deref().unwrap_or(&original_path);
+    let op = effective_original.to_string_lossy().into_owned();
+    let dp = diff_temp.to_string_lossy().into_owned();
+    let tp = temp_output.to_string_lossy().into_owned();
 
-    let patch_result = std::thread::spawn(move || {
+    let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
-        hdiff.apply()
-    })
-    .join();
+        hdiff.apply(None)
+    }));
 
     let _ = fs::remove_file(&diff_temp);
 
     match patch_result {
         Ok(true) => {
-            if target_path.exists() {
-                let _ = fs::remove_file(&target_path);
+            let actual_size = fs::metadata(&temp_output)?.len();
+            if actual_size != asset.target_file_size {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::SizeMismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_size,
+                    actual: actual_size,
+                });
+            }
+            if !asset.target_file_hash.is_empty()
+                && !verify_file_hash(&temp_output, &asset.target_file_hash)
+            {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::Md5Mismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_hash.clone(),
+                    actual: "(computed)".to_string(),
+                });
             }
             fs::rename(&temp_output, &target_path)?;
             Ok(())
@@ -978,62 +1798,89 @@ fn apply_hdiff_patch(
                 error: "HDiff apply returned false".to_string(),
             })
         }
-        Err(_) => {
+        Err(join_err) => {
             let _ = fs::remove_file(&temp_output);
+            let error_msg = if let Some(s) = join_err.downcast_ref::<&'static str>() {
+                s.to_string()
+            } else if let Some(s) = join_err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown thread panic".to_string()
+            };
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff thread panicked".to_string(),
+                error: format!("HDiff thread panicked: {error_msg}"),
             })
         }
     }
 }
 
-fn apply_hdiff_patch_with_empty_original(
+fn apply_hdiff_patch_from_files(
     game_dir: &Path,
-    diff_data: &[u8],
+    diff_path: &Path,
     asset: &PatchAssetInfo,
 ) -> SophonResult<()> {
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
 
-    let empty_original_path = game_dir.join(format!("patching/{}.diff_ref", asset.patch_name));
+    let safe_patch_name = asset.patch_name.replace(['/', '\\', '\0'], "_");
+    let empty_original_path = game_dir.join(format!("patching/{safe_patch_name}.diff_ref"));
     {
         if let Some(parent) = empty_original_path.parent() {
             fs::create_dir_all(parent)?;
         }
         fs::File::create(&empty_original_path)?;
-    }
-
-    let diff_temp = game_dir.join(format!("patching/{}.hdiff", asset.patch_name));
-    {
-        if let Some(parent) = diff_temp.parent() {
-            fs::create_dir_all(parent)?;
+        // BlankFileMd5Hash represents an empty original file.
+        // Verify our freshly-created diff_ref is actually empty before proceeding.
+        if !verify_file_hash(&empty_original_path, BLANK_FILE_MD5) {
+            let _ = fs::remove_file(&empty_original_path);
+            return Err(SophonError::HDiffPatchFailed {
+                file: asset.target_file_path.clone(),
+                error: format!(
+                    "Blank diff_ref file hash mismatch for created empty file at {empty_original_path:?}"
+                ),
+            });
         }
-        let mut diff_file = fs::File::create(&diff_temp)?;
-        diff_file.write_all(diff_data)?;
     }
 
-    let temp_output = target_path.with_extension("temp");
+    let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
+    let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
+    let temp_output = game_dir.join(format!("patching/{safe_path}_{safe_hash}.tmp.out"));
+    let _ = fs::remove_file(&temp_output);
     if let Some(parent) = temp_output.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let op = empty_original_path.to_string_lossy().to_string();
-    let dp = diff_temp.to_string_lossy().to_string();
+    let dp = diff_path.to_string_lossy().to_string();
     let tp = temp_output.to_string_lossy().to_string();
 
-    let patch_result = std::thread::spawn(move || {
+    let patch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         let mut hdiff = super::hdiffpatch::HDiff::new(op, dp, tp);
-        hdiff.apply()
-    })
-    .join();
+        hdiff.apply(None)
+    }));
 
     let _ = fs::remove_file(&empty_original_path);
-    let _ = fs::remove_file(&diff_temp);
 
     match patch_result {
         Ok(true) => {
-            if target_path.exists() {
-                let _ = fs::remove_file(&target_path);
+            let actual_size = fs::metadata(&temp_output)?.len();
+            if actual_size != asset.target_file_size {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::SizeMismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_size,
+                    actual: actual_size,
+                });
+            }
+            if !asset.target_file_hash.is_empty()
+                && !verify_file_hash(&temp_output, &asset.target_file_hash)
+            {
+                let _ = fs::remove_file(&temp_output);
+                return Err(SophonError::Md5Mismatch {
+                    item: asset.target_file_path.clone(),
+                    expected: asset.target_file_hash.clone(),
+                    actual: "(computed)".to_string(),
+                });
             }
             fs::rename(&temp_output, &target_path)?;
             Ok(())
@@ -1042,24 +1889,117 @@ fn apply_hdiff_patch_with_empty_original(
             let _ = fs::remove_file(&temp_output);
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff apply returned false (empty original)".to_string(),
+                error: "HDiff apply returned false (from files)".to_string(),
             })
         }
-        Err(_) => {
+        Err(join_err) => {
             let _ = fs::remove_file(&temp_output);
+            let error_msg = if let Some(s) = join_err.downcast_ref::<&'static str>() {
+                s.to_string()
+            } else if let Some(s) = join_err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown thread panic".to_string()
+            };
             Err(SophonError::HDiffPatchFailed {
                 file: asset.target_file_path.clone(),
-                error: "HDiff thread panicked (empty original)".to_string(),
+                error: format!("HDiff thread panicked (from files): {error_msg}"),
             })
         }
     }
 }
 
-async fn apply_download_over(
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct DownloadOverContext {
+    pub build: SophonBuildData,
+    pub manifests: HashMap<String, (DownloadInfo, SophonManifestProto)>,
+}
+
+pub async fn fetch_download_over_context(
+    client: &Client,
+    game_id: &str,
+    vo_lang: &str,
+) -> SophonResult<DownloadOverContext> {
+    let (_, pre_branch) = fetch_front_door(client, game_id).await?;
+    let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
+    let build = fetch_build(client, &pre_branch, None).await?;
+
+    let mut manifests = HashMap::new();
+    for meta in &build.manifests {
+        let should_fetch = meta.matching_field == "game"
+            || vo_lang_matches(&meta.matching_field, vo_lang)
+            || !is_known_vo_locale(&meta.matching_field);
+
+        if !should_fetch {
+            continue;
+        }
+
+        let manifest_result =
+            fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
+        manifests.insert(
+            meta.matching_field.clone(),
+            (meta.chunk_download.clone(), manifest_result.manifest),
+        );
+    }
+
+    Ok(DownloadOverContext { build, manifests })
+}
+
+async fn apply_download_over_with_retry(
     client: &Client,
     game_dir: &Path,
     state: &PreinstallState,
     asset: &PatchAssetInfo,
+    context: &DownloadOverContext,
+    handle: &DownloadHandle,
+) -> SophonResult<()> {
+    let mut last_err = None;
+    for attempt in 0..MAX_RETRIES {
+        if handle.is_cancelled() {
+            return Err(SophonError::Cancelled);
+        }
+        match apply_download_over(client, game_dir, state, asset, context, handle).await {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                if !err.is_retryable() {
+                    return Err(err);
+                }
+                let err_msg = err.to_string();
+                last_err = Some(err);
+                let is_last = attempt == MAX_RETRIES - 1;
+                if is_last {
+                    break;
+                }
+                let delay = retry_delay(attempt);
+                log::warn!(
+                    "DownloadOver failed for {} (attempt {}/{}), retrying in {}ms: {}",
+                    asset.target_file_path,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    delay.as_millis(),
+                    err_msg
+                );
+                if cancelable_sleep(handle, delay).await.is_err() {
+                    return Err(SophonError::Cancelled);
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| SophonError::DownloadFailed {
+        chunk: asset.target_file_path.clone(),
+        attempts: MAX_RETRIES,
+        error: "All retry attempts exhausted".to_string(),
+    }))
+}
+
+async fn apply_download_over(
+    client: &Client,
+    game_dir: &Path,
+    _state: &PreinstallState,
+    asset: &PatchAssetInfo,
+    context: &DownloadOverContext,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     let target_path = validate_asset_path(game_dir, &asset.target_file_path)?;
 
@@ -1067,27 +2007,12 @@ async fn apply_download_over(
         fs::create_dir_all(parent)?;
     }
 
-    let build = {
-        let (_, pre_branch) = fetch_front_door(client, &state.game_id).await?;
-        let pre_branch = pre_branch.ok_or(SophonError::NoPreinstallAvailable)?;
-        fetch_build(client, &pre_branch, None).await?
-    };
-
-    let matching_meta = build
+    let (chunk_download, manifest) = context
         .manifests
-        .iter()
-        .find(|m| m.matching_field == asset.matching_field)
+        .get(&asset.matching_field)
         .ok_or_else(|| SophonError::NoVoiceManifest(asset.matching_field.clone()))?;
 
-    let manifest_result = super::api::fetch_manifest(
-        client,
-        &matching_meta.manifest_download,
-        &matching_meta.manifest.id,
-    )
-    .await?;
-
-    let file_entry = manifest_result
-        .manifest
+    let file_entry = manifest
         .assets
         .iter()
         .find(|a| a.asset_name == asset.target_file_path)
@@ -1102,29 +2027,25 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || fs::create_dir_all(&cd)).await??;
     }
 
-    for chunk in &file_entry.asset_chunks {
+    let chunk_futures = file_entry.asset_chunks.iter().map(|chunk| {
         let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
-        if !chunk_path.exists() {
-            super::download::download_chunk(
-                client,
-                &matching_meta.chunk_download,
-                chunk,
-                &chunk_path,
-            )
-            .await?;
+        let client = client.clone();
+        let chunk_download = chunk_download.clone();
+        let chunk = chunk.clone();
+        let handle = handle.clone();
+        async move {
+            download_chunk_with_retries(&client, &chunk_download, &chunk, &chunk_path, &handle)
+                .await
         }
-    }
+    });
+    try_join_all(chunk_futures).await?;
 
     {
         let gd = game_dir.to_path_buf();
         let file_entry = file_entry.clone();
         let cd = chunks_dir.clone();
-        let target = target_path.clone();
         let vc = Arc::new(dashmap::DashMap::new());
         tokio::task::spawn_blocking(move || {
-            if target.exists() {
-                let _ = fs::remove_file(&target);
-            }
             let tmp_dir = gd.join("tmp-patch-downloadover");
             fs::create_dir_all(&tmp_dir)?;
             let result = super::assembly::assemble_file(
@@ -1135,7 +2056,13 @@ async fn apply_download_over(
                 &dashmap::DashMap::new(),
                 &vc,
             );
-            let _ = fs::remove_dir_all(&tmp_dir);
+            if let Err(err) = fs::remove_dir_all(&tmp_dir) {
+                log::warn!(
+                    "Failed to clean up temp directory {}: {}",
+                    tmp_dir.display(),
+                    err
+                );
+            }
             result
         })
         .await??;
@@ -1291,6 +2218,116 @@ mod tests {
     }
 
     #[test]
+    fn verify_file_hash_md5_uppercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_md5_file");
+        let data = b"hello world";
+        let md5_hex_lower = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+        assert!(verify_file_hash(&path, &md5_hex_lower.to_uppercase()));
+    }
+
+    #[test]
+    fn verify_file_hash_xxh64_uppercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_xxh64_file");
+        let data = b"hello world";
+        fs::write(&path, data).unwrap();
+        let mut hasher = twox_hash::XxHash64::default();
+        use std::hash::Hasher;
+        hasher.write(data);
+        let xxh64_lower = format!("{:016x}", hasher.finish());
+        assert!(verify_file_hash(&path, &xxh64_lower.to_uppercase()));
+    }
+
+    #[test]
+    fn verify_file_hash_empty_returns_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_empty");
+        fs::write(&path, b"some data").unwrap();
+        assert!(verify_file_hash(&path, ""));
+    }
+
+    #[test]
+    fn verify_file_hash_whitespace_only_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_whitespace");
+        fs::write(&path, b"some data").unwrap();
+        assert!(!verify_file_hash(&path, "   "));
+        assert!(!verify_file_hash(&path, "\t"));
+        assert!(!verify_file_hash(&path, "\n"));
+    }
+
+    #[test]
+    fn verify_file_hash_unknown_length_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_unknown");
+        fs::write(&path, b"some data").unwrap();
+        assert!(!verify_file_hash(&path, "short"));
+        assert!(!verify_file_hash(
+            &path,
+            "1234567890abcdef1234567890abcdef1234567890abcdef"
+        ));
+    }
+
+    #[test]
+    fn verify_file_hash_missing_file_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent_file");
+        assert!(!verify_file_hash(&path, "0123456789abcdef0123456789abcdef"));
+        assert!(!verify_file_hash(&path, "0123456789abcdef"));
+    }
+
+    // --- Group 8: Positive lowercase and negative wrong-hash cases ---
+
+    /// Lowercase MD5 hash must be accepted (verify_file_hash normalizes to
+    /// lowercase).
+    #[test]
+    fn verify_file_hash_md5_lowercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_md5_lower");
+        let data = b"hello world";
+        let md5_lower = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+        assert!(verify_file_hash(&path, &md5_lower));
+    }
+
+    /// A real MD5 mismatch must return false (verify_file_hash dispatcher).
+    #[test]
+    fn verify_file_hash_md5_wrong_hash_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_md5_wrong");
+        fs::write(&path, b"hello world").unwrap();
+        // real md5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        assert!(!verify_file_hash(&path, "00000000000000000000000000000000"));
+    }
+
+    /// Lowercase XXH64 hash must be accepted (verify_file_hash normalizes to
+    /// lowercase).
+    #[test]
+    fn verify_file_hash_xxh64_lowercase_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_xxh64_lower");
+        let data = b"hello world";
+        let mut hasher = twox_hash::XxHash64::default();
+        use std::hash::Hasher;
+        hasher.write(data);
+        let xxh64_lower = format!("{:016x}", hasher.finish());
+        fs::write(&path, data).unwrap();
+        assert!(verify_file_hash(&path, &xxh64_lower));
+    }
+
+    /// A real XXH64 mismatch must return false (verify_file_hash dispatcher).
+    #[test]
+    fn verify_file_hash_xxh64_wrong_hash_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_xxh64_wrong");
+        fs::write(&path, b"hello world").unwrap();
+        // 16 all-zero chars is not the real XXH64
+        assert!(!verify_file_hash(&path, "0000000000000000"));
+    }
+
+    #[test]
     fn delete_preinstall_state_cleans_up() {
         let dir = tempfile::tempdir().unwrap();
         let state_path = PreinstallState::state_file_path(dir.path(), "5.0.0");
@@ -1345,6 +2382,112 @@ mod tests {
     }
 
     #[test]
+    fn validate_asset_path_rejects_windows_drive_letter() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_asset_path(dir.path(), "C:/Windows/System32");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_empty() {
+        let result = validate_patch_name("");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::InvalidAssetName(_)
+        ));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_null_byte() {
+        let result = validate_patch_name("file\0.txt");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            SophonError::InvalidAssetName(_)
+        ));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_dotdot() {
+        let result = validate_patch_name("../../etc/passwd");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_drive_letter() {
+        let result = validate_patch_name("C:/path/to/chunk.bin");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_accepts_valid() {
+        let result = validate_patch_name("chunk_001.bin");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_relative_parent_component() {
+        // Path-component `..` check (not literal substring): a single leading
+        // `..` segment must still be rejected as traversal.
+        // ARRANGE: a name whose first path component is `..`
+        let name = "../etc/passwd";
+
+        // ACT: validate the patch name
+        let result = validate_patch_name(name);
+
+        // ASSERT: rejected as PathTraversal (not InvalidAssetName)
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_parent_component_in_middle() {
+        // Path-component `..` check: `..` may legally appear as a *substring*
+        // (e.g. `foo..bar`) but is still rejected when it appears as a
+        // directory component between separators.
+        // ARRANGE: a name with `..` as a middle directory component
+        let name = "path/../file";
+
+        // ACT
+        let result = validate_patch_name(name);
+
+        // ASSERT
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
+    }
+
+    #[test]
+    fn validate_patch_name_accepts_consecutive_dots_in_filename() {
+        // Consecutive dots within a single filename component are NOT
+        // path traversal and must remain accepted.
+        // ARRANGE / ACT / ASSERT
+        assert!(validate_patch_name("foo..bar").is_ok());
+    }
+
+    #[test]
+    fn validate_patch_name_accepts_version_like_name() {
+        // Version-like names such as `2.0..hotfix.pak` are legitimate
+        // patch filenames and must be accepted.
+        // ARRANGE / ACT / ASSERT
+        assert!(validate_patch_name("2.0..hotfix.pak").is_ok());
+    }
+
+    #[test]
+    fn validate_patch_name_rejects_dot_prefix() {
+        // Reject ./ and .\\ prefixes for consistency with validate_asset_name
+        assert!(validate_patch_name("./foo").is_err());
+        assert!(validate_patch_name(".\\foo").is_err());
+        assert!(validate_patch_name("./foo/bar").is_err());
+        assert!(validate_patch_name(".\\foo\\bar").is_err());
+        // But "foo..bar" (consecutive dots in filename) is still OK
+        assert!(validate_patch_name("foo..bar").is_ok());
+    }
+
+    #[test]
     fn is_file_already_patched_size_mismatch() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.bin");
@@ -1383,6 +2526,82 @@ mod tests {
     }
 
     #[test]
+    fn is_file_already_patched_returns_false_when_file_missing() {
+        // TOCTOU fix: function must fail soft (return false) when the file
+        // handle cannot be opened, rather than panicking or returning true.
+        // ARRANGE: an isolated tempdir containing no target file
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does_not_exist.bin");
+        // `dir` must outlive the call so the tempdir stays valid for `path`.
+        let _keep_dir_alive = &dir;
+
+        // ACT
+        let result = is_file_already_patched(&path, 0, "d41d8cd98f00b204e9800998ecf8427e");
+
+        // ASSERT: missing file -> false, regardless of expected hash/size
+        assert!(!result);
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_false_when_size_mismatch() {
+        // Size check must short-circuit before hashing, so incorrect
+        // expected size must return false without computing any hash.
+        // ARRANGE: a 5-byte file but expected size is far larger
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("size_mismatch.bin");
+        let data = b"short";
+        fs::write(&path, data).unwrap();
+        let actual_size = data.len() as u64;
+
+        // ACT
+        let result = is_file_already_patched(
+            &path,
+            actual_size + 9_999,
+            "00000000000000000000000000000000",
+        );
+
+        // ASSERT
+        assert!(!result);
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_true_when_size_and_md5_match() {
+        // Happy path: when both the on-disk size and the computed MD5 of
+        // the *same* file handle match, the function returns true.
+        // This exercises the open-then-hash-from-same-handle flow.
+        // ARRANGE
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("match.bin");
+        let data = b"hello world";
+        let expected_md5 = hex::encode(md5::Md5::digest(data));
+        fs::write(&path, data).unwrap();
+
+        // ACT
+        let result = is_file_already_patched(&path, data.len() as u64, &expected_md5);
+
+        // ASSERT
+        assert!(result);
+    }
+
+    #[test]
+    fn is_file_already_patched_returns_false_when_only_md5_mismatch() {
+        // When size matches but the MD5 computed from the file handle does
+        // not equal expected_md5, the function must return false.
+        // ARRANGE
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("md5_mismatch.bin");
+        let data = b"hello world";
+        fs::write(&path, data).unwrap();
+
+        // ACT: pass the correct size but a deliberately wrong hash
+        let result =
+            is_file_already_patched(&path, data.len() as u64, "00000000000000000000000000000000");
+
+        // ASSERT
+        assert!(!result);
+    }
+
+    #[test]
     fn patch_method_remove_serialization() {
         let method = PatchMethod::Remove;
         let json = serde_json::to_string(&method).unwrap();
@@ -1409,10 +2628,10 @@ mod tests {
     #[test]
     fn filter_patch_assets_skips_filtered_download_over() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("ZenlessZoneZero_Data/Persistent")).unwrap();
+        fs::create_dir_all(dir.path().join(format!("{NAP_GAME_DATA_DIR}/Persistent"))).unwrap();
         fs::write(
             dir.path()
-                .join("ZenlessZoneZero_Data/Persistent/KDelResource"),
+                .join(format!("{NAP_GAME_DATA_DIR}/Persistent/KDelResource")),
             "cutscenes",
         )
         .unwrap();
@@ -1476,11 +2695,13 @@ mod tests {
             main_manifest_ids: vec![],
         };
 
-        let filtered = filter_patch_assets_for_removed_features(dir.path(), &state);
-        assert_eq!(filtered.len(), 3);
-        assert_eq!(filtered[0].patch_method, PatchMethod::Skip);
-        assert_eq!(filtered[1].patch_method, PatchMethod::Skip);
-        assert_eq!(filtered[2].patch_method, PatchMethod::CopyOver);
+        let cache = FilterCache::new(dir.path());
+        let mut assets = state.patch_assets.clone();
+        filter_patch_assets_for_removed_features(&cache, &mut assets);
+        assert_eq!(assets.len(), 3);
+        assert_eq!(assets[0].patch_method, PatchMethod::Skip);
+        assert_eq!(assets[1].patch_method, PatchMethod::Skip);
+        assert_eq!(assets[2].patch_method, PatchMethod::CopyOver);
     }
 
     #[test]
@@ -1513,9 +2734,11 @@ mod tests {
             main_manifest_ids: vec![],
         };
 
-        let filtered = filter_patch_assets_for_removed_features(dir.path(), &state);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].patch_method, PatchMethod::DownloadOver);
+        let cache = FilterCache::new(dir.path());
+        let mut assets = state.patch_assets.clone();
+        filter_patch_assets_for_removed_features(&cache, &mut assets);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].patch_method, PatchMethod::DownloadOver);
     }
 
     #[test]
@@ -1615,6 +2838,107 @@ mod tests {
     }
 
     #[test]
+    fn apply_copy_over_small_chunk_below_magic_len() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let data = b"ab";
+        let md5_hex = hex::encode(md5::Md5::digest(data));
+        fs::write(chunks_dir.join("small_chunk"), data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/small.bin".to_string(),
+            target_file_size: data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "small_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: data.len() as u64,
+            patch_chunk_length: data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/small.bin")).unwrap();
+        assert_eq!(written, data);
+    }
+
+    #[test]
+    fn apply_copy_over_exact_magic_len_non_hdiff() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let data = b"ABCDE";
+        assert_eq!(data.len(), HDIFF_MAGIC.len());
+        assert_ne!(&data[..], HDIFF_MAGIC.as_ref());
+        let md5_hex = hex::encode(md5::Md5::digest(data));
+        fs::write(chunks_dir.join("exact_chunk"), data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/exact.bin".to_string(),
+            target_file_size: data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "exact_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: data.len() as u64,
+            patch_chunk_length: data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/exact.bin")).unwrap();
+        assert_eq!(written, data);
+    }
+
+    #[test]
+    fn apply_copy_over_with_offset_non_hdiff_seeks_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        let full_data = b"__PREFIX__HelloHDIFFWorld__SUFFIX__";
+        fs::write(chunks_dir.join("offset_chunk"), full_data).unwrap();
+
+        let target_data = &full_data[10..25];
+        assert!(target_data.starts_with(b"HelloHDIFF"));
+        let md5_hex = hex::encode(md5::Md5::digest(target_data));
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/offset.bin".to_string(),
+            target_file_size: target_data.len() as u64,
+            target_file_hash: md5_hex,
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "offset_chunk".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 10,
+            patch_size: 15,
+            patch_chunk_length: 15,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        apply_copy_over(dir.path(), &chunks_dir, &asset).unwrap();
+
+        let written = fs::read(dir.path().join("GameData/offset.bin")).unwrap();
+        assert_eq!(written, target_data);
+    }
+
+    #[test]
     fn apply_copy_over_detects_hdiff_magic() {
         let dir = tempfile::tempdir().unwrap();
         let chunks_dir = dir.path().join("patching/chunk");
@@ -1645,6 +2969,281 @@ mod tests {
         assert!(
             matches!(err, SophonError::HDiffPatchFailed { .. }),
             "expected HDiffPatchFailed, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn apply_copy_over_cleans_up_diff_temp_on_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a chunk with HDIFF magic but invalid hdiff data
+        let hdiff_data = b"HDIFFinvalid_data_that_cannot_be_patched";
+        fs::write(chunks_dir.join("patch_hdiff_fail"), hdiff_data).unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/hdiff_fail.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::CopyOver,
+            patch_name: "patch_hdiff_fail".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: hdiff_data.len() as u64,
+            patch_chunk_length: hdiff_data.len() as u64,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        let result = apply_copy_over(dir.path(), &chunks_dir, &asset);
+
+        // Should fail because the hdiff data is invalid
+        assert!(result.is_err());
+
+        // The diff_temp file should have been cleaned up
+        let diff_temp = dir.path().join("patching/patch_hdiff_fail.diff");
+        assert!(
+            !diff_temp.exists(),
+            "diff_temp file should have been cleaned up after apply_hdiff_patch_from_files fails"
+        );
+    }
+
+    #[test]
+    fn apply_hdiff_patch_size_mismatch_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create an original file with the wrong size
+        let original_path = dir.path().join("original.bin");
+        fs::write(&original_path, b"short data that has wrong size").unwrap();
+        let actual_size = fs::metadata(&original_path).unwrap().len();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk.bin"), b"dummy chunk data").unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "original.bin".to_string(),
+            target_file_size: 100,
+            target_file_hash: "target_hash".to_string(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("original.bin".to_string()),
+            original_file_hash: Some("original_hash".to_string()),
+            original_file_size: Some(999), // Expected size is 999, but actual is different
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SophonError::OriginalFileMissing(_)),
+            "Expected OriginalFileMissing, got: {err:?}"
+        );
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("Size mismatch"),
+            "Error should mention 'Size mismatch': {err_str}"
+        );
+        // Also verify the error message includes expected and actual sizes
+        assert!(
+            err_str.contains("999") && err_str.contains(&actual_size.to_string()),
+            "Error should include expected and actual sizes: {err_str}"
+        );
+    }
+
+    #[test]
+    fn apply_hdiff_patch_blank_original_creates_diff_ref() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk.bin"), b"dummy chunk data").unwrap();
+
+        // Asset where original file doesn't exist but hash indicates blank file
+        let asset = PatchAssetInfo {
+            target_file_path: "new_file.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("nonexistent.bin".to_string()),
+            original_file_hash: Some(BLANK_FILE_MD5.to_string()),
+            original_file_size: Some(0),
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        // Should NOT return OriginalFileMissing — should create blank diff_ref and
+        // proceed
+        assert!(
+            !matches!(result, Err(SophonError::OriginalFileMissing(_))),
+            "Should not return OriginalFileMissing for blank original: {:?}",
+            result
+        );
+        // The patch will fail because the dummy chunk isn't a real HDiff, but that's OK
+        // — the point is we got past the blank-file check and didn't error on
+        // missing original. Verify the diff_ref was cleaned up after patching
+        let diff_ref_path = dir.path().join("patching/patch_chunk.bin.diff_ref");
+        assert!(
+            !diff_ref_path.exists(),
+            "diff_ref file should have been cleaned up after patching"
+        );
+    }
+
+    #[test]
+    fn apply_hdiff_patch_blank_original_by_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk2.bin"), b"dummy chunk data").unwrap();
+
+        // Asset where original file doesn't exist and original_file_size is 0
+        let asset = PatchAssetInfo {
+            target_file_path: "another_new_file.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk2.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("nonexistent2.bin".to_string()),
+            original_file_hash: None,
+            original_file_size: Some(0),
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        // Should NOT return OriginalFileMissing — should create blank diff_ref and
+        // proceed
+        assert!(
+            !matches!(result, Err(SophonError::OriginalFileMissing(_))),
+            "Should not return OriginalFileMissing for blank original (size=0): {:?}",
+            result
+        );
+        // Verify the diff_ref was cleaned up after patching
+        let diff_ref_path = dir.path().join("patching/patch_chunk2.bin.diff_ref");
+        assert!(
+            !diff_ref_path.exists(),
+            "diff_ref file should have been cleaned up after patching"
+        );
+    }
+    /// Test that original_file_hash == BLANK_FILE_MD5 triggers blank-file
+    /// handling even when original_file_size is non-zero. The hash is
+    /// authoritative for blank detection; size inconsistency is a manifest
+    /// bug but we handle it gracefully by treating the file as blank.
+    #[test]
+    fn apply_hdiff_patch_blank_original_by_hash_ignores_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let chunks_dir = dir.path().join("patching/chunk");
+        fs::create_dir_all(&chunks_dir).unwrap();
+
+        // Create a dummy chunk file so the patch chunk exists check passes
+        fs::write(chunks_dir.join("patch_chunk3.bin"), b"dummy chunk data").unwrap();
+
+        // Asset where original file doesn't exist, hash indicates blank, but
+        // size is inconsistent (non-zero). Hash should take precedence.
+        let asset = PatchAssetInfo {
+            target_file_path: "new_file2.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "patch_chunk3.bin".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: Some("nonexistent3.bin".to_string()),
+            original_file_hash: Some(BLANK_FILE_MD5.to_string()),
+            original_file_size: Some(999), // Inconsistent: hash says blank, size says 999
+            matching_field: "game".to_string(),
+        };
+
+        let cache = FilterCache::new(dir.path());
+        let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
+
+        // Should NOT return OriginalFileMissing — hash takes precedence and
+        // triggers blank-file handling.
+        assert!(
+            !matches!(result, Err(SophonError::OriginalFileMissing(_))),
+            "Should not return OriginalFileMissing when hash indicates blank: {:?}",
+            result
+        );
+        // Verify the diff_ref was cleaned up after patching
+        let diff_ref_path = dir.path().join("patching/patch_chunk3.bin.diff_ref");
+        assert!(
+            !diff_ref_path.exists(),
+            "diff_ref file should have been cleaned up after patching"
+        );
+    }
+
+    #[test]
+    fn apply_hdiff_patch_from_files_blank_diff_ref_hash_matches() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a mock diff file
+        let diff_path = dir.path().join("patching/mock.diff");
+        fs::create_dir_all(diff_path.parent().unwrap()).unwrap();
+        fs::write(&diff_path, b"mock hdiff data").unwrap();
+
+        let asset = PatchAssetInfo {
+            target_file_path: "GameData/output.bin".to_string(),
+            target_file_size: 0,
+            target_file_hash: String::new(),
+            patch_method: PatchMethod::Patch,
+            patch_name: "blank_verify_patch".to_string(),
+            patch_hash: String::new(),
+            patch_offset: 0,
+            patch_size: 20,
+            patch_chunk_length: 20,
+            original_file_path: None,
+            original_file_hash: None,
+            original_file_size: None,
+            matching_field: "game".to_string(),
+        };
+
+        // This will fail because the diff data is invalid, but the blank diff_ref
+        // hash verification should pass (not fail with hash mismatch) before
+        // getting to the hdiff application step.
+        let result = apply_hdiff_patch_from_files(dir.path(), &diff_path, &asset);
+
+        // Verify that we did not fail on the blank diff_ref hash verification step
+        if let Err(SophonError::HDiffPatchFailed { error, .. }) = &result {
+            assert!(
+                !error.contains("hash mismatch"),
+                "Should not fail on blank diff_ref hash mismatch. Error: {error}"
+            );
+        }
+
+        // Directly verify that BLANK_FILE_MD5 is the hash of an empty file
+        let empty_path = dir.path().join("empty_file.txt");
+        fs::write(&empty_path, b"").unwrap();
+        assert!(
+            verify_file_hash(&empty_path, BLANK_FILE_MD5),
+            "BLANK_FILE_MD5 should match the hash of an empty file"
         );
     }
 
@@ -1721,13 +3320,15 @@ mod tests {
     #[test]
     fn is_filtered_asset_nap_kdel() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("ZenlessZoneZero_Data/Persistent")).unwrap();
+        fs::create_dir_all(dir.path().join(format!("{NAP_GAME_DATA_DIR}/Persistent"))).unwrap();
         fs::write(
             dir.path()
-                .join("ZenlessZoneZero_Data/Persistent/KDelResource"),
+                .join(format!("{NAP_GAME_DATA_DIR}/Persistent/KDelResource")),
             "cutscenes|design",
         )
         .unwrap();
+
+        let cache = FilterCache::new(dir.path());
 
         let asset = PatchAssetInfo {
             target_file_path: "data.bin".to_string(),
@@ -1744,7 +3345,7 @@ mod tests {
             original_file_size: None,
             matching_field: "cutscenes".to_string(),
         };
-        assert!(is_filtered_asset(dir.path(), &asset));
+        assert!(is_filtered_asset(&cache, &asset));
 
         let asset_game = PatchAssetInfo {
             target_file_path: "data.bin".to_string(),
@@ -1761,19 +3362,22 @@ mod tests {
             original_file_size: None,
             matching_field: "game".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset_game));
+        assert!(!is_filtered_asset(&cache, &asset_game));
     }
 
     #[test]
     fn is_filtered_asset_hkrpg_blacklist() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("StarRail_Data/Persistent")).unwrap();
+        fs::create_dir_all(dir.path().join(format!("{HKRPG_DATA_DIR}/Persistent"))).unwrap();
         fs::write(
-            dir.path()
-                .join("StarRail_Data/Persistent/DownloadBlacklist.json"),
+            dir.path().join(format!(
+                "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
+            )),
             r#"{"fileName":"Audio/Korean/vo_kr.pak","fileSize":"1000"}"#,
         )
         .unwrap();
+
+        let cache = FilterCache::new(dir.path());
 
         let asset = PatchAssetInfo {
             target_file_path: "Audio/Korean/vo_kr.pak".to_string(),
@@ -1790,7 +3394,7 @@ mod tests {
             original_file_size: None,
             matching_field: "ko-kr".to_string(),
         };
-        assert!(is_filtered_asset(dir.path(), &asset));
+        assert!(is_filtered_asset(&cache, &asset));
 
         let asset_en = PatchAssetInfo {
             target_file_path: "Audio/English/vo_en.pak".to_string(),
@@ -1807,19 +3411,26 @@ mod tests {
             original_file_size: None,
             matching_field: "en-us".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset_en));
+        assert!(!is_filtered_asset(&cache, &asset_en));
     }
 
     #[test]
-    fn is_filtered_asset_genshin_audio_lang() {
+    fn is_filtered_asset_hk4e_audio_lang() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("GenshinImpact_Data/Persistent")).unwrap();
-        fs::write(
+        fs::create_dir_all(
             dir.path()
-                .join("GenshinImpact_Data/Persistent/audio_lang_installed"),
+                .join(format!("{HK4E_DATA_DIR_GLOBAL}/Persistent")),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(format!(
+                "{HK4E_DATA_DIR_GLOBAL}/Persistent/audio_lang_installed"
+            )),
             "English(US)\n",
         )
         .unwrap();
+
+        let cache = FilterCache::new(dir.path());
 
         let asset_en = PatchAssetInfo {
             target_file_path: "Audio/English(US)/vo_en.pak".to_string(),
@@ -1836,7 +3447,7 @@ mod tests {
             original_file_size: None,
             matching_field: "en-us".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset_en));
+        assert!(!is_filtered_asset(&cache, &asset_en));
 
         let asset_jp = PatchAssetInfo {
             target_file_path: "Audio/Japanese/vo_jp.pak".to_string(),
@@ -1853,12 +3464,13 @@ mod tests {
             original_file_size: None,
             matching_field: "ja-jp".to_string(),
         };
-        assert!(is_filtered_asset(dir.path(), &asset_jp));
+        assert!(is_filtered_asset(&cache, &asset_jp));
     }
 
     #[test]
     fn is_filtered_asset_no_game_dir_markers() {
         let dir = tempfile::tempdir().unwrap();
+        let cache = FilterCache::new(dir.path());
         let asset = PatchAssetInfo {
             target_file_path: "data.bin".to_string(),
             target_file_size: 100,
@@ -1874,7 +3486,7 @@ mod tests {
             original_file_size: None,
             matching_field: "game".to_string(),
         };
-        assert!(!is_filtered_asset(dir.path(), &asset));
+        assert!(!is_filtered_asset(&cache, &asset));
     }
 
     #[test]
@@ -1883,6 +3495,104 @@ mod tests {
         let chunks = patching_chunk_dir(dir.path());
         assert!(chunks.to_string_lossy().contains("patching"));
         assert!(chunks.to_string_lossy().contains("chunk"));
+    }
+
+    // --- Group 11: Retry delay formula tests ---
+
+    #[test]
+    fn retry_delay_first_attempt_is_1000ms() {
+        // Base 1000ms + jitter (0-999ms)
+        let delay = retry_delay(0_u32).as_millis();
+        assert!(
+            (1000..2000).contains(&delay),
+            "expected 1000-1999, got {}",
+            delay
+        );
+    }
+
+    #[test]
+    fn retry_delay_doubles_up_to_fifth_attempt() {
+        // attempt 0 -> 1s + jitter
+        let d0 = retry_delay(0_u32).as_millis();
+        assert!(
+            (1000..2000).contains(&d0),
+            "attempt 0: expected 1000-1999, got {}",
+            d0
+        );
+        // attempt 1 -> 2s + jitter
+        let d1 = retry_delay(1_u32).as_millis();
+        assert!(
+            (2000..3000).contains(&d1),
+            "attempt 1: expected 2000-2999, got {}",
+            d1
+        );
+        // attempt 2 -> 4s + jitter
+        let d2 = retry_delay(2_u32).as_millis();
+        assert!(
+            (4000..5000).contains(&d2),
+            "attempt 2: expected 4000-4999, got {}",
+            d2
+        );
+        // attempt 3 -> 8s + jitter
+        let d3 = retry_delay(3_u32).as_millis();
+        assert!(
+            (8000..9000).contains(&d3),
+            "attempt 3: expected 8000-8999, got {}",
+            d3
+        );
+        // attempt 4 -> 16s + jitter
+        let d4 = retry_delay(4_u32).as_millis();
+        assert!(
+            (16000..17000).contains(&d4),
+            "attempt 4: expected 16000-16999, got {}",
+            d4
+        );
+        // attempt 5 -> 32s, capped to 30s + jitter
+        let d5 = retry_delay(5_u32).as_millis();
+        assert!(
+            (30000..31000).contains(&d5),
+            "attempt 5: expected 30000-30999, got {}",
+            d5
+        );
+    }
+
+    #[test]
+    fn retry_delay_caps_at_30_seconds_for_larger_attempts() {
+        // Capped at 30000 + jitter (up to ~30999ms)
+        let d5 = retry_delay(5_u32).as_millis();
+        assert!(
+            (30000..31000).contains(&d5),
+            "attempt 5: expected 30000-30999, got {}",
+            d5
+        );
+        let d6 = retry_delay(6_u32).as_millis();
+        assert!(
+            (30000..31000).contains(&d6),
+            "attempt 6: expected 30000-30999, got {}",
+            d6
+        );
+        let d50 = retry_delay(50_u32).as_millis();
+        assert!(
+            (30000..31000).contains(&d50),
+            "attempt 50: expected 30000-30999, got {}",
+            d50
+        );
+    }
+
+    #[test]
+    fn retry_delay_max_attempt_caps_before_multiply() {
+        let d10 = retry_delay(10).as_millis();
+        assert!(
+            (30000..31000).contains(&d10),
+            "attempt 10: expected 30000-30999, got {}",
+            d10
+        );
+        let d100 = retry_delay(100).as_millis();
+        assert!(
+            (30000..31000).contains(&d100),
+            "attempt 100: expected 30000-30999, got {}",
+            d100
+        );
     }
 
     fn make_download_info() -> DownloadInfo {

@@ -1,3 +1,4 @@
+use serde::de::{self, Unexpected};
 use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
@@ -17,7 +18,7 @@ pub struct FrontDoorData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameBranch {
     pub game: GameId,
-    pub main: PackageBranch,
+    pub main: Option<PackageBranch>,
     pub pre_download: Option<PackageBranch>,
 }
 
@@ -62,6 +63,8 @@ pub struct SophonManifestMeta {
     pub chunk_download: DownloadInfo,
     pub manifest_download: DownloadInfo,
     pub stats: Stats,
+    #[serde(default)]
+    pub deduplicated_stats: Option<Stats>,
 }
 
 #[allow(dead_code)]
@@ -86,9 +89,8 @@ pub struct DownloadInfo {
 }
 
 /// Compression format for downloaded content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
-#[serde(try_from = "i32", into = "i32")]
 pub enum Compression {
     None = 0,
     Zstd = 1,
@@ -112,9 +114,75 @@ impl TryFrom<i32> for Compression {
     }
 }
 
+impl<'de> Deserialize<'de> for Compression {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct CompressionVisitor;
+        impl<'de> de::Visitor<'de> for CompressionVisitor {
+            type Value = Compression;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("0, 1, false, or true")
+            }
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(if v {
+                    Compression::Zstd
+                } else {
+                    Compression::None
+                })
+            }
+            fn visit_i32<E: de::Error>(self, v: i32) -> Result<Self::Value, E> {
+                match v {
+                    0 => Ok(Compression::None),
+                    1 => Ok(Compression::Zstd),
+                    _ => Err(de::Error::invalid_value(
+                        Unexpected::Signed(v as i64),
+                        &self,
+                    )),
+                }
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                match v {
+                    0 => Ok(Compression::None),
+                    1 => Ok(Compression::Zstd),
+                    _ => Err(de::Error::invalid_value(Unexpected::Signed(v), &self)),
+                }
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                match v {
+                    0 => Ok(Compression::None),
+                    1 => Ok(Compression::Zstd),
+                    _ => Err(de::Error::invalid_value(Unexpected::Unsigned(v), &self)),
+                }
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                match v {
+                    "true" => Ok(Compression::Zstd),
+                    "false" => Ok(Compression::None),
+                    _ => Err(de::Error::invalid_value(Unexpected::Str(v), &self)),
+                }
+            }
+        }
+        deserializer.deserialize_any(CompressionVisitor)
+    }
+}
+
+impl Serialize for Compression {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i32(*self as i32)
+    }
+}
+
 impl DownloadInfo {
     pub fn url_for(&self, item_name: &str) -> String {
-        format!("{}{}/{}", self.url_prefix, self.url_suffix, item_name)
+        let prefix = self.url_prefix.trim_end_matches('/');
+        let suffix = self.url_suffix.trim_matches('/');
+        if suffix.is_empty() {
+            format!("{prefix}/{item_name}")
+        } else {
+            format!("{prefix}/{suffix}/{item_name}")
+        }
     }
 
     pub fn is_compressed(&self) -> bool {
@@ -161,33 +229,9 @@ pub struct SophonPatchManifestMeta {
     pub stats: std::collections::HashMap<String, Stats>,
 }
 
-#[inline]
-pub fn front_door_game_index(game_id: &str) -> Option<usize> {
-    match game_id.to_lowercase().as_str() {
-        "bh3" => Some(3),
-        "hk4e" => Some(2),
-        "hkrpg" => Some(1),
-        "nap" => Some(0),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn front_door_game_index_known() {
-        assert_eq!(front_door_game_index("nap"), Some(0));
-        assert_eq!(front_door_game_index("hkrpg"), Some(1));
-        assert_eq!(front_door_game_index("hk4e"), Some(2));
-        assert_eq!(front_door_game_index("bh3"), Some(3));
-    }
-
-    #[test]
-    fn front_door_game_index_unknown() {
-        assert_eq!(front_door_game_index("unknown"), None);
-    }
 
     #[test]
     fn compression_try_from_valid() {
@@ -214,6 +258,43 @@ mod tests {
             password: String::new(),
             compression: Compression::None,
             url_prefix: "https://example.com/".to_string(),
+            url_suffix: "v1".to_string(),
+        };
+        assert_eq!(
+            dl.url_for("manifest.dat"),
+            "https://example.com/v1/manifest.dat"
+        );
+    }
+
+    #[test]
+    fn download_info_url_for_trims_slashes() {
+        // Test that trailing/leading slashes are properly trimmed
+        let dl = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com//".to_string(),
+            url_suffix: "/v1/".to_string(),
+        };
+        // Should not have double slashes (except in protocol)
+        let url = dl.url_for("manifest.dat");
+        // Check for double slashes not in protocol
+        let after_protocol = url.strip_prefix("https://").unwrap_or(&url);
+        assert!(
+            !after_protocol.contains("//"),
+            "URL should not contain double slashes: {}",
+            url
+        );
+        assert_eq!(url, "https://example.com/v1/manifest.dat");
+    }
+
+    #[test]
+    fn download_info_url_for_no_slashes() {
+        let dl = DownloadInfo {
+            encryption: 0,
+            password: String::new(),
+            compression: Compression::None,
+            url_prefix: "https://example.com".to_string(),
             url_suffix: "v1".to_string(),
         };
         assert_eq!(
