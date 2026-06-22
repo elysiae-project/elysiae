@@ -5956,14 +5956,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/sysinfo/sysinfo-0.39.3.crate",
-        "sha256": "21d0d938c10fcda3e897e28aaddf4ab462375d411f4378cd63b1c945f69aba96",
-        "dest": "src-tauri/cargo/vendor/sysinfo-0.39.3"
+        "url": "https://static.crates.io/crates/sysinfo/sysinfo-0.39.4.crate",
+        "sha256": "a71c821502e2786cc74c965f86561090a2b08fea91507cb599b5da291486a2aa",
+        "dest": "src-tauri/cargo/vendor/sysinfo-0.39.4"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"21d0d938c10fcda3e897e28aaddf4ab462375d411f4378cd63b1c945f69aba96\", \"files\": {}}",
-        "dest": "src-tauri/cargo/vendor/sysinfo-0.39.3",
+        "contents": "{\"package\": \"a71c821502e2786cc74c965f86561090a2b08fea91507cb599b5da291486a2aa\", \"files\": {}}",
+        "dest": "src-tauri/cargo/vendor/sysinfo-0.39.4",
         "dest-filename": ".cargo-checksum.json"
     },
     {
