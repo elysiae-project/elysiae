@@ -610,13 +610,13 @@ mod tests {
     }
 
     #[test]
-    fn test_find_hk4e_persistent_dir_with_yuanshen_data() {
+    fn test_find_hk4e_persistent_dir_with_cn_data() {
         let dir = tempfile::tempdir().unwrap();
-        let yuanshen_data = dir.path().join(GAME_DATA_DIR_CN);
-        fs::create_dir(&yuanshen_data).unwrap();
+        let cn_data = dir.path().join(GAME_DATA_DIR_CN);
+        fs::create_dir(&cn_data).unwrap();
 
         let result = find_hk4e_persistent_dir(dir.path());
-        assert_eq!(result, yuanshen_data.join("Persistent"));
+        assert_eq!(result, cn_data.join("Persistent"));
     }
 
     #[test]

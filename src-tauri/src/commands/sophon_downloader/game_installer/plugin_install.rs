@@ -292,7 +292,8 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
     for entry in validation {
         let file_path = game_dir.join(&entry.path);
         if !file_path.exists() {
-            log::warn!("Validation file missing: {}", entry.path);
+            let path = &entry.path;
+            log::warn!("Validation file missing: {path}");
             return false;
         }
         if let Some(expected_size) = entry.size
@@ -312,7 +313,8 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
             let computed = match cache::file_md5_hex(&file_path) {
                 Ok(md5) => md5,
                 Err(err) => {
-                    log::warn!("Failed to compute MD5 for {}: {}", entry.path, err);
+                    let path = &entry.path;
+                    log::warn!("Failed to compute MD5 for {path}: {err}");
                     return false;
                 }
             };
@@ -511,7 +513,8 @@ pub async fn install_channel_sdks(
         });
 
         if let Err(err) = install_single_sdk(client, game_dir, sdk, &updater).await {
-            log::warn!("SDK {} installation failed: {}", sdk.game.id, err);
+            let game_id = &sdk.game.id;
+            log::warn!("SDK {game_id} installation failed: {err}");
         }
     }
 

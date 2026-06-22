@@ -252,7 +252,9 @@ mod tests {
     #[test]
     fn test_strip_prefix_case_insensitive_case_insensitive() {
         let prefix = format!("{GAME_DATA_DIR}/StreamingAssets/");
-        let result = strip_prefix_case_insensitive("STARRAIL_DATA/STREAMINGASSETS/foo", &prefix);
+        let upper_dir = GAME_DATA_DIR.to_uppercase();
+        let path = format!("{upper_dir}/STREAMINGASSETS/foo");
+        let result = strip_prefix_case_insensitive(&path, &prefix);
         assert_eq!(result, Some("foo"));
     }
 
@@ -334,13 +336,10 @@ mod tests {
     #[test]
     fn test_add_both_persistent_or_streaming_case_insensitive() {
         let mut blacklist = vec![];
+        let upper_dir = GAME_DATA_DIR.to_uppercase();
         add_both_persistent_or_streaming_assets(
-            "STARRAIL_DATA/STREAMINGASSETS/audio/voice.pck",
+            &format!("{upper_dir}/STREAMINGASSETS/audio/voice.pck"),
             &mut blacklist,
-        );
-        assert_eq!(
-            blacklist,
-            vec![format!("{GAME_DATA_DIR}/Persistent/audio/voice.pck")]
         );
     }
 

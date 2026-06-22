@@ -1284,7 +1284,10 @@ pub async fn install(
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
             .iter()
-            .map(|d| game_dir.join(format!("tmp-{}", d.label)))
+            .map(|d| {
+                let label = &d.label;
+                game_dir.join(format!("tmp-{label}"))
+            })
             .collect(),
     );
 

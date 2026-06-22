@@ -67,7 +67,7 @@ pub async fn check_update(
             match fetch_build_sizes(client, pre, vo_lang).await {
                 Ok((cs, ds)) => (true, Some(tag), cs, ds),
                 Err(err) => {
-                    log::warn!("Failed to fetch preinstall sizes: {}", err);
+                    log::warn!("Failed to fetch preinstall sizes: {err}");
                     (true, Some(tag), 0, 0)
                 }
             }

@@ -64,11 +64,9 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
             .take(count - MAX_CACHE_ENTRIES / 2)
             .cloned()
             .collect();
+        let trim_len = to_trim.len();
         log::warn!(
-            "Verification cache has {} entries (max {}), trimming {} entries",
-            count,
-            MAX_CACHE_ENTRIES,
-            to_trim.len(),
+            "Verification cache has {count} entries (max {MAX_CACHE_ENTRIES}), trimming {trim_len} entries",
         );
         to_trim
     } else {
@@ -84,7 +82,8 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
         cache.remove(key);
     }
     if !trim_keys.is_empty() {
-        log::debug!("Trimmed verification cache to {} entries", cache.len());
+        let cache_len = cache.len();
+        log::debug!("Trimmed verification cache to {cache_len} entries");
     }
 
     // Stale entries (where the file no longer exists on disk) are not eagerly
@@ -431,7 +430,7 @@ mod tests {
                 mtime_secs: 999,
             },
         );
-        let tmp_path = game_dir.join(format!("{}.tmp", VERIFICATION_CACHE_FILE));
+        let tmp_path = game_dir.join(format!("{VERIFICATION_CACHE_FILE}.tmp"));
         assert!(!tmp_path.exists());
         save_verification_cache(&game_dir, &cache).unwrap();
         assert!(!tmp_path.exists());
