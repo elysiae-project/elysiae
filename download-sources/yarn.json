@@ -722,86 +722,86 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.11.2.tgz",
-        "sha512": "fb8519ccbb7e78e004402c2077e4ea2a0c9424caefc7e0607572cb6aa25898fab33fe9c4e9866bfe163a0962d81906fc8c59fdf63124982eae037b4dbda980d7",
-        "dest-filename": "cli-darwin-arm64-QHRhdXJpLWFwcHMvY2xpLWRhcndpbi1hcm02NEBucG06Mi4xMS4y-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.11.3.tgz",
+        "sha512": "071a5a33c6ec0a85ecdf077858a6216acfc6d60b3bfabec1f9ee169f2464d8612854ea2e241d61a0be84e982d76435db61c8ba54576b367a1b430776b952f87b",
+        "dest-filename": "cli-darwin-arm64-QHRhdXJpLWFwcHMvY2xpLWRhcndpbi1hcm02NEBucG06Mi4xMS4z-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.11.2.tgz",
-        "sha512": "563618b5950fa8330bbad49f244cb1144dc1cfe0cf8bb73cc02de299c920bdc88b0d92eae2ac0a271062720d015c68578c9b25f2f29681644534c3c42d0f97ca",
-        "dest-filename": "cli-darwin-x64-QHRhdXJpLWFwcHMvY2xpLWRhcndpbi14NjRAbnBtOjIuMTEuMg==-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.11.3.tgz",
+        "sha512": "0db658b8f075644cdc00761ec82be8de5b73336efe697c0f9680abb5ec4f9e680f82e958266dd33aae9a0b84bec0f8525ed79d760f33226b4d92fc7f810ce6c2",
+        "dest-filename": "cli-darwin-x64-QHRhdXJpLWFwcHMvY2xpLWRhcndpbi14NjRAbnBtOjIuMTEuMw==-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.11.2.tgz",
-        "sha512": "c8c7a60fa7f88bde4042b892f046b3c8e1736c4df8ca39cfd7a8b720ece91c642f068cb60e3ca914c141ab436d3ee213511bff70e1a0b91b4747977bf7ff4248",
-        "dest-filename": "cli-linux-arm-gnueabihf-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LWFybS1nbnVlYWJpaGZAbnBtOjIuMTEuMg==-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.11.3.tgz",
+        "sha512": "ef8d4d76ea819b3d5791d53ccb3dce23f90166da876efc68f45f72b48796614ebdfc16bd75c6446ea394fbe0e9d06fd753cbc02344df4f2c0497ea7e05b2ef68",
+        "dest-filename": "cli-linux-arm-gnueabihf-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LWFybS1nbnVlYWJpaGZAbnBtOjIuMTEuMw==-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.11.2.tgz",
-        "sha512": "72023dd43db02fc1928285b06570eab7e0f09ee6423f6fdbcf4dd0004e13ae1800288b2b078857dba5bf1f510e34f514364aabb207820f4c14ea970d8d5ff993",
-        "dest-filename": "cli-linux-arm64-gnu-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LWFybTY0LWdudUBucG06Mi4xMS4y-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.11.3.tgz",
+        "sha512": "4560174fca53a887335dca2273e2d7968eae11b017181d1c821e8f83b63dc559c46f3af2435247b511a3f52c73aca49e981203047e90736e242b61baf62f287c",
+        "dest-filename": "cli-linux-arm64-gnu-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LWFybTY0LWdudUBucG06Mi4xMS4z-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.11.2.tgz",
-        "sha512": "5f5ae6d01111a8002082d6131124a05eb4b7b33e126ff3a23e2cf9e14a884a55d6f86911def3481a7b32fe57a3366a17195aab8b7439dc109f422725388c913f",
-        "dest-filename": "cli-linux-arm64-musl-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LWFybTY0LW11c2xAbnBtOjIuMTEuMg==-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.11.3.tgz",
+        "sha512": "aa89aa612fb20247748173119a182e59773b45f54df9728a5da1306dfe5098a511c3274b14e4e575de85f3f5a86434ac04cad5f1da4dc73d189de18b9a86e248",
+        "dest-filename": "cli-linux-arm64-musl-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LWFybTY0LW11c2xAbnBtOjIuMTEuMw==-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-riscv64-gnu/-/cli-linux-riscv64-gnu-2.11.2.tgz",
-        "sha512": "bac6cc2c96d3dcab643ab04c0d578660d337e5a4c75f1dfc4894b34cc4aaaa379420e43e8953e36f6c8018d004f8aaa605b031e0538523231e297c7633f24a19",
-        "dest-filename": "cli-linux-riscv64-gnu-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LXJpc2N2NjQtZ251QG5wbToyLjExLjI=-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-riscv64-gnu/-/cli-linux-riscv64-gnu-2.11.3.tgz",
+        "sha512": "8ce0976c3a9e0e3e5771c96c38101a5e3b53830642560f33119f9d6cf502a000ce8258c580bd2b3a461373deaf51880ead811fb8762285633120319a0fa1b027",
+        "dest-filename": "cli-linux-riscv64-gnu-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LXJpc2N2NjQtZ251QG5wbToyLjExLjM=-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.11.2.tgz",
-        "sha512": "46ee20c0928f1b472d546721446a51ba9e18e255b64927c59eb6d07321e10a588acb883c433f7b4eb5200aeaf809b5b20202b1bc68774a3ae40342c36330c68b",
-        "dest-filename": "cli-linux-x64-gnu-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LXg2NC1nbnVAbnBtOjIuMTEuMg==-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.11.3.tgz",
+        "sha512": "faedc73bf177807c0be3cb7d81637fbaba99be96842730459936aae5e48886fcbc4cebe785bf8b809af7437046fb9271b81ac2523aad384cfa80cb6d74915204",
+        "dest-filename": "cli-linux-x64-gnu-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LXg2NC1nbnVAbnBtOjIuMTEuMw==-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.11.2.tgz",
-        "sha512": "7949bb4fa72537530c98d49143d81a5ac41dc9e850c761a69f9861b7f41496a65023fa9c3f63892b97676b1ab01730abd8776c128f727716aa712d6827332f53",
-        "dest-filename": "cli-linux-x64-musl-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LXg2NC1tdXNsQG5wbToyLjExLjI=-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.11.3.tgz",
+        "sha512": "b29af9269afa285fef7a190bc09d1899d1aff10c29594faec3b27c6e08a33b4b28c7a64262c48d31b72c4234ea3e2e3197ea74c28218a565e00a180762901cf2",
+        "dest-filename": "cli-linux-x64-musl-QHRhdXJpLWFwcHMvY2xpLWxpbnV4LXg2NC1tdXNsQG5wbToyLjExLjM=-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-arm64-msvc/-/cli-win32-arm64-msvc-2.11.2.tgz",
-        "sha512": "1de7995bcd2353e8154ce117e17fe10ba3554807435576a3c0fe5fc4867fdf3f56bd40bbaabb9d5f618c4e2958aba0e0d1ed2c9345e0b00243d61679c0f05750",
-        "dest-filename": "cli-win32-arm64-msvc-QHRhdXJpLWFwcHMvY2xpLXdpbjMyLWFybTY0LW1zdmNAbnBtOjIuMTEuMg==-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-arm64-msvc/-/cli-win32-arm64-msvc-2.11.3.tgz",
+        "sha512": "69b9284508a1e7105adefcf6b2959a7b1d243ff33357354f407a26d9ff239c2ab8e91fe5b8e0fa532f3910c53dfdb7f37fa673768ad626c80ef8e317f74171db",
+        "dest-filename": "cli-win32-arm64-msvc-QHRhdXJpLWFwcHMvY2xpLXdpbjMyLWFybTY0LW1zdmNAbnBtOjIuMTEuMw==-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.11.2.tgz",
-        "sha512": "6218d03597177db9022f26b34afd673e727d891144d709ba91ce751436d4d74fc3934f62a3ee8f00630b8e4c675f619d334a8c9c39938ecb58f264c356fb4a78",
-        "dest-filename": "cli-win32-ia32-msvc-QHRhdXJpLWFwcHMvY2xpLXdpbjMyLWlhMzItbXN2Y0BucG06Mi4xMS4y-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.11.3.tgz",
+        "sha512": "572e80bf3166d46e34860debf8e6030778e4baeed1e309cccdb4012aeba7f6fe82820f0889eae92cbeeda0cceb64ab3ff0d946f12838c7588b151e76a249f21e",
+        "dest-filename": "cli-win32-ia32-msvc-QHRhdXJpLWFwcHMvY2xpLXdpbjMyLWlhMzItbXN2Y0BucG06Mi4xMS4z-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.11.2.tgz",
-        "sha512": "77625c865148a597af65545ecaa85039e90999bd541f7ae1679557eac1f7b72f444c4d132906afa6286fa127145df28aa56e87642d0cac519153466d0fec3780",
-        "dest-filename": "cli-win32-x64-msvc-QHRhdXJpLWFwcHMvY2xpLXdpbjMyLXg2NC1tc3ZjQG5wbToyLjExLjI=-10c0.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.11.3.tgz",
+        "sha512": "1a572217be4675bb1e6a33b289bd9a087c04dc15c8a99d658862962c546f09d379c26f21f2116cb0454a43fe84fb68ec30b83dbfb2c24dbf7cdd81679f4412c3",
+        "dest-filename": "cli-win32-x64-msvc-QHRhdXJpLWFwcHMvY2xpLXdpbjMyLXg2NC1tc3ZjQG5wbToyLjExLjM=-10c0.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.11.2.tgz",
-        "sha512": "6e4dc77a6aaf191a32fb90ff75531440728c60b8250f48d59cc9bfd2218c1fab9f67ea7caf5e26e81a488b1c228f73c1bd976f391529d5889f4c3f10c5567537",
-        "dest-filename": "cli-QHRhdXJpLWFwcHMvY2xpQG5wbToyLjExLjI=-8596dd46f2.tgz",
+        "url": "https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.11.3.tgz",
+        "sha512": "1049507bccfcb83ecf8b9fbeb49fd47c4c16b8ad3caddde808361d7886c901bea9651af196a9a8179821e47e58bf39943e14b821109a2d2b1086f5a4adf2be19",
+        "dest-filename": "cli-QHRhdXJpLWFwcHMvY2xpQG5wbToyLjExLjM=-2d1af16d26.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
@@ -939,9 +939,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/@types/node/-/node-25.9.3.tgz",
-        "sha512": "eb4dc175d40cbf7a5472be14d9d86e8e4f37376b530d5affdf8c0823607a6c9cba83ef160fac946f5d63b3336cd20762e0f7ac55697b001b7c9d8315a672d472",
-        "dest-filename": "node-QHR5cGVzL25vZGVAbnBtOjI1LjkuMw==-72d3aece9d.tgz",
+        "url": "https://registry.npmjs.org/@types/node/-/node-26.0.0.tgz",
+        "sha512": "bdfd98162d6263d9471b034932cd356e26456ca264ad94754fafcc9738e124b3dd9ed3872e14eb0d29d255c76dbe38a18b8550365ac5448c4bb03065429022a4",
+        "dest-filename": "node-QHR5cGVzL25vZGVAbnBtOjI2LjAuMA==-f36e21634f.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
@@ -1408,9 +1408,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/lucide-preact/-/lucide-preact-1.20.0.tgz",
-        "sha512": "3b926a36f91650efb358a36ad801e6f352a9cd4cf6675ee9bc402d1abd8357a16b7180e99f223f91e94673c03b8254b1bbdb953ea6c834d8bd0f44637d85bc05",
-        "dest-filename": "lucide-preact-bHVjaWRlLXByZWFjdEBucG06MS4yMC4w-811d8ad4f9.tgz",
+        "url": "https://registry.npmjs.org/lucide-preact/-/lucide-preact-1.21.0.tgz",
+        "sha512": "19426cfef6121cd3391d4d14c0d0037cabc36cd0d0ee2eaf7229e20afb6945532c5f2f8539c6911e0461a95718fc288e46a03aa0c0bcc4ae4927b5af6f5af54b",
+        "dest-filename": "lucide-preact-bHVjaWRlLXByZWFjdEBucG06MS4yMS4w-50240d3d09.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
@@ -1786,9 +1786,9 @@
     },
     {
         "type": "file",
-        "url": "https://registry.npmjs.org/undici-types/-/undici-types-7.24.6.tgz",
-        "sha512": "591356fac2608f9381378ff42691c5aadab38696e75741ae07e3a8cc0f6008bedaf7ddd2994fb5241642ccb37162c6cc7c87832fe953b29843e6337937e9f4ce",
-        "dest-filename": "undici-types-dW5kaWNpLXR5cGVzQG5wbTo3LjI0LjY=-d9cd8befb6.tgz",
+        "url": "https://registry.npmjs.org/undici-types/-/undici-types-8.3.0.tgz",
+        "sha512": "8f7ef949c57ad1da26f9890f1487d32dc3a23f190dfdbb87cf91a86e32e18b116e00d68db370bd9781a6ad6a9e8e05d627b05b25c158a53114912d467bc6e965",
+        "dest-filename": "undici-types-dW5kaWNpLXR5cGVzQG5wbTo4LjMuMA==-c8aa7e2fbe.tgz",
         "dest": "flatpak-node/yarn-berry/cache/locator"
     },
     {
