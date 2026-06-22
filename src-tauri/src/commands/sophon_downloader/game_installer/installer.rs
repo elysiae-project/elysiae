@@ -2176,7 +2176,7 @@ mod tests {
         let server = MockServer::start().await;
         let data = b"chunk payload that has the wrong hash".to_vec();
         // Intentionally wrong hash so the chunk always fails MD5 verification.
-        let wrong_md5 = "00000000000000000000000000000000";
+        let _wrong_md5 = "00000000000000000000000000000000";
 
         let wrong_md5 = hex::encode(md5::Md5::digest(b"wrong_data"));
         let data_len = data.len() as u64;

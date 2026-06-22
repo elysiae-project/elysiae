@@ -6,9 +6,6 @@ use tauri::{Manager, command};
 use crate::commands::{file_downloader, file_manager};
 mod commands;
 use crate::commands::sophon_downloader::ActiveDownload;
-use std::env;
-use tauri::Manager;
-use tauri::command;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -131,4 +128,22 @@ fn is_wayland() -> bool {
 #[command]
 fn elysiae_version() -> String {
     env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "Unknown App Version".to_string())
+}
+
+#[cfg(debug_assertions)]
+fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::empty())
+        .build()
+}
+
+#[cfg(not(debug_assertions))]
+fn disable_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::all())
+        .build()
 }
