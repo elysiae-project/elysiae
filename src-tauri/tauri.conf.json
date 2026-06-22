@@ -19,7 +19,7 @@
         "minHeight": 700,
         "minWidth": 1200,
         "maxHeight": 700,
-        "maxWidth": 1200, 
+        "maxWidth": 1200,
         "decorations": false,
         "shadow": false,
         "transparent": false
@@ -29,7 +29,11 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**"]
+        "scope": [
+          "$APPDATA/**",
+          "$APPCONFIG/**",
+          "$APPLOCALDATA/**"
+        ]
       }
     }
   },
@@ -42,7 +46,7 @@
       "icons/icon.svg"
     ],
     "resources": {
-      "resources/settings.json": "settings.json",
+      "conf/settings.json": "settings.json",
       "icons/icon.png": "appIcon.png"
     },
     "active": true,
@@ -51,7 +55,9 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["elysiae"]
+        "schemes": [
+          "elysiae"
+        ]
       }
     }
   }

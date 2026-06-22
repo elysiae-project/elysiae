@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "isFirstLaunch": true,
+  "lastUsedVersion": "none",
+  "selectedGame": "hkrpg",
+  "voLanguage": "en",
+  "blockNotifications": false,
+  "createShortcuts": true,
+  "autoUpdate": true,
+  "autoPreload": true,
+  "installedComponents": {
+    "proton": null,
+    "jadeite": null
+  },
+  "cachedBackgrounds": {
+    "bh3": [],
+    "hk4e": [],
+    "hkrpg": [],
+    "nap": []
+  }
+}
