@@ -87,9 +87,14 @@ export const downloadFileNoProgress = async (
 	destination: string,
 ) => {
 	const downloadID = crypto.randomUUID();
-	await invoke<void>("download_file", {
-		url: url,
-		dest: destination,
-		uuid: downloadID,
-	});
+	try {
+		await invoke<void>("download_file", {
+			url: url,
+			dest: destination,
+			uuid: downloadID,
+		});
+	} catch (e) {
+		error(`downloadFileNoProgress: ${e}`);
+		throw e;
+	}
 };
