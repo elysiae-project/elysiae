@@ -1,12 +1,12 @@
 {
+  "version": 1,
   "isFirstLaunch": true,
   "lastUsedVersion": "none",
   "selectedGame": "hkrpg",
   "voLanguage": "en",
   "blockNotifications": false,
   "installedComponents": {
-    "wine": null,
-    "dxvk": null,
+    "proton": null,
     "jadeite": null
   },
   "cachedBackgrounds": {
