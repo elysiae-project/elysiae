@@ -269,6 +269,7 @@ export type Settings = {
 	version: number;
 	isFirstLaunch: boolean;
 	lastUsedVersion: string;
+	selectedGame: GameCodes;
 	voLanguage: string;
 	blockNotifications: boolean;
 	createShortcuts: boolean;
