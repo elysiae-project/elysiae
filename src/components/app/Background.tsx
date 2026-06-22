@@ -17,13 +17,15 @@ const BackgroundVideo = ({ src }: { src: string | null }) => {
 		if (!el || !src) return;
 
 		const onCanPlay = () => {
-			el.play().catch(() => {});
+			el.play().catch((err) => {
+				console.error("Background video play failed:", err);
+			});
 			setVisible(true);
 		};
 
-		el.addEventListener("canplay", onCanPlay);
 		el.src = src;
 		el.load();
+		el.addEventListener("canplay", onCanPlay);
 
 		return () => {
 			el.removeEventListener("canplay", onCanPlay);
