@@ -41,16 +41,17 @@ export const updateAllProtonComponents = async (
 	onProgress: (event: ProtonSetupProgress) => void,
 ): Promise<void> => {
 	const modules: AppModules[] = ["proton", "jadeite"];
-	for (let i = 0; i < modules.length; i++) {
-		try {
+	try {
+		for (let i = 0; i < modules.length; i++) {
 			await updateProtonComponent(modules[i], onProgress);
-		} catch (e) {
-			error(`updateAllProtonComponents: ${e}`);
-			return;
 		}
+		info("Proton Component Download Complete");
+	} catch (e) {
+		error(`updateAllProtonComponents: ${e}`);
+		throw e;
+	} finally {
+		onProgress({ type: "protonSetupFinished" });
 	}
-	info("Proton Component Download Complete");
-	onProgress({ type: "protonSetupFinished" });
 };
 
 /**
@@ -67,54 +68,45 @@ export const updateProtonComponent = async (
 	);
 	const component = components[index](onProgress);
 
-	try {
-		info(`Installing/Updating ${component.componentName}`);
-		const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${component.componentName}.json`;
-		const assetResponse = await getApiJson<ModuleData[]>(assetURL);
+	info(`Installing/Updating ${component.componentName}`);
+	const assetURL = `https://raw.githubusercontent.com/elysiae-project/components/refs/heads/main/components/${component.componentName}.json`;
+	const assetResponse = await getApiJson<ModuleData[]>(assetURL);
 
-		const json = assetResponse[0];
+	const json = assetResponse[0];
 
+	onProgress({
+		type: "protonSetupDownloading",
+		component: component.componentName,
+		downloaded_bytes: 0,
+		total_bytes: 0,
+	});
+
+	await downloadFile(json.download_url, component.saveTo, (progress, total) => {
 		onProgress({
 			type: "protonSetupDownloading",
 			component: component.componentName,
-			downloaded_bytes: 0,
-			total_bytes: 0,
+			downloaded_bytes: progress,
+			total_bytes: total,
 		});
+	});
 
-		await downloadFile(
-			json.download_url,
-			component.saveTo,
-			(progress, total) => {
-				onProgress({
-					type: "protonSetupDownloading",
-					component: component.componentName,
-					downloaded_bytes: progress,
-					total_bytes: total,
-				});
-			},
-		);
+	onProgress({
+		type: "protonSetupExtracting",
+		component: component.componentName,
+	});
 
+	await extractFile(component.saveTo, component.extractTo);
+
+	if (typeof component.postInstall !== "undefined") {
 		onProgress({
-			type: "protonSetupExtracting",
+			type: "protonSetupInstalling",
 			component: component.componentName,
 		});
-
-		await extractFile(component.saveTo, component.extractTo);
-
-		if (typeof component.postInstall !== "undefined") {
-			onProgress({
-				type: "protonSetupInstalling",
-				component: component.componentName,
-			});
-			await component.postInstall();
-		}
-
-		// Update the Proton module tracker
-		await updateModuleTracker(component.componentName, json.tag);
-	} catch (e) {
-		error(`installProtonComponent: ${e}`);
-		return;
+		await component.postInstall();
 	}
+
+	// Update the Proton module tracker
+	await updateModuleTracker(component.componentName, json.tag);
 	info(`Installation/Update of ${component.componentName} succeeded.`);
 };
 
