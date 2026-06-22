@@ -2093,12 +2093,13 @@ mod tests {
         let data = b"chunk payload".to_vec();
         let expected_md5 = hex::encode(md5::Md5::digest(&data));
 
+        let data_len = data.len() as u64;
         let chunk = SophonManifestAssetChunk {
             chunk_name: "test_retry_chunk".to_string(),
             chunk_decompressed_hash_md5: String::new(),
             chunk_on_file_offset: 0,
-            chunk_size: data.len() as u64,
-            chunk_size_decompressed: data.len() as u64,
+            chunk_size: data_len,
+            chunk_size_decompressed: data_len,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: expected_md5,
             chunk_old_offset: -1,
@@ -2177,22 +2178,25 @@ mod tests {
         // Intentionally wrong hash so the chunk always fails MD5 verification.
         let wrong_md5 = "00000000000000000000000000000000";
 
+        let wrong_md5 = hex::encode(md5::Md5::digest(b"wrong_data"));
+        let data_len = data.len() as u64;
         let chunk = SophonManifestAssetChunk {
             chunk_name: "discard_partial_chunk".to_string(),
             chunk_decompressed_hash_md5: String::new(),
             chunk_on_file_offset: 0,
-            chunk_size: data.len() as u64,
-            chunk_size_decompressed: data.len() as u64,
+            chunk_size: data_len,
+            chunk_size_decompressed: data_len,
             chunk_compressed_hash_xxh: 0,
             chunk_compressed_hash_md5: wrong_md5.to_string(),
             chunk_old_offset: -1,
         };
 
+        let server_uri = server.uri();
         let dl_info = Arc::new(DownloadInfo {
             encryption: 0,
             password: String::new(),
             compression: Compression::None,
-            url_prefix: format!("{}/", server.uri()),
+            url_prefix: format!("{server_uri}/"),
             url_suffix: "chunks".to_string(),
         });
 

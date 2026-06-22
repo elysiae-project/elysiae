@@ -1290,7 +1290,8 @@ mod tests {
     fn try_get_version_no_hdiff_fails() {
         let result = HDiff::try_get_version("random_string");
         assert!(result.is_err(), "should fail without HDIFF marker");
-        let msg = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
         assert!(msg.contains("cannot find 'HDIFF'"), "msg={msg}");
     }
 
@@ -1299,7 +1300,8 @@ mod tests {
     fn try_get_version_hdiff_no_digits_fails() {
         let result = HDiff::try_get_version("HDIFF");
         assert!(result.is_err(), "should fail when no digits follow HDIFF");
-        let msg = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
         assert!(msg.contains("invalid version string"), "msg={msg}");
     }
 
@@ -1308,7 +1310,8 @@ mod tests {
     fn try_get_version_hdiff_non_numeric_fails() {
         let result = HDiff::try_get_version("HDIFFabc");
         assert!(result.is_err(), "should fail with non-numeric version");
-        let msg = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
         assert!(msg.contains("invalid version string"), "msg={msg}");
     }
 

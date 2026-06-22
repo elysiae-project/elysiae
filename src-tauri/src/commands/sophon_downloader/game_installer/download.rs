@@ -571,11 +571,12 @@ mod tests {
     use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
     fn make_download_info(server: &MockServer) -> DownloadInfo {
+        let server_uri = server.uri();
         DownloadInfo {
             encryption: 0,
             password: String::new(),
             compression: Compression::None,
-            url_prefix: format!("{}/", server.uri()),
+            url_prefix: format!("{server_uri}/"),
             url_suffix: "chunks".to_string(),
         }
     }

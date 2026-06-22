@@ -152,19 +152,19 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
 
     let mut buf = Vec::new();
     File::open(&bv_path)?.read_to_end(&mut buf)?;
-    if buf.len() < 16 {
+    let buf_len = buf.len();
+    if buf_len < 16 {
         log::warn!(
-            "write_binary_version_files: BinaryVersion.bytes too short ({} bytes), skipping",
-            buf.len()
+            "write_binary_version_files: BinaryVersion.bytes too short ({buf_len} bytes), skipping"
         );
         return Ok(());
     }
 
     let data = &buf[..buf.len().saturating_sub(3)];
-    if data.len() < 40 {
+    let data_len = data.len();
+    if data_len < 40 {
         log::warn!(
-            "write_binary_version_files: BinaryVersion.bytes data too short after trim ({} bytes), skipping",
-            data.len()
+            "write_binary_version_files: BinaryVersion.bytes data too short after trim ({data_len} bytes), skipping"
         );
         return Ok(());
     }
@@ -590,8 +590,9 @@ mod tests {
         // data = buf[..buf.len()-3]; data.len() needs to have hash at data.len()-40
         // Current buf = 2 + 11 + 12 = 25 bytes
         // We want data.len() - 40 = 25, so data.len() = 65, buf.len() = 68
-        let padding = 65 - buf.len();
-        buf.resize(buf.len() + padding, 0xFF);
+        let buf_len = buf.len();
+        let padding = 65 - buf_len;
+        buf.resize(buf_len + padding, 0xFF);
 
         // Hash at position 65-40=25 in data = position 25 in buf before trailing trim
         buf.extend_from_slice(hash.as_bytes());
