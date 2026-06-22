@@ -1,4 +1,4 @@
-import { resolveResource } from "@tauri-apps/api/path";
+import { appDataDir, join } from "@tauri-apps/api/path";
 import { error } from "@tauri-apps/plugin-log";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { AppOptions } from "../types";
@@ -6,23 +6,9 @@ import type { AppOptions } from "../types";
 let store: Store | undefined;
 
 const loadStore = async (): Promise<Store> => {
-	return new Promise((resolve, reject) => {
-		resolveResource("settings.json")
-			.then((storeFile) => {
-				load(storeFile)
-					.then((newStore) => {
-						resolve(newStore);
-					})
-					.catch((e) => {
-						error(`loadStore: ${e}`);
-						reject(e);
-					});
-			})
-			.catch((e) => {
-				error(`loadStore: ${e}`);
-				reject(e);
-			});
-	});
+	const appData = await appDataDir();
+	const storePath = await join(appData, "settings.json");
+	return load(storePath);
 };
 
 export const getOption = async <T = unknown>(
