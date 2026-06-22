@@ -3,12 +3,18 @@ import { error } from "@tauri-apps/plugin-log";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { AppOptions } from "../types";
 
+let storePromise: Promise<Store> | undefined;
 let store: Store | undefined;
 
-const loadStore = async (): Promise<Store> => {
-	const appData = await appDataDir();
-	const storePath = await join(appData, "settings.json");
-	return load(storePath);
+const loadStore = (): Promise<Store> => {
+	if (!storePromise) {
+		storePromise = (async () => {
+			const appData = await appDataDir();
+			const storePath = await join(appData, "settings.json");
+			return load(storePath);
+		})();
+	}
+	return storePromise;
 };
 
 export const getOption = async <T = unknown>(
