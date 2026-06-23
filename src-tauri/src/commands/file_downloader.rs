@@ -22,7 +22,16 @@ pub async fn download_file(
     let full_path = app_handle
         .path()
         .resolve(&dest, BaseDirectory::AppData)
-        .unwrap();
+        .map_err(|err| format!("download_file: failed to resolve path for {dest}: {err}"))?;
+
+    if let Some(parent) = full_path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|err| {
+            format!(
+                "download_file: failed to create parent dir {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
 
     let response = client
         .get(&*url)
@@ -34,9 +43,12 @@ pub async fn download_file(
         return Err(format!("download_file: HTTP {status} for {url}"));
     }
     let total = response.content_length().unwrap_or(0);
-    let mut file = tokio::fs::File::create(&full_path)
-        .await
-        .map_err(|err| err.to_string())?;
+    let mut file = tokio::fs::File::create(&full_path).await.map_err(|err| {
+        format!(
+            "download_file: failed to create {}: {err}",
+            full_path.display()
+        )
+    })?;
     let mut downloaded_bytes: u64 = 0;
     let mut last_emitted = Instant::now() - Duration::from_millis(250);
     let throttle = Duration::from_millis(250);

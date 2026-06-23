@@ -15,6 +15,7 @@ dependencies = [
  "glib 0.22.7",
  "hex",
  "libc",
+ "log",
  "lru",
  "lz4",
  "md-5",
