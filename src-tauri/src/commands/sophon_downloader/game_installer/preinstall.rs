@@ -10,6 +10,17 @@ thread_local! {
     /// a fresh `FILE_WRITE_BUFFER_SIZE` byte vector per asset is wasteful.
     static COPY_BUFFER: std::cell::RefCell<Vec<u8>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// Reusable per-thread verification buffer. Used by verify_chunk_md5
+    /// and verify_chunk_xxh64 to avoid allocating 256 KiB per call.
+    static VERIFY_BUFFER: std::cell::RefCell<Vec<u8>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn borrow_verify_buffer<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Vec<u8>) -> R,
+{
+    VERIFY_BUFFER.with(|cell| f(&mut cell.borrow_mut()))
 }
 
 fn borrow_copy_buffer<F, R>(f: F) -> R
@@ -929,23 +940,28 @@ pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
     };
     let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => hasher.update(&buf[..n]),
-            Err(err) => {
-                log::warn!(
-                    "Failed to read file for MD5 verification: {}: {}",
-                    path.display(),
-                    err
-                );
-                return false;
+    borrow_verify_buffer(|buf| {
+        if buf.capacity() < super::FILE_WRITE_BUFFER_SIZE {
+            *buf = Vec::with_capacity(super::FILE_WRITE_BUFFER_SIZE);
+        }
+        unsafe { buf.set_len(super::FILE_WRITE_BUFFER_SIZE) };
+        loop {
+            match reader.read(buf) {
+                Ok(0) => break,
+                Ok(n) => hasher.update(&buf[..n]),
+                Err(err) => {
+                    log::warn!(
+                        "Failed to read file for MD5 verification: {}: {}",
+                        path.display(),
+                        err
+                    );
+                    return false;
+                }
             }
         }
-    }
-    let actual = hex::encode(hasher.finalize());
-    actual == expected_md5
+        let actual = hex::encode(hasher.finalize());
+        actual == expected_md5
+    })
 }
 
 pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
@@ -958,25 +974,30 @@ pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
     };
     let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
     let mut hasher = xxhash_rust::xxh64::Xxh64::new(0);
-    let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
-    loop {
-        match std::io::Read::read(&mut reader, &mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                hasher.update(&buf[..n]);
-            }
-            Err(err) => {
-                log::warn!(
-                    "Failed to read file for XXH64 verification: {}: {}",
-                    path.display(),
-                    err
-                );
-                return false;
+    borrow_verify_buffer(|buf| {
+        if buf.capacity() < super::FILE_WRITE_BUFFER_SIZE {
+            *buf = Vec::with_capacity(super::FILE_WRITE_BUFFER_SIZE);
+        }
+        unsafe { buf.set_len(super::FILE_WRITE_BUFFER_SIZE) };
+        loop {
+            match reader.read(buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    hasher.update(&buf[..n]);
+                }
+                Err(err) => {
+                    log::warn!(
+                        "Failed to read file for XXH64 verification: {}: {}",
+                        path.display(),
+                        err
+                    );
+                    return false;
+                }
             }
         }
-    }
-    let actual = format!("{:016x}", hasher.digest());
-    actual == expected_xxh64
+        let actual = format!("{:016x}", hasher.digest());
+        actual == expected_xxh64
+    })
 }
 
 pub(super) fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
