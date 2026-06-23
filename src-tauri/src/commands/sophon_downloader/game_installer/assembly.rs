@@ -231,22 +231,17 @@ pub fn assemble_file(
     };
 
     let mut cursor = 0u64;
-    let mut sorted_ranges: Vec<(u64, u64)> = file
-        .asset_chunks
-        .iter()
-        .map(|c| (c.chunk_on_file_offset, c.chunk_size_decompressed))
-        .collect();
-    sorted_ranges.sort_unstable_by_key(|r| r.0);
-    for (off, size) in &sorted_ranges {
-        if *off != cursor {
+    for chunk in &file.asset_chunks {
+        if chunk.chunk_on_file_offset != cursor {
             return Err(SophonError::SizeMismatch {
                 item: file.asset_name.clone(),
                 expected: file.asset_size,
-                actual: *off,
+                actual: chunk.chunk_on_file_offset,
             });
         }
-        cursor = off
-            .checked_add(*size)
+        cursor = chunk
+            .chunk_on_file_offset
+            .checked_add(chunk.chunk_size_decompressed)
             .ok_or_else(|| SophonError::SizeMismatch {
                 item: file.asset_name.clone(),
                 expected: file.asset_size,
