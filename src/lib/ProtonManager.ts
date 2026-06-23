@@ -136,14 +136,16 @@ export const protonJadeiteExec = async (path: string): Promise<void> => {
 };
 
 export const protonEnvAvailable = async (): Promise<boolean> => {
-	const protonInstallPath = await protonDir();
-	const protonDataDir = await protonData();
-
-	return (
-		(await exists(protonInstallPath)) &&
-		(await exists(protonDataDir)) &&
-		(await exists("jadeite"))
-	);
+	if (
+		!(await exists("proton")) ||
+		!(await exists("proton-data")) ||
+		!(await exists("jadeite"))
+	) {
+		return false;
+	}
+	const data = await getOption<ProtonComponentData>("installedComponents");
+	if (!data) return false;
+	return data.proton !== null && data.jadeite !== null;
 };
 
 export const protonDir = async (): Promise<string> => {
