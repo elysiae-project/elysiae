@@ -5,6 +5,7 @@ mod api;
 mod assembly;
 mod bandwidth;
 mod cache;
+mod concurrency;
 mod download;
 mod error;
 mod game_filters;
@@ -123,6 +124,10 @@ pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
 
 pub use assembly::validate_asset_name;
 pub use bandwidth::{BandwidthManager, SharedBandwidthManager};
+pub use concurrency::{
+    ConcurrencyManager, DEFAULT_CHUNK_MAX_CONCURRENT, DEFAULT_CONCURRENT_VERIFICATION,
+    DEFAULT_LDIFF_MAX_CONCURRENT, DEFAULT_MAX_CONCURRENT_TASKS, SharedConcurrencyManager,
+};
 pub use error::SophonError;
 pub use handle::DownloadHandle;
 pub use installer::{
