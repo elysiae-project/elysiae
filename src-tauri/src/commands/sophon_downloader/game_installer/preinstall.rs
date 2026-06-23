@@ -29,8 +29,16 @@ where
 {
     COPY_BUFFER.with(|cell| f(&mut cell.borrow_mut()))
 }
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
+
+static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+#[inline]
+fn now_nanos() -> u64 {
+    EPOCH.elapsed().as_nanos() as u64
+}
 
 use dashmap::DashMap;
 
@@ -554,11 +562,11 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
-    let last_update = Arc::new(std::sync::Mutex::new(Instant::now()));
+    let last_update = Arc::new(AtomicU64::new(now_nanos()));
     let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
     let max_concurrency = super::adaptive_max_concurrency();
     let last_speed_bytes = Arc::new(AtomicU64::new(0));
-    let last_speed_time = Arc::new(std::sync::Mutex::new(Instant::now()));
+    let last_speed_time = Arc::new(AtomicU64::new(now_nanos()));
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
@@ -625,22 +633,23 @@ pub async fn preinstall_download(
 
                 let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
                 {
-                    if let Ok(mut lu) = last_update.try_lock()
-                        && lu.elapsed()
-                            >= std::time::Duration::from_millis(super::PROGRESS_UPDATE_INTERVAL_MS)
+                    let now = now_nanos();
+                    if now.saturating_sub(last_update.load(Ordering::Relaxed))
+                        >= super::PROGRESS_UPDATE_INTERVAL_MS * 1_000_000
                     {
-                        let speed_bps = if let Ok(mut lst) = last_speed_time.try_lock() {
-                            let window_elapsed = lst.elapsed().as_secs_f64();
-                            if window_elapsed >= 1.0 {
-                                let window_bytes =
-                                    db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
-                                let window_speed = window_bytes as f64 / window_elapsed;
-                                last_speed_bytes.store(db, Ordering::Relaxed);
-                                *lst = Instant::now();
-                                window_speed
-                            } else {
-                                0.0
-                            }
+                        let last_speed_nanos = last_speed_time.load(Ordering::Relaxed);
+                        let window_elapsed = if last_speed_nanos == 0 {
+                            0.0
+                        } else {
+                            now.saturating_sub(last_speed_nanos) as f64 / 1_000_000_000.0
+                        };
+                        let speed_bps = if window_elapsed >= 1.0 {
+                            let window_bytes =
+                                db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
+                            let window_speed = window_bytes as f64 / window_elapsed;
+                            last_speed_bytes.store(db, Ordering::Relaxed);
+                            last_speed_time.store(now, Ordering::Relaxed);
+                            window_speed
                         } else {
                             0.0
                         };
@@ -657,7 +666,7 @@ pub async fn preinstall_download(
                             speed_bps,
                             eta_seconds: eta,
                         });
-                        *lu = Instant::now();
+                        last_update.store(now, Ordering::Relaxed);
                     }
                 }
 

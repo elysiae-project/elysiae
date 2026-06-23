@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -54,9 +55,9 @@ struct InstallContext {
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
-    last_update: Arc<Mutex<Instant>>,
+    last_update: Arc<AtomicU64>,
     last_speed_bytes: Arc<AtomicU64>,
-    last_speed_time: Arc<Mutex<Instant>>,
+    last_speed_time: Arc<AtomicU64>,
     updater: ProgressUpdater,
     downloaded_chunks: Arc<DashMap<String, u64>>,
     chunks_since_save: Arc<AtomicU64>,
@@ -64,6 +65,13 @@ struct InstallContext {
     state_saver: StateSaver,
     adaptive_assembly: Arc<AdaptiveAssembly>,
     bandwidth_manager: Option<super::bandwidth::SharedBandwidthManager>,
+}
+
+static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+#[inline]
+fn now_nanos() -> u64 {
+    EPOCH.elapsed().as_nanos() as u64
 }
 
 pub(crate) struct InstallerData {
@@ -907,21 +915,23 @@ async fn process_download_item(
 
     adaptive.record_bytes(item.chunk.chunk_size);
 
-    if let Ok(mut lu) = ctx.last_update.try_lock()
-        && lu.elapsed() >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
+    let now = now_nanos();
+    if now.saturating_sub(ctx.last_update.load(Ordering::Relaxed))
+        >= PROGRESS_UPDATE_INTERVAL_MS * 1_000_000
     {
-        let speed_bps = if let Ok(mut lst) = ctx.last_speed_time.try_lock() {
-            let window_elapsed = lst.elapsed().as_secs_f64();
-            if window_elapsed >= 1.0 {
-                let last_db = ctx.last_speed_bytes.load(Ordering::Relaxed);
-                let window_bytes = db.saturating_sub(last_db);
-                let window_speed = window_bytes as f64 / window_elapsed;
-                ctx.last_speed_bytes.store(db, Ordering::Relaxed);
-                *lst = Instant::now();
-                window_speed
-            } else {
-                0.0
-            }
+        let last_speed_nanos = ctx.last_speed_time.load(Ordering::Relaxed);
+        let window_elapsed = if last_speed_nanos == 0 {
+            0.0
+        } else {
+            now.saturating_sub(last_speed_nanos) as f64 / 1_000_000_000.0
+        };
+        let speed_bps = if window_elapsed >= 1.0 {
+            let last_db = ctx.last_speed_bytes.load(Ordering::Relaxed);
+            let window_bytes = db.saturating_sub(last_db);
+            let window_speed = window_bytes as f64 / window_elapsed;
+            ctx.last_speed_bytes.store(db, Ordering::Relaxed);
+            ctx.last_speed_time.store(now, Ordering::Relaxed);
+            window_speed
         } else {
             0.0
         };
@@ -939,7 +949,7 @@ async fn process_download_item(
             speed_bps,
             eta_seconds,
         });
-        *lu = Instant::now();
+        ctx.last_update.store(now, Ordering::Relaxed);
     }
 
     notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx).await;
@@ -1422,9 +1432,9 @@ pub async fn install(
         verify_cache,
         chunk_refcounts: Arc::new(DashMap::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
-        last_update: Arc::new(Mutex::new(Instant::now())),
+        last_update: Arc::new(AtomicU64::new(now_nanos())),
         last_speed_bytes: Arc::new(AtomicU64::new(0)),
-        last_speed_time: Arc::new(Mutex::new(Instant::now())),
+        last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
         updater: Arc::clone(&callbacks.updater),
         downloaded_chunks: Arc::new(initial_dashmap),
         chunks_since_save: Arc::new(AtomicU64::new(0)),
@@ -1459,10 +1469,7 @@ pub async fn install(
             speed_bps: 0.0,
             eta_seconds: 0.0,
         });
-        *ctx.last_update.lock().unwrap_or_else(|err| {
-            log::error!("last_update mutex poisoned, recovering");
-            err.into_inner()
-        }) = Instant::now();
+        ctx.last_update.store(now_nanos(), Ordering::Relaxed);
     }
 
     let adaptive = Arc::new(AdaptiveSemaphore::new());
@@ -2181,9 +2188,9 @@ mod tests {
             verify_cache: Arc::new(DashMap::new()),
             chunk_refcounts: Arc::new(DashMap::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
-            last_update: Arc::new(Mutex::new(Instant::now())),
+            last_update: Arc::new(AtomicU64::new(now_nanos())),
             last_speed_bytes: Arc::new(AtomicU64::new(0)),
-            last_speed_time: Arc::new(Mutex::new(Instant::now())),
+            last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
             updater: Arc::new(|_| {}),
             downloaded_chunks: Arc::new(DashMap::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
@@ -2273,9 +2280,9 @@ mod tests {
             verify_cache: Arc::new(DashMap::new()),
             chunk_refcounts: Arc::new(DashMap::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
-            last_update: Arc::new(Mutex::new(Instant::now())),
+            last_update: Arc::new(AtomicU64::new(now_nanos())),
             last_speed_bytes: Arc::new(AtomicU64::new(0)),
-            last_speed_time: Arc::new(Mutex::new(Instant::now())),
+            last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
             updater: Arc::new(|_| {}),
             downloaded_chunks: Arc::new(DashMap::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
