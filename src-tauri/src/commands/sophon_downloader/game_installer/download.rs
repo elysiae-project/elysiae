@@ -411,19 +411,14 @@ async fn download_with_resume(
 
     check_available_space(dest, remaining)?;
 
-    // Seed the hasher with existing file content
+    // Seed the hasher with existing file content using memory-mapped I/O
     let mut hasher = Md5::new();
     {
-        let existing_file = tokio::fs::File::open(dest).await?;
-        let mut reader =
-            tokio::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, existing_file);
-        let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
-        loop {
-            let n = reader.read(&mut buf).await?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
+        let existing_file = std::fs::File::open(dest)?;
+        let file_len = existing_file.metadata()?.len();
+        if file_len > 0 {
+            let mmap = unsafe { memmap2::Mmap::map(&existing_file)? };
+            hasher.update(&mmap[..existing_size as usize]);
         }
     }
 
