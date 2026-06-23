@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-use bytes::BytesMut;
 use futures_util::StreamExt;
 use libc;
 use md5::{Digest, Md5};
@@ -11,7 +10,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
 use super::bandwidth::SharedBandwidthManager;
-use super::buffer_pool::{acquire_buffer, release_buffer};
 use super::error::{SophonError, SophonResult};
 use super::{FILE_WRITE_BUFFER_SIZE, STREAM_POLL_INTERVAL_MS};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
@@ -265,9 +263,6 @@ async fn download_full_file_with_response(
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
-    // Acquire a reusable buffer from the pool
-    let mut buf = acquire_buffer();
-
     loop {
         match timeout(
             Duration::from_millis(STREAM_POLL_INTERVAL_MS),
@@ -327,9 +322,6 @@ async fn download_full_file_with_response(
             }
         }
     }
-
-    // Release the buffer back to the pool
-    release_buffer(buf);
 
     if let Err(err) = file.flush().await {
         let _ = tokio::fs::remove_file(dest).await;
