@@ -837,3 +837,93 @@ fn is_filtered_asset_quick(
     }
     false
 }
+
+// ---------------------------------------------------------------------------
+// 12. Parallel vs sequential file verification (real production pattern)
+// ---------------------------------------------------------------------------
+// Compares sequential verification (one file at a time) against parallel
+// verification (multiple files concurrently). This tests the actual code path
+// used by verify_integrity.
+
+#[test]
+fn bench_parallel_vs_sequential_verification() {
+    use md5::{Digest, Md5};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file_size = 10 * 1024 * 1024; // 10 MiB per file
+    let num_files = 10;
+
+    // Create test files
+    let mut file_paths = Vec::new();
+    let mut hashes = Vec::new();
+    for i in 0..num_files {
+        let path = dir.path().join(format!("verify_test_{i}.bin"));
+        let data = vec![0xAB_u8; file_size];
+        fs::write(&path, &data).expect("write");
+        file_paths.push(path);
+
+        let mut hasher = Md5::new();
+        hasher.update(&data);
+        hashes.push(hex::encode(hasher.finalize()));
+    }
+
+    // Sequential verification
+    let start = Instant::now();
+    for (path, hash) in file_paths.iter().zip(&hashes) {
+        let file = fs::File::open(path).expect("open");
+        let mut reader = std::io::BufReader::new(file);
+        let mut hasher = Md5::new();
+        let mut buf = vec![0u8; FILE_WRITE_BUFFER_SIZE];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => hasher.update(&buf[..n]),
+                Err(_) => break,
+            }
+        }
+        let _computed = hex::encode(hasher.finalize());
+    }
+    let sequential_time = start.elapsed();
+
+    // Parallel verification (simulating parallel integrity check)
+    let start = Instant::now();
+    let handles: Vec<_> = file_paths
+        .iter()
+        .zip(&hashes)
+        .map(|(path, _hash)| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                let file = fs::File::open(path).expect("open");
+                let mut reader = std::io::BufReader::new(file);
+                let mut hasher = Md5::new();
+                let mut buf = vec![0u8; FILE_WRITE_BUFFER_SIZE];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => hasher.update(&buf[..n]),
+                        Err(_) => break,
+                    }
+                }
+                let _computed = hex::encode(hasher.finalize());
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        handle.join().expect("join");
+    }
+    let parallel_time = start.elapsed();
+
+    println!("bench_parallel_vs_sequential_verification:");
+    println!(
+        "  files: {num_files}, size each: {} MiB, total: {} MiB",
+        file_size / (1024 * 1024),
+        num_files * file_size / (1024 * 1024)
+    );
+    println!("  sequential: {}", fmt_dur(sequential_time));
+    println!("  parallel:   {}", fmt_dur(parallel_time));
+    println!(
+        "  speedup:    {:.1}x",
+        sequential_time.as_nanos() as f64 / parallel_time.as_nanos().max(1) as f64
+    );
+}

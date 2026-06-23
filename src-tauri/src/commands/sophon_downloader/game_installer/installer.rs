@@ -1577,65 +1577,104 @@ pub async fn verify_integrity(
         .collect();
 
     let total_files = all_assets.len() as u64;
-    let mut error_count = 0u64;
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
     let chunks_dir = game_dir.join("chunks");
     let mut last_emit = Instant::now();
 
-    for (scanned, (asset, chunk_download)) in all_assets.into_iter().enumerate() {
-        let scanned = (scanned + 1) as u64;
-        if let Err(err) = validate_asset_name(&asset.asset_name) {
-            log::warn!("Skipping file with invalid asset_name during verification: {err}");
-            continue;
-        }
-        let file_path = game_dir.join(&asset.asset_name);
+    // Phase 1: Verify all files in parallel (bounded by semaphore)
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(DEFAULT_CONCURRENT_VERIFICATION));
+    let scanned_count = Arc::new(AtomicU64::new(0));
+    let error_count = Arc::new(AtomicU64::new(0));
 
-        let is_valid = tokio::task::spawn_blocking({
-            let verify_cache = Arc::clone(&verify_cache);
-            let file_path = file_path.clone();
+    let verify_futures = all_assets.into_iter().map(|(asset, chunk_download)| {
+        let permit = Arc::clone(&semaphore);
+        let verify_cache = Arc::clone(&verify_cache);
+        let game_dir = game_dir.to_path_buf();
+        let scanned_count = Arc::clone(&scanned_count);
+        let error_count = Arc::clone(&error_count);
+
+        async move {
+            let _permit = permit.acquire().await.ok()?;
+
+            if let Err(err) = validate_asset_name(&asset.asset_name) {
+                log::warn!("Skipping file with invalid asset_name during verification: {err}");
+                return None;
+            }
+
+            let file_path = game_dir.join(&asset.asset_name);
             let asset_size = asset.asset_size;
             let asset_md5 = asset.asset_hash_md5.clone();
-            let gd = game_dir.to_path_buf();
-            move || {
-                cache::check_file_md5_cached(&file_path, asset_size, &asset_md5, &gd, &verify_cache)
+
+            let is_valid = tokio::task::spawn_blocking({
+                let file_path = file_path.clone();
+                move || {
+                    cache::check_file_md5_cached(
+                        &file_path,
+                        asset_size,
+                        &asset_md5,
+                        &game_dir,
+                        &verify_cache,
+                    )
                     .unwrap_or(false)
-            }
-        })
-        .await?;
-
-        if !is_valid {
-            error_count += 1;
-            emit(SophonProgress::Warning {
-                message: format!(
-                    "File {} failed integrity check, re-downloading",
-                    asset.asset_name
-                ),
-            });
-
-            if let Err(err) = redownload_asset(
-                client,
-                asset,
-                chunk_download,
-                &chunks_dir,
-                game_dir,
-                &file_path,
-                &mut emit,
-                &verify_cache,
-            )
+                }
+            })
             .await
-            {
-                let asset_name = &asset.asset_name;
-                emit(SophonProgress::Error {
-                    message: format!("Failed to re-download {asset_name}: {err}"),
-                });
+            .ok()?;
+
+            let scanned = scanned_count.fetch_add(1, Ordering::Relaxed) + 1;
+
+            if !is_valid {
+                error_count.fetch_add(1, Ordering::Relaxed);
+                Some((asset, chunk_download, file_path))
+            } else {
+                if scanned % 100 == 0 {
+                    log::debug!("Verified {}/{} files", scanned, total_files);
+                }
+                None
             }
+        }
+    });
+
+    // Collect failed verifications for re-download
+    let failed_verifications: Vec<_> = futures_util::future::join_all(verify_futures)
+        .await
+        .into_iter()
+        .filter_map(|x| x)
+        .collect();
+
+    // Phase 2: Re-download failed files sequentially (to avoid overwhelming the
+    // network)
+    for (asset, chunk_download, file_path) in failed_verifications {
+        emit(SophonProgress::Warning {
+            message: format!(
+                "File {} failed integrity check, re-downloading",
+                asset.asset_name
+            ),
+        });
+
+        if let Err(err) = redownload_asset(
+            client,
+            asset,
+            chunk_download,
+            &chunks_dir,
+            game_dir,
+            &file_path,
+            &mut emit,
+            &verify_cache,
+        )
+        .await
+        {
+            let asset_name = &asset.asset_name;
+            emit(SophonProgress::Error {
+                message: format!("Failed to re-download {asset_name}: {err}"),
+            });
         }
 
         if last_emit.elapsed() >= Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS) {
             emit(SophonProgress::Verifying {
-                scanned_files: scanned,
+                scanned_files: scanned_count.load(Ordering::Relaxed),
                 total_files,
-                error_count,
+                error_count: error_count.load(Ordering::Relaxed),
             });
             last_emit = Instant::now();
         }
@@ -1644,7 +1683,7 @@ pub async fn verify_integrity(
     emit(SophonProgress::Verifying {
         scanned_files: total_files,
         total_files,
-        error_count,
+        error_count: error_count.load(Ordering::Relaxed),
     });
 
     emit(SophonProgress::Finished);
