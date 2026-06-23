@@ -94,6 +94,9 @@ pub struct DownloadInfo {
 pub enum Compression {
     None = 0,
     Zstd = 1,
+    Gzip = 2,
+    Brotli = 3,
+    Deflate = 4,
 }
 
 impl From<Compression> for i32 {
@@ -109,6 +112,9 @@ impl TryFrom<i32> for Compression {
         match value {
             0 => Ok(Compression::None),
             1 => Ok(Compression::Zstd),
+            2 => Ok(Compression::Gzip),
+            3 => Ok(Compression::Brotli),
+            4 => Ok(Compression::Deflate),
             _ => Err(format!("Invalid compression value: {value}")),
         }
     }
@@ -136,6 +142,9 @@ impl<'de> Deserialize<'de> for Compression {
                 match v {
                     0 => Ok(Compression::None),
                     1 => Ok(Compression::Zstd),
+                    2 => Ok(Compression::Gzip),
+                    3 => Ok(Compression::Brotli),
+                    4 => Ok(Compression::Deflate),
                     _ => Err(de::Error::invalid_value(
                         Unexpected::Signed(v as i64),
                         &self,
@@ -146,6 +155,9 @@ impl<'de> Deserialize<'de> for Compression {
                 match v {
                     0 => Ok(Compression::None),
                     1 => Ok(Compression::Zstd),
+                    2 => Ok(Compression::Gzip),
+                    3 => Ok(Compression::Brotli),
+                    4 => Ok(Compression::Deflate),
                     _ => Err(de::Error::invalid_value(Unexpected::Signed(v), &self)),
                 }
             }
@@ -153,6 +165,9 @@ impl<'de> Deserialize<'de> for Compression {
                 match v {
                     0 => Ok(Compression::None),
                     1 => Ok(Compression::Zstd),
+                    2 => Ok(Compression::Gzip),
+                    3 => Ok(Compression::Brotli),
+                    4 => Ok(Compression::Deflate),
                     _ => Err(de::Error::invalid_value(Unexpected::Unsigned(v), &self)),
                 }
             }
@@ -237,6 +252,9 @@ mod tests {
     fn compression_try_from_valid() {
         assert_eq!(Compression::try_from(0).unwrap(), Compression::None);
         assert_eq!(Compression::try_from(1).unwrap(), Compression::Zstd);
+        assert_eq!(Compression::try_from(2).unwrap(), Compression::Gzip);
+        assert_eq!(Compression::try_from(3).unwrap(), Compression::Brotli);
+        assert_eq!(Compression::try_from(4).unwrap(), Compression::Deflate);
     }
 
     #[test]
@@ -247,7 +265,7 @@ mod tests {
     #[test]
     fn compression_try_from_boundary() {
         assert!(Compression::try_from(-1).is_err());
-        assert!(Compression::try_from(2).is_err());
+        assert!(Compression::try_from(5).is_err());
         assert!(Compression::try_from(i32::MAX).is_err());
     }
 

@@ -728,6 +728,7 @@ async fn download_chunk_with_retries(
             &item.chunk,
             dest,
             Some(handle),
+            None,
         )
         .await
         {
@@ -1681,7 +1682,8 @@ async fn redownload_asset(
             emit(SophonProgress::Warning {
                 message: format!("Re-downloading chunk {chunk_name}"),
             });
-            download::download_chunk(client, chunk_download, chunk, &chunk_path, None).await?;
+            download::download_chunk(client, chunk_download, chunk, &chunk_path, None, None)
+                .await?;
         }
     }
 

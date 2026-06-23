@@ -3,6 +3,7 @@ mod adaptive_assembly;
 mod adaptive_download;
 mod api;
 mod assembly;
+mod bandwidth;
 mod cache;
 mod download;
 mod error;
@@ -121,6 +122,7 @@ pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
 }
 
 pub use assembly::validate_asset_name;
+pub use bandwidth::{BandwidthManager, SharedBandwidthManager};
 pub use error::SophonError;
 pub use handle::DownloadHandle;
 pub use installer::{
