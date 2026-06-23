@@ -957,14 +957,13 @@ pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
         return false;
     };
     let mut reader = std::io::BufReader::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
-    let mut hasher = twox_hash::XxHash64::default();
+    let mut hasher = xxhash_rust::xxh64::Xxh64::new(0);
     let mut buf = vec![0u8; super::FILE_WRITE_BUFFER_SIZE];
     loop {
         match std::io::Read::read(&mut reader, &mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                use std::hash::Hasher;
-                hasher.write(&buf[..n]);
+                hasher.update(&buf[..n]);
             }
             Err(err) => {
                 log::warn!(
@@ -976,7 +975,7 @@ pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
             }
         }
     }
-    let actual = format!("{:016x}", std::hash::Hasher::finish(&hasher));
+    let actual = format!("{:016x}", hasher.digest());
     actual == expected_xxh64
 }
 
@@ -2240,10 +2239,9 @@ mod tests {
         let path = dir.path().join("test_xxh64_file");
         let data = b"hello world";
         fs::write(&path, data).unwrap();
-        let mut hasher = twox_hash::XxHash64::default();
-        use std::hash::Hasher;
-        hasher.write(data);
-        let xxh64_lower = format!("{:016x}", hasher.finish());
+        let mut hasher = xxhash_rust::xxh64::Xxh64::new(0);
+        hasher.update(data);
+        let xxh64_lower = format!("{:016x}", hasher.digest());
         assert!(verify_file_hash(&path, &xxh64_lower.to_uppercase()));
     }
 
@@ -2316,10 +2314,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_xxh64_lower");
         let data = b"hello world";
-        let mut hasher = twox_hash::XxHash64::default();
-        use std::hash::Hasher;
-        hasher.write(data);
-        let xxh64_lower = format!("{:016x}", hasher.finish());
+        let mut hasher = xxhash_rust::xxh64::Xxh64::new(0);
+        hasher.update(data);
+        let xxh64_lower = format!("{:016x}", hasher.digest());
         fs::write(&path, data).unwrap();
         assert!(verify_file_hash(&path, &xxh64_lower));
     }

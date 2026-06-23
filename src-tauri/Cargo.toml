@@ -59,6 +59,7 @@ sha2 = "0.11.0"
 sysinfo = "0.39.4"
 libc = "0.2.186"
 twox-hash = "2.1.2"
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 lz4 = "1.28.1"
 memmap2 = "0.9.10"
 tempfile = "3.27.0"

@@ -70,17 +70,18 @@ fn compute_file_md5(path: &Path) -> SophonResult<String> {
 
 /// Compute XXH64 hash of a file using memory-mapped I/O.
 fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
+    use xxhash_rust::xxh64::Xxh64;
     let file = std::fs::File::open(path)?;
     let len = file.metadata()?.len();
     if len == 0 {
-        let mut hasher = twox_hash::XxHash64::default();
-        std::hash::Hasher::write(&mut hasher, b"");
-        return Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)));
+        let mut hasher = Xxh64::new(0);
+        hasher.update(b"");
+        return Ok(format!("{:016x}", hasher.digest()));
     }
     let mmap = unsafe { memmap2::Mmap::map(&file)? };
-    let mut hasher = twox_hash::XxHash64::default();
-    std::hash::Hasher::write(&mut hasher, &mmap[..]);
-    Ok(format!("{:016x}", std::hash::Hasher::finish(&hasher)))
+    let mut hasher = Xxh64::new(0);
+    hasher.update(&mmap[..]);
+    Ok(format!("{:016x}", hasher.digest()))
 }
 
 async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonResult<bool> {

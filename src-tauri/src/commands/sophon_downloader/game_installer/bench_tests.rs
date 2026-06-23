@@ -147,6 +147,45 @@ fn bench_md5_file_verification() {
     println!("  peak buffer: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
 }
 
+#[test]
+fn bench_xxh64_file_verification() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file_path = dir.path().join("test_xxh64.bin");
+
+    // Write a 50 MiB test file
+    let file_size = 50 * 1024 * 1024;
+    {
+        let mut f = fs::File::create(&file_path).expect("create");
+        let chunk = vec![0xAB_u8; 1024 * 1024];
+        for _ in 0..50 {
+            f.write_all(&chunk).expect("write");
+        }
+    }
+
+    // Benchmark xxhash-rust XXH64 with 1 MiB buffer
+    let start = Instant::now();
+    let file = fs::File::open(&file_path).expect("open");
+    let mut reader = std::io::BufReader::new(file);
+    let mut hasher = xxhash_rust::xxh64::Xxh64::new(0);
+    let mut buf = vec![0u8; FILE_WRITE_BUFFER_SIZE];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+    let _hash = format!("{:016x}", hasher.digest());
+    let elapsed = start.elapsed();
+    let throughput_mb = (file_size as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64();
+
+    println!("bench_xxh64_file_verification:");
+    println!("  file: {} MiB", file_size / (1024 * 1024));
+    println!("  time: {}", fmt_dur(elapsed));
+    println!("  throughput: {throughput_mb:.1} MiB/s");
+    println!("  peak buffer: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
+}
+
 // ---------------------------------------------------------------------------
 // 3. Download stream write path (real production pattern)
 // ---------------------------------------------------------------------------
