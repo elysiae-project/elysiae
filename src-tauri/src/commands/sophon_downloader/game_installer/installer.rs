@@ -64,6 +64,7 @@ struct InstallContext {
     last_save: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
     adaptive_assembly: Arc<AdaptiveAssembly>,
+    bandwidth_manager: Option<super::bandwidth::SharedBandwidthManager>,
 }
 
 pub(crate) struct InstallerData {
@@ -728,7 +729,7 @@ async fn download_chunk_with_retries(
             &item.chunk,
             dest,
             Some(handle),
-            None,
+            ctx.bandwidth_manager.clone(),
         )
         .await
         {
@@ -1438,6 +1439,7 @@ pub async fn install(
         last_save: Arc::new(Mutex::new(None)),
         state_saver: callbacks.state_saver,
         adaptive_assembly: Arc::clone(&adaptive_assembly),
+        bandwidth_manager: None,
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
@@ -2157,6 +2159,7 @@ mod tests {
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
+            bandwidth_manager: None,
         });
 
         let handle = DownloadHandle::new();
@@ -2248,6 +2251,7 @@ mod tests {
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
+            bandwidth_manager: None,
         });
 
         let handle = DownloadHandle::new();
