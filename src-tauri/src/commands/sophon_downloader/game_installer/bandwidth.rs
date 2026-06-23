@@ -1,10 +1,4 @@
-//! Bandwidth manager for real-time speed tracking and adaptive throttling.
-//!
-//! This module implements a production-grade bandwidth management system
-//! inspired by the original Sophon DLL's bandwidth manager
-//! (`sophon/sophon_net/bandwidth/bandwidth_manager.cc`). It tracks per-stream
-//! and aggregate bandwidth metrics, supports dynamic throttling, and provides
-//! adaptive bandwidth scheduling.
+//! Bandwidth manager for real-time speed tracking.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,53 +7,31 @@ use std::time::{Duration, Instant};
 
 /// Time window for bandwidth averaging (seconds).
 const BANDWIDTH_WINDOW_SECS: u64 = 3;
-/// Default bandwidth limit in bytes per second (0 = unlimited).
-const DEFAULT_BANDWIDTH_LIMIT: u64 = 0;
-
-/// Bandwidth metrics tracked per download stream.
-#[derive(Debug, Clone)]
-pub struct BandwidthMetrics {
-    /// Bytes downloaded from network.
-    pub download_bytes: u64,
-    /// Bytes written to disk.
-    pub written_bytes: u64,
-    /// Bytes verified (hashed).
-    pub verified_bytes: u64,
-    /// Current download speed in bytes/sec.
-    pub download_speed: f64,
-    /// Current write speed in bytes/sec.
-    pub write_speed: f64,
-    /// Current verification speed in bytes/sec.
-    pub verify_speed: f64,
-    /// Timestamp of last update.
-    pub last_update: Instant,
-}
 
 /// A single bandwidth sample point.
 #[derive(Debug, Clone)]
 struct BandwidthSample {
     timestamp: Instant,
+    #[allow(dead_code)]
     bytes: u64,
 }
 
 /// Bandwidth tracker for a single stream.
-pub struct BandwidthTracker {
+struct BandwidthTracker {
     window: Mutex<VecDeque<BandwidthSample>>,
     total_bytes: AtomicU64,
-    last_reported: AtomicU64,
 }
 
 impl BandwidthTracker {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             window: Mutex::new(VecDeque::new()),
             total_bytes: AtomicU64::new(0),
-            last_reported: AtomicU64::new(0),
         }
     }
 
-    /// Record `bytes` downloaded/written/verified at the current time.
-    pub fn record(&self, bytes: u64) {
+    /// Record `bytes` downloaded/written at the current time.
+    fn record(&self, bytes: u64) {
         self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
         let now = Instant::now();
         let mut window = self.window.lock().unwrap();
@@ -68,7 +40,6 @@ impl BandwidthTracker {
             bytes,
         });
 
-        // Clean up old samples outside the window
         let cutoff = now - Duration::from_secs(BANDWIDTH_WINDOW_SECS);
         while let Some(sample) = window.front() {
             if sample.timestamp < cutoff {
@@ -79,8 +50,8 @@ impl BandwidthTracker {
         }
     }
 
-    /// Calculate current speed in bytes/sec based on the sliding window.
-    pub fn current_speed(&self) -> f64 {
+    #[cfg(test)]
+    fn current_speed(&self) -> f64 {
         let window = self.window.lock().unwrap();
         if window.len() < 2 {
             return 0.0;
@@ -97,8 +68,8 @@ impl BandwidthTracker {
         total_bytes as f64 / duration
     }
 
-    /// Get total bytes recorded.
-    pub fn total_bytes(&self) -> u64 {
+    #[cfg(test)]
+    fn total_bytes(&self) -> u64 {
         self.total_bytes.load(Ordering::Relaxed)
     }
 }
@@ -111,16 +82,8 @@ impl Default for BandwidthTracker {
 
 /// Global bandwidth manager that coordinates bandwidth across all streams.
 pub struct BandwidthManager {
-    /// Aggregate download tracker.
-    pub download_tracker: BandwidthTracker,
-    /// Aggregate write tracker.
-    pub write_tracker: BandwidthTracker,
-    /// Aggregate verification tracker.
-    pub verify_tracker: BandwidthTracker,
-    /// Bandwidth limit in bytes/sec (0 = unlimited).
-    bandwidth_limit: AtomicU64,
-    /// Last time bandwidth was throttled.
-    last_throttle: Mutex<Instant>,
+    download_tracker: BandwidthTracker,
+    write_tracker: BandwidthTracker,
 }
 
 impl BandwidthManager {
@@ -128,20 +91,7 @@ impl BandwidthManager {
         Self {
             download_tracker: BandwidthTracker::new(),
             write_tracker: BandwidthTracker::new(),
-            verify_tracker: BandwidthTracker::new(),
-            bandwidth_limit: AtomicU64::new(DEFAULT_BANDWIDTH_LIMIT),
-            last_throttle: Mutex::new(Instant::now()),
         }
-    }
-
-    /// Set bandwidth limit in bytes/sec. 0 = unlimited.
-    pub fn set_bandwidth_limit(&self, bytes_per_sec: u64) {
-        self.bandwidth_limit.store(bytes_per_sec, Ordering::Relaxed);
-    }
-
-    /// Get current bandwidth limit in bytes/sec.
-    pub fn bandwidth_limit(&self) -> u64 {
-        self.bandwidth_limit.load(Ordering::Relaxed)
     }
 
     /// Record download bytes.
@@ -154,60 +104,9 @@ impl BandwidthManager {
         self.write_tracker.record(bytes);
     }
 
-    /// Record verified bytes.
-    pub fn record_verify(&self, bytes: u64) {
-        self.verify_tracker.record(bytes);
-    }
-
-    /// Get current aggregate metrics.
-    pub fn metrics(&self) -> BandwidthMetrics {
-        BandwidthMetrics {
-            download_bytes: self.download_tracker.total_bytes(),
-            written_bytes: self.write_tracker.total_bytes(),
-            verified_bytes: self.verify_tracker.total_bytes(),
-            download_speed: self.download_tracker.current_speed(),
-            write_speed: self.write_tracker.current_speed(),
-            verify_speed: self.verify_tracker.current_speed(),
-            last_update: Instant::now(),
-        }
-    }
-
-    /// Check if we should throttle based on bandwidth limit.
-    /// Returns the number of bytes that can be processed now.
-    pub fn throttle_allowance(&self, requested: u64) -> u64 {
-        let limit = self.bandwidth_limit();
-        if limit == 0 {
-            return requested; // No limit
-        }
-
-        let current_speed = self.download_tracker.current_speed();
-        if current_speed >= limit as f64 {
-            // Already at limit, allow minimal progress
-            return requested.min(1024); // Allow 1KB to prevent stalling
-        }
-
-        // Allow full request if under limit
-        requested
-    }
-
-    /// Calculate sleep duration needed to maintain bandwidth limit.
-    pub fn throttle_delay(&self) -> Option<Duration> {
-        let limit = self.bandwidth_limit();
-        if limit == 0 {
-            return None;
-        }
-
-        let current_speed = self.download_tracker.current_speed();
-        if current_speed <= limit as f64 * 0.9 {
-            return None; // Under 90% of limit, no delay needed
-        }
-
-        // Need to slow down - sleep for a short duration
-        Some(Duration::from_millis(100))
-    }
-
     /// Format bytes/sec as human-readable string (e.g., "1.5 MB/s").
-    pub fn format_speed(speed_bps: f64) -> String {
+    #[cfg(test)]
+    fn format_speed(speed_bps: f64) -> String {
         if speed_bps >= 1_073_741_824.0 {
             format!("{:.2} GB/s", speed_bps / 1_073_741_824.0)
         } else if speed_bps >= 1_048_576.0 {
@@ -246,38 +145,10 @@ mod tests {
     }
 
     #[test]
-    fn bandwidth_manager_tracks_all_metrics() {
+    fn bandwidth_manager_records_download_and_write() {
         let manager = BandwidthManager::new();
         manager.record_download(1000);
         manager.record_write(500);
-        manager.record_verify(250);
-
-        let metrics = manager.metrics();
-        assert_eq!(metrics.download_bytes, 1000);
-        assert_eq!(metrics.written_bytes, 500);
-        assert_eq!(metrics.verified_bytes, 250);
-    }
-
-    #[test]
-    fn bandwidth_limit_zero_is_unlimited() {
-        let manager = BandwidthManager::new();
-        manager.set_bandwidth_limit(0);
-        assert_eq!(manager.throttle_allowance(10000), 10000);
-    }
-
-    #[test]
-    fn bandwidth_limit_enforced() {
-        let manager = BandwidthManager::new();
-        manager.set_bandwidth_limit(1024); // 1KB/s limit
-
-        // Simulate high bandwidth usage
-        for _ in 0..10 {
-            manager.record_download(1000);
-        }
-
-        // Should allow minimal progress when at limit
-        let allowance = manager.throttle_allowance(10000);
-        assert!(allowance <= 1024, "Allowance should be limited");
     }
 
     #[test]

@@ -1626,7 +1626,7 @@ pub async fn verify_integrity(
                 error_count.fetch_add(1, Ordering::Relaxed);
                 Some((asset, chunk_download, file_path))
             } else {
-                if scanned % 100 == 0 {
+                if scanned.is_multiple_of(100) {
                     log::debug!("Verified {}/{} files", scanned, total_files);
                 }
                 None
@@ -1638,7 +1638,7 @@ pub async fn verify_integrity(
     let failed_verifications: Vec<_> = futures_util::future::join_all(verify_futures)
         .await
         .into_iter()
-        .filter_map(|x| x)
+        .flatten()
         .collect();
 
     // Phase 2: Re-download failed files sequentially (to avoid overwhelming the

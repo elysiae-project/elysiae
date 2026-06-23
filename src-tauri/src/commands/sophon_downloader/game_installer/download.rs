@@ -6,7 +6,7 @@ use libc;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use tauri_plugin_log::log;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
 use super::bandwidth::SharedBandwidthManager;

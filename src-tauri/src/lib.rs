@@ -58,10 +58,10 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                if !is_flatpak() {
-                    if let Err(e) = app.deep_link().register_all() {
-                        eprintln!("Elysiae: Failed to register deep links: {e}");
-                    }
+                if !is_flatpak()
+                    && let Err(e) = app.deep_link().register_all()
+                {
+                    eprintln!("Elysiae: Failed to register deep links: {e}");
                 }
             }
             Ok(())

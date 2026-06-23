@@ -5,11 +5,8 @@ mod api;
 mod assembly;
 mod assembly_opt;
 mod bandwidth;
-mod buffer_pool;
 mod cache;
-mod concurrency;
 mod download;
-mod download_config;
 mod error;
 mod game_filters;
 mod handle;
@@ -34,6 +31,9 @@ pub const MAX_HASH_RETRIES: u32 = 5;
 /// enough that a stalled connection cannot delay user-initiated cancel/pause
 /// past this bound on the order of seconds.
 pub const STREAM_POLL_INTERVAL_MS: u64 = 1_000;
+
+/// Maximum concurrent verification tasks.
+pub const DEFAULT_CONCURRENT_VERIFICATION: usize = 16;
 
 use std::time::Duration;
 
@@ -126,15 +126,6 @@ pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
 }
 
 pub use assembly::validate_asset_name;
-pub use bandwidth::{BandwidthManager, SharedBandwidthManager};
-pub use concurrency::{
-    ConcurrencyManager, DEFAULT_CHUNK_MAX_CONCURRENT, DEFAULT_CONCURRENT_VERIFICATION,
-    DEFAULT_LDIFF_MAX_CONCURRENT, DEFAULT_MAX_CONCURRENT_TASKS, SharedConcurrencyManager,
-};
-pub use download_config::{
-    DEFAULT_FILE_WRITE_BUFFER_SIZE, DownloadConfig, MAX_FILE_WRITE_BUFFER_SIZE,
-    MIN_FILE_WRITE_BUFFER_SIZE,
-};
 pub use error::SophonError;
 pub use handle::DownloadHandle;
 pub use installer::{

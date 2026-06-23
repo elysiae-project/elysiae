@@ -3,12 +3,11 @@
 //! These functions are designed to match the performance of the original Sophon
 //! DLL's assembly pipeline, which uses memory-mapped files and large buffers.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use md5::{Digest, Md5};
-use tauri_plugin_log::log;
 
 use super::FILE_WRITE_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
@@ -23,7 +22,7 @@ impl<T: Write + Seek> WriteSeek for T {}
 /// Memory-mapped file reader for efficient old file chunk reuse.
 pub struct MmapReader {
     mmap: memmap2::Mmap,
-    offset: usize,
+    _offset: usize,
 }
 
 impl MmapReader {
@@ -31,7 +30,7 @@ impl MmapReader {
     pub fn new(path: &Path) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
-        Ok(Self { mmap, offset: 0 })
+        Ok(Self { mmap, _offset: 0 })
     }
 
     /// Read bytes starting from the given offset.
@@ -43,11 +42,6 @@ impl MmapReader {
     /// Get the total length of the mapped file.
     pub fn len(&self) -> usize {
         self.mmap.len()
-    }
-
-    /// Check if the mapped file is empty.
-    pub fn is_empty(&self) -> bool {
-        self.mmap.is_empty()
     }
 }
 
@@ -82,11 +76,8 @@ pub fn write_chunk_from_mmap(
     let mut chunk_hasher = Md5::new();
     chunk_hasher.update(chunk_data);
 
-    match file_hasher {
-        Some(hasher) => {
-            hasher.update(chunk_data);
-        }
-        None => {}
+    if let Some(hasher) = file_hasher {
+        hasher.update(chunk_data);
     }
 
     writer.write_all(chunk_data)?;
