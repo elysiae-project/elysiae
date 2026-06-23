@@ -1375,10 +1375,11 @@ pub async fn install(
                     let valid = if manifest_changed {
                         let tp = target_path.clone();
                         let md5 = file.asset_hash_md5.clone();
+                        let ck = file.asset_name.clone();
                         let vc = Arc::clone(&verify_cache);
-                        let gd = game_dir.clone();
                         tokio::task::spawn_blocking(move || {
-                            cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc).unwrap_or(false)
+                            cache::check_file_md5_with_cache_key(&tp, sz, &md5, &ck, &vc)
+                                .unwrap_or(false)
                         })
                         .await
                         .ok()?

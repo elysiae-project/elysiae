@@ -131,11 +131,20 @@ pub fn check_file_md5_cached(
         .unwrap_or(path)
         .display()
         .to_string();
+    check_file_md5_with_cache_key(path, expected_size, expected_md5, &cache_key, cache)
+}
+
+pub fn check_file_md5_with_cache_key(
+    path: &Path,
+    expected_size: u64,
+    expected_md5: &str,
+    cache_key: &str,
+    cache: &DashMap<String, VerificationEntry>,
+) -> io::Result<bool> {
     let metadata = match path.metadata() {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // File deleted - evict stale entry if present
-            cache.remove(&cache_key);
+            cache.remove(cache_key);
             return Ok(false);
         }
         Err(err) => return Err(err),
@@ -146,7 +155,7 @@ pub fn check_file_md5_cached(
         .unwrap_or_default()
         .as_secs();
 
-    if let Some(entry) = cache.get(&cache_key)
+    if let Some(entry) = cache.get(cache_key)
         && entry.size == expected_size
         && entry.md5 == expected_md5
     {
@@ -159,8 +168,7 @@ pub fn check_file_md5_cached(
     }
 
     if metadata.len() != expected_size {
-        // Size mismatch - evict stale entry
-        cache.remove(&cache_key);
+        cache.remove(cache_key);
         return Ok(false);
     }
 
@@ -169,7 +177,7 @@ pub fn check_file_md5_cached(
 
     if matches {
         cache.insert(
-            cache_key,
+            cache_key.to_string(),
             VerificationEntry {
                 size: expected_size,
                 md5: expected_md5.to_string(),
@@ -177,8 +185,7 @@ pub fn check_file_md5_cached(
             },
         );
     } else {
-        // MD5 mismatch - evict stale entry to avoid repeated computation
-        cache.remove(&cache_key);
+        cache.remove(cache_key);
     }
 
     Ok(matches)
