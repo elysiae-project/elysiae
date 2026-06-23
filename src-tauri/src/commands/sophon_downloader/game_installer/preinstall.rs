@@ -32,7 +32,7 @@ where
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 
 use futures_util::StreamExt;
 use futures_util::future::try_join_all;
@@ -540,7 +540,6 @@ pub async fn preinstall_download(
         existing
     };
 
-    let downloaded_chunks: Arc<DashSet<String>> = Arc::new(resume_chunks.keys().cloned().collect());
     let chunk_bytes_map: Arc<DashMap<String, u64>> = Arc::new(DashMap::new());
     for (k, v) in resume_chunks {
         chunk_bytes_map.insert(k, v);
@@ -570,7 +569,6 @@ pub async fn preinstall_download(
             let handle = handle.clone();
             let updater = Arc::clone(&updater);
             let downloaded_bytes = Arc::clone(&downloaded_bytes);
-            let downloaded_chunks = Arc::clone(&downloaded_chunks);
             let chunk_bytes_map = Arc::clone(&chunk_bytes_map);
             let state_saver = Arc::clone(&state_saver);
             let last_update = Arc::clone(&last_update);
@@ -601,7 +599,6 @@ pub async fn preinstall_download(
                 {
                     downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
                     if !already_downloaded_chunk {
-                        downloaded_chunks.insert(chunk_info.patch_name.clone());
                         chunk_bytes_map
                             .insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                     }
@@ -623,7 +620,6 @@ pub async fn preinstall_download(
                     .await?;
 
                     downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                    downloaded_chunks.insert(chunk_info.patch_name.clone());
                     chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
                 }
 
@@ -698,11 +694,11 @@ pub async fn preinstall_download(
         eta_seconds: 0.0,
     });
 
-    let downloaded_chunks: HashSet<String> = match Arc::try_unwrap(downloaded_chunks) {
-        Ok(set) => set.into_iter().collect(),
+    let downloaded_chunks: HashSet<String> = match Arc::try_unwrap(chunk_bytes_map) {
+        Ok(map) => map.into_iter().map(|(k, _)| k).collect(),
         Err(arc) => {
-            log::warn!("downloaded_chunks DashSet still has references, using iter");
-            arc.iter().map(|r| r.clone()).collect()
+            log::warn!("chunk_bytes_map DashMap still has references, using iter");
+            arc.iter().map(|r| r.key().clone()).collect()
         }
     };
     let state = PreinstallState {
