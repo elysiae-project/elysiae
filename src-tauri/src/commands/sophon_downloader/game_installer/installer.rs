@@ -678,18 +678,19 @@ fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveSemaphore>) -> CancellationTok
 }
 
 async fn check_needs_download(
-    dest: PathBuf,
+    dest: &Path,
     chunk: &SophonManifestAssetChunk,
     game_dir: &Path,
     verify_cache: &Arc<DashMap<String, VerificationEntry>>,
 ) -> SophonResult<bool> {
-    if tokio::fs::metadata(&dest).await.is_err() {
+    if tokio::fs::metadata(dest).await.is_err() {
         return Ok(true);
     }
 
     let chunk_size = chunk.chunk_size;
     let expected_md5 = chunk.chunk_compressed_hash_md5.clone();
     let cache = Arc::clone(verify_cache);
+    let dest = dest.to_path_buf();
     let gd = game_dir.to_path_buf();
 
     let valid = tokio::task::spawn_blocking(move || {
@@ -851,7 +852,7 @@ async fn process_download_item(
 
     let mut was_actually_downloaded = false;
     let needs_download =
-        check_needs_download(dest.clone(), &item.chunk, &ctx.game_dir, &ctx.verify_cache).await?;
+        check_needs_download(&dest, &item.chunk, &ctx.game_dir, &ctx.verify_cache).await?;
     if handle.is_cancelled() {
         return Err(SophonError::Cancelled);
     }
@@ -2066,7 +2067,7 @@ mod tests {
         let chunk = make_chunk("c1", 100);
         let cache = Arc::new(DashMap::new());
 
-        let needs = check_needs_download(dest, &chunk, dir.path(), &cache)
+        let needs = check_needs_download(&dest, &chunk, dir.path(), &cache)
             .await
             .unwrap();
         assert!(needs);
@@ -2111,7 +2112,7 @@ mod tests {
         let mut chunk = make_chunk("c1", data.len() as u64);
         chunk.chunk_compressed_hash_md5 = md5_hex;
 
-        let needs = check_needs_download(file_path, &chunk, dir.path(), &cache)
+        let needs = check_needs_download(&file_path, &chunk, dir.path(), &cache)
             .await
             .unwrap();
         assert!(!needs);
