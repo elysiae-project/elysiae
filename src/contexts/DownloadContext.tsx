@@ -119,11 +119,12 @@ export const DownloadProvider = ({
 	}, []);
 
 	useEffect(() => {
-		let cleanupFn: (() => void) | undefined;
+		let cleanupProgress: (() => void) | undefined;
+		let cleanupError: (() => void) | undefined;
 		let isCancelled = false;
 
 		(async () => {
-			const unlisten = await listen("sophon://progress", (event) => {
+			const unlistenProgress = await listen("sophon://progress", (event) => {
 				const payload = event.payload as SophonProgress;
 
 				setState((prev) => {
@@ -256,14 +257,34 @@ export const DownloadProvider = ({
 					}
 				});
 			});
+
+			const unlistenError = await listen<{ message: string }>(
+				"sophon://error",
+				(event) => {
+					setState((prev) => ({
+						...prev,
+						isError: true,
+						isPaused: false,
+						isDownloading: false,
+						isAssembling: false,
+						isFetchingManifest: false,
+						isVerifying: false,
+						isInstallingPlugins: false,
+						errorMessage: event.payload.message,
+					}));
+				},
+			);
+
 			if (!isCancelled) {
-				cleanupFn = unlisten;
+				cleanupProgress = unlistenProgress;
+				cleanupError = unlistenError;
 			}
 		})();
 
 		return () => {
 			isCancelled = true;
-			cleanupFn?.();
+			cleanupProgress?.();
+			cleanupError?.();
 		};
 	}, []);
 
