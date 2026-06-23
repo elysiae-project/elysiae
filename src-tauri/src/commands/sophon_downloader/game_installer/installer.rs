@@ -1197,6 +1197,8 @@ pub async fn install(
         prev_manifest_hash,
         mut prev_downloaded_chunks,
     } = resume;
+    let current_manifest_hash = combine_manifest_hashes(&installers);
+    let manifest_changed = prev_manifest_hash != current_manifest_hash;
     if options.is_resume {
         // Validate that chunk files referenced in persisted state actually exist on
         // disk. Stale entries (e.g. user deleted game files between sessions)
@@ -1222,8 +1224,7 @@ pub async fn install(
             })
             .await?;
         }
-        let current_manifest_hash = combine_manifest_hashes(&installers);
-        if prev_manifest_hash != current_manifest_hash {
+        if manifest_changed {
             log::warn!(
                 "Manifest changed on resume (old={}, new={}), re-verifying all chunks",
                 prev_manifest_hash,
@@ -1370,41 +1371,50 @@ pub async fn install(
                     }
 
                     let target_path = game_dir.join(&file.asset_name);
-                    if target_path.exists() {
-                        let tp = target_path.clone();
-                        let sz = file.asset_size;
-                        let md5 = file.asset_hash_md5.clone();
-                        let vc = Arc::clone(&verify_cache);
-                        let gd = game_dir.clone();
-                        let valid = tokio::task::spawn_blocking(move || {
-                            cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc).unwrap_or(false)
-                        })
-                        .await
-                        .ok()?;
-
-                        if valid {
-                            indices_arc.insert(file_idx);
-                            let file_chunk_size: u64 = file
-                                .asset_chunks
-                                .iter()
-                                .filter(|c| c.chunk_old_offset < 0)
-                                .map(|c| c.chunk_size)
-                                .fold(0u64, |acc, x| acc.saturating_add(x));
-                            resume_bytes_offset_arc.fetch_add(file_chunk_size, Ordering::Relaxed);
-                            for c in &file.asset_chunks {
-                                completed_chunk_names_arc.insert(c.chunk_name.clone());
-                            }
-                            pre_assembled_arc.fetch_add(1, Ordering::Relaxed);
+                    let sz = file.asset_size;
+                    let valid = if manifest_changed {
+                        if !target_path.exists() {
+                            false
                         } else {
-                            let needs_old_file =
-                                file.asset_chunks.iter().any(|c| c.chunk_old_offset >= 0);
-                            if !needs_old_file {
-                                files_to_delete.lock().unwrap().push(target_path);
-                            }
+                            let tp = target_path.clone();
+                            let md5 = file.asset_hash_md5.clone();
+                            let vc = Arc::clone(&verify_cache);
+                            let gd = game_dir.clone();
+                            tokio::task::spawn_blocking(move || {
+                                cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc)
+                                    .unwrap_or(false)
+                            })
+                            .await
+                            .ok()?
+                        }
+                    } else {
+                        target_path
+                            .metadata()
+                            .map(|m| m.len() == sz)
+                            .unwrap_or(false)
+                    };
+
+                    if valid {
+                        indices_arc.insert(file_idx);
+                        let file_chunk_size: u64 = file
+                            .asset_chunks
+                            .iter()
+                            .filter(|c| c.chunk_old_offset < 0)
+                            .map(|c| c.chunk_size)
+                            .fold(0u64, |acc, x| acc.saturating_add(x));
+                        resume_bytes_offset_arc.fetch_add(file_chunk_size, Ordering::Relaxed);
+                        for c in &file.asset_chunks {
+                            completed_chunk_names_arc.insert(c.chunk_name.clone());
+                        }
+                        pre_assembled_arc.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        let needs_old_file =
+                            file.asset_chunks.iter().any(|c| c.chunk_old_offset >= 0);
+                        if !needs_old_file {
+                            files_to_delete.lock().unwrap().push(target_path);
                         }
                     }
                 }
-
                 let checked = checked_files.fetch_add(1, Ordering::Relaxed) + 1;
                 if checked.is_multiple_of(500) {
                     updater(SophonProgress::CalculatingDownloads {
