@@ -122,7 +122,7 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
 }
 
 struct DecrementGuard<'a> {
-    chunks: Vec<String>,
+    chunks: Vec<&'a str>,
     chunk_refcounts: &'a DashMap<String, usize>,
     chunks_dir: &'a Path,
 }
@@ -130,7 +130,7 @@ struct DecrementGuard<'a> {
 impl Drop for DecrementGuard<'_> {
     fn drop(&mut self) {
         for chunk_name in self.chunks.drain(..) {
-            decrement_chunk_refcount(&chunk_name, self.chunk_refcounts, self.chunks_dir);
+            decrement_chunk_refcount(chunk_name, self.chunk_refcounts, self.chunks_dir);
         }
     }
 }
@@ -300,7 +300,7 @@ pub fn assemble_file(
             })?;
 
             total_written += bytes_written;
-            guard.chunks.push(chunk.chunk_name.clone());
+            guard.chunks.push(&chunk.chunk_name);
         }
     }
 
