@@ -43,7 +43,7 @@ export const getApiJson = async <T>(url: string): Promise<T> => {
  * @returns Boolean value based on weather verifyingString is a valid http URL
  *   or not
  */
-const isURLValid = (verifyingString: string): boolean => {
+export const isURLValid = (verifyingString: string): boolean => {
 	try {
 		const testURL = new URL(verifyingString);
 		return testURL.protocol === "http:" || testURL.protocol === "https:";

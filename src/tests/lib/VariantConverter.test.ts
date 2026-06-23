@@ -4,8 +4,8 @@ import {
 	variantToExeName,
 	variantToGameCode,
 	variantToGameName,
-} from "../lib/VariantConverter";
-import { type GameCodes, Variants } from "../types";
+} from "../../lib/VariantConverter";
+import { type GameCodes, Variants } from "../../types";
 
 test("Convert from game code to variant", () => {
 	expect(gameCodeToVariant.bh3).toBe(Variants.BH3);
