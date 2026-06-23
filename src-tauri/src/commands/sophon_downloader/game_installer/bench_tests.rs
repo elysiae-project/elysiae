@@ -927,3 +927,58 @@ fn bench_parallel_vs_sequential_verification() {
         sequential_time.as_nanos() as f64 / parallel_time.as_nanos().max(1) as f64
     );
 }
+
+#[test]
+fn bench_verify_buffer_reuse() {
+    use super::preinstall::verify_chunk_md5;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let num_files = 50;
+    let file_size = 1024 * 1024;
+
+    let mut paths = Vec::new();
+    let mut hashes = Vec::new();
+    for i in 0..num_files {
+        let path = dir.path().join(format!("vbr_{i}.bin"));
+        let data = vec![0xCD_u8; file_size];
+        let mut hasher = Md5::new();
+        hasher.update(&data);
+        hashes.push(hex::encode(hasher.finalize()));
+        fs::write(&path, &data).expect("write");
+        paths.push(path);
+    }
+
+    let start = Instant::now();
+    for (path, hash) in paths.iter().zip(&hashes) {
+        assert!(verify_chunk_md5(path, hash));
+    }
+    let reused = start.elapsed();
+
+    let start = Instant::now();
+    for (path, hash) in paths.iter().zip(&hashes) {
+        let file = fs::File::open(path).expect("open");
+        let mut reader = std::io::BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, file);
+        let mut hasher = Md5::new();
+        let mut buf = vec![0u8; FILE_WRITE_BUFFER_SIZE];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => hasher.update(&buf[..n]),
+                Err(_) => break,
+            }
+        }
+        assert_eq!(hex::encode(hasher.finalize()), hash.as_str());
+    }
+    let fresh_alloc = start.elapsed();
+
+    let total_mb = (num_files * file_size) as f64 / (1024.0 * 1024.0);
+    println!("bench_verify_buffer_reuse:");
+    println!("  files: {num_files} x {} KiB", file_size / 1024);
+    println!("  total: {total_mb:.1} MiB");
+    println!("  reusable buffer:  {}", fmt_dur(reused));
+    println!("  fresh alloc each: {}", fmt_dur(fresh_alloc));
+    println!(
+        "  ratio:  {:.2}x (reusable / fresh)",
+        reused.as_nanos() as f64 / fresh_alloc.as_nanos().max(1) as f64
+    );
+}
