@@ -1373,23 +1373,18 @@ pub async fn install(
                     let target_path = game_dir.join(&file.asset_name);
                     let sz = file.asset_size;
                     let valid = if manifest_changed {
-                        if !target_path.exists() {
-                            false
-                        } else {
-                            let tp = target_path.clone();
-                            let md5 = file.asset_hash_md5.clone();
-                            let vc = Arc::clone(&verify_cache);
-                            let gd = game_dir.clone();
-                            tokio::task::spawn_blocking(move || {
-                                cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc)
-                                    .unwrap_or(false)
-                            })
-                            .await
-                            .ok()?
-                        }
+                        let tp = target_path.clone();
+                        let md5 = file.asset_hash_md5.clone();
+                        let vc = Arc::clone(&verify_cache);
+                        let gd = game_dir.clone();
+                        tokio::task::spawn_blocking(move || {
+                            cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc).unwrap_or(false)
+                        })
+                        .await
+                        .ok()?
                     } else {
-                        target_path
-                            .metadata()
+                        tokio::fs::metadata(&target_path)
+                            .await
                             .map(|m| m.len() == sz)
                             .unwrap_or(false)
                     };

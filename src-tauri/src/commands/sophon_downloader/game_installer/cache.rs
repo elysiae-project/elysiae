@@ -149,9 +149,13 @@ pub fn check_file_md5_cached(
     if let Some(entry) = cache.get(&cache_key)
         && entry.size == expected_size
         && entry.md5 == expected_md5
-        && entry.mtime_secs == mtime
     {
-        return Ok(true);
+        if entry.mtime_secs == mtime {
+            return Ok(true);
+        }
+        if metadata.len() == expected_size {
+            return Ok(true);
+        }
     }
 
     if metadata.len() != expected_size {
@@ -180,6 +184,8 @@ pub fn check_file_md5_cached(
     Ok(matches)
 }
 
+const MMAP_THRESHOLD: u64 = 64 * 1024;
+
 pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
     let file = File::open(path)?;
     let len = file.metadata()?.len();
@@ -188,9 +194,15 @@ pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
         hasher.update(b"");
         return Ok(hex::encode(hasher.finalize()));
     }
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
     let mut hasher = Md5::new();
-    hasher.update(&mmap[..]);
+    if len >= MMAP_THRESHOLD {
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        hasher.update(&mmap[..]);
+    } else {
+        let mut data = Vec::with_capacity(len as usize);
+        std::io::Read::read_to_end(&mut std::io::BufReader::new(file), &mut data)?;
+        hasher.update(&data);
+    }
     Ok(hex::encode(hasher.finalize()))
 }
 
