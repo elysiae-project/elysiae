@@ -7,6 +7,7 @@ mod bandwidth;
 mod cache;
 mod concurrency;
 mod download;
+mod download_config;
 mod error;
 mod game_filters;
 mod handle;
@@ -127,6 +128,10 @@ pub use bandwidth::{BandwidthManager, SharedBandwidthManager};
 pub use concurrency::{
     ConcurrencyManager, DEFAULT_CHUNK_MAX_CONCURRENT, DEFAULT_CONCURRENT_VERIFICATION,
     DEFAULT_LDIFF_MAX_CONCURRENT, DEFAULT_MAX_CONCURRENT_TASKS, SharedConcurrencyManager,
+};
+pub use download_config::{
+    DEFAULT_FILE_WRITE_BUFFER_SIZE, DownloadConfig, MAX_FILE_WRITE_BUFFER_SIZE,
+    MIN_FILE_WRITE_BUFFER_SIZE,
 };
 pub use error::SophonError;
 pub use handle::DownloadHandle;
