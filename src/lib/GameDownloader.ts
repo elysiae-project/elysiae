@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
-import { info } from "@tauri-apps/plugin-log";
+import { error, info } from "@tauri-apps/plugin-log";
 import { type GameData, type ResumeInfo, Variants } from "../types";
 import { broadcastNotification, createDesktopShortcut } from "./Desktop";
 import { exists } from "./Fs";
@@ -29,11 +29,16 @@ export const downloadGame = async (game: Variants): Promise<void> => {
 			voLang: gameData.requestedLanguage,
 			outputPath: gameData.gameDir,
 		});
-	} finally {
 		await broadcastNotification(
 			`${variantToGameName[game]} Has Finished Downloading`,
 		);
 		await createDesktopShortcut(game);
+	} catch (e) {
+		error(`downloadGame: ${e}`);
+		await broadcastNotification(
+			`Download of ${variantToGameName[game]} Failed`,
+		);
+		throw e;
 	}
 };
 
@@ -258,7 +263,8 @@ export const isGameInstalled = async (game: Variants): Promise<boolean> => {
 const getGameData = async (game: Variants): Promise<GameData> => {
 	const gameCode = variantToGameCode[game];
 	const gameDir = await join("games", gameCode);
-	const requestedLanguage = (await getOption("voLanguage")) as string;
+	const requestedLanguage =
+		((await getOption("voLanguage")) as string | undefined) ?? "en";
 
 	return {
 		gameCode,
