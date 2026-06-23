@@ -69,17 +69,25 @@ export const InstallerButton = () => {
 				disabled={(downloadActive && !gameInstalled) || state.isSettingUpProton}
 				onClick={async () => {
 					if (!protonAvailable) {
-						await updateAllProtonComponents((event) => {
-							setProtonSetupProgress(event);
-						});
-						setProtonAvailable(true);
+						try {
+							await updateAllProtonComponents((event) => {
+								setProtonSetupProgress(event);
+							});
+							setProtonAvailable(await protonEnvAvailable());
+						} catch {
+							setProtonAvailable(false);
+						}
 					} else if (canResume && resumeVariant !== null) {
 						setResumable(null);
 						setDownloadingGame(resumeVariant);
 						await resumeDownloadInterrupted();
 					} else if (!gameInstalled) {
 						setDownloadingGame(game);
-						await downloadGame(game);
+						try {
+							await downloadGame(game);
+						} catch {
+							// Error state is set via sophon://error listener
+						}
 					} else {
 						await runGame(game);
 					}
