@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use dashmap::mapref::entry::Entry;
 use futures_util::StreamExt;
 use futures_util::future::try_join_all;
 use reqwest::Client;
@@ -447,11 +446,6 @@ fn register_chunks_for_file(
 
     let pending = Arc::new(AtomicUsize::new(chunk_count));
     for chunk in downloadable {
-        // Borrow the chunk_name once and reuse through &str to avoid 3×
-        // heap allocations per chunk (entry + refcount + index). The key
-        // types in the maps own `String`, so each entry() / insert() needs
-        // an owned key — we'll clone exactly once when we actually commit
-        // a brand-new item into the maps.
         let name = chunk.chunk_name.as_str();
 
         chunk_to_files
@@ -461,23 +455,20 @@ fn register_chunks_for_file(
 
         let is_pre = pre_downloaded.contains(name);
 
-        match ctx.chunk_refcounts.entry(chunk.chunk_name.clone()) {
-            Entry::Vacant(vacant) => {
-                vacant.insert(1);
-                download_items_index.insert(chunk.chunk_name.clone(), download_items.len());
-                download_items.push(DownloadItem {
-                    chunk: chunk.clone(),
-                    client: Arc::clone(&data.client),
-                    chunk_download: Arc::clone(&data.chunk_download),
-                    is_pre_downloaded: is_pre,
-                });
+        if let Some(mut occupied) = ctx.chunk_refcounts.get_mut(name) {
+            *occupied += 1;
+            if is_pre && let Some(idx) = download_items_index.get(name) {
+                download_items[*idx].is_pre_downloaded = is_pre;
             }
-            Entry::Occupied(mut occupied) => {
-                *occupied.get_mut() += 1;
-                if is_pre && let Some(&idx) = download_items_index.get(name) {
-                    download_items[idx].is_pre_downloaded = is_pre;
-                }
-            }
+        } else {
+            ctx.chunk_refcounts.insert(name.to_owned(), 1);
+            download_items_index.insert(name.to_owned(), download_items.len());
+            download_items.push(DownloadItem {
+                chunk: chunk.clone(),
+                client: Arc::clone(&data.client),
+                chunk_download: Arc::clone(&data.chunk_download),
+                is_pre_downloaded: is_pre,
+            });
         }
     }
 }
