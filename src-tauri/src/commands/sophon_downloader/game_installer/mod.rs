@@ -32,9 +32,6 @@ pub const MAX_HASH_RETRIES: u32 = 5;
 /// past this bound on the order of seconds.
 pub const STREAM_POLL_INTERVAL_MS: u64 = 1_000;
 
-/// Maximum concurrent verification tasks.
-pub const DEFAULT_CONCURRENT_VERIFICATION: usize = 16;
-
 use std::time::Duration;
 
 pub fn retry_delay(attempt: u32) -> Duration {

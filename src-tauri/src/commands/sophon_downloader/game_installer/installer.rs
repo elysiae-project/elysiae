@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use futures_util::StreamExt;
 use futures_util::future::try_join_all;
 use reqwest::Client;
@@ -1321,83 +1321,118 @@ pub async fn install(
 
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
-    let mut completed_chunk_names: HashSet<&str> = HashSet::new();
+    let mut completed_chunk_names: HashSet<String> = HashSet::new();
     let completed_indices = if options.is_resume {
         let total = all_files.len() as u64;
-        let mut last_calc_update = Instant::now();
         (callbacks.updater)(SophonProgress::CalculatingDownloads {
             checked_files: 0,
             total_files: total,
         });
-        let mut indices = HashSet::new();
-        for (file_idx, file) in all_files.iter().enumerate() {
-            if file.asset_chunks.is_empty() {
-                indices.insert(file_idx);
-                pre_assembled += 1;
-            } else {
-                if let Err(err) = validate_asset_name(&file.asset_name) {
-                    log::warn!(
-                        "Skipping file with invalid asset_name \"{}\": {err}",
-                        file.asset_name
-                    );
-                    continue;
-                }
-                let target_path = game_dir.join(&file.asset_name);
-                if target_path.exists() {
-                    let valid = {
+
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(
+            super::adaptive_max_concurrency(),
+        ));
+        let checked_files = Arc::new(AtomicU64::new(0));
+        let resume_bytes_offset_arc = Arc::new(AtomicU64::new(0));
+        let pre_assembled_arc = Arc::new(AtomicU64::new(0));
+        let completed_chunk_names_arc: Arc<DashSet<String>> = Arc::new(DashSet::new());
+        let indices_arc: Arc<DashSet<usize>> = Arc::new(DashSet::new());
+        let files_to_delete: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let calc_futures = all_files.iter().enumerate().map(|(file_idx, file)| {
+            let permit = Arc::clone(&semaphore);
+            let verify_cache = Arc::clone(&verify_cache);
+            let game_dir = game_dir.to_path_buf();
+            let checked_files = Arc::clone(&checked_files);
+            let resume_bytes_offset_arc = Arc::clone(&resume_bytes_offset_arc);
+            let pre_assembled_arc = Arc::clone(&pre_assembled_arc);
+            let completed_chunk_names_arc = Arc::clone(&completed_chunk_names_arc);
+            let indices_arc = Arc::clone(&indices_arc);
+            let files_to_delete = Arc::clone(&files_to_delete);
+            let updater = Arc::clone(&callbacks.updater);
+
+            async move {
+                let _permit = permit.acquire().await.ok()?;
+
+                if file.asset_chunks.is_empty() {
+                    indices_arc.insert(file_idx);
+                    pre_assembled_arc.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    if validate_asset_name(&file.asset_name).is_err() {
+                        let checked = checked_files.fetch_add(1, Ordering::Relaxed) + 1;
+                        if checked.is_multiple_of(500) {
+                            updater(SophonProgress::CalculatingDownloads {
+                                checked_files: checked,
+                                total_files: total,
+                            });
+                        }
+                        return None;
+                    }
+
+                    let target_path = game_dir.join(&file.asset_name);
+                    if target_path.exists() {
                         let tp = target_path.clone();
                         let sz = file.asset_size;
                         let md5 = file.asset_hash_md5.clone();
-                        let vc = verify_cache.clone();
-                        let gd = game_dir.to_path_buf();
-                        tokio::task::spawn_blocking(move || {
+                        let vc = Arc::clone(&verify_cache);
+                        let gd = game_dir.clone();
+                        let valid = tokio::task::spawn_blocking(move || {
                             cache::check_file_md5_cached(&tp, sz, &md5, &gd, &vc).unwrap_or(false)
                         })
-                        .await?
-                    };
-                    if valid {
-                        indices.insert(file_idx);
-                        let file_chunk_size: u64 = file
-                            .asset_chunks
-                            .iter()
-                            .filter(|c| c.chunk_old_offset < 0)
-                            .map(|c| c.chunk_size)
-                            .fold(0u64, |acc, x| acc.saturating_add(x));
-                        resume_bytes_offset = resume_bytes_offset.saturating_add(file_chunk_size);
-                        for c in &file.asset_chunks {
-                            completed_chunk_names.insert(&c.chunk_name);
-                        }
-                        pre_assembled += 1;
-                    } else {
-                        // Keep the old file if any chunk can be sourced from it
-                        // (chunk-level reuse). Assembly will read from it directly.
-                        let needs_old_file =
-                            file.asset_chunks.iter().any(|c| c.chunk_old_offset >= 0);
-                        if !needs_old_file {
-                            tokio::task::spawn_blocking(move || {
-                                let _ = fs::remove_file(target_path);
-                            })
-                            .await?;
+                        .await
+                        .ok()?;
+
+                        if valid {
+                            indices_arc.insert(file_idx);
+                            let file_chunk_size: u64 = file
+                                .asset_chunks
+                                .iter()
+                                .filter(|c| c.chunk_old_offset < 0)
+                                .map(|c| c.chunk_size)
+                                .fold(0u64, |acc, x| acc.saturating_add(x));
+                            resume_bytes_offset_arc.fetch_add(file_chunk_size, Ordering::Relaxed);
+                            for c in &file.asset_chunks {
+                                completed_chunk_names_arc.insert(c.chunk_name.clone());
+                            }
+                            pre_assembled_arc.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            let needs_old_file =
+                                file.asset_chunks.iter().any(|c| c.chunk_old_offset >= 0);
+                            if !needs_old_file {
+                                files_to_delete.lock().unwrap().push(target_path);
+                            }
                         }
                     }
                 }
+
+                let checked = checked_files.fetch_add(1, Ordering::Relaxed) + 1;
+                if checked.is_multiple_of(500) {
+                    updater(SophonProgress::CalculatingDownloads {
+                        checked_files: checked,
+                        total_files: total,
+                    });
+                }
+                Some(())
             }
-            let checked = (file_idx + 1) as u64;
-            if last_calc_update.elapsed()
-                >= std::time::Duration::from_millis(PROGRESS_UPDATE_INTERVAL_MS)
-            {
-                (callbacks.updater)(SophonProgress::CalculatingDownloads {
-                    checked_files: checked,
-                    total_files: total,
-                });
-                last_calc_update = Instant::now();
-            }
+        });
+
+        futures_util::future::join_all(calc_futures).await;
+
+        for path in files_to_delete.lock().unwrap().drain(..) {
+            let _ = fs::remove_file(&path);
         }
+
+        resume_bytes_offset = resume_bytes_offset_arc.load(Ordering::Relaxed);
+        pre_assembled = pre_assembled_arc.load(Ordering::Relaxed);
+        for name in completed_chunk_names_arc.iter() {
+            completed_chunk_names.insert(name.key().clone());
+        }
+
         (callbacks.updater)(SophonProgress::CalculatingDownloads {
             checked_files: total,
             total_files: total,
         });
-        Some(indices)
+        Some(indices_arc.iter().map(|r| *r.key()).collect())
     } else {
         None
     };
@@ -1581,7 +1616,9 @@ pub async fn verify_integrity(
     let mut last_emit = Instant::now();
 
     // Phase 1: Verify all files in parallel (bounded by semaphore)
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(DEFAULT_CONCURRENT_VERIFICATION));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(
+        super::adaptive_max_concurrency(),
+    ));
     let scanned_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
 
