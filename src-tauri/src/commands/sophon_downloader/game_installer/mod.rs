@@ -3,6 +3,7 @@ mod adaptive_assembly;
 mod adaptive_download;
 mod api;
 mod assembly;
+mod assembly_opt;
 mod bandwidth;
 mod buffer_pool;
 mod cache;

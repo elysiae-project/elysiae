@@ -376,6 +376,19 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
+    // Use optimized version for large chunks
+    const OPT_THRESHOLD: u64 = 1024 * 1024;
+    if expected_size >= OPT_THRESHOLD {
+        return super::assembly_opt::decompress_chunk_optimized(
+            chunk_path,
+            writer,
+            offset,
+            expected_size,
+            file_hasher,
+            chunk_decompressed_hash_md5,
+        );
+    }
+
     let f = File::open(chunk_path)?;
     let buf_reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
     let mut decoder = zstd::Decoder::new(buf_reader)?;
@@ -445,6 +458,8 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
 /// the given old offset, verify the chunk's decompressed MD5, and write to the
 /// output writer at the new file offset. Used for chunk-level reuse during
 /// updates.
+///
+/// For large chunks (>= 1 MiB), uses memory-mapped I/O for better performance.
 #[allow(clippy::too_many_arguments)]
 fn write_from_old_file<W: Write + Seek>(
     old_file_path: &Path,
@@ -456,6 +471,20 @@ fn write_from_old_file<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
+    // Use memory-mapped I/O for large chunks (>= 1 MiB) for better performance
+    const MMA_THRESHOLD: u64 = 1024 * 1024;
+    if expected_size >= MMA_THRESHOLD {
+        return super::assembly_opt::write_chunk_from_mmap(
+            old_file_path,
+            writer,
+            new_offset,
+            old_offset,
+            expected_size,
+            file_hasher,
+            chunk_decompressed_hash_md5,
+        );
+    }
+
     let f = File::open(old_file_path).map_err(SophonError::Io)?;
     let mut reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
     reader.seek(SeekFrom::Start(old_offset))?;
