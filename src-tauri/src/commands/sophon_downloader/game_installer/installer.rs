@@ -806,7 +806,7 @@ async fn download_chunk_with_retries(
     }
 }
 
-async fn notify_assembly_ready(
+fn notify_assembly_ready(
     chunk_name: &str,
     chunk_to_files: &DashMap<String, Vec<FileEntry>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
@@ -814,10 +814,6 @@ async fn notify_assembly_ready(
     let entries = match chunk_to_files.remove(chunk_name) {
         Some((_, entries)) => entries,
         None => {
-            log::warn!(
-                "notify_assembly_ready: chunk '{}' not found in chunk_to_files (already removed or never registered)",
-                chunk_name
-            );
             return;
         }
     };
@@ -825,7 +821,7 @@ async fn notify_assembly_ready(
     for (file_idx, tmp_dir_idx, pending) in entries {
         let prev = pending.fetch_sub(1, Ordering::AcqRel);
         if prev == 1 {
-            let _ = assemble_tx.send((file_idx, tmp_dir_idx)).await;
+            let _ = assemble_tx.try_send((file_idx, tmp_dir_idx));
         }
     }
 }
@@ -952,7 +948,7 @@ async fn process_download_item(
         ctx.last_update.store(now, Ordering::Relaxed);
     }
 
-    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx).await;
+    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
 
     Ok(())
 }
@@ -2093,7 +2089,7 @@ mod tests {
             vec![(0usize, 0usize, Arc::clone(&pending))],
         );
 
-        notify_assembly_ready("chunk_a", &chunk_to_files, &tx).await;
+        notify_assembly_ready("chunk_a", &chunk_to_files, &tx);
 
         let received = rx.try_recv();
         assert!(received.is_ok(), "file should be sent to assembly channel");
@@ -2107,7 +2103,7 @@ mod tests {
         let (tx, rx) = mpsc::channel::<(usize, usize)>(16);
         drop(rx);
 
-        notify_assembly_ready("nonexistent_chunk", &chunk_to_files, &tx).await;
+        notify_assembly_ready("nonexistent_chunk", &chunk_to_files, &tx);
     }
 
     #[tokio::test]
