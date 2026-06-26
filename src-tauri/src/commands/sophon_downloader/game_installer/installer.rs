@@ -629,9 +629,6 @@ fn spawn_assembly_coordinator(
             }
 
             if join_set.is_empty() {
-                // Race recv against cancellation so cancellation can drain workers
-                // even when downloads have stopped pushing. `biased` ensures we
-                // observe cancellation before committing to a new assembly task.
                 tokio::select! {
                     biased;
                     _ = cancel.cancelled() => {
@@ -646,7 +643,7 @@ fn spawn_assembly_coordinator(
                         join_set.spawn(spawn_assembly_task(params, move |p| updater(p)));
                     }
                 }
-            } else if let Some(res) = join_set.join_next().await {
+            } else if let Some(res) = join_set.try_join_next() {
                 match res {
                     Ok(Ok(())) => {}
                     Ok(Err(err)) => {
@@ -655,6 +652,17 @@ fn spawn_assembly_coordinator(
                     Err(err) => {
                         log::error!("Assembly task join error: {err}");
                     }
+                }
+            } else {
+                // No completed assembly tasks yet — yield briefly so we don't
+                // spin-loop, but stay responsive to new channel entries and
+                // cancellation.
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => {
+                        return drain_join_set(&mut join_set).await;
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
                 }
             }
         }
@@ -834,8 +842,8 @@ async fn process_download_item(
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
 ) -> SophonResult<()> {
-    let _permit = adaptive.acquire().await;
-
+    // Wait for pause/cancel outside the adaptive permit so we don't waste
+    // concurrency slots on paused tasks.
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
         handle
@@ -846,6 +854,8 @@ async fn process_download_item(
             )
             .await?;
     }
+
+    let _permit = adaptive.acquire().await;
 
     if !validate_chunk_name(&item.chunk.chunk_name) {
         return Err(SophonError::PathTraversal(
@@ -977,7 +987,7 @@ async fn run_downloads(
                     .await
             }
         })
-        .buffer_unordered(256) // High ceiling, adaptive semaphore controls actual concurrency
+        .buffer_unordered(1024) // High ceiling, adaptive semaphore controls actual concurrency
         .collect()
         .await
 }
