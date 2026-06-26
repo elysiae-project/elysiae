@@ -79,17 +79,17 @@ pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
 
 /// Minimum concurrent downloads in adaptive mode.
-pub const ADAPTIVE_MIN_CONCURRENCY: usize = 8;
+pub const ADAPTIVE_MIN_CONCURRENCY: usize = 16;
 /// Maximum concurrent downloads in adaptive mode.
-/// Computed as (cores * 4) clamped to [8, 128].
+/// Computed as (cores * 8) clamped to [16, 256].
 pub fn adaptive_max_concurrency() -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    (cpus * 4).clamp(8, 128)
+    (cpus * 8).clamp(16, 256)
 }
 /// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 32;
+pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 64;
 /// Time window for throughput measurement (seconds).
 pub const ADAPTIVE_WINDOW_SECS: u64 = 3;
 
@@ -162,8 +162,8 @@ mod tests {
     #[test]
     fn adaptive_max_concurrency_bounds() {
         let c = adaptive_max_concurrency();
-        assert!(c >= 8, "concurrency {c} < 8");
-        assert!(c <= 128, "concurrency {c} > 128");
+        assert!(c >= 16, "concurrency {c} < 16");
+        assert!(c <= 256, "concurrency {c} > 256");
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
         let cpus = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
-        let expected = (cpus * 4).clamp(8, 128);
+        let expected = (cpus * 8).clamp(16, 256);
         assert_eq!(adaptive_max_concurrency(), expected);
     }
 
