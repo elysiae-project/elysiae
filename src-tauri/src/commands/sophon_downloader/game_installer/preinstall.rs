@@ -887,7 +887,12 @@ async fn download_patch_chunk_inner(
     let mut total_len = 0u64;
 
     loop {
-        match timeout(Duration::from_millis(20000), stream.next()).await {
+        match timeout(
+            Duration::from_millis(super::STREAM_POLL_INTERVAL_MS),
+            stream.next(),
+        )
+        .await
+        {
             Ok(Some(chunk)) => {
                 let bytes = chunk?;
                 if bytes.is_empty() && content_length.is_none_or(|expected| total_len < expected) {
