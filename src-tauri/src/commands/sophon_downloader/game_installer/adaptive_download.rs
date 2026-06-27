@@ -88,6 +88,7 @@ impl AdaptiveSemaphore {
 
     fn dec_active(&self) {
         self.active.fetch_sub(1, Ordering::AcqRel);
+        self.notify.notify_one();
     }
 
     pub fn adjust(&self) -> usize {
@@ -137,10 +138,12 @@ impl AdaptiveSemaphore {
         if new_target > current {
             let delta = new_target - current;
             self.semaphore.add_permits(delta);
+            self.notify.notify_waiters();
+        } else if new_target < current {
+            self.notify.notify_one();
         }
 
         self.target.store(new_target, Ordering::Release);
-        self.notify.notify_one();
         *window_start = now;
         new_target
     }
