@@ -60,16 +60,15 @@ pub async fn cancelable_sleep(
     }
 }
 /// Maximum concurrent file assembly tasks.
-pub const ASSEMBLY_CONCURRENCY: usize = 4;
+pub const ASSEMBLY_CONCURRENCY: usize = 2;
 /// Size of the channel buffer for assembly task scheduling.
-/// Must be large enough that slow assembly never backpressures downloads.
-pub const ASSEMBLY_CHANNEL_SIZE: usize = 1024;
+pub const ASSEMBLY_CHANNEL_SIZE: usize = 64;
 /// Filename for the installed version marker file.
 pub const VERSION_FILE_NAME: &str = ".sophon_version";
 /// Filename for the MD5 verification cache.
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
-/// Buffer size for file writes during assembly (1 MiB).
+/// Buffer size for file writes during assembly.
 pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
 
 /// Minimum interval between progress updates (ms).
@@ -126,17 +125,13 @@ pub fn compute_eta_speed(
 }
 
 /// Minimum concurrent downloads in adaptive mode.
-pub const ADAPTIVE_MIN_CONCURRENCY: usize = 32;
+pub const ADAPTIVE_MIN_CONCURRENCY: usize = 8;
 /// Maximum concurrent downloads in adaptive mode.
-/// Computed as (cores * 8) clamped to [32, 256].
 pub fn adaptive_max_concurrency() -> usize {
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
-    (cpus * 8).clamp(32, 256)
+    16
 }
 /// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 64;
+pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 16;
 /// Time window for throughput measurement (seconds).
 pub const ADAPTIVE_WINDOW_SECS: u64 = 1;
 
@@ -207,19 +202,8 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_max_concurrency_bounds() {
-        let c = adaptive_max_concurrency();
-        assert!(c >= 64, "concurrency {c} < 64");
-        assert!(c <= 512, "concurrency {c} > 512");
-    }
-
-    #[test]
-    fn adaptive_max_concurrency_formula() {
-        let cpus = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
-        let expected = (cpus * 8).clamp(32, 256);
-        assert_eq!(adaptive_max_concurrency(), expected);
+    fn adaptive_max_concurrency_fixed() {
+        assert_eq!(adaptive_max_concurrency(), 16);
     }
 
     #[test]

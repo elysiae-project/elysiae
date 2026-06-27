@@ -24,8 +24,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
-                .pool_max_idle_per_host(16)
-                .pool_idle_timeout(Duration::from_secs(90))
+                .pool_max_idle_per_host(8)
+                .pool_idle_timeout(Duration::from_secs(30))
                 .tcp_nodelay(true)
                 .http2_adaptive_window(true)
                 .http2_keep_alive_interval(Duration::from_secs(10))

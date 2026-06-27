@@ -989,25 +989,53 @@ async fn run_downloads(
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
 ) -> Vec<SophonResult<()>> {
-    futures_util::stream::iter(download_items)
-        .map(|item| {
-            let ctx = Arc::clone(&ctx);
-            let chunk_to_files = Arc::clone(&chunk_to_files);
-            let assemble_tx = assemble_tx.clone();
-            let handle = handle.clone();
-            let adaptive = Arc::clone(&adaptive);
+    let mut results = Vec::with_capacity(download_items.len());
+    let mut join_set = tokio::task::JoinSet::new();
+    // Limit concurrent spawned tasks to prevent memory explosion from
+    // buffering all futures upfront. Reference implementations use 5-24
+    // workers; 32 gives headroom while keeping memory bounded.
+    const MAX_PENDING: usize = 32;
 
-            async move {
-                if handle.is_cancelled() {
-                    return Err(SophonError::Cancelled);
+    for item in download_items {
+        if handle.is_cancelled() {
+            join_set.abort_all();
+            while let Some(result) = join_set.join_next().await {
+                match result {
+                    Ok(r) => results.push(r),
+                    Err(err) => results.push(Err(SophonError::JoinError(err))),
                 }
-                process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive)
-                    .await
             }
-        })
-        .buffer_unordered(adaptive_max_concurrency())
-        .collect()
-        .await
+            results.push(Err(SophonError::Cancelled));
+            break;
+        }
+
+        let ctx = Arc::clone(&ctx);
+        let chunk_to_files = Arc::clone(&chunk_to_files);
+        let assemble_tx = assemble_tx.clone();
+        let handle = handle.clone();
+        let adaptive = Arc::clone(&adaptive);
+
+        join_set.spawn(async move {
+            process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive).await
+        });
+
+        if join_set.len() >= MAX_PENDING {
+            match join_set.join_next().await {
+                Some(Ok(r)) => results.push(r),
+                Some(Err(err)) => results.push(Err(SophonError::JoinError(err))),
+                None => break,
+            }
+        }
+    }
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(r) => results.push(r),
+            Err(err) => results.push(Err(SophonError::JoinError(err))),
+        }
+    }
+
+    results
 }
 
 #[allow(clippy::too_many_arguments)]
