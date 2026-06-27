@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -1044,6 +1044,11 @@ async fn process_download_item(
     Ok(())
 }
 
+struct DownloadSummary {
+    cancelled: bool,
+    first_error: Option<SophonError>,
+}
+
 async fn run_downloads(
     ctx: Arc<InstallContext>,
     download_items: Vec<DownloadItem>,
@@ -1052,21 +1057,17 @@ async fn run_downloads(
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
-) -> Vec<SophonResult<()>> {
-    let mut results = Vec::with_capacity(download_items.len());
+) -> DownloadSummary {
+    let cancelled = Arc::new(AtomicU8::new(0));
+    let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let mut join_set = tokio::task::JoinSet::new();
     const MAX_PENDING: usize = 128;
 
     for (item_idx, item) in download_items.into_iter().enumerate() {
         if handle.is_cancelled() {
             join_set.abort_all();
-            while let Some(result) = join_set.join_next().await {
-                match result {
-                    Ok(r) => results.push(r),
-                    Err(err) => results.push(Err(SophonError::JoinError(err))),
-                }
-            }
-            results.push(Err(SophonError::Cancelled));
+            while join_set.join_next().await.is_some() {}
+            cancelled.store(1, Ordering::Relaxed);
             break;
         }
 
@@ -1076,9 +1077,11 @@ async fn run_downloads(
         let assemble_tx = assemble_tx.clone();
         let handle = handle.clone();
         let adaptive = Arc::clone(&adaptive);
+        let cancelled = Arc::clone(&cancelled);
+        let first_error = Arc::clone(&first_error);
 
         join_set.spawn(async move {
-            process_download_item(
+            let result = process_download_item(
                 item,
                 item_idx,
                 ctx,
@@ -1088,32 +1091,39 @@ async fn run_downloads(
                 handle,
                 adaptive,
             )
-            .await
+            .await;
+            if let Err(err) = result {
+                if matches!(err, SophonError::Cancelled) {
+                    cancelled.store(1, Ordering::Relaxed);
+                } else if first_error
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_none()
+                {
+                    *first_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
+                }
+            }
         });
 
         if join_set.len() >= MAX_PENDING {
-            match join_set.join_next().await {
-                Some(Ok(r)) => results.push(r),
-                Some(Err(err)) => results.push(Err(SophonError::JoinError(err))),
-                None => break,
+            if join_set.join_next().await.is_none() {
+                break;
             }
         }
     }
 
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(r) => results.push(r),
-            Err(err) => results.push(Err(SophonError::JoinError(err))),
-        }
-    }
+    while join_set.join_next().await.is_some() {}
 
-    results
+    DownloadSummary {
+        cancelled: cancelled.load(Ordering::Relaxed) != 0,
+        first_error: first_error.lock().unwrap_or_else(|e| e.into_inner()).take(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn finalize_install(
     ctx: &InstallContext,
-    results: Vec<SophonResult<()>>,
+    summary: DownloadSummary,
     deleted_files: Vec<String>,
     tag: &str,
     is_preinstall: bool,
@@ -1122,10 +1132,7 @@ async fn finalize_install(
     game_code: &str,
     vo_langs: &[String],
 ) -> SophonResult<()> {
-    let cancelled = results
-        .iter()
-        .any(|r| matches!(r, Err(SophonError::Cancelled)));
-    if cancelled {
+    if summary.cancelled {
         assembly_cancel_token.cancel(); // stop assembly before deleting chunks
         let _ = assembly_task.await; // drain before cleanup
         let cd = Arc::clone(&ctx.chunks_dir);
@@ -1143,7 +1150,9 @@ async fn finalize_install(
         return Err(SophonError::Cancelled);
     }
 
-    results.into_iter().find(|r| r.is_err()).transpose()?;
+    if let Some(err) = summary.first_error {
+        return Err(err);
+    }
     assembly_task.await??;
 
     {
