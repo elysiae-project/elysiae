@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::{BufWriter, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 thread_local! {
     /// Reusable per-thread copy buffer. The copyover preinstall path streams
@@ -567,6 +567,8 @@ pub async fn preinstall_download(
     let max_concurrency = super::adaptive_max_concurrency();
     let last_speed_bytes = Arc::new(AtomicU64::new(0));
     let last_speed_time = Arc::new(AtomicU64::new(now_nanos()));
+    let smooth_speed_bps = Arc::new(AtomicU64::new(0));
+    let eta_speed_history = Arc::new(Mutex::new(VecDeque::new()));
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
@@ -583,6 +585,8 @@ pub async fn preinstall_download(
             let chunks_since_save = Arc::clone(&chunks_since_save);
             let last_speed_bytes = Arc::clone(&last_speed_bytes);
             let last_speed_time = Arc::clone(&last_speed_time);
+            let smooth_speed_bps = Arc::clone(&smooth_speed_bps);
+            let eta_speed_history = Arc::clone(&eta_speed_history);
             let already_downloaded_chunk = chunk_bytes_map.contains_key(&chunk_info.patch_name);
 
             async move {
@@ -643,7 +647,7 @@ pub async fn preinstall_download(
                         } else {
                             now.saturating_sub(last_speed_nanos) as f64 / 1_000_000_000.0
                         };
-                        let speed_bps = if window_elapsed >= 1.0 {
+                        let instant_window_speed = if window_elapsed >= 1.0 {
                             let window_bytes =
                                 db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
                             let window_speed = window_bytes as f64 / window_elapsed;
@@ -653,9 +657,22 @@ pub async fn preinstall_download(
                         } else {
                             0.0
                         };
+
+                        let speed_alpha = 1.0
+                            / (super::SPEED_SMOOTH_WINDOW_SECS * 1000.0
+                                / super::PROGRESS_UPDATE_INTERVAL_MS as f64);
+
+                        let speed_bps = super::ewma_update(
+                            &smooth_speed_bps,
+                            instant_window_speed,
+                            speed_alpha,
+                        );
+                        let eta_speed_bps =
+                            super::compute_eta_speed(&eta_speed_history, instant_window_speed);
+
                         let remaining = total_bytes.saturating_sub(db);
-                        let eta = if speed_bps > 0.0 {
-                            remaining as f64 / speed_bps
+                        let eta = if eta_speed_bps > 0.0 {
+                            remaining as f64 / eta_speed_bps
                         } else {
                             0.0
                         };

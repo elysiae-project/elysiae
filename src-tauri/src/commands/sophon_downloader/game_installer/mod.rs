@@ -78,6 +78,56 @@ pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
 /// Minimum interval between progress updates (ms).
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
 
+/// Smoothing window for displayed download speed (seconds).
+/// Uses EWMA with alpha derived from this window size.
+pub const SPEED_SMOOTH_WINDOW_SECS: f64 = 5.0;
+
+/// Update an EWMA-smoothed value stored as scaled u64 in an AtomicU64.
+/// `alpha = 1.0 / (window_secs * update_hz)` approximates a window-sized moving
+/// average.
+pub fn ewma_update(atomic: &std::sync::atomic::AtomicU64, raw_value: f64, alpha: f64) -> f64 {
+    const SCALE: f64 = 1000.0;
+    use std::sync::atomic::Ordering;
+    let prev_raw = atomic.load(Ordering::Relaxed);
+    let prev = prev_raw as f64 / SCALE;
+    let new_val = if prev == 0.0 {
+        raw_value
+    } else {
+        alpha * raw_value + (1.0 - alpha) * prev
+    };
+    atomic.store((new_val * SCALE) as u64, Ordering::Release);
+    new_val
+}
+
+/// Number of speed samples kept in the ETA history ring buffer.
+pub const ETA_WINDOW_SAMPLES: usize = 30;
+/// Minimum samples needed before ETA is shown.
+pub const ETA_MIN_SAMPLES: usize = 5;
+
+/// Compute ETA speed using median filtering over recent speed samples.
+/// Returns 0.0 if fewer than `ETA_MIN_SAMPLES` are available.
+pub fn compute_eta_speed(
+    history: &std::sync::Mutex<std::collections::VecDeque<f64>>,
+    instant_speed: f64,
+) -> f64 {
+    let mut samples = history.lock().unwrap_or_else(|err| err.into_inner());
+    samples.push_back(instant_speed);
+    if samples.len() > ETA_WINDOW_SAMPLES {
+        samples.pop_front();
+    }
+    if samples.len() < ETA_MIN_SAMPLES {
+        return 0.0;
+    }
+    let mut sorted: Vec<f64> = samples.iter().copied().collect();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mid = sorted.len() / 2;
+    if sorted.len() % 2 == 0 {
+        (sorted[mid - 1] + sorted[mid]) / 2.0
+    } else {
+        sorted[mid]
+    }
+}
+
 /// Minimum concurrent downloads in adaptive mode.
 pub const ADAPTIVE_MIN_CONCURRENCY: usize = 16;
 /// Maximum concurrent downloads in adaptive mode.
@@ -214,5 +264,67 @@ mod tests {
         handle.cancel();
         let result = cancelable_sleep(&handle, Duration::from_secs(30)).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn ewma_update_first_sample_is_raw() {
+        let atomic = std::sync::atomic::AtomicU64::new(0);
+        let val = ewma_update(&atomic, 1000.0, 0.2);
+        assert!((val - 1000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn ewma_update_smoothing_converges() {
+        let atomic = std::sync::atomic::AtomicU64::new(0);
+        ewma_update(&atomic, 1000.0, 0.2);
+        let val = ewma_update(&atomic, 500.0, 0.2);
+        assert!((val - 900.0).abs() < 0.01);
+        let val = ewma_update(&atomic, 500.0, 0.2);
+        assert!(val < 900.0 && val > 500.0);
+    }
+
+    #[test]
+    fn ewma_update_speed_window_alpha() {
+        let alpha = 1.0 / (SPEED_SMOOTH_WINDOW_SECS * 1000.0 / PROGRESS_UPDATE_INTERVAL_MS as f64);
+        assert!((alpha - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn compute_eta_speed_returns_zero_with_few_samples() {
+        let history = std::sync::Mutex::new(std::collections::VecDeque::new());
+        assert_eq!(compute_eta_speed(&history, 1000.0), 0.0);
+        assert_eq!(compute_eta_speed(&history, 2000.0), 0.0);
+        assert_eq!(compute_eta_speed(&history, 3000.0), 0.0);
+        assert_eq!(compute_eta_speed(&history, 4000.0), 0.0);
+    }
+
+    #[test]
+    fn compute_eta_speed_median_with_enough_samples() {
+        let history = std::sync::Mutex::new(std::collections::VecDeque::new());
+        for _ in 0..4 {
+            compute_eta_speed(&history, 1000.0);
+        }
+        let result = compute_eta_speed(&history, 1000.0);
+        assert!((result - 1000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compute_eta_speed_median_rejects_outlier() {
+        let history = std::sync::Mutex::new(std::collections::VecDeque::new());
+        for _ in 0..4 {
+            compute_eta_speed(&history, 100.0);
+        }
+        let result = compute_eta_speed(&history, 10000.0);
+        assert!((result - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compute_eta_speed_window_bounds() {
+        let history = std::sync::Mutex::new(std::collections::VecDeque::new());
+        for i in 0..ETA_WINDOW_SAMPLES + 5 {
+            compute_eta_speed(&history, i as f64 * 100.0);
+        }
+        let guard = history.lock().unwrap();
+        assert!(guard.len() <= ETA_WINDOW_SAMPLES);
     }
 }

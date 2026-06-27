@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
@@ -56,6 +56,10 @@ struct InstallContext {
     chunk_refcounts: Arc<DashMap<String, usize>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<AtomicU64>,
+    /// EWMA-smoothed speed for display (bytes/sec, scaled by 1000).
+    smooth_speed_bps: Arc<AtomicU64>,
+    /// Ring buffer of recent speed samples for ETA calculation.
+    eta_speed_history: Arc<Mutex<VecDeque<f64>>>,
     last_speed_bytes: Arc<AtomicU64>,
     last_speed_time: Arc<AtomicU64>,
     updater: ProgressUpdater,
@@ -931,7 +935,7 @@ async fn process_download_item(
         } else {
             now.saturating_sub(last_speed_nanos) as f64 / 1_000_000_000.0
         };
-        let speed_bps = if window_elapsed >= 1.0 {
+        let instant_window_speed = if window_elapsed >= 1.0 {
             let last_db = ctx.last_speed_bytes.load(Ordering::Relaxed);
             let window_bytes = db.saturating_sub(last_db);
             let window_speed = window_bytes as f64 / window_elapsed;
@@ -941,11 +945,19 @@ async fn process_download_item(
         } else {
             0.0
         };
+
+        let speed_alpha =
+            1.0 / (SPEED_SMOOTH_WINDOW_SECS * 1000.0 / PROGRESS_UPDATE_INTERVAL_MS as f64);
+        let speed_bps =
+            super::ewma_update(&ctx.smooth_speed_bps, instant_window_speed, speed_alpha);
+
+        let eta_speed_bps = super::compute_eta_speed(&ctx.eta_speed_history, instant_window_speed);
+
         let remaining_bytes = ctx
             .total_bytes
             .saturating_sub(db + ctx.resume_bytes_offset.load(Ordering::Relaxed));
-        let eta_seconds = if speed_bps > 0.0 {
-            remaining_bytes as f64 / speed_bps
+        let eta_seconds = if eta_speed_bps > 0.0 {
+            remaining_bytes as f64 / eta_speed_bps
         } else {
             0.0
         };
@@ -1480,6 +1492,8 @@ pub async fn install(
         chunk_refcounts: Arc::new(DashMap::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
         last_update: Arc::new(AtomicU64::new(now_nanos())),
+        smooth_speed_bps: Arc::new(AtomicU64::new(0)),
+        eta_speed_history: Arc::new(Mutex::new(VecDeque::new())),
         last_speed_bytes: Arc::new(AtomicU64::new(0)),
         last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
         updater: Arc::clone(&callbacks.updater),
@@ -2238,6 +2252,8 @@ mod tests {
             chunk_refcounts: Arc::new(DashMap::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(AtomicU64::new(now_nanos())),
+            smooth_speed_bps: Arc::new(AtomicU64::new(0)),
+            eta_speed_history: Arc::new(Mutex::new(VecDeque::new())),
             last_speed_bytes: Arc::new(AtomicU64::new(0)),
             last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
             updater: Arc::new(|_| {}),
@@ -2330,6 +2346,8 @@ mod tests {
             chunk_refcounts: Arc::new(DashMap::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(AtomicU64::new(now_nanos())),
+            smooth_speed_bps: Arc::new(AtomicU64::new(0)),
+            eta_speed_history: Arc::new(Mutex::new(VecDeque::new())),
             last_speed_bytes: Arc::new(AtomicU64::new(0)),
             last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
             updater: Arc::new(|_| {}),
