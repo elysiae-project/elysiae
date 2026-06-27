@@ -81,7 +81,7 @@ fn now_nanos() -> u64 {
 pub(crate) struct InstallerData {
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
-    files: Vec<SophonManifestAssetProperty>,
+    file_count: usize,
     label: String,
     pub matching_field: String,
 }
@@ -396,37 +396,46 @@ async fn prepare_directories(game_dir: &Path, chunks_dir: &Path) -> SophonResult
     Ok(())
 }
 
-fn build_installer_data(installers: Vec<SophonInstaller>) -> Vec<InstallerData> {
-    installers
-        .into_iter()
-        .map(|inst| InstallerData {
+fn build_installer_data(
+    installers: Vec<SophonInstaller>,
+) -> (Vec<InstallerData>, Vec<SophonManifestAssetProperty>) {
+    let mut all_files = Vec::new();
+    let mut data = Vec::with_capacity(installers.len());
+    for inst in installers {
+        let file_count = inst
+            .manifest
+            .assets
+            .iter()
+            .filter(|a| !a.is_directory())
+            .count();
+        all_files.extend(
+            inst.manifest
+                .assets
+                .into_iter()
+                .filter(|a| !a.is_directory()),
+        );
+        data.push(InstallerData {
             label: inst.label,
             matching_field: inst.matching_field,
             client: Arc::new(inst.client),
             chunk_download: Arc::new(inst.chunk_download),
-            files: inst
-                .manifest
-                .assets
-                .into_iter()
-                .filter(|a| !a.is_directory())
-                .collect(),
-        })
-        .collect()
+            file_count,
+        });
+    }
+    (data, all_files)
 }
 
-fn compute_totals(installer_data: &[InstallerData]) -> (u64, u64) {
+fn compute_totals(all_files: &[SophonManifestAssetProperty]) -> (u64, u64) {
     let mut seen_chunks: HashSet<&str> = HashSet::new();
-    let total_compressed: u64 = installer_data
+    let total_compressed: u64 = all_files
         .iter()
-        .flat_map(|d| d.files.iter())
         .flat_map(|f| f.asset_chunks.iter())
-        // Only count chunks that need downloading (exclude old-source reuse)
         .filter(|c| c.chunk_old_offset < 0)
         .filter(|c| seen_chunks.insert(c.chunk_name.as_str()))
         .map(|c| c.chunk_size)
         .fold(0u64, |acc, x| acc.saturating_add(x));
 
-    let total_files: u64 = installer_data.iter().map(|d| d.files.len() as u64).sum();
+    let total_files: u64 = all_files.len() as u64;
 
     (total_compressed, total_files)
 }
@@ -492,9 +501,9 @@ async fn build_download_state(
     completed_indices: Option<&HashSet<usize>>,
     pre_downloaded: &HashSet<String>,
 ) -> SophonResult<(Vec<DownloadItem>, Arc<DashMap<String, Vec<FileEntry>>>)> {
-    let total_chunks: usize = installer_data
+    let total_chunks: usize = ctx
+        .all_files
         .iter()
-        .flat_map(|d| d.files.iter())
         .map(|f| f.asset_chunks.len())
         .fold(0usize, |acc, x| acc.saturating_add(x));
     let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
@@ -504,9 +513,8 @@ async fn build_download_state(
     let mut all_files_index: usize = 0;
 
     for (tmp_dir_idx, data) in installer_data.into_iter().enumerate() {
-        let needs_tmp_dir = data.files.iter().enumerate().any(|(i, _)| {
-            completed_indices.is_none_or(|set| !set.contains(&(all_files_index + i)))
-        });
+        let needs_tmp_dir = (0..data.file_count)
+            .any(|i| completed_indices.is_none_or(|set| !set.contains(&(all_files_index + i))));
         if needs_tmp_dir {
             let tmp_dir = &ctx.all_tmp_dirs[tmp_dir_idx];
             let td = tmp_dir.clone();
@@ -515,7 +523,7 @@ async fn build_download_state(
                 .map_err(SophonError::from)?;
         }
 
-        for _ in 0..data.files.len() {
+        for _ in 0..data.file_count {
             if completed_indices.is_some_and(|set| set.contains(&all_files_index)) {
                 all_files_index += 1;
                 continue;
@@ -1278,14 +1286,9 @@ pub async fn install(
         }
     }
 
-    let mut installer_data = build_installer_data(installers);
+    let (mut installer_data, mut all_files) = build_installer_data(installers);
     if game_code == "nap" {
         super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
-    }
-    let total_assets: usize = installer_data.iter().map(|d| d.files.len()).sum();
-    let mut all_files: Vec<SophonManifestAssetProperty> = Vec::with_capacity(total_assets);
-    for d in &installer_data {
-        all_files.extend(d.files.iter().cloned());
     }
     if game_code == "hkrpg" {
         super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
@@ -1294,15 +1297,20 @@ pub async fn install(
     } else if game_code == "nap" {
         super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
     }
-    let filtered_set: HashSet<&str> = all_files.iter().map(|f| f.asset_name.as_str()).collect();
-    let installer_data: Vec<InstallerData> = installer_data
-        .into_iter()
-        .map(|mut d| {
-            d.files
-                .retain(|f| filtered_set.contains(f.asset_name.as_str()));
-            d
-        })
+    let filtered_set: HashSet<String> = all_files
+        .iter()
+        .map(|f| f.asset_name.as_str().to_owned())
         .collect();
+    let mut all_files_index: usize = 0;
+    for d in &mut installer_data {
+        let count = d.file_count;
+        let kept: usize = (all_files_index..all_files_index + count)
+            .filter(|&i| filtered_set.contains(all_files[i].asset_name.as_str()))
+            .count();
+        d.file_count = kept;
+        all_files_index += count;
+    }
+    all_files.retain(|f| filtered_set.contains(f.asset_name.as_str()));
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
@@ -1314,7 +1322,7 @@ pub async fn install(
             .collect(),
     );
 
-    let (total_compressed, total_files) = compute_totals(&installer_data);
+    let (total_compressed, total_files) = compute_totals(&all_files);
     log::info!(
         "Sophon install: {} total files across {} installers, {} compressed bytes",
         total_files,
@@ -1327,7 +1335,7 @@ pub async fn install(
             i,
             d.label,
             d.matching_field,
-            d.files.len(),
+            d.file_count,
         );
     }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
@@ -1873,7 +1881,7 @@ mod tests {
         InstallerData {
             client: Arc::new(Client::new()),
             chunk_download: Arc::new(make_download_info()),
-            files,
+            file_count: files.len(),
             label: "test".into(),
             matching_field: "game".into(),
         }
@@ -1892,63 +1900,47 @@ mod tests {
 
     #[test]
     fn compute_totals_no_dupes() {
-        let data = vec![
-            make_installer_data(vec![make_file(
+        let files = vec![
+            make_file(
                 "a.pak",
                 "aa",
                 vec![make_chunk("c1", 100), make_chunk("c2", 200)],
-            )]),
-            make_installer_data(vec![make_file("b.pak", "bb", vec![make_chunk("c3", 300)])]),
+            ),
+            make_file("b.pak", "bb", vec![make_chunk("c3", 300)]),
         ];
-        let (bytes, files) = compute_totals(&data);
+        let (bytes, files_count) = compute_totals(&files);
         assert_eq!(bytes, 600);
-        assert_eq!(files, 2);
+        assert_eq!(files_count, 2);
     }
 
     #[test]
     fn compute_totals_with_dedup() {
-        let data = vec![
-            make_installer_data(vec![make_file(
-                "a.pak",
-                "aa",
-                vec![make_chunk("shared", 500)],
-            )]),
-            make_installer_data(vec![make_file(
-                "b.pak",
-                "bb",
-                vec![make_chunk("shared", 500)],
-            )]),
+        let files = vec![
+            make_file("a.pak", "aa", vec![make_chunk("shared", 500)]),
+            make_file("b.pak", "bb", vec![make_chunk("shared", 500)]),
         ];
-        let (bytes, files) = compute_totals(&data);
+        let (bytes, files_count) = compute_totals(&files);
         assert_eq!(bytes, 500);
-        assert_eq!(files, 2);
+        assert_eq!(files_count, 2);
     }
 
     #[test]
     fn compute_totals_empty() {
-        let data: Vec<InstallerData> = vec![];
-        let (bytes, files) = compute_totals(&data);
+        let files: Vec<SophonManifestAssetProperty> = vec![];
+        let (bytes, files_count) = compute_totals(&files);
         assert_eq!(bytes, 0);
-        assert_eq!(files, 0);
+        assert_eq!(files_count, 0);
     }
 
     #[test]
     fn compute_totals_same_name_different_size() {
-        let data = vec![
-            make_installer_data(vec![make_file(
-                "a.pak",
-                "aa",
-                vec![make_chunk("shared", 500)],
-            )]),
-            make_installer_data(vec![make_file(
-                "b.pak",
-                "bb",
-                vec![make_chunk("shared", 600)],
-            )]),
+        let files = vec![
+            make_file("a.pak", "aa", vec![make_chunk("shared", 500)]),
+            make_file("b.pak", "bb", vec![make_chunk("shared", 600)]),
         ];
-        let (bytes, files) = compute_totals(&data);
+        let (bytes, files_count) = compute_totals(&files);
         assert_eq!(bytes, 500);
-        assert_eq!(files, 2);
+        assert_eq!(files_count, 2);
     }
 
     #[test]
@@ -2408,20 +2400,18 @@ mod tests {
             asset_hash_md5: String::new(),
             asset_size: 0,
         };
-        let data = vec![make_installer_data(vec![file1])];
-        let (bytes, files) = compute_totals(&data);
+        let (bytes, files_count) = compute_totals(&[file1]);
         assert_eq!(bytes, 500, "old-reuse chunk should be excluded");
-        assert_eq!(files, 1);
+        assert_eq!(files_count, 1);
     }
 
     #[test]
     fn compute_totals_filters_directories() {
         let file1 = make_file("a.pak", "aa", vec![make_chunk("c1", 100)]);
         let dir1 = make_dir("GameData");
-        let data = vec![make_installer_data(vec![dir1, file1])];
-        let (bytes, files) = compute_totals(&data);
+        let (bytes, files_count) = compute_totals(&[dir1, file1]);
         assert_eq!(bytes, 100);
-        assert_eq!(files, 2);
+        assert_eq!(files_count, 2);
     }
 
     #[test]
@@ -2440,10 +2430,11 @@ mod tests {
             manifest_hash: "abc".into(),
         };
 
-        let result = build_installer_data(vec![installer]);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].files.len(), 1);
-        assert_eq!(result[0].files[0].asset_name, "a.pak");
+        let (data, all_files) = build_installer_data(vec![installer]);
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0].file_count, 1);
+        assert_eq!(all_files.len(), 1);
+        assert_eq!(all_files[0].asset_name, "a.pak");
     }
 
     #[test]
