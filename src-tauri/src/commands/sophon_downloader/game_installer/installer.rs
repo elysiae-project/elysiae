@@ -864,8 +864,11 @@ async fn process_download_item(
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(chunk));
 
     let mut was_actually_downloaded = false;
-    let needs_download =
-        check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
+    let needs_download = if item.is_pre_downloaded {
+        check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?
+    } else {
+        true
+    };
     if handle.is_cancelled() {
         return Err(SophonError::Cancelled);
     }
