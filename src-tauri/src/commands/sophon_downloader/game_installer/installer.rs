@@ -508,7 +508,8 @@ async fn build_download_state(
     pre_downloaded: &HashSet<String>,
 ) -> SophonResult<(
     Vec<DownloadItem>,
-    Arc<Vec<Vec<FileEntry>>>,
+    Arc<Vec<FileEntry>>,
+    Arc<Vec<usize>>,
     Vec<AtomicUsize>,
     Arc<HashMap<String, usize>>,
     Arc<Vec<String>>,
@@ -573,6 +574,14 @@ async fn build_download_state(
         all_files_index,
     );
 
+    let mut chunk_entry_offsets: Vec<usize> = Vec::with_capacity(chunk_entries.len() + 1);
+    let mut flat_chunk_entries: Vec<FileEntry> = Vec::new();
+    chunk_entry_offsets.push(0);
+    for inner in &chunk_entries {
+        flat_chunk_entries.extend_from_slice(inner);
+        chunk_entry_offsets.push(flat_chunk_entries.len());
+    }
+
     let chunk_names: Vec<String> = download_items
         .iter()
         .map(|item| {
@@ -589,7 +598,8 @@ async fn build_download_state(
 
     Ok((
         download_items,
-        Arc::new(chunk_entries),
+        Arc::new(flat_chunk_entries),
+        Arc::new(chunk_entry_offsets),
         chunk_refcounts,
         Arc::new(chunk_name_to_idx),
         Arc::new(chunk_names),
@@ -849,15 +859,17 @@ async fn download_chunk_with_retries(
 
 fn notify_assembly_ready(
     item_idx: usize,
-    chunk_entries: &[Vec<FileEntry>],
+    chunk_entries: &[FileEntry],
+    chunk_entry_offsets: &[usize],
     assemble_tx: &mpsc::Sender<(usize, usize)>,
 ) {
-    let entries = match chunk_entries.get(item_idx) {
-        Some(entries) => entries,
-        None => return,
-    };
+    let start = chunk_entry_offsets.get(item_idx).copied().unwrap_or(0);
+    let end = chunk_entry_offsets.get(item_idx + 1).copied().unwrap_or(0);
+    if start >= end {
+        return;
+    }
 
-    for (file_idx, tmp_dir_idx, pending) in entries {
+    for (file_idx, tmp_dir_idx, pending) in &chunk_entries[start..end] {
         let prev = pending.fetch_sub(1, Ordering::AcqRel);
         if prev == 1 {
             let _ = assemble_tx.try_send((*file_idx, *tmp_dir_idx));
@@ -869,7 +881,8 @@ async fn process_download_item(
     item: DownloadItem,
     item_idx: usize,
     ctx: Arc<InstallContext>,
-    chunk_entries: Arc<Vec<Vec<FileEntry>>>,
+    chunk_entries: Arc<Vec<FileEntry>>,
+    chunk_entry_offsets: Arc<Vec<usize>>,
     assemble_tx: mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
@@ -1026,7 +1039,7 @@ async fn process_download_item(
         ctx.last_update.store(now, Ordering::Relaxed);
     }
 
-    notify_assembly_ready(item_idx, &chunk_entries, &assemble_tx);
+    notify_assembly_ready(item_idx, &chunk_entries, &chunk_entry_offsets, &assemble_tx);
 
     Ok(())
 }
@@ -1034,7 +1047,8 @@ async fn process_download_item(
 async fn run_downloads(
     ctx: Arc<InstallContext>,
     download_items: Vec<DownloadItem>,
-    chunk_entries: Arc<Vec<Vec<FileEntry>>>,
+    chunk_entries: Arc<Vec<FileEntry>>,
+    chunk_entry_offsets: Arc<Vec<usize>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
@@ -1058,6 +1072,7 @@ async fn run_downloads(
 
         let ctx = Arc::clone(&ctx);
         let chunk_entries = Arc::clone(&chunk_entries);
+        let chunk_entry_offsets = Arc::clone(&chunk_entry_offsets);
         let assemble_tx = assemble_tx.clone();
         let handle = handle.clone();
         let adaptive = Arc::clone(&adaptive);
@@ -1068,6 +1083,7 @@ async fn run_downloads(
                 item_idx,
                 ctx,
                 chunk_entries,
+                chunk_entry_offsets,
                 assemble_tx,
                 handle,
                 adaptive,
@@ -1624,15 +1640,21 @@ pub async fn install(
     let assembly_task =
         spawn_assembly_coordinator(&ctx, assemble_rx, assembly_cancel_token.clone());
 
-    let (download_items, chunk_entries, chunk_refcounts_vec, chunk_name_to_idx, chunk_names) =
-        build_download_state(
-            installer_data,
-            &ctx,
-            &assemble_tx,
-            completed_indices.as_ref(),
-            &pre_downloaded,
-        )
-        .await?;
+    let (
+        download_items,
+        chunk_entries,
+        chunk_entry_offsets,
+        chunk_refcounts_vec,
+        chunk_name_to_idx,
+        chunk_names,
+    ) = build_download_state(
+        installer_data,
+        &ctx,
+        &assemble_tx,
+        completed_indices.as_ref(),
+        &pre_downloaded,
+    )
+    .await?;
 
     let _ = ctx.chunk_refcounts.set(Arc::new(chunk_refcounts_vec));
     let _ = ctx.chunk_name_to_idx.set(Arc::clone(&chunk_name_to_idx));
@@ -1667,6 +1689,7 @@ pub async fn install(
         Arc::clone(&ctx),
         download_items,
         chunk_entries,
+        chunk_entry_offsets,
         &assemble_tx,
         options.handle,
         Arc::clone(&adaptive),
@@ -2235,9 +2258,10 @@ mod tests {
         let (tx, mut rx) = mpsc::channel::<(usize, usize)>(16);
 
         let pending: PendingCount = Arc::new(AtomicUsize::new(1usize));
-        let chunk_entries: Vec<Vec<FileEntry>> = vec![vec![(0usize, 0usize, Arc::clone(&pending))]];
+        let chunk_entries: Vec<FileEntry> = vec![(0usize, 0usize, Arc::clone(&pending))];
+        let chunk_entry_offsets: Vec<usize> = vec![0, 1];
 
-        notify_assembly_ready(0, &chunk_entries, &tx);
+        notify_assembly_ready(0, &chunk_entries, &chunk_entry_offsets, &tx);
 
         let received = rx.try_recv();
         assert!(received.is_ok(), "file should be sent to assembly channel");
@@ -2247,11 +2271,12 @@ mod tests {
 
     #[tokio::test]
     async fn notify_assembly_ready_chunk_not_in_map() {
-        let chunk_entries: Vec<Vec<FileEntry>> = vec![];
+        let chunk_entries: Vec<FileEntry> = vec![];
+        let chunk_entry_offsets: Vec<usize> = vec![0];
         let (tx, rx) = mpsc::channel::<(usize, usize)>(16);
         drop(rx);
 
-        notify_assembly_ready(999, &chunk_entries, &tx);
+        notify_assembly_ready(999, &chunk_entries, &chunk_entry_offsets, &tx);
     }
 
     #[tokio::test]
