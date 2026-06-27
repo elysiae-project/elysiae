@@ -42,6 +42,8 @@ pub struct ResumeContext {
 }
 
 struct InstallContext {
+    installer_clients: Arc<Vec<Arc<Client>>>,
+    installer_downloads: Arc<Vec<Arc<DownloadInfo>>>,
     chunks_dir: Arc<PathBuf>,
     game_dir: PathBuf,
     all_tmp_dirs: Arc<Vec<std::path::PathBuf>>,
@@ -89,8 +91,7 @@ pub(crate) struct InstallerData {
 struct DownloadItem {
     file_idx: usize,
     chunk_idx: usize,
-    client: Arc<Client>,
-    chunk_download: Arc<DownloadInfo>,
+    installer_idx: usize,
     is_pre_downloaded: bool,
 }
 
@@ -450,7 +451,7 @@ fn register_chunks_for_file(
     download_items: &mut Vec<DownloadItem>,
     download_items_index: &mut HashMap<String, usize>,
     chunk_refcounts: &mut Vec<AtomicUsize>,
-    data: &InstallerData,
+    installer_idx: usize,
     pre_downloaded: &HashSet<String>,
 ) {
     let downloadable: Vec<(usize, &SophonManifestAssetChunk)> = file
@@ -480,8 +481,7 @@ fn register_chunks_for_file(
             download_items.push(DownloadItem {
                 file_idx,
                 chunk_idx,
-                client: Arc::clone(&data.client),
-                chunk_download: Arc::clone(&data.chunk_download),
+                installer_idx,
                 is_pre_downloaded: is_pre,
             });
             download_items_index.insert(chunk.chunk_name.clone(), idx);
@@ -560,7 +560,7 @@ async fn build_download_state(
                 &mut download_items,
                 &mut download_items_index,
                 &mut chunk_refcounts,
-                &data,
+                tmp_dir_idx,
                 pre_downloaded,
             );
             all_files_index += 1;
@@ -925,8 +925,8 @@ async fn process_download_item(
     if needs_download {
         download_chunk_with_retries(
             chunk,
-            &item.client,
-            &item.chunk_download,
+            &ctx.installer_clients[item.installer_idx],
+            &ctx.installer_downloads[item.installer_idx],
             &dest,
             &ctx,
             &handle,
@@ -1612,8 +1612,23 @@ pub async fn install(
         HashMap::new()
     };
 
+    let installer_clients: Arc<Vec<Arc<Client>>> = Arc::new(
+        installer_data
+            .iter()
+            .map(|d| Arc::clone(&d.client))
+            .collect(),
+    );
+    let installer_downloads: Arc<Vec<Arc<DownloadInfo>>> = Arc::new(
+        installer_data
+            .iter()
+            .map(|d| Arc::clone(&d.chunk_download))
+            .collect(),
+    );
+
     let adaptive_assembly = Arc::new(AdaptiveAssembly::new());
     let ctx = Arc::new(InstallContext {
+        installer_clients,
+        installer_downloads,
         chunks_dir: Arc::clone(&chunks_dir),
         game_dir: game_dir.to_path_buf(),
         all_tmp_dirs: Arc::clone(&all_tmp_dirs),
@@ -2403,6 +2418,8 @@ mod tests {
         let dest = dir.path().join("test_retry_chunk.zstd");
 
         let ctx = Arc::new(InstallContext {
+            installer_clients: Arc::new(vec![Arc::clone(&client)]),
+            installer_downloads: Arc::new(vec![Arc::clone(&chunk_download)]),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             game_dir: dir.path().to_path_buf(),
             all_tmp_dirs: Arc::new(vec![]),
@@ -2496,6 +2513,8 @@ mod tests {
             .unwrap();
 
         let ctx = Arc::new(InstallContext {
+            installer_clients: Arc::new(vec![Arc::clone(&client)]),
+            installer_downloads: Arc::new(vec![Arc::clone(&chunk_download)]),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             game_dir: dir.path().to_path_buf(),
             all_tmp_dirs: Arc::new(vec![]),
