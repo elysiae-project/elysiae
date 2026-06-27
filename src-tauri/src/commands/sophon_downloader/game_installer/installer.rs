@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use dashmap::{DashMap, DashSet};
-use futures_util::StreamExt;
 use futures_util::future::try_join_all;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
@@ -447,7 +446,7 @@ fn register_chunks_for_file(
     file_idx: usize,
     tmp_dir_idx: usize,
     ctx: &InstallContext,
-    chunk_to_files: &DashMap<String, Vec<FileEntry>>,
+    chunk_entries: &mut Vec<Vec<FileEntry>>,
     download_items: &mut Vec<DownloadItem>,
     download_items_index: &mut HashMap<String, usize>,
     data: &InstallerData,
@@ -468,22 +467,15 @@ fn register_chunks_for_file(
     let pending = Arc::new(AtomicUsize::new(chunk_count));
     for (chunk_idx, chunk) in downloadable {
         let name = chunk.chunk_name.as_str();
-
-        chunk_to_files
-            .entry(chunk.chunk_name.clone())
-            .or_default()
-            .push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
-
         let is_pre = pre_downloaded.contains(name);
 
-        if let Some(mut occupied) = ctx.chunk_refcounts.get_mut(name) {
-            *occupied += 1;
-            if is_pre && let Some(idx) = download_items_index.get(name) {
-                download_items[*idx].is_pre_downloaded = is_pre;
+        let item_idx = if let Some(&idx) = download_items_index.get(name) {
+            if is_pre {
+                download_items[idx].is_pre_downloaded = true;
             }
+            idx
         } else {
-            ctx.chunk_refcounts.insert(name.to_owned(), 1);
-            download_items_index.insert(name.to_owned(), download_items.len());
+            let idx = download_items.len();
             download_items.push(DownloadItem {
                 file_idx,
                 chunk_idx,
@@ -491,6 +483,19 @@ fn register_chunks_for_file(
                 chunk_download: Arc::clone(&data.chunk_download),
                 is_pre_downloaded: is_pre,
             });
+            download_items_index.insert(chunk.chunk_name.clone(), idx);
+            idx
+        };
+
+        if item_idx >= chunk_entries.len() {
+            chunk_entries.resize_with(item_idx + 1, Vec::new);
+        }
+        chunk_entries[item_idx].push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
+
+        if let Some(mut count) = ctx.chunk_refcounts.get_mut(name) {
+            *count += 1;
+        } else {
+            ctx.chunk_refcounts.insert(name.to_owned(), 1);
         }
     }
 }
@@ -501,15 +506,15 @@ async fn build_download_state(
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     completed_indices: Option<&HashSet<usize>>,
     pre_downloaded: &HashSet<String>,
-) -> SophonResult<(Vec<DownloadItem>, Arc<DashMap<String, Vec<FileEntry>>>)> {
+) -> SophonResult<(Vec<DownloadItem>, Arc<Vec<Vec<FileEntry>>>)> {
     let total_chunks: usize = ctx
         .all_files
         .iter()
         .map(|f| f.asset_chunks.len())
         .fold(0usize, |acc, x| acc.saturating_add(x));
-    let chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>> = Arc::new(DashMap::new());
     let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
     let mut download_items_index: HashMap<String, usize> = HashMap::with_capacity(total_chunks);
+    let mut chunk_entries: Vec<Vec<FileEntry>> = Vec::with_capacity(total_chunks);
 
     let mut all_files_index: usize = 0;
 
@@ -534,7 +539,6 @@ async fn build_download_state(
             let has_downloadable = file.asset_chunks.iter().any(|c| c.chunk_old_offset < 0);
 
             if !has_downloadable {
-                // All chunks are old-source (or no chunks) — assemble immediately
                 let _ = assemble_tx.send((all_files_index, tmp_dir_idx)).await;
                 all_files_index += 1;
                 continue;
@@ -545,7 +549,7 @@ async fn build_download_state(
                 all_files_index,
                 tmp_dir_idx,
                 ctx,
-                &chunk_to_files,
+                &mut chunk_entries,
                 &mut download_items,
                 &mut download_items_index,
                 &data,
@@ -556,12 +560,12 @@ async fn build_download_state(
     }
 
     log::info!(
-        "build_download_state: {} download items, {} chunk->file mappings, all_files_index={}",
+        "build_download_state: {} download items, {} chunk entries, all_files_index={}",
         download_items.len(),
-        chunk_to_files.len(),
+        chunk_entries.len(),
         all_files_index,
     );
-    Ok((download_items, chunk_to_files))
+    Ok((download_items, Arc::new(chunk_entries)))
 }
 
 fn make_assembly_params(
@@ -814,35 +818,32 @@ async fn download_chunk_with_retries(
 }
 
 fn notify_assembly_ready(
-    chunk_name: &str,
-    chunk_to_files: &DashMap<String, Vec<FileEntry>>,
+    item_idx: usize,
+    chunk_entries: &[Vec<FileEntry>],
     assemble_tx: &mpsc::Sender<(usize, usize)>,
 ) {
-    let entries = match chunk_to_files.remove(chunk_name) {
-        Some((_, entries)) => entries,
-        None => {
-            return;
-        }
+    let entries = match chunk_entries.get(item_idx) {
+        Some(entries) => entries,
+        None => return,
     };
 
     for (file_idx, tmp_dir_idx, pending) in entries {
         let prev = pending.fetch_sub(1, Ordering::AcqRel);
         if prev == 1 {
-            let _ = assemble_tx.try_send((file_idx, tmp_dir_idx));
+            let _ = assemble_tx.try_send((*file_idx, *tmp_dir_idx));
         }
     }
 }
 
 async fn process_download_item(
     item: DownloadItem,
+    item_idx: usize,
     ctx: Arc<InstallContext>,
-    chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>>,
+    chunk_entries: Arc<Vec<Vec<FileEntry>>>,
     assemble_tx: mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
 ) -> SophonResult<()> {
-    // Wait for pause/cancel outside the adaptive permit so we don't waste
-    // concurrency slots on paused tasks.
     {
         let db = ctx.downloaded_bytes.load(Ordering::Relaxed);
         handle
@@ -976,7 +977,7 @@ async fn process_download_item(
         ctx.last_update.store(now, Ordering::Relaxed);
     }
 
-    notify_assembly_ready(&chunk.chunk_name, &chunk_to_files, &assemble_tx);
+    notify_assembly_ready(item_idx, &chunk_entries, &assemble_tx);
 
     Ok(())
 }
@@ -984,19 +985,16 @@ async fn process_download_item(
 async fn run_downloads(
     ctx: Arc<InstallContext>,
     download_items: Vec<DownloadItem>,
-    chunk_to_files: Arc<DashMap<String, Vec<FileEntry>>>,
+    chunk_entries: Arc<Vec<Vec<FileEntry>>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
     adaptive: Arc<AdaptiveSemaphore>,
 ) -> Vec<SophonResult<()>> {
     let mut results = Vec::with_capacity(download_items.len());
     let mut join_set = tokio::task::JoinSet::new();
-    // Limit concurrent spawned tasks to prevent memory explosion from
-    // buffering all futures upfront. Reference implementations use 5-24
-    // workers; 32 gives headroom while keeping memory bounded.
     const MAX_PENDING: usize = 32;
 
-    for item in download_items {
+    for (item_idx, item) in download_items.into_iter().enumerate() {
         if handle.is_cancelled() {
             join_set.abort_all();
             while let Some(result) = join_set.join_next().await {
@@ -1010,13 +1008,22 @@ async fn run_downloads(
         }
 
         let ctx = Arc::clone(&ctx);
-        let chunk_to_files = Arc::clone(&chunk_to_files);
+        let chunk_entries = Arc::clone(&chunk_entries);
         let assemble_tx = assemble_tx.clone();
         let handle = handle.clone();
         let adaptive = Arc::clone(&adaptive);
 
         join_set.spawn(async move {
-            process_download_item(item, ctx, chunk_to_files, assemble_tx, handle, adaptive).await
+            process_download_item(
+                item,
+                item_idx,
+                ctx,
+                chunk_entries,
+                assemble_tx,
+                handle,
+                adaptive,
+            )
+            .await
         });
 
         if join_set.len() >= MAX_PENDING {
@@ -1555,7 +1562,7 @@ pub async fn install(
     let assembly_task =
         spawn_assembly_coordinator(&ctx, assemble_rx, assembly_cancel_token.clone());
 
-    let (download_items, chunk_to_files) = build_download_state(
+    let (download_items, chunk_entries) = build_download_state(
         installer_data,
         &ctx,
         &assemble_tx,
@@ -1581,7 +1588,7 @@ pub async fn install(
     let results = run_downloads(
         Arc::clone(&ctx),
         download_items,
-        chunk_to_files,
+        chunk_entries,
         &assemble_tx,
         options.handle,
         Arc::clone(&adaptive),
@@ -2129,16 +2136,12 @@ mod tests {
 
     #[tokio::test]
     async fn notify_assembly_ready_single_file_ready() {
-        let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
         let (tx, mut rx) = mpsc::channel::<(usize, usize)>(16);
 
         let pending: PendingCount = Arc::new(AtomicUsize::new(1usize));
-        chunk_to_files.insert(
-            "chunk_a".to_string(),
-            vec![(0usize, 0usize, Arc::clone(&pending))],
-        );
+        let chunk_entries: Vec<Vec<FileEntry>> = vec![vec![(0usize, 0usize, Arc::clone(&pending))]];
 
-        notify_assembly_ready("chunk_a", &chunk_to_files, &tx);
+        notify_assembly_ready(0, &chunk_entries, &tx);
 
         let received = rx.try_recv();
         assert!(received.is_ok(), "file should be sent to assembly channel");
@@ -2148,11 +2151,11 @@ mod tests {
 
     #[tokio::test]
     async fn notify_assembly_ready_chunk_not_in_map() {
-        let chunk_to_files: DashMap<String, Vec<FileEntry>> = DashMap::new();
+        let chunk_entries: Vec<Vec<FileEntry>> = vec![];
         let (tx, rx) = mpsc::channel::<(usize, usize)>(16);
         drop(rx);
 
-        notify_assembly_ready("nonexistent_chunk", &chunk_to_files, &tx);
+        notify_assembly_ready(999, &chunk_entries, &tx);
     }
 
     #[tokio::test]
