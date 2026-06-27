@@ -1005,7 +1005,7 @@ async fn run_downloads(
                     .await
             }
         })
-        .buffer_unordered(1024) // High ceiling, adaptive semaphore controls actual concurrency
+        .buffer_unordered(512) // High ceiling, adaptive semaphore controls actual concurrency
         .collect()
         .await
 }
