@@ -512,6 +512,130 @@ fn patching_chunk_dir(game_dir: &Path) -> PathBuf {
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
 
+#[allow(clippy::too_many_arguments)]
+async fn process_preinstall_chunk(
+    chunk_info: PatchChunkInfo,
+    client: Client,
+    diff_download: DownloadInfo,
+    chunks_dir: PathBuf,
+    handle: DownloadHandle,
+    updater: ProgressUpdater,
+    downloaded_bytes: Arc<AtomicU64>,
+    resume_offset: u64,
+    total_bytes: u64,
+    chunk_bytes_map: Arc<DashMap<String, u64>>,
+    already_downloaded: bool,
+    state_saver: super::installer::StateSaver,
+    last_update: Arc<AtomicU64>,
+    chunks_since_save: Arc<AtomicUsize>,
+    last_speed_bytes: Arc<AtomicU64>,
+    last_speed_time: Arc<AtomicU64>,
+    smooth_speed_bps: Arc<AtomicU64>,
+    eta_speed_history: Arc<Mutex<VecDeque<f64>>>,
+    adaptive: Arc<super::adaptive_download::AdaptiveSemaphore>,
+) -> SophonResult<()> {
+    if handle.is_cancelled() {
+        return Err(SophonError::Cancelled);
+    }
+
+    let _permit = adaptive.acquire().await;
+
+    handle
+        .wait_if_paused(
+            &*updater,
+            downloaded_bytes.load(Ordering::Relaxed) + resume_offset,
+            total_bytes,
+        )
+        .await?;
+
+    validate_patch_name(&chunk_info.patch_name)?;
+
+    let chunk_path = chunks_dir.join(&chunk_info.patch_name);
+
+    let needs_download =
+        if chunk_path.exists() && verify_file_hash(&chunk_path, &chunk_info.patch_md5) {
+            downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
+            if !already_downloaded {
+                chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
+            }
+            false
+        } else {
+            true
+        };
+
+    if needs_download {
+        download_patch_chunk_with_retries(
+            &client,
+            &diff_download,
+            &chunk_info.patch_name,
+            &chunk_path,
+            &chunk_info.patch_md5,
+            10,
+            &handle,
+        )
+        .await?;
+
+        downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
+        chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
+    }
+
+    let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
+    {
+        let now = now_nanos();
+        if now.saturating_sub(last_update.load(Ordering::Relaxed))
+            >= super::PROGRESS_UPDATE_INTERVAL_MS * 1_000_000
+        {
+            let last_speed_nanos = last_speed_time.load(Ordering::Relaxed);
+            let window_elapsed = if last_speed_nanos == 0 {
+                0.0
+            } else {
+                now.saturating_sub(last_speed_nanos) as f64 / 1_000_000_000.0
+            };
+            let instant_window_speed = if window_elapsed >= 1.0 {
+                let window_bytes = db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
+                let window_speed = window_bytes as f64 / window_elapsed;
+                last_speed_bytes.store(db, Ordering::Relaxed);
+                last_speed_time.store(now, Ordering::Relaxed);
+                window_speed
+            } else {
+                0.0
+            };
+
+            let speed_alpha = 1.0
+                / (super::SPEED_SMOOTH_WINDOW_SECS * 1000.0
+                    / super::PROGRESS_UPDATE_INTERVAL_MS as f64);
+
+            let speed_bps =
+                super::ewma_update(&smooth_speed_bps, instant_window_speed, speed_alpha);
+            let eta_speed_bps = super::compute_eta_speed(&eta_speed_history, instant_window_speed);
+
+            let remaining = total_bytes.saturating_sub(db);
+            let eta = if eta_speed_bps > 0.0 {
+                remaining as f64 / eta_speed_bps
+            } else {
+                0.0
+            };
+
+            updater(SophonProgress::Downloading {
+                downloaded_bytes: db,
+                total_bytes,
+                speed_bps,
+                eta_seconds: eta,
+            });
+            last_update.store(now, Ordering::Relaxed);
+        }
+    }
+
+    let save_count = chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
+    if save_count
+        .is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL as usize)
+    {
+        state_saver(&chunk_bytes_map);
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn preinstall_download(
     client: &Client,
@@ -564,7 +688,6 @@ pub async fn preinstall_download(
 
     let last_update = Arc::new(AtomicU64::new(now_nanos()));
     let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
-    let max_concurrency = super::adaptive_max_concurrency();
     let adaptive = Arc::new(super::adaptive_download::AdaptiveSemaphore::new());
     let last_speed_bytes = Arc::new(AtomicU64::new(0));
     let last_speed_time = Arc::new(AtomicU64::new(now_nanos()));
@@ -572,138 +695,61 @@ pub async fn preinstall_download(
     let eta_speed_history = Arc::new(Mutex::new(VecDeque::new()));
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
-    let results: Vec<SophonResult<()>> = futures_util::stream::iter(chunk_infos)
-        .map(|chunk_info| {
-            let client = client.clone();
-            let diff_download = plan.diff_download.clone();
-            let chunks_dir = chunks_dir.clone();
-            let handle = handle.clone();
-            let updater = Arc::clone(&updater);
-            let downloaded_bytes = Arc::clone(&downloaded_bytes);
-            let chunk_bytes_map = Arc::clone(&chunk_bytes_map);
-            let state_saver = Arc::clone(&state_saver);
-            let last_update = Arc::clone(&last_update);
-            let chunks_since_save = Arc::clone(&chunks_since_save);
-            let last_speed_bytes = Arc::clone(&last_speed_bytes);
-            let last_speed_time = Arc::clone(&last_speed_time);
-            let smooth_speed_bps = Arc::clone(&smooth_speed_bps);
-            let eta_speed_history = Arc::clone(&eta_speed_history);
-            let already_downloaded_chunk = chunk_bytes_map.contains_key(&chunk_info.patch_name);
-            let adaptive = Arc::clone(&adaptive);
+    let mut join_set = tokio::task::JoinSet::new();
+    const MAX_PENDING: usize = 32;
+    let mut results: Vec<SophonResult<()>> = Vec::with_capacity(chunk_infos.len());
 
-            async move {
-                if handle.is_cancelled() {
-                    return Err(SophonError::Cancelled);
+    for chunk_info in chunk_infos.into_iter() {
+        if handle.is_cancelled() {
+            join_set.abort_all();
+            while let Some(result) = join_set.join_next().await {
+                match result {
+                    Ok(r) => results.push(r),
+                    Err(err) => results.push(Err(SophonError::JoinError(err))),
                 }
-
-                let _permit = adaptive.acquire().await;
-
-                handle
-                    .wait_if_paused(
-                        &*updater,
-                        downloaded_bytes.load(Ordering::Relaxed) + resume_offset,
-                        total_bytes,
-                    )
-                    .await?;
-
-                validate_patch_name(&chunk_info.patch_name)?;
-
-                let chunk_path = chunks_dir.join(&chunk_info.patch_name);
-
-                let needs_download = if chunk_path.exists()
-                    && verify_file_hash(&chunk_path, &chunk_info.patch_md5)
-                {
-                    downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                    if !already_downloaded_chunk {
-                        chunk_bytes_map
-                            .insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
-                    }
-                    false
-                } else {
-                    true
-                };
-
-                if needs_download {
-                    download_patch_chunk_with_retries(
-                        &client,
-                        &diff_download,
-                        &chunk_info.patch_name,
-                        &chunk_path,
-                        &chunk_info.patch_md5,
-                        10,
-                        &handle,
-                    )
-                    .await?;
-
-                    downloaded_bytes.fetch_add(chunk_info.patch_size, Ordering::Relaxed);
-                    chunk_bytes_map.insert(chunk_info.patch_name.clone(), chunk_info.patch_size);
-                }
-
-                let db = downloaded_bytes.load(Ordering::Relaxed) + resume_offset;
-                {
-                    let now = now_nanos();
-                    if now.saturating_sub(last_update.load(Ordering::Relaxed))
-                        >= super::PROGRESS_UPDATE_INTERVAL_MS * 1_000_000
-                    {
-                        let last_speed_nanos = last_speed_time.load(Ordering::Relaxed);
-                        let window_elapsed = if last_speed_nanos == 0 {
-                            0.0
-                        } else {
-                            now.saturating_sub(last_speed_nanos) as f64 / 1_000_000_000.0
-                        };
-                        let instant_window_speed = if window_elapsed >= 1.0 {
-                            let window_bytes =
-                                db.saturating_sub(last_speed_bytes.load(Ordering::Relaxed));
-                            let window_speed = window_bytes as f64 / window_elapsed;
-                            last_speed_bytes.store(db, Ordering::Relaxed);
-                            last_speed_time.store(now, Ordering::Relaxed);
-                            window_speed
-                        } else {
-                            0.0
-                        };
-
-                        let speed_alpha = 1.0
-                            / (super::SPEED_SMOOTH_WINDOW_SECS * 1000.0
-                                / super::PROGRESS_UPDATE_INTERVAL_MS as f64);
-
-                        let speed_bps = super::ewma_update(
-                            &smooth_speed_bps,
-                            instant_window_speed,
-                            speed_alpha,
-                        );
-                        let eta_speed_bps =
-                            super::compute_eta_speed(&eta_speed_history, instant_window_speed);
-
-                        let remaining = total_bytes.saturating_sub(db);
-                        let eta = if eta_speed_bps > 0.0 {
-                            remaining as f64 / eta_speed_bps
-                        } else {
-                            0.0
-                        };
-
-                        updater(SophonProgress::Downloading {
-                            downloaded_bytes: db,
-                            total_bytes,
-                            speed_bps,
-                            eta_seconds: eta,
-                        });
-                        last_update.store(now, Ordering::Relaxed);
-                    }
-                }
-
-                let save_count = chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
-                if save_count.is_multiple_of(
-                    crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL as usize,
-                ) {
-                    state_saver(&chunk_bytes_map);
-                }
-
-                Ok(())
             }
-        })
-        .buffer_unordered(max_concurrency.min(128))
-        .collect()
-        .await;
+            results.push(Err(SophonError::Cancelled));
+            break;
+        }
+
+        let already_downloaded = chunk_bytes_map.contains_key(&chunk_info.patch_name);
+        join_set.spawn(process_preinstall_chunk(
+            chunk_info,
+            client.clone(),
+            plan.diff_download.clone(),
+            chunks_dir.clone(),
+            handle.clone(),
+            Arc::clone(&updater),
+            Arc::clone(&downloaded_bytes),
+            resume_offset,
+            total_bytes,
+            Arc::clone(&chunk_bytes_map),
+            already_downloaded,
+            Arc::clone(&state_saver),
+            Arc::clone(&last_update),
+            Arc::clone(&chunks_since_save),
+            Arc::clone(&last_speed_bytes),
+            Arc::clone(&last_speed_time),
+            Arc::clone(&smooth_speed_bps),
+            Arc::clone(&eta_speed_history),
+            Arc::clone(&adaptive),
+        ));
+
+        if join_set.len() >= MAX_PENDING {
+            match join_set.join_next().await {
+                Some(Ok(r)) => results.push(r),
+                Some(Err(err)) => results.push(Err(SophonError::JoinError(err))),
+                None => break,
+            }
+        }
+    }
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(r) => results.push(r),
+            Err(err) => results.push(Err(SophonError::JoinError(err))),
+        }
+    }
 
     for result in &results {
         if let Err(err) = result
