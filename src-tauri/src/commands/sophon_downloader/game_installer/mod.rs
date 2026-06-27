@@ -26,10 +26,8 @@ pub const MAX_RETRIES: u32 = 5;
 pub const MAX_HASH_RETRIES: u32 = 5;
 
 /// Streaming-download idle-poll interval. The HTTP body streaming loop wakes
-/// at this cadence to re-check cancellation and pause state. Must be small
-/// enough that a stalled connection cannot delay user-initiated cancel/pause
-/// past this bound on the order of seconds.
-pub const STREAM_POLL_INTERVAL_MS: u64 = 1_000;
+/// at this cadence to re-check cancellation and pause state.
+pub const STREAM_POLL_INTERVAL_MS: u64 = 250;
 
 use std::time::Duration;
 
@@ -128,17 +126,17 @@ pub fn compute_eta_speed(
 }
 
 /// Minimum concurrent downloads in adaptive mode.
-pub const ADAPTIVE_MIN_CONCURRENCY: usize = 16;
+pub const ADAPTIVE_MIN_CONCURRENCY: usize = 32;
 /// Maximum concurrent downloads in adaptive mode.
-/// Computed as (cores * 8) clamped to [16, 256].
+/// Computed as (cores * 16) clamped to [64, 512].
 pub fn adaptive_max_concurrency() -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    (cpus * 8).clamp(16, 256)
+    (cpus * 16).clamp(64, 512)
 }
 /// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 64;
+pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 128;
 /// Time window for throughput measurement (seconds).
 pub const ADAPTIVE_WINDOW_SECS: u64 = 3;
 
@@ -211,8 +209,8 @@ mod tests {
     #[test]
     fn adaptive_max_concurrency_bounds() {
         let c = adaptive_max_concurrency();
-        assert!(c >= 16, "concurrency {c} < 16");
-        assert!(c <= 256, "concurrency {c} > 256");
+        assert!(c >= 64, "concurrency {c} < 64");
+        assert!(c <= 512, "concurrency {c} > 512");
     }
 
     #[test]
@@ -220,7 +218,7 @@ mod tests {
         let cpus = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
-        let expected = (cpus * 8).clamp(16, 256);
+        let expected = (cpus * 16).clamp(64, 512);
         assert_eq!(adaptive_max_concurrency(), expected);
     }
 
