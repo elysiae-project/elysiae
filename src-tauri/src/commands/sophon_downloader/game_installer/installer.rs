@@ -34,7 +34,7 @@ use crate::commands::sophon_downloader::proto_parse::{
 };
 
 type ProgressUpdater = Arc<dyn Fn(SophonProgress) + Send + Sync>;
-pub type StateSaver = Arc<dyn Fn(&DashMap<String, u64>) + Send + Sync>;
+pub type StateSaver = Arc<dyn Fn(&HashMap<String, u64>) + Send + Sync>;
 
 pub struct ResumeContext {
     pub prev_manifest_hash: String,
@@ -64,7 +64,7 @@ struct InstallContext {
     last_speed_bytes: Arc<AtomicU64>,
     last_speed_time: Arc<AtomicU64>,
     updater: ProgressUpdater,
-    downloaded_chunks: Arc<DashMap<String, u64>>,
+    downloaded_chunks: Arc<OnceLock<Vec<AtomicU64>>>,
     chunks_since_save: Arc<AtomicU64>,
     last_save: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
@@ -930,12 +930,14 @@ async fn process_download_item(
             .ok();
     }
 
-    ctx.downloaded_chunks
-        .insert(chunk.chunk_name.clone(), chunk.chunk_size);
+    if let Some(dc) = ctx.downloaded_chunks.get() {
+        dc[item_idx].store(chunk.chunk_size, Ordering::Relaxed);
+    }
 
     let count = ctx.chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
     if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
         let dc = Arc::clone(&ctx.downloaded_chunks);
+        let cn = Arc::clone(&ctx.chunk_names);
         let saver = Arc::clone(&ctx.state_saver);
         let prev_handle = {
             let mut guard = ctx.last_save.lock().unwrap_or_else(|err| {
@@ -947,7 +949,18 @@ async fn process_download_item(
         if let Some(h) = prev_handle {
             let _ = h.await;
         }
-        let new_handle = tokio::task::spawn_blocking(move || saver(&dc));
+        let new_handle = tokio::task::spawn_blocking(move || {
+            let map = if let (Some(dc), Some(cn)) = (dc.get(), cn.get()) {
+                dc.iter()
+                    .zip(cn.iter())
+                    .filter(|(v, _)| v.load(Ordering::Relaxed) > 0)
+                    .map(|(v, k)| (k.clone(), v.load(Ordering::Relaxed)))
+                    .collect::<HashMap<String, u64>>()
+            } else {
+                HashMap::new()
+            };
+            saver(&map);
+        });
         {
             let mut guard = ctx.last_save.lock().unwrap_or_else(|err| {
                 log::error!("last_save mutex poisoned, recovering");
@@ -1134,12 +1147,24 @@ async fn finalize_install(
 
     {
         let dc = Arc::clone(&ctx.downloaded_chunks);
+        let cn = Arc::clone(&ctx.chunk_names);
         let saver = Arc::clone(&ctx.state_saver);
-        tokio::task::spawn_blocking(move || saver(&dc))
-            .await
-            .unwrap_or_else(|err| {
-                log::error!("Final state save join error: {err}");
-            });
+        tokio::task::spawn_blocking(move || {
+            let map = if let (Some(dc), Some(cn)) = (dc.get(), cn.get()) {
+                dc.iter()
+                    .zip(cn.iter())
+                    .filter(|(v, _)| v.load(Ordering::Relaxed) > 0)
+                    .map(|(v, k)| (k.clone(), v.load(Ordering::Relaxed)))
+                    .collect::<HashMap<String, u64>>()
+            } else {
+                HashMap::new()
+            };
+            saver(&map);
+        })
+        .await
+        .unwrap_or_else(|err| {
+            log::error!("Final state save join error: {err}");
+        });
     }
 
     {
@@ -1563,7 +1588,6 @@ pub async fn install(
     };
 
     let adaptive_assembly = Arc::new(AdaptiveAssembly::new());
-    let initial_dashmap: DashMap<String, u64> = DashMap::from_iter(initial_chunks);
     let ctx = Arc::new(InstallContext {
         chunks_dir: Arc::clone(&chunks_dir),
         game_dir: game_dir.to_path_buf(),
@@ -1585,7 +1609,7 @@ pub async fn install(
         last_speed_bytes: Arc::new(AtomicU64::new(0)),
         last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
         updater: Arc::clone(&callbacks.updater),
-        downloaded_chunks: Arc::new(initial_dashmap),
+        downloaded_chunks: Arc::new(OnceLock::new()),
         chunks_since_save: Arc::new(AtomicU64::new(0)),
         last_save: Arc::new(Mutex::new(None)),
         state_saver: callbacks.state_saver,
@@ -1611,8 +1635,19 @@ pub async fn install(
         .await?;
 
     let _ = ctx.chunk_refcounts.set(Arc::new(chunk_refcounts_vec));
-    let _ = ctx.chunk_name_to_idx.set(chunk_name_to_idx);
-    let _ = ctx.chunk_names.set(chunk_names);
+    let _ = ctx.chunk_name_to_idx.set(Arc::clone(&chunk_name_to_idx));
+    let _ = ctx.chunk_names.set(Arc::clone(&chunk_names));
+
+    {
+        let downloaded_chunks_vec: Vec<AtomicU64> = (0..download_items.len())
+            .map(|i| {
+                let name = &chunk_names[i];
+                let val = initial_chunks.get(name).copied().unwrap_or(0);
+                AtomicU64::new(val)
+            })
+            .collect();
+        let _ = ctx.downloaded_chunks.set(downloaded_chunks_vec);
+    }
 
     {
         let initial_offset = ctx.resume_bytes_offset.load(Ordering::Relaxed);
@@ -2354,7 +2389,7 @@ mod tests {
             last_speed_bytes: Arc::new(AtomicU64::new(0)),
             last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
             updater: Arc::new(|_| {}),
-            downloaded_chunks: Arc::new(DashMap::new()),
+            downloaded_chunks: Arc::new(OnceLock::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
@@ -2447,7 +2482,7 @@ mod tests {
             last_speed_bytes: Arc::new(AtomicU64::new(0)),
             last_speed_time: Arc::new(AtomicU64::new(now_nanos())),
             updater: Arc::new(|_| {}),
-            downloaded_chunks: Arc::new(DashMap::new()),
+            downloaded_chunks: Arc::new(OnceLock::new()),
             chunks_since_save: Arc::new(AtomicU64::new(0)),
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),

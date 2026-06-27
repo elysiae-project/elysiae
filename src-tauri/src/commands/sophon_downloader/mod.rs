@@ -7,7 +7,7 @@
 pub mod api_scrape;
 pub mod game_installer;
 pub mod proto_parse;
-use dashmap::DashMap;
+
 use game_installer::{DownloadHandle, SophonError, UpdateInfo, read_installed_tag};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -499,9 +499,9 @@ fn make_state_saver(app: &AppHandle, state: &DownloadState) -> game_installer::S
         download_type: &'a DownloadType,
         current_tag: &'a Option<String>,
         manifest_hash: &'a str,
-        downloaded_chunks: &'a DashMap<String, u64>,
+        downloaded_chunks: &'a HashMap<String, u64>,
     }
-    Arc::new(move |chunks: &DashMap<String, u64>| {
+    Arc::new(move |chunks: &HashMap<String, u64>| {
         let snapshot = DownloadStateRef {
             game_id: &meta.game_id,
             vo_lang: &meta.vo_lang,

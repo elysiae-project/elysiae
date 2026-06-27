@@ -630,7 +630,11 @@ async fn process_preinstall_chunk(
     if save_count
         .is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL as usize)
     {
-        state_saver(&chunk_bytes_map);
+        let map: HashMap<String, u64> = chunk_bytes_map
+            .iter()
+            .map(|r| (r.key().clone(), *r.value()))
+            .collect();
+        state_saver(&map);
     }
 
     Ok(())
@@ -761,7 +765,11 @@ pub async fn preinstall_download(
     results.into_iter().find(|r| r.is_err()).transpose()?;
 
     // Final save to ensure all downloaded chunks are persisted
-    state_saver(&chunk_bytes_map);
+    let map: HashMap<String, u64> = chunk_bytes_map
+        .iter()
+        .map(|r| (r.key().clone(), *r.value()))
+        .collect();
+    state_saver(&map);
 
     updater(SophonProgress::Downloading {
         downloaded_bytes: total_bytes,
