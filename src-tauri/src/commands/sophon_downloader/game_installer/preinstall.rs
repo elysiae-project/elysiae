@@ -919,12 +919,7 @@ async fn download_patch_chunk_inner(
     dest: &Path,
     expected_md5: &str,
 ) -> SophonResult<()> {
-    let resp = client
-        .get(url)
-        .timeout(Duration::from_secs(20))
-        .send()
-        .await?
-        .error_for_status()?;
+    let resp = client.get(url).send().await?.error_for_status()?;
     let content_length: Option<u64> = resp
         .headers()
         .get(reqwest::header::CONTENT_LENGTH)

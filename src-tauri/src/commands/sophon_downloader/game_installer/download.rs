@@ -191,7 +191,6 @@ async fn do_download_chunk(
         let resp = client
             .get(url)
             .header(reqwest::header::RANGE, range_header)
-            .timeout(Duration::from_secs(20))
             .send()
             .await?;
 
@@ -222,11 +221,7 @@ async fn do_download_chunk(
     }
 
     // Fresh download
-    let resp = client
-        .get(url)
-        .timeout(Duration::from_secs(20))
-        .send()
-        .await?;
+    let resp = client.get(url).send().await?;
     let resp = resp.error_for_status()?;
     download_full_file_with_response(resp, chunk, dest, handle).await
 }
@@ -256,6 +251,12 @@ async fn download_full_file_with_response(
     let mut file = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, file);
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
+    let mut xxh64_hasher: Option<xxhash_rust::xxh64::Xxh64> =
+        if chunk.chunk_compressed_hash_md5.len() == 16 {
+            Some(xxhash_rust::xxh64::Xxh64::new(0))
+        } else {
+            None
+        };
     let mut total_len = 0u64;
 
     loop {
@@ -284,6 +285,9 @@ async fn download_full_file_with_response(
                         });
                     }
                     hasher.update(&bytes);
+                    if let Some(ref mut h) = xxh64_hasher {
+                        h.update(&bytes);
+                    }
                     if let Err(err) = file.write_all(&bytes).await {
                         let _ = tokio::fs::remove_file(dest).await;
                         return Err(SophonError::Io(err));
@@ -342,13 +346,22 @@ async fn download_full_file_with_response(
                 }
             }
             16 => {
-                drop(file);
-                if !verify_existing_file_hash(dest, expected).await? {
+                let actual = if let Some(h) = xxh64_hasher {
+                    format!("{:016x}", h.digest())
+                } else {
+                    drop(file);
+                    if verify_existing_file_hash(dest, expected).await? {
+                        String::new()
+                    } else {
+                        expected.clone()
+                    }
+                };
+                if !actual.is_empty() && actual != expected.to_ascii_lowercase() {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Md5Mismatch {
                         item: chunk.chunk_name.clone(),
                         expected: expected.clone(),
-                        actual: "(xxh64 mismatch)".to_string(),
+                        actual,
                     });
                 }
             }
@@ -402,6 +415,21 @@ async fn download_with_resume(
 
     // Seed the hasher with existing file content using memory-mapped I/O
     let mut hasher = Md5::new();
+    let mut xxh64_hasher: Option<xxhash_rust::xxh64::Xxh64> =
+        if chunk.chunk_compressed_hash_md5.len() == 16 {
+            let mut h = xxhash_rust::xxh64::Xxh64::new(0);
+            {
+                let existing_file = std::fs::File::open(dest)?;
+                let file_len = existing_file.metadata()?.len();
+                if file_len > 0 {
+                    let mmap = unsafe { memmap2::Mmap::map(&existing_file)? };
+                    h.update(&mmap[..existing_size as usize]);
+                }
+            }
+            Some(h)
+        } else {
+            None
+        };
     {
         let existing_file = std::fs::File::open(dest)?;
         let file_len = existing_file.metadata()?.len();
@@ -449,6 +477,9 @@ async fn download_with_resume(
                         return Err(SophonError::Io(err));
                     }
                     hasher.update(&bytes);
+                    if let Some(ref mut h) = xxh64_hasher {
+                        h.update(&bytes);
+                    }
                     if let Some(handle) = handle
                         && handle.is_cancelled()
                     {
@@ -503,13 +534,22 @@ async fn download_with_resume(
                 }
             }
             16 => {
-                drop(file);
-                if !verify_existing_file_hash(dest, expected).await? {
+                let actual = if let Some(h) = xxh64_hasher {
+                    format!("{:016x}", h.digest())
+                } else {
+                    drop(file);
+                    if verify_existing_file_hash(dest, expected).await? {
+                        String::new()
+                    } else {
+                        expected.clone()
+                    }
+                };
+                if !actual.is_empty() && actual != expected.to_ascii_lowercase() {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Md5Mismatch {
                         item: chunk.chunk_name.clone(),
                         expected: expected.clone(),
-                        actual: "(xxh64 mismatch)".to_string(),
+                        actual,
                     });
                 }
             }
