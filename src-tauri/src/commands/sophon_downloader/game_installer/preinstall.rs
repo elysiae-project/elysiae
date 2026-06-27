@@ -565,6 +565,7 @@ pub async fn preinstall_download(
     let last_update = Arc::new(AtomicU64::new(now_nanos()));
     let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
     let max_concurrency = super::adaptive_max_concurrency();
+    let adaptive = Arc::new(super::adaptive_download::AdaptiveSemaphore::new());
     let last_speed_bytes = Arc::new(AtomicU64::new(0));
     let last_speed_time = Arc::new(AtomicU64::new(now_nanos()));
     let smooth_speed_bps = Arc::new(AtomicU64::new(0));
@@ -588,11 +589,14 @@ pub async fn preinstall_download(
             let smooth_speed_bps = Arc::clone(&smooth_speed_bps);
             let eta_speed_history = Arc::clone(&eta_speed_history);
             let already_downloaded_chunk = chunk_bytes_map.contains_key(&chunk_info.patch_name);
+            let adaptive = Arc::clone(&adaptive);
 
             async move {
                 if handle.is_cancelled() {
                     return Err(SophonError::Cancelled);
                 }
+
+                let _permit = adaptive.acquire().await;
 
                 handle
                     .wait_if_paused(
@@ -697,7 +701,7 @@ pub async fn preinstall_download(
                 Ok(())
             }
         })
-        .buffer_unordered(max_concurrency)
+        .buffer_unordered(max_concurrency.min(128))
         .collect()
         .await;
 

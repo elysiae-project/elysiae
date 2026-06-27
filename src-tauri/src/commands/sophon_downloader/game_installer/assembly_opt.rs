@@ -13,7 +13,7 @@ use md5::{Digest, Md5};
 use super::FILE_WRITE_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
 
-const ASSEMBLY_BUFFER_SIZE: usize = 8 * 1024 * 1024;
+const ASSEMBLY_BUFFER_SIZE: usize = 1024 * 1024;
 
 thread_local! {
     static OPT_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -114,9 +114,9 @@ pub fn decompress_chunk_optimized(
     let mut decoder = zstd::Decoder::new(buf_reader)?;
 
     let window_log: u32 = if cfg!(target_pointer_width = "64") {
-        31
+        26
     } else {
-        30
+        25
     };
     decoder.set_parameter(zstd::zstd_safe::DParameter::WindowLogMax(window_log))?;
 

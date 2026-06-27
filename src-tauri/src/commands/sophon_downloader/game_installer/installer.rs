@@ -1005,7 +1005,7 @@ async fn run_downloads(
                     .await
             }
         })
-        .buffer_unordered(512)
+        .buffer_unordered(adaptive_max_concurrency())
         .collect()
         .await
 }
