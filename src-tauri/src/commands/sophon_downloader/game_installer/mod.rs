@@ -138,7 +138,7 @@ pub fn adaptive_max_concurrency() -> usize {
 /// Initial concurrent downloads in adaptive mode.
 pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 128;
 /// Time window for throughput measurement (seconds).
-pub const ADAPTIVE_WINDOW_SECS: u64 = 3;
+pub const ADAPTIVE_WINDOW_SECS: u64 = 1;
 
 pub const FRONT_DOOR_URL: &str = concat!(
     "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x68\x79\x70\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d",
