@@ -16,6 +16,9 @@ mod plugin_install;
 mod preinstall;
 mod update;
 
+#[cfg(feature = "pipeline-profiling")]
+mod profiling;
+
 #[cfg(test)]
 mod bench_tests;
 #[cfg(test)]
