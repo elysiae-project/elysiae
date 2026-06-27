@@ -1285,6 +1285,16 @@ pub async fn install(
     if game_code == "nap" {
         super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
     }
+    let mut file_installer_map: HashMap<String, usize> = HashMap::new();
+    let mut idx: usize = 0;
+    for (inst_idx, d) in installer_data.iter().enumerate() {
+        for _ in 0..d.file_count {
+            if idx < all_files.len() {
+                file_installer_map.insert(all_files[idx].asset_name.clone(), inst_idx);
+            }
+            idx += 1;
+        }
+    }
     if game_code == "hkrpg" {
         super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
     } else if game_code == "hk4e" {
@@ -1296,16 +1306,15 @@ pub async fn install(
         .iter()
         .map(|f| f.asset_name.as_str().to_owned())
         .collect();
-    let mut all_files_index: usize = 0;
-    for d in &mut installer_data {
-        let count = d.file_count;
-        let kept: usize = (all_files_index..all_files_index + count)
-            .filter(|&i| filtered_set.contains(all_files[i].asset_name.as_str()))
-            .count();
-        d.file_count = kept;
-        all_files_index += count;
-    }
     all_files.retain(|f| filtered_set.contains(f.asset_name.as_str()));
+    for d in &mut installer_data {
+        d.file_count = 0;
+    }
+    for f in all_files.iter() {
+        if let Some(inst_idx) = file_installer_map.get(&f.asset_name) {
+            installer_data[*inst_idx].file_count += 1;
+        }
+    }
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
