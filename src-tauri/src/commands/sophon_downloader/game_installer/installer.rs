@@ -87,7 +87,8 @@ pub(crate) struct InstallerData {
 }
 
 struct DownloadItem {
-    chunk: SophonManifestAssetChunk,
+    file_idx: usize,
+    chunk_idx: usize,
     client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
     is_pre_downloaded: bool,
@@ -453,11 +454,11 @@ fn register_chunks_for_file(
     data: &InstallerData,
     pre_downloaded: &HashSet<String>,
 ) {
-    // Only count chunks that need downloading (exclude old-source reuse)
-    let downloadable: Vec<&SophonManifestAssetChunk> = file
+    let downloadable: Vec<(usize, &SophonManifestAssetChunk)> = file
         .asset_chunks
         .iter()
-        .filter(|c| c.chunk_old_offset < 0)
+        .enumerate()
+        .filter(|(_, c)| c.chunk_old_offset < 0)
         .collect();
 
     let chunk_count = downloadable.len();
@@ -466,7 +467,7 @@ fn register_chunks_for_file(
     }
 
     let pending = Arc::new(AtomicUsize::new(chunk_count));
-    for chunk in downloadable {
+    for (chunk_idx, chunk) in downloadable {
         let name = chunk.chunk_name.as_str();
 
         chunk_to_files
@@ -485,7 +486,8 @@ fn register_chunks_for_file(
             ctx.chunk_refcounts.insert(name.to_owned(), 1);
             download_items_index.insert(name.to_owned(), download_items.len());
             download_items.push(DownloadItem {
-                chunk: chunk.clone(),
+                file_idx,
+                chunk_idx,
                 client: Arc::clone(&data.client),
                 chunk_download: Arc::clone(&data.chunk_download),
                 is_pre_downloaded: is_pre,
@@ -730,7 +732,9 @@ async fn check_needs_download(
 }
 
 async fn download_chunk_with_retries(
-    item: &DownloadItem,
+    chunk: &SophonManifestAssetChunk,
+    client: &Client,
+    chunk_download: &DownloadInfo,
     dest: &Path,
     ctx: &InstallContext,
     handle: &DownloadHandle,
@@ -744,9 +748,9 @@ async fn download_chunk_with_retries(
         }
 
         match super::download::download_chunk(
-            &item.client,
-            &item.chunk_download,
-            &item.chunk,
+            client,
+            chunk_download,
+            chunk,
             dest,
             Some(handle),
             ctx.bandwidth_manager.clone(),
@@ -758,7 +762,7 @@ async fn download_chunk_with_retries(
                 hash_failures += 1;
                 if hash_failures >= MAX_HASH_RETRIES {
                     return Err(SophonError::DownloadFailed {
-                        chunk: item.chunk.chunk_name.clone(),
+                        chunk: chunk.chunk_name.clone(),
                         attempts: hash_failures,
                         error: format!(
                             "hash verification failed after {} retries",
@@ -768,17 +772,14 @@ async fn download_chunk_with_retries(
                 }
                 log::warn!(
                     "MD5 mismatch for {} (hash retry {}/{}), re-downloading",
-                    item.chunk.chunk_name,
+                    chunk.chunk_name,
                     hash_failures,
                     MAX_HASH_RETRIES
                 );
-                // Discard the corrupted payload. Resuming a Range download from
-                // a corrupted tail would still fail MD5 verification because we
-                // would append new bytes on top of garbage. Start fresh.
                 if let Err(err) = tokio::fs::remove_file(dest).await {
                     log::warn!(
                         "Failed to discard corrupted chunk {} before retry: {}",
-                        item.chunk.chunk_name,
+                        chunk.chunk_name,
                         err
                     );
                 }
@@ -788,8 +789,6 @@ async fn download_chunk_with_retries(
                 {
                     return Err(SophonError::Cancelled);
                 }
-                // Don't count against network retries — corrupted data is
-                // not a network error. Continue to re-download the chunk.
             }
             Err(err) => {
                 if !err.is_retryable() {
@@ -801,7 +800,7 @@ async fn download_chunk_with_retries(
                     (ctx.updater)(SophonProgress::Warning {
                         message: format!(
                             "Chunk {} failed (attempt {}/{}): {err_msg}",
-                            item.chunk.chunk_name, network_attempts, MAX_RETRIES
+                            chunk.chunk_name, network_attempts, MAX_RETRIES
                         ),
                     });
                     if cancelable_sleep(handle, retry_delay(network_attempts))
@@ -812,15 +811,11 @@ async fn download_chunk_with_retries(
                     }
                 } else {
                     return Err(SophonError::DownloadFailed {
-                        chunk: item.chunk.chunk_name.clone(),
+                        chunk: chunk.chunk_name.clone(),
                         attempts: MAX_RETRIES,
                         error: err.to_string(),
                     });
                 }
-                // Don't delete the partial file here - the inner layer
-                // (download.rs) can resume it on the next attempt via
-                // HTTP Range requests. Removing it now would destroy progress.
-                // let _ = fs::remove_file(dest);
             }
         }
     }
@@ -869,34 +864,42 @@ async fn process_download_item(
 
     let _permit = adaptive.acquire().await;
 
-    if !validate_chunk_name(&item.chunk.chunk_name) {
-        return Err(SophonError::PathTraversal(
-            item.chunk.chunk_name.clone().into(),
-        ));
+    let chunk = &ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx];
+
+    if !validate_chunk_name(&chunk.chunk_name) {
+        return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
     }
-    let dest = ctx.chunks_dir.join(assembly::chunk_filename(&item.chunk));
+    let dest = ctx.chunks_dir.join(assembly::chunk_filename(chunk));
 
     let mut was_actually_downloaded = false;
     let needs_download =
-        check_needs_download(&dest, &item.chunk, &ctx.game_dir, &ctx.verify_cache).await?;
+        check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
     if handle.is_cancelled() {
         return Err(SophonError::Cancelled);
     }
     if needs_download {
-        download_chunk_with_retries(&item, &dest, &ctx, &handle).await?;
+        download_chunk_with_retries(
+            chunk,
+            &item.client,
+            &item.chunk_download,
+            &dest,
+            &ctx,
+            &handle,
+        )
+        .await?;
         was_actually_downloaded = true;
     }
 
     if was_actually_downloaded && item.is_pre_downloaded {
         ctx.resume_bytes_offset
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                Some(v.saturating_sub(item.chunk.chunk_size))
+                Some(v.saturating_sub(chunk.chunk_size))
             })
             .ok();
     }
 
     ctx.downloaded_chunks
-        .insert(item.chunk.chunk_name.clone(), item.chunk.chunk_size);
+        .insert(chunk.chunk_name.clone(), chunk.chunk_size);
 
     let count = ctx.chunks_since_save.fetch_add(1, Ordering::Relaxed) + 1;
     if count.is_multiple_of(crate::commands::sophon_downloader::CHUNK_STATE_SAVE_INTERVAL) {
@@ -925,13 +928,13 @@ async fn process_download_item(
     let db = if was_actually_downloaded {
         let old = ctx
             .downloaded_bytes
-            .fetch_add(item.chunk.chunk_size, Ordering::Relaxed);
-        old + item.chunk.chunk_size
+            .fetch_add(chunk.chunk_size, Ordering::Relaxed);
+        old + chunk.chunk_size
     } else {
         ctx.downloaded_bytes.load(Ordering::Relaxed)
     };
 
-    adaptive.record_bytes(item.chunk.chunk_size);
+    adaptive.record_bytes(chunk.chunk_size);
 
     let now = now_nanos();
     if now.saturating_sub(ctx.last_update.load(Ordering::Relaxed))
@@ -978,7 +981,7 @@ async fn process_download_item(
         ctx.last_update.store(now, Ordering::Relaxed);
     }
 
-    notify_assembly_ready(&item.chunk.chunk_name, &chunk_to_files, &assemble_tx);
+    notify_assembly_ready(&chunk.chunk_name, &chunk_to_files, &assemble_tx);
 
     Ok(())
 }
@@ -2220,12 +2223,18 @@ mod tests {
             .mount(&server)
             .await;
 
-        let item = DownloadItem {
-            chunk,
-            client: Arc::new(Client::new()),
-            chunk_download: dl_info,
-            is_pre_downloaded: false,
-        };
+        let client = Arc::new(Client::new());
+        let chunk_download = dl_info;
+
+        Mock::given(method("GET"))
+            .and(path("chunks/test_retry_chunk"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(data.clone())
+                    .insert_header("content-length", data.len().to_string()),
+            )
+            .mount(&server)
+            .await;
 
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("test_retry_chunk.zstd");
@@ -2259,7 +2268,9 @@ mod tests {
 
         let handle = DownloadHandle::new();
 
-        let result = download_chunk_with_retries(&item, &dest, &ctx, &handle).await;
+        let result =
+            download_chunk_with_retries(&chunk, &client, &chunk_download, &dest, &ctx, &handle)
+                .await;
         assert!(result.is_ok());
     }
 
@@ -2310,12 +2321,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let item = DownloadItem {
-            chunk,
-            client: Arc::new(Client::new()),
-            chunk_download: dl_info,
-            is_pre_downloaded: false,
-        };
+        let client = Arc::new(Client::new());
+        let chunk_download = dl_info;
 
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("discard_partial_chunk.zstd");
@@ -2353,7 +2360,9 @@ mod tests {
 
         let handle = DownloadHandle::new();
 
-        let result = download_chunk_with_retries(&item, &dest, &ctx, &handle).await;
+        let result =
+            download_chunk_with_retries(&chunk, &client, &chunk_download, &dest, &ctx, &handle)
+                .await;
         // After MAX_HASH_RETRIES attempts, the operation should fail; the
         // point of this test is that the partial file was discarded on each
         // Md5Mismatch retry (so the retry attempt always starts from size 0).
