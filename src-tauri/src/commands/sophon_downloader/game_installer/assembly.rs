@@ -1,8 +1,9 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread_local;
 use std::time::{Duration, Instant};
@@ -34,19 +35,20 @@ pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
 #[inline]
 pub fn decrement_chunk_refcount(
     chunk_name: &str,
-    chunk_refcounts: &DashMap<String, usize>,
+    chunk_name_to_idx: &HashMap<String, usize>,
+    chunk_refcounts: &[AtomicUsize],
+    chunk_names: &[String],
     chunks_dir: &Path,
 ) {
     if !validate_chunk_name(chunk_name) {
         return;
     }
-    if let Some(mut count) = chunk_refcounts.get_mut(chunk_name) {
-        *count -= 1;
-        if *count == 0 {
-            drop(count);
-            chunk_refcounts.remove(chunk_name);
-            let _ = fs::remove_file(chunks_dir.join(format!("{chunk_name}.zstd")));
-        }
+    let Some(&idx) = chunk_name_to_idx.get(chunk_name) else {
+        return;
+    };
+    let prev = chunk_refcounts[idx].fetch_sub(1, Ordering::AcqRel);
+    if prev == 1 {
+        let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_names[idx])));
     }
 }
 
@@ -123,14 +125,22 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
 
 struct DecrementGuard<'a> {
     chunks: Vec<&'a str>,
-    chunk_refcounts: &'a DashMap<String, usize>,
+    chunk_name_to_idx: &'a HashMap<String, usize>,
+    chunk_refcounts: &'a [AtomicUsize],
+    chunk_names: &'a [String],
     chunks_dir: &'a Path,
 }
 
 impl Drop for DecrementGuard<'_> {
     fn drop(&mut self) {
         for chunk_name in self.chunks.drain(..) {
-            decrement_chunk_refcount(chunk_name, self.chunk_refcounts, self.chunks_dir);
+            decrement_chunk_refcount(
+                chunk_name,
+                self.chunk_name_to_idx,
+                self.chunk_refcounts,
+                self.chunk_names,
+                self.chunks_dir,
+            );
         }
     }
 }
@@ -140,7 +150,9 @@ pub fn assemble_file(
     game_dir: &Path,
     chunks_dir: &Path,
     temp_dir: &Path,
-    chunk_refcounts: &DashMap<String, usize>,
+    chunk_name_to_idx: &HashMap<String, usize>,
+    chunk_refcounts: &[AtomicUsize],
+    chunk_names: &[String],
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
     validate_asset_name(&file.asset_name)?;
@@ -174,7 +186,13 @@ pub fn assemble_file(
                 file.asset_hash_md5
             );
             for chunk in &file.asset_chunks {
-                decrement_chunk_refcount(&chunk.chunk_name, chunk_refcounts, chunks_dir);
+                decrement_chunk_refcount(
+                    &chunk.chunk_name,
+                    chunk_name_to_idx,
+                    chunk_refcounts,
+                    chunk_names,
+                    chunks_dir,
+                );
             }
             return Ok(());
         }
@@ -226,7 +244,9 @@ pub fn assemble_file(
     });
     let mut guard = DecrementGuard {
         chunks: Vec::new(),
+        chunk_name_to_idx,
         chunk_refcounts,
+        chunk_names,
         chunks_dir,
     };
 
@@ -563,7 +583,9 @@ pub struct AssemblyTaskParams {
     pub all_tmp_dirs: Arc<Vec<std::path::PathBuf>>,
     pub game_dir: std::path::PathBuf,
     pub chunks_dir: Arc<std::path::PathBuf>,
-    pub chunk_refcounts: Arc<DashMap<String, usize>>,
+    pub chunk_refcounts: Arc<Vec<AtomicUsize>>,
+    pub chunk_name_to_idx: Arc<HashMap<String, usize>>,
+    pub chunk_names: Arc<Vec<String>>,
     pub verify_cache: Arc<DashMap<String, VerificationEntry>>,
     pub assembled_files: Arc<AtomicU64>,
     pub last_assembly_update: Arc<Mutex<Instant>>,
@@ -582,6 +604,8 @@ pub fn run_assembly_task(
         game_dir,
         chunks_dir,
         chunk_refcounts,
+        chunk_name_to_idx,
+        chunk_names,
         verify_cache,
         assembled_files,
         last_assembly_update,
@@ -609,7 +633,9 @@ pub fn run_assembly_task(
         &game_dir,
         &chunks_dir,
         tmp_dir,
+        &chunk_name_to_idx,
         &chunk_refcounts,
+        &chunk_names,
         &verify_cache,
     )
     .map_err(|err| SophonError::AssemblyFailed {
@@ -793,8 +819,10 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("chunk0".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("chunk0".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["chunk0".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -802,7 +830,9 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -844,9 +874,12 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("chunkA".to_string(), 1);
-        chunk_refcounts.insert("chunkB".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("chunkA".to_string(), 0), ("chunkB".to_string(), 1)]
+                .into_iter()
+                .collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1), AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["chunkA".to_string(), "chunkB".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -854,7 +887,9 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -890,8 +925,10 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("chunk_skip".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("chunk_skip".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["chunk_skip".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -899,12 +936,14 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         )
         .unwrap();
 
-        assert!(!chunk_refcounts.contains_key("chunk_skip"));
+        assert_eq!(chunk_refcounts[0].load(Ordering::Acquire), 0);
         assert!(!chunks_dir.join("chunk_skip.zstd").exists());
 
         let result = fs::read(&target).unwrap();
@@ -938,8 +977,10 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("chunk_fix".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("chunk_fix".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["chunk_fix".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -947,7 +988,9 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -965,12 +1008,20 @@ mod tests {
         let chunk_file = chunks_dir.join("vanish.zstd");
         fs::write(&chunk_file, b"dummy").unwrap();
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("vanish".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("vanish".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["vanish".to_string()];
 
-        decrement_chunk_refcount("vanish", &chunk_refcounts, &chunks_dir);
+        decrement_chunk_refcount(
+            "vanish",
+            &chunk_name_to_idx,
+            &chunk_refcounts,
+            &chunk_names,
+            &chunks_dir,
+        );
 
-        assert!(!chunk_refcounts.contains_key("vanish"));
+        assert_eq!(chunk_refcounts[0].load(Ordering::Acquire), 0);
         assert!(!chunk_file.exists());
     }
 
@@ -983,13 +1034,20 @@ mod tests {
         let chunk_file = chunks_dir.join("keep.zstd");
         fs::write(&chunk_file, b"dummy").unwrap();
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("keep".to_string(), 2);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("keep".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(2)];
+        let chunk_names: Vec<String> = vec!["keep".to_string()];
 
-        decrement_chunk_refcount("keep", &chunk_refcounts, &chunks_dir);
+        decrement_chunk_refcount(
+            "keep",
+            &chunk_name_to_idx,
+            &chunk_refcounts,
+            &chunk_names,
+            &chunks_dir,
+        );
 
-        let count = *chunk_refcounts.get("keep").unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(chunk_refcounts[0].load(Ordering::Acquire), 1);
         assert!(chunk_file.exists());
     }
 
@@ -1036,7 +1094,9 @@ mod tests {
             all_tmp_dirs: Arc::new(vec![dir.path().to_path_buf()]),
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
-            chunk_refcounts: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(Vec::new()),
+            chunk_name_to_idx: Arc::new(HashMap::new()),
+            chunk_names: Arc::new(Vec::new()),
             verify_cache: Arc::new(DashMap::new()),
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
@@ -1085,8 +1145,10 @@ mod tests {
             asset_hash_md5: file_md5,
         };
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("ck0".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("ck0".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["ck0".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -1094,7 +1156,9 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -1136,8 +1200,10 @@ mod tests {
             asset_hash_md5: file_md5,
         };
 
-        let chunk_refcounts = DashMap::new();
-        chunk_refcounts.insert("ck1".to_string(), 1);
+        let chunk_name_to_idx: HashMap<String, usize> =
+            [("ck1".to_string(), 0)].into_iter().collect();
+        let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
+        let chunk_names: Vec<String> = vec!["ck1".to_string()];
         let verify_cache = DashMap::new();
 
         let result = assemble_file(
@@ -1145,7 +1211,9 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         );
 
@@ -1173,7 +1241,9 @@ mod tests {
             all_tmp_dirs: Arc::new(vec![]),
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
-            chunk_refcounts: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(Vec::new()),
+            chunk_name_to_idx: Arc::new(HashMap::new()),
+            chunk_names: Arc::new(Vec::new()),
             verify_cache: Arc::new(DashMap::new()),
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
@@ -1520,7 +1590,9 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_refcounts = DashMap::new();
+        let chunk_name_to_idx: HashMap<String, usize> = HashMap::new();
+        let chunk_refcounts: Vec<AtomicUsize> = Vec::new();
+        let chunk_names: Vec<String> = Vec::new();
         let verify_cache = DashMap::new();
 
         // This should reuse data from the existing file, not fail due to missing chunk
@@ -1529,7 +1601,9 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
+            &chunk_name_to_idx,
             &chunk_refcounts,
+            &chunk_names,
             &verify_cache,
         );
 
@@ -1543,7 +1617,8 @@ mod tests {
         let result_data = fs::read(&target_path).unwrap();
         assert_eq!(&result_data, old_data);
 
-        // Verify no chunk was downloaded (refcount should still be 0)
-        assert!(!chunk_refcounts.contains_key("not_used"));
+        // Verify no chunk was downloaded — refcounts vec is still empty
+        // (chunk_name_to_idx has no entry for "not_used", so decrement was a no-op)
+        assert!(chunk_refcounts.is_empty());
     }
 }

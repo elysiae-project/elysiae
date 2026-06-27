@@ -2140,12 +2140,30 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || {
             let tmp_dir = gd.join("tmp-patch-downloadover");
             fs::create_dir_all(&tmp_dir)?;
+            let chunk_name_to_idx: HashMap<String, usize> = file_entry
+                .asset_chunks
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (c.chunk_name.clone(), i))
+                .collect();
+            let chunk_refcounts: Vec<AtomicUsize> = file_entry
+                .asset_chunks
+                .iter()
+                .map(|_| AtomicUsize::new(1))
+                .collect();
+            let chunk_names: Vec<String> = file_entry
+                .asset_chunks
+                .iter()
+                .map(|c| c.chunk_name.clone())
+                .collect();
             let result = super::assembly::assemble_file(
                 &file_entry,
                 &gd,
                 &cd,
                 &tmp_dir,
-                &dashmap::DashMap::new(),
+                &chunk_name_to_idx,
+                &chunk_refcounts,
+                &chunk_names,
                 &vc,
             );
             if let Err(err) = fs::remove_dir_all(&tmp_dir) {

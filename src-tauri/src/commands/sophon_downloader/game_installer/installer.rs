@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use dashmap::{DashMap, DashSet};
@@ -52,7 +52,9 @@ struct InstallContext {
     total_files: u64,
     resume_bytes_offset: Arc<AtomicU64>,
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
-    chunk_refcounts: Arc<DashMap<String, usize>>,
+    chunk_refcounts: Arc<OnceLock<Arc<Vec<AtomicUsize>>>>,
+    chunk_name_to_idx: Arc<OnceLock<Arc<HashMap<String, usize>>>>,
+    chunk_names: Arc<OnceLock<Arc<Vec<String>>>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<AtomicU64>,
     /// EWMA-smoothed speed for display (bytes/sec, scaled by 1000).
@@ -439,16 +441,15 @@ fn compute_totals(all_files: &[SophonManifestAssetProperty]) -> (u64, u64) {
     (total_compressed, total_files)
 }
 
-#[inline]
 #[allow(clippy::too_many_arguments)]
 fn register_chunks_for_file(
     file: &SophonManifestAssetProperty,
     file_idx: usize,
     tmp_dir_idx: usize,
-    ctx: &InstallContext,
     chunk_entries: &mut Vec<Vec<FileEntry>>,
     download_items: &mut Vec<DownloadItem>,
     download_items_index: &mut HashMap<String, usize>,
+    chunk_refcounts: &mut Vec<AtomicUsize>,
     data: &InstallerData,
     pre_downloaded: &HashSet<String>,
 ) {
@@ -492,11 +493,10 @@ fn register_chunks_for_file(
         }
         chunk_entries[item_idx].push((file_idx, tmp_dir_idx, Arc::clone(&pending)));
 
-        if let Some(mut count) = ctx.chunk_refcounts.get_mut(name) {
-            *count += 1;
-        } else {
-            ctx.chunk_refcounts.insert(name.to_owned(), 1);
+        if item_idx >= chunk_refcounts.len() {
+            chunk_refcounts.resize_with(item_idx + 1, || AtomicUsize::new(0));
         }
+        chunk_refcounts[item_idx].fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -506,7 +506,13 @@ async fn build_download_state(
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     completed_indices: Option<&HashSet<usize>>,
     pre_downloaded: &HashSet<String>,
-) -> SophonResult<(Vec<DownloadItem>, Arc<Vec<Vec<FileEntry>>>)> {
+) -> SophonResult<(
+    Vec<DownloadItem>,
+    Arc<Vec<Vec<FileEntry>>>,
+    Vec<AtomicUsize>,
+    Arc<HashMap<String, usize>>,
+    Arc<Vec<String>>,
+)> {
     let total_chunks: usize = ctx
         .all_files
         .iter()
@@ -515,6 +521,7 @@ async fn build_download_state(
     let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
     let mut download_items_index: HashMap<String, usize> = HashMap::with_capacity(total_chunks);
     let mut chunk_entries: Vec<Vec<FileEntry>> = Vec::with_capacity(total_chunks);
+    let mut chunk_refcounts: Vec<AtomicUsize> = Vec::with_capacity(total_chunks);
 
     let mut all_files_index: usize = 0;
 
@@ -548,10 +555,10 @@ async fn build_download_state(
                 file,
                 all_files_index,
                 tmp_dir_idx,
-                ctx,
                 &mut chunk_entries,
                 &mut download_items,
                 &mut download_items_index,
+                &mut chunk_refcounts,
                 &data,
                 pre_downloaded,
             );
@@ -565,7 +572,28 @@ async fn build_download_state(
         chunk_entries.len(),
         all_files_index,
     );
-    Ok((download_items, Arc::new(chunk_entries)))
+
+    let chunk_names: Vec<String> = download_items
+        .iter()
+        .map(|item| {
+            ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx]
+                .chunk_name
+                .clone()
+        })
+        .collect();
+    let chunk_name_to_idx: HashMap<String, usize> = chunk_names
+        .iter()
+        .enumerate()
+        .map(|(idx, name)| (name.clone(), idx))
+        .collect();
+
+    Ok((
+        download_items,
+        Arc::new(chunk_entries),
+        chunk_refcounts,
+        Arc::new(chunk_name_to_idx),
+        Arc::new(chunk_names),
+    ))
 }
 
 fn make_assembly_params(
@@ -580,7 +608,9 @@ fn make_assembly_params(
         all_tmp_dirs: Arc::clone(&ctx.all_tmp_dirs),
         game_dir: ctx.game_dir.clone(),
         chunks_dir: Arc::clone(&ctx.chunks_dir),
-        chunk_refcounts: Arc::clone(&ctx.chunk_refcounts),
+        chunk_refcounts: Arc::clone(ctx.chunk_refcounts.get().unwrap()),
+        chunk_name_to_idx: Arc::clone(ctx.chunk_name_to_idx.get().unwrap()),
+        chunk_names: Arc::clone(ctx.chunk_names.get().unwrap()),
         verify_cache: Arc::clone(&ctx.verify_cache),
         assembled_files: Arc::clone(&ctx.assembled_files),
         last_assembly_update: Arc::clone(&ctx.last_assembly_update),
@@ -1545,7 +1575,9 @@ pub async fn install(
         total_files,
         resume_bytes_offset: Arc::new(AtomicU64::new(resume_bytes_offset)),
         verify_cache,
-        chunk_refcounts: Arc::new(DashMap::new()),
+        chunk_refcounts: Arc::new(OnceLock::new()),
+        chunk_name_to_idx: Arc::new(OnceLock::new()),
+        chunk_names: Arc::new(OnceLock::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
         last_update: Arc::new(AtomicU64::new(now_nanos())),
         smooth_speed_bps: Arc::new(AtomicU64::new(0)),
@@ -1568,14 +1600,19 @@ pub async fn install(
     let assembly_task =
         spawn_assembly_coordinator(&ctx, assemble_rx, assembly_cancel_token.clone());
 
-    let (download_items, chunk_entries) = build_download_state(
-        installer_data,
-        &ctx,
-        &assemble_tx,
-        completed_indices.as_ref(),
-        &pre_downloaded,
-    )
-    .await?;
+    let (download_items, chunk_entries, chunk_refcounts_vec, chunk_name_to_idx, chunk_names) =
+        build_download_state(
+            installer_data,
+            &ctx,
+            &assemble_tx,
+            completed_indices.as_ref(),
+            &pre_downloaded,
+        )
+        .await?;
+
+    let _ = ctx.chunk_refcounts.set(Arc::new(chunk_refcounts_vec));
+    let _ = ctx.chunk_name_to_idx.set(chunk_name_to_idx);
+    let _ = ctx.chunk_names.set(chunk_names);
 
     {
         let initial_offset = ctx.resume_bytes_offset.load(Ordering::Relaxed);
@@ -1856,12 +1893,30 @@ async fn redownload_asset(
     );
     let tmp_dir = game_dir.join(&tmp_dir_name);
     fs::create_dir_all(&tmp_dir)?;
+    let chunk_name_to_idx: HashMap<String, usize> = asset
+        .asset_chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.chunk_name.clone(), i))
+        .collect();
+    let chunk_refcounts: Vec<AtomicUsize> = asset
+        .asset_chunks
+        .iter()
+        .map(|_| AtomicUsize::new(1))
+        .collect();
+    let chunk_names: Vec<String> = asset
+        .asset_chunks
+        .iter()
+        .map(|c| c.chunk_name.clone())
+        .collect();
     let result = assembly::assemble_file(
         asset,
         game_dir,
         chunks_dir,
         &tmp_dir,
-        &DashMap::new(),
+        &chunk_name_to_idx,
+        &chunk_refcounts,
+        &chunk_names,
         verify_cache,
     );
     let _ = fs::remove_dir_all(&tmp_dir);
@@ -2289,7 +2344,9 @@ mod tests {
             total_files: 0,
             resume_bytes_offset: Arc::new(AtomicU64::new(0)),
             verify_cache: Arc::new(DashMap::new()),
-            chunk_refcounts: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(OnceLock::new()),
+            chunk_name_to_idx: Arc::new(OnceLock::new()),
+            chunk_names: Arc::new(OnceLock::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(AtomicU64::new(now_nanos())),
             smooth_speed_bps: Arc::new(AtomicU64::new(0)),
@@ -2380,7 +2437,9 @@ mod tests {
             total_files: 0,
             resume_bytes_offset: Arc::new(AtomicU64::new(0)),
             verify_cache: Arc::new(DashMap::new()),
-            chunk_refcounts: Arc::new(DashMap::new()),
+            chunk_refcounts: Arc::new(OnceLock::new()),
+            chunk_name_to_idx: Arc::new(OnceLock::new()),
+            chunk_names: Arc::new(OnceLock::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(AtomicU64::new(now_nanos())),
             smooth_speed_bps: Arc::new(AtomicU64::new(0)),
