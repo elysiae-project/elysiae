@@ -147,22 +147,22 @@ impl AdaptiveSemaphore {
 
     fn calculate_new_target(current: usize, ewma: f64, prev_ewma: f64, best: f64) -> usize {
         let max = adaptive_max_concurrency();
-        if best > 0.0 && ewma >= best * 0.6 {
+        if best > 0.0 && ewma >= best * 0.5 {
             if current < max * 3 / 4 {
-                let increase = (current / 2).max(16);
+                let increase = current.max(32);
                 (current + increase).min(max)
             } else {
-                let increase = (current / 8).max(8);
+                let increase = (current / 4).max(16);
                 (current + increase).min(max)
             }
         } else if best == 0.0 && prev_ewma == 0.0 && ewma > 0.0 {
-            let increase = (current / 2).max(16);
+            let increase = current.max(32);
             (current + increase).min(max)
-        } else if prev_ewma > 0.0 && ewma >= prev_ewma * 0.85 {
-            let increase = (current / 8).max(8);
+        } else if prev_ewma > 0.0 && ewma >= prev_ewma * 0.8 {
+            let increase = (current / 4).max(16);
             (current + increase).min(max)
         } else if prev_ewma > 0.0 && ewma < prev_ewma * 0.5 {
-            let decreased = (current * 8) / 10;
+            let decreased = (current * 7) / 10;
             decreased.max(ADAPTIVE_MIN_CONCURRENCY)
         } else {
             current.saturating_sub(1).max(ADAPTIVE_MIN_CONCURRENCY)
@@ -192,7 +192,7 @@ mod tests {
     fn calculate_new_target_ramp_up_near_max() {
         let max = super::adaptive_max_concurrency();
         let current = if max > 1 { (max * 3 / 4).max(1) } else { 1 };
-        let increase = (current / 8).max(8);
+        let increase = (current / 4).max(16);
         let expected = (current + increase).min(max);
         let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
         assert_eq!(target, expected);
@@ -202,7 +202,7 @@ mod tests {
     fn calculate_new_target_ramp_up_aggressive() {
         let max = super::adaptive_max_concurrency();
         let current = if max > 2 { max / 2 } else { 1 };
-        let increase = (current / 2).max(16);
+        let increase = current.max(32);
         let expected = (current + increase).min(max);
         let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
         assert_eq!(target, expected);
@@ -212,7 +212,7 @@ mod tests {
     fn calculate_new_target_stable_gentle_increase() {
         let max = super::adaptive_max_concurrency();
         let current = if max > 2 { max / 2 } else { 1 };
-        let increase = (current / 8).max(8);
+        let increase = (current / 4).max(16);
         let expected = (current + increase).min(max);
         let target = AdaptiveSemaphore::calculate_new_target(current, 45.0, 50.0, 100.0);
         assert_eq!(target, expected);
@@ -220,14 +220,14 @@ mod tests {
 
     #[test]
     fn calculate_new_target_significant_drop() {
-        let target = AdaptiveSemaphore::calculate_new_target(30, 20.0, 50.0, 100.0);
-        assert_eq!(target, 24); // 30 * 8 / 10 = 24
+        let target = AdaptiveSemaphore::calculate_new_target(60, 20.0, 50.0, 100.0);
+        assert_eq!(target, 42); // 60 * 7 / 10 = 42
     }
 
     #[test]
     fn calculate_new_target_moderate_drop() {
-        let target = AdaptiveSemaphore::calculate_new_target(20, 38.0, 50.0, 100.0);
-        assert_eq!(target, 19); // 20 - 1 = 19
+        let target = AdaptiveSemaphore::calculate_new_target(40, 38.0, 50.0, 100.0);
+        assert_eq!(target, 39); // 40 - 1 = 39
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         let max = super::adaptive_max_concurrency();
         let current = if max > 1 { max / 2 } else { 1 };
         let target = AdaptiveSemaphore::calculate_new_target(current, 50.0, 0.0, 0.0);
-        let increase = (current / 2).max(16);
+        let increase = current.max(32);
         let expected = (current + increase).min(max);
         assert!(
             target > current,
@@ -282,7 +282,7 @@ mod tests {
 
         let ewma_raw = sem.ewma_throughput_mbps.load(Ordering::Relaxed);
         let ewma = ewma_raw as f64 / THROUGHPUT_SCALE;
-        assert!(ewma > 60.0 && ewma < 74.0); // ~66.7 MiB/s: 200MB / 3s
+        assert!(ewma > 180.0 && ewma < 210.0); // ~190.7 MiB/s: 200MB / 1s
     }
 
     #[test]
@@ -313,9 +313,9 @@ mod tests {
 
         let ewma_raw = sem.ewma_throughput_mbps.load(Ordering::Relaxed);
         let ewma = ewma_raw as f64 / THROUGHPUT_SCALE;
-        // First: ~66.7 MiB/s. Second: ~33.3 MiB/s. EWMA = 0.25*33.3 + 0.75*66.7 = 58.3
-        // MiB/s
-        assert!(ewma > 52.0 && ewma < 65.0);
+        // First: ~190.7 MiB/s. Second: ~95.4 MiB/s.
+        // EWMA = 0.25*95.4 + 0.75*190.7 ≈ 166.9 MiB/s
+        assert!(ewma > 155.0 && ewma < 180.0);
     }
 
     #[test]
@@ -441,12 +441,9 @@ mod tests {
         let prev_ewma = 100.0;
         let ewma = prev_ewma * 0.5;
         let best = 120.0;
-        let current = 30;
+        let current = 40;
         let target = AdaptiveSemaphore::calculate_new_target(current, ewma, prev_ewma, best);
-        assert_eq!(
-            target,
-            current.saturating_sub(1).max(ADAPTIVE_MIN_CONCURRENCY)
-        );
+        assert_eq!(target, 39);
     }
 
     #[test]
