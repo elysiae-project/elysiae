@@ -3,6 +3,7 @@
 //! These functions are designed to match the performance of the original Sophon
 //! DLL's assembly pipeline, which uses memory-mapped files and large buffers.
 
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -12,8 +13,11 @@ use md5::{Digest, Md5};
 use super::FILE_WRITE_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
 
-/// Large transfer buffer size for assembly (8 MiB).
 const ASSEMBLY_BUFFER_SIZE: usize = 8 * 1024 * 1024;
+
+thread_local! {
+    static OPT_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Trait alias for write + seek operations.
 pub trait WriteSeek: Write + Seek {}
@@ -110,7 +114,6 @@ pub fn decompress_chunk_optimized(
     let buf_reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
     let mut decoder = zstd::Decoder::new(buf_reader)?;
 
-    // Set window log max for better decompression performance
     let window_log: u32 = if cfg!(target_pointer_width = "64") {
         31
     } else {
@@ -123,8 +126,14 @@ pub fn decompress_chunk_optimized(
     let mut bytes_written: u64 = 0;
     let mut chunk_hasher = Md5::new();
 
-    // Use a large buffer for better I/O throughput
-    let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
+    let mut buffer = OPT_BUFFER.with(|cell| {
+        let mut buf = cell.take();
+        if buf.capacity() < ASSEMBLY_BUFFER_SIZE {
+            buf = Vec::with_capacity(ASSEMBLY_BUFFER_SIZE);
+        }
+        unsafe { buf.set_len(ASSEMBLY_BUFFER_SIZE) };
+        buf
+    });
 
     if let Some(hasher) = file_hasher {
         loop {
@@ -148,6 +157,9 @@ pub fn decompress_chunk_optimized(
             bytes_written += n as u64;
         }
     }
+
+    buffer.clear();
+    OPT_BUFFER.with(|cell| cell.replace(buffer));
 
     if bytes_written != expected_size {
         return Err(SophonError::SizeMismatch {
