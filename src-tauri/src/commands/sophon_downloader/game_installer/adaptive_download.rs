@@ -152,17 +152,17 @@ impl AdaptiveSemaphore {
         let max = adaptive_max_concurrency();
         if best > 0.0 && ewma >= best * 0.5 {
             if current < max * 3 / 4 {
-                let increase = current.max(32);
+                let increase = (current / 2).max(4);
                 (current + increase).min(max)
             } else {
-                let increase = (current / 4).max(16);
+                let increase = (current / 8).max(2);
                 (current + increase).min(max)
             }
         } else if best == 0.0 && prev_ewma == 0.0 && ewma > 0.0 {
-            let increase = current.max(32);
+            let increase = (current / 2).max(4);
             (current + increase).min(max)
         } else if prev_ewma > 0.0 && ewma >= prev_ewma * 0.8 {
-            let increase = (current / 4).max(16);
+            let increase = (current / 8).max(2);
             (current + increase).min(max)
         } else if prev_ewma > 0.0 && ewma < prev_ewma * 0.5 {
             let decreased = (current * 7) / 10;
@@ -195,7 +195,7 @@ mod tests {
     fn calculate_new_target_ramp_up_near_max() {
         let max = super::adaptive_max_concurrency();
         let current = if max > 1 { (max * 3 / 4).max(1) } else { 1 };
-        let increase = (current / 4).max(16);
+        let increase = (current / 8).max(2);
         let expected = (current + increase).min(max);
         let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
         assert_eq!(target, expected);
@@ -205,7 +205,7 @@ mod tests {
     fn calculate_new_target_ramp_up_aggressive() {
         let max = super::adaptive_max_concurrency();
         let current = if max > 2 { max / 2 } else { 1 };
-        let increase = current.max(32);
+        let increase = (current / 2).max(4);
         let expected = (current + increase).min(max);
         let target = AdaptiveSemaphore::calculate_new_target(current, 100.0, 80.0, 100.0);
         assert_eq!(target, expected);
@@ -215,7 +215,7 @@ mod tests {
     fn calculate_new_target_stable_gentle_increase() {
         let max = super::adaptive_max_concurrency();
         let current = if max > 2 { max / 2 } else { 1 };
-        let increase = (current / 4).max(16);
+        let increase = (current / 8).max(2);
         let expected = (current + increase).min(max);
         let target = AdaptiveSemaphore::calculate_new_target(current, 45.0, 50.0, 100.0);
         assert_eq!(target, expected);
@@ -258,7 +258,7 @@ mod tests {
         let max = super::adaptive_max_concurrency();
         let current = if max > 1 { max / 2 } else { 1 };
         let target = AdaptiveSemaphore::calculate_new_target(current, 50.0, 0.0, 0.0);
-        let increase = current.max(32);
+        let increase = (current / 2).max(4);
         let expected = (current + increase).min(max);
         assert!(
             target > current,

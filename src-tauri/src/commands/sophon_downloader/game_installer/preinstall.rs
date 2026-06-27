@@ -696,7 +696,7 @@ pub async fn preinstall_download(
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let mut join_set = tokio::task::JoinSet::new();
-    const MAX_PENDING: usize = 32;
+    const MAX_PENDING: usize = 128;
     let mut results: Vec<SophonResult<()>> = Vec::with_capacity(chunk_infos.len());
 
     for chunk_info in chunk_infos.into_iter() {

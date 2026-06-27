@@ -992,7 +992,7 @@ async fn run_downloads(
 ) -> Vec<SophonResult<()>> {
     let mut results = Vec::with_capacity(download_items.len());
     let mut join_set = tokio::task::JoinSet::new();
-    const MAX_PENDING: usize = 32;
+    const MAX_PENDING: usize = 128;
 
     for (item_idx, item) in download_items.into_iter().enumerate() {
         if handle.is_cancelled() {
