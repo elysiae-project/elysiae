@@ -855,8 +855,6 @@ async fn process_download_item(
             .await?;
     }
 
-    let _permit = adaptive.acquire().await;
-
     let chunk = &ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx];
 
     if !validate_chunk_name(&chunk.chunk_name) {
@@ -864,15 +862,23 @@ async fn process_download_item(
     }
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(chunk));
 
-    let mut was_actually_downloaded = false;
     let needs_download = if item.is_pre_downloaded {
         check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?
     } else {
         true
     };
+
     if handle.is_cancelled() {
         return Err(SophonError::Cancelled);
     }
+
+    let _permit = if needs_download {
+        Some(adaptive.acquire().await)
+    } else {
+        None
+    };
+
+    let mut was_actually_downloaded = false;
     if needs_download {
         download_chunk_with_retries(
             chunk,
