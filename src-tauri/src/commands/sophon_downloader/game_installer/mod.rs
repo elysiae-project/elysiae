@@ -69,8 +69,8 @@ pub const VERSION_FILE_NAME: &str = ".sophon_version";
 /// Filename for the MD5 verification cache.
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
-/// Buffer size for file writes during assembly (256 KiB).
-pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
+/// Buffer size for file writes during assembly (1 MiB).
+pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
 
 /// Minimum interval between progress updates (ms).
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;

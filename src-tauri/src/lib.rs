@@ -30,7 +30,7 @@ pub fn run() {
                 .http2_adaptive_window(true)
                 .http2_keep_alive_interval(Duration::from_secs(10))
                 .http2_keep_alive_timeout(Duration::from_secs(5))
-                .tcp_keepalive(Duration::from_secs(60))
+                .tcp_keepalive(Duration::from_secs(30))
                 .connect_timeout(Duration::from_secs(10))
                 .read_timeout(Duration::from_secs(60))
                 .http2_initial_stream_window_size(Some(16 * 1024 * 1024))
