@@ -68,7 +68,6 @@ struct InstallContext {
     last_save: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
     adaptive_assembly: Arc<AdaptiveAssembly>,
-    bandwidth_manager: Option<super::bandwidth::SharedBandwidthManager>,
 }
 
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -747,15 +746,8 @@ async fn download_chunk_with_retries(
             return Err(SophonError::Cancelled);
         }
 
-        match super::download::download_chunk(
-            client,
-            chunk_download,
-            chunk,
-            dest,
-            Some(handle),
-            ctx.bandwidth_manager.clone(),
-        )
-        .await
+        match super::download::download_chunk(client, chunk_download, chunk, dest, Some(handle))
+            .await
         {
             Ok(()) => return Ok(()),
             Err(SophonError::Md5Mismatch { .. }) => {
@@ -1513,7 +1505,6 @@ pub async fn install(
         last_save: Arc::new(Mutex::new(None)),
         state_saver: callbacks.state_saver,
         adaptive_assembly: Arc::clone(&adaptive_assembly),
-        bandwidth_manager: None,
     });
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
@@ -1796,8 +1787,7 @@ async fn redownload_asset(
             emit(SophonProgress::Warning {
                 message: format!("Re-downloading chunk {chunk_name}"),
             });
-            download::download_chunk(client, chunk_download, chunk, &chunk_path, None, None)
-                .await?;
+            download::download_chunk(client, chunk_download, chunk, &chunk_path, None).await?;
         }
     }
 
@@ -2263,7 +2253,6 @@ mod tests {
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
-            bandwidth_manager: None,
         });
 
         let handle = DownloadHandle::new();
@@ -2355,7 +2344,6 @@ mod tests {
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
-            bandwidth_manager: None,
         });
 
         let handle = DownloadHandle::new();

@@ -4,7 +4,6 @@ mod adaptive_download;
 mod api;
 mod assembly;
 mod assembly_opt;
-mod bandwidth;
 mod cache;
 mod download;
 mod error;

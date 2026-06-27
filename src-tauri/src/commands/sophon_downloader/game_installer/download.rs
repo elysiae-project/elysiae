@@ -9,7 +9,6 @@ use tauri_plugin_log::log;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::time::timeout;
 
-use super::bandwidth::SharedBandwidthManager;
 use super::error::{SophonError, SophonResult};
 use super::{FILE_WRITE_BUFFER_SIZE, STREAM_POLL_INTERVAL_MS};
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
@@ -112,14 +111,13 @@ pub async fn download_chunk(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
     handle: Option<&super::handle::DownloadHandle>,
-    bandwidth: Option<SharedBandwidthManager>,
 ) -> SophonResult<()> {
     if !super::assembly::validate_chunk_name(&chunk.chunk_name) {
         return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
     }
 
     let url = chunk_download.url_for(&chunk.chunk_name);
-    do_download_chunk(client, &url, chunk, dest, handle, bandwidth).await
+    do_download_chunk(client, &url, chunk, dest, handle).await
 }
 
 async fn do_download_chunk(
@@ -128,7 +126,6 @@ async fn do_download_chunk(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
     handle: Option<&super::handle::DownloadHandle>,
-    bandwidth: Option<SharedBandwidthManager>,
 ) -> SophonResult<()> {
     // Check for partial download to resume (skip exists() to avoid TOCTOU)
     let mut existing_size = match tokio::fs::metadata(dest).await {
@@ -216,8 +213,7 @@ async fn do_download_chunk(
                 })
                 .unwrap_or(false);
             if range_header_valid {
-                return download_with_resume(resp, chunk, dest, existing_size, handle, bandwidth)
-                    .await;
+                return download_with_resume(resp, chunk, dest, existing_size, handle).await;
             }
             let _ = tokio::fs::remove_file(dest).await;
         } else {
@@ -232,7 +228,7 @@ async fn do_download_chunk(
         .send()
         .await?;
     let resp = resp.error_for_status()?;
-    download_full_file_with_response(resp, chunk, dest, handle, bandwidth).await
+    download_full_file_with_response(resp, chunk, dest, handle).await
 }
 
 /// Optimized download using zero-copy buffers and buffer pooling.
@@ -241,7 +237,6 @@ async fn download_full_file_with_response(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
     handle: Option<&super::handle::DownloadHandle>,
-    bandwidth: Option<SharedBandwidthManager>,
 ) -> SophonResult<()> {
     let content_length = resp.content_length();
     if let Some(len) = content_length
@@ -292,11 +287,6 @@ async fn download_full_file_with_response(
                     if let Err(err) = file.write_all(&bytes).await {
                         let _ = tokio::fs::remove_file(dest).await;
                         return Err(SophonError::Io(err));
-                    }
-                    // Record bandwidth metrics
-                    if let Some(ref bw) = bandwidth {
-                        bw.record_download(bytes.len() as u64);
-                        bw.record_write(bytes.len() as u64);
                     }
                     if let Some(handle) = handle
                         && handle.is_cancelled()
@@ -386,7 +376,6 @@ async fn download_with_resume(
     dest: &Path,
     existing_size: u64,
     handle: Option<&super::handle::DownloadHandle>,
-    bandwidth: Option<SharedBandwidthManager>,
 ) -> SophonResult<()> {
     if resp.status() == reqwest::StatusCode::OK {
         let _ = tokio::fs::remove_file(dest).await;
@@ -460,11 +449,6 @@ async fn download_with_resume(
                         return Err(SophonError::Io(err));
                     }
                     hasher.update(&bytes);
-                    // Record bandwidth metrics
-                    if let Some(ref bw) = bandwidth {
-                        bw.record_download(bytes.len() as u64);
-                        bw.record_write(bytes.len() as u64);
-                    }
                     if let Some(handle) = handle
                         && handle.is_cancelled()
                     {
