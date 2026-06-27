@@ -26,7 +26,6 @@ impl<T: Write + Seek> WriteSeek for T {}
 /// Memory-mapped file reader for efficient old file chunk reuse.
 pub struct MmapReader {
     mmap: memmap2::Mmap,
-    _offset: usize,
 }
 
 impl MmapReader {
@@ -34,7 +33,7 @@ impl MmapReader {
     pub fn new(path: &Path) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
-        Ok(Self { mmap, _offset: 0 })
+        Ok(Self { mmap })
     }
 
     /// Read bytes starting from the given offset.

@@ -1255,15 +1255,15 @@ pub async fn install(
             // Filter them down to names that still exist in the new manifest
             // so we don't waste I/O on MD5-validating chunks that have no
             // consumer.
-            let manifest_chunk_names: HashSet<String> = installers
+            let manifest_chunk_names: HashSet<&str> = installers
                 .iter()
                 .flat_map(|inst| inst.manifest.assets.iter())
                 .flat_map(|asset| asset.asset_chunks.iter())
-                .map(|c| c.chunk_name.clone())
+                .map(|c| c.chunk_name.as_str())
                 .collect();
             let before = prev_downloaded_chunks.len();
             prev_downloaded_chunks
-                .retain(|chunk_name, _| manifest_chunk_names.contains(chunk_name));
+                .retain(|chunk_name, _| manifest_chunk_names.contains(chunk_name.as_str()));
             let dropped = before - prev_downloaded_chunks.len();
             if dropped > 0 {
                 log::warn!(
