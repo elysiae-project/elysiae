@@ -30,7 +30,7 @@ where
     COPY_BUFFER.with(|cell| f(&mut cell.borrow_mut()))
 }
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -698,71 +698,93 @@ pub async fn preinstall_download(
     let smooth_speed_bps = Arc::new(AtomicU64::new(0));
     let eta_speed_history = Arc::new(Mutex::new(VecDeque::new()));
 
+    if handle.is_cancelled() {
+        return Err(SophonError::Cancelled);
+    }
+
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let mut join_set = tokio::task::JoinSet::new();
     const MAX_PENDING: usize = 128;
-    let mut results: Vec<SophonResult<()>> = Vec::with_capacity(chunk_infos.len());
+    let cancelled = Arc::new(AtomicU8::new(0));
+    let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
 
     for chunk_info in chunk_infos.into_iter() {
-        if handle.is_cancelled() {
+        if cancelled.load(Ordering::Relaxed) != 0 {
             join_set.abort_all();
-            while let Some(result) = join_set.join_next().await {
-                match result {
-                    Ok(r) => results.push(r),
-                    Err(err) => results.push(Err(SophonError::JoinError(err))),
-                }
-            }
-            results.push(Err(SophonError::Cancelled));
+            while join_set.join_next().await.is_some() {}
+            cancelled.store(1, Ordering::Relaxed);
             break;
         }
 
         let already_downloaded = chunk_bytes_map.contains_key(&chunk_info.patch_name);
-        join_set.spawn(process_preinstall_chunk(
-            chunk_info,
-            client.clone(),
-            plan.diff_download.clone(),
-            chunks_dir.clone(),
-            handle.clone(),
-            Arc::clone(&updater),
-            Arc::clone(&downloaded_bytes),
-            resume_offset,
-            total_bytes,
-            Arc::clone(&chunk_bytes_map),
-            already_downloaded,
-            Arc::clone(&state_saver),
-            Arc::clone(&last_update),
-            Arc::clone(&chunks_since_save),
-            Arc::clone(&last_speed_bytes),
-            Arc::clone(&last_speed_time),
-            Arc::clone(&smooth_speed_bps),
-            Arc::clone(&eta_speed_history),
-            Arc::clone(&adaptive),
-        ));
+        let cancelled = Arc::clone(&cancelled);
+        let first_error = Arc::clone(&first_error);
+        let chunk_bytes_map_clone = Arc::clone(&chunk_bytes_map);
+        let client_clone = client.clone();
+        let diff_download_clone = plan.diff_download.clone();
+        let chunks_dir_clone = chunks_dir.clone();
+        let handle_clone = handle.clone();
+        let updater_clone = Arc::clone(&updater);
+        let downloaded_bytes_clone = Arc::clone(&downloaded_bytes);
+        let state_saver_clone = Arc::clone(&state_saver);
+        let last_update_clone = Arc::clone(&last_update);
+        let chunks_since_save_clone = Arc::clone(&chunks_since_save);
+        let last_speed_bytes_clone = Arc::clone(&last_speed_bytes);
+        let last_speed_time_clone = Arc::clone(&last_speed_time);
+        let smooth_speed_bps_clone = Arc::clone(&smooth_speed_bps);
+        let eta_speed_history_clone = Arc::clone(&eta_speed_history);
+        let adaptive_clone = Arc::clone(&adaptive);
+        join_set.spawn(async move {
+            let result = process_preinstall_chunk(
+                chunk_info,
+                client_clone,
+                diff_download_clone,
+                chunks_dir_clone,
+                handle_clone,
+                updater_clone,
+                downloaded_bytes_clone,
+                resume_offset,
+                total_bytes,
+                chunk_bytes_map_clone,
+                already_downloaded,
+                state_saver_clone,
+                last_update_clone,
+                chunks_since_save_clone,
+                last_speed_bytes_clone,
+                last_speed_time_clone,
+                smooth_speed_bps_clone,
+                eta_speed_history_clone,
+                adaptive_clone,
+            )
+            .await;
+            if let Err(err) = result {
+                if matches!(err, SophonError::Cancelled) {
+                    cancelled.store(1, Ordering::Relaxed);
+                } else if first_error
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_none()
+                {
+                    *first_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
+                }
+            }
+        });
 
         if join_set.len() >= MAX_PENDING {
-            match join_set.join_next().await {
-                Some(Ok(r)) => results.push(r),
-                Some(Err(err)) => results.push(Err(SophonError::JoinError(err))),
-                None => break,
+            if join_set.join_next().await.is_none() {
+                break;
             }
         }
     }
 
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(r) => results.push(r),
-            Err(err) => results.push(Err(SophonError::JoinError(err))),
-        }
-    }
+    while join_set.join_next().await.is_some() {}
 
-    for result in &results {
-        if let Err(err) = result
-            && matches!(err, SophonError::Cancelled)
-        {
-            return Err(SophonError::Cancelled);
-        }
+    if cancelled.load(Ordering::Relaxed) != 0 {
+        return Err(SophonError::Cancelled);
     }
-    results.into_iter().find(|r| r.is_err()).transpose()?;
+    if let Some(err) = first_error.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        return Err(err);
+    }
 
     // Final save to ensure all downloaded chunks are persisted
     let map: HashMap<String, u64> = chunk_bytes_map
