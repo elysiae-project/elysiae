@@ -72,6 +72,9 @@ pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
 /// Buffer size for file writes during assembly.
 pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
+/// Buffer size for file writes during chunk downloads (smaller to save memory
+/// with many concurrent downloads).
+pub const CHUNK_WRITE_BUFFER_SIZE: usize = 64 * 1024;
 
 /// Minimum interval between progress updates (ms).
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;

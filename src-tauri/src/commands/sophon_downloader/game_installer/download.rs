@@ -7,7 +7,7 @@ use reqwest::Client;
 use tauri_plugin_log::log;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
-use super::FILE_WRITE_BUFFER_SIZE;
+use super::CHUNK_WRITE_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
@@ -249,7 +249,7 @@ async fn download_full_file_with_response(
     check_available_space(dest, chunk.chunk_size)?;
 
     let file = tokio::fs::File::create(dest).await?;
-    let mut file = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, file);
+    let mut file = BufWriter::with_capacity(CHUNK_WRITE_BUFFER_SIZE, file);
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut xxh64_hasher: Option<xxhash_rust::xxh64::Xxh64> =
@@ -436,7 +436,7 @@ async fn download_with_resume(
         .append(true)
         .open(dest)
         .await?;
-    let mut file = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, file);
+    let mut file = BufWriter::with_capacity(CHUNK_WRITE_BUFFER_SIZE, file);
     let mut stream = resp.bytes_stream();
     let mut total_len = existing_size;
 

@@ -699,7 +699,7 @@ pub async fn preinstall_download(
     }
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
-    const WORKER_COUNT: usize = 256;
+    const WORKER_COUNT: usize = 128;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let queue: Arc<Mutex<VecDeque<PatchChunkInfo>>> =
