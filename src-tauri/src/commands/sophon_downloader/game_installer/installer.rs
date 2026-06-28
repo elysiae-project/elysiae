@@ -966,7 +966,6 @@ async fn process_download_item(
     handle: DownloadHandle,
 ) -> SophonResult<()> {
     #[cfg(feature = "pipeline-profiling")]
-    #[cfg(feature = "pipeline-profiling")]
     let mut _chunk_timer = super::profiling::ChunkTimer::new(&ctx.profiler);
 
     {
