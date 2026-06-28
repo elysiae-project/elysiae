@@ -1781,6 +1781,68 @@ pub async fn install(
     )
     .await?;
 
+    log::info!(
+        "MEMORY: all_files={} files, approx {:.1}MB ({}B strings + {}B chunks + {}B struct)",
+        ctx.all_files.len(),
+        {
+            let total_name_bytes: usize = ctx
+                .all_files
+                .iter()
+                .map(|f| f.asset_name.len() + f.asset_hash_md5.len())
+                .sum();
+            let total_chunk_bytes: usize = ctx
+                .all_files
+                .iter()
+                .flat_map(|f| f.asset_chunks.iter())
+                .map(|c| {
+                    c.chunk_name.len()
+                        + c.chunk_decompressed_hash_md5.len()
+                        + c.chunk_compressed_hash_md5.len()
+                        + 48
+                })
+                .sum();
+            let total_struct = ctx.all_files.len()
+                * std::mem::size_of::<SophonManifestAssetProperty>()
+                + ctx
+                    .all_files
+                    .iter()
+                    .map(|f| f.asset_chunks.len())
+                    .sum::<usize>()
+                    * std::mem::size_of::<SophonManifestAssetChunk>();
+            (total_name_bytes + total_chunk_bytes + total_struct) as f64 / 1_048_576.0
+        },
+        ctx.all_files
+            .iter()
+            .map(|f| f.asset_name.len() + f.asset_hash_md5.len())
+            .sum::<usize>(),
+        ctx.all_files
+            .iter()
+            .flat_map(|f| f.asset_chunks.iter())
+            .map(|c| c.chunk_name.len()
+                + c.chunk_decompressed_hash_md5.len()
+                + c.chunk_compressed_hash_md5.len()
+                + 48)
+            .sum::<usize>(),
+        ctx.all_files.len() * std::mem::size_of::<SophonManifestAssetProperty>()
+            + ctx
+                .all_files
+                .iter()
+                .map(|f| f.asset_chunks.len())
+                .sum::<usize>()
+                * std::mem::size_of::<SophonManifestAssetChunk>(),
+    );
+    log::info!(
+        "MEMORY: download_items={}×{}B chunk_entries={}×{}B refcounts={}×{}B downloaded_chunks={}×{}B",
+        download_items.len(),
+        std::mem::size_of::<DownloadItem>(),
+        chunk_entries.len(),
+        std::mem::size_of::<FileEntry>(),
+        chunk_refcounts_vec.len(),
+        std::mem::size_of::<AtomicUsize>(),
+        download_items.len(),
+        std::mem::size_of::<AtomicU64>(),
+    );
+
     let _ = ctx.chunk_refcounts.set(Arc::new(chunk_refcounts_vec));
     let _ = ctx.chunk_names.set(Arc::clone(&chunk_names_lookup));
 
