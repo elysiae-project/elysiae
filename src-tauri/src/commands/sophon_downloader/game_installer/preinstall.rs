@@ -532,13 +532,10 @@ async fn process_preinstall_chunk(
     last_speed_time: Arc<AtomicU64>,
     smooth_speed_bps: Arc<AtomicU64>,
     eta_speed_history: Arc<Mutex<VecDeque<f64>>>,
-    adaptive: Arc<super::adaptive_download::AdaptiveSemaphore>,
 ) -> SophonResult<()> {
     if handle.is_cancelled() {
         return Err(SophonError::Cancelled);
     }
-
-    let _permit = adaptive.acquire().await;
 
     handle
         .wait_if_paused(
@@ -692,7 +689,6 @@ pub async fn preinstall_download(
 
     let last_update = Arc::new(AtomicU64::new(now_nanos()));
     let chunks_since_save = Arc::new(AtomicUsize::new(0usize));
-    let adaptive = Arc::new(super::adaptive_download::AdaptiveSemaphore::new());
     let last_speed_bytes = Arc::new(AtomicU64::new(0));
     let last_speed_time = Arc::new(AtomicU64::new(now_nanos()));
     let smooth_speed_bps = Arc::new(AtomicU64::new(0));
@@ -704,7 +700,6 @@ pub async fn preinstall_download(
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let mut join_set = tokio::task::JoinSet::new();
-    const MAX_PENDING: usize = 256;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
 
@@ -733,7 +728,6 @@ pub async fn preinstall_download(
         let last_speed_time_clone = Arc::clone(&last_speed_time);
         let smooth_speed_bps_clone = Arc::clone(&smooth_speed_bps);
         let eta_speed_history_clone = Arc::clone(&eta_speed_history);
-        let adaptive_clone = Arc::clone(&adaptive);
         join_set.spawn(async move {
             let result = process_preinstall_chunk(
                 chunk_info,
@@ -754,7 +748,6 @@ pub async fn preinstall_download(
                 last_speed_time_clone,
                 smooth_speed_bps_clone,
                 eta_speed_history_clone,
-                adaptive_clone,
             )
             .await;
             if let Err(err) = result {
@@ -769,12 +762,6 @@ pub async fn preinstall_download(
                 }
             }
         });
-
-        if join_set.len() >= MAX_PENDING {
-            if join_set.join_next().await.is_none() {
-                break;
-            }
-        }
     }
 
     while join_set.join_next().await.is_some() {}

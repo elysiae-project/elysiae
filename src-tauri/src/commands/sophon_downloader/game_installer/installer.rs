@@ -34,11 +34,6 @@ impl ChunkNameArena {
         &self.data[offset as usize..(offset + len) as usize]
     }
 
-    pub fn len(&self) -> usize {
-        self.spans.len()
-    }
-}
-
 impl From<&[&str]> for ChunkNameArena {
     fn from(names: &[&str]) -> Self {
         let total_bytes: usize = names.iter().map(|n| n.len()).sum();
@@ -61,7 +56,6 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::adaptive_assembly::AdaptiveAssembly;
-use super::adaptive_download::AdaptiveSemaphore;
 use super::api::{fetch_build, fetch_front_door, is_known_vo_locale, vo_lang_matches};
 use super::assembly::{
     self, AssemblyTaskParams, cleanup_tmp_files, spawn_assembly_task, validate_asset_name,
@@ -801,28 +795,6 @@ fn spawn_assembly_coordinator(
     handle
 }
 
-fn spawn_adaptive_adjuster(adaptive: &Arc<AdaptiveSemaphore>) -> CancellationToken {
-    let cancel_token = CancellationToken::new();
-    let adaptive = Arc::clone(adaptive);
-    let token = cancel_token.clone();
-
-    tokio::spawn(async move {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(ADAPTIVE_WINDOW_SECS));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tokio::select! {
-                _ = token.cancelled() => break,
-                _ = interval.tick() => {
-                    adaptive.adjust();
-                }
-            }
-        }
-    });
-
-    cancel_token
-}
-
 async fn check_needs_download(
     dest: &Path,
     chunk: &SophonManifestAssetChunk,
@@ -958,7 +930,6 @@ async fn process_download_item(
     chunk_entry_offsets: Arc<Vec<usize>>,
     assemble_tx: mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
-    adaptive: Arc<AdaptiveSemaphore>,
 ) -> SophonResult<()> {
     #[cfg(feature = "pipeline-profiling")]
     #[cfg(feature = "pipeline-profiling")]
@@ -994,14 +965,6 @@ async fn process_download_item(
     if handle.is_cancelled() {
         return Err(SophonError::Cancelled);
     }
-
-    let _permit = if needs_download {
-        Some(adaptive.acquire().await)
-    } else {
-        None
-    };
-    #[cfg(feature = "pipeline-profiling")]
-    _chunk_timer.record_phase(super::profiling::ChunkPhase::SemaphoreWait);
 
     let mut was_actually_downloaded = false;
     if needs_download {
@@ -1085,8 +1048,6 @@ async fn process_download_item(
         ctx.downloaded_bytes.load(Ordering::Relaxed)
     };
 
-    adaptive.record_bytes(chunk.chunk_size);
-
     let now = now_nanos();
     if now.saturating_sub(ctx.last_update.load(Ordering::Relaxed))
         >= PROGRESS_UPDATE_INTERVAL_MS * 1_000_000
@@ -1152,12 +1113,10 @@ async fn run_downloads(
     chunk_entry_offsets: Arc<Vec<usize>>,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
-    adaptive: Arc<AdaptiveSemaphore>,
 ) -> DownloadSummary {
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let mut join_set = tokio::task::JoinSet::new();
-    const MAX_PENDING: usize = 256;
 
     for (item_idx, item) in download_items.into_iter().enumerate() {
         if handle.is_cancelled() {
@@ -1172,7 +1131,6 @@ async fn run_downloads(
         let chunk_entry_offsets = Arc::clone(&chunk_entry_offsets);
         let assemble_tx = assemble_tx.clone();
         let handle = handle.clone();
-        let adaptive = Arc::clone(&adaptive);
         let cancelled = Arc::clone(&cancelled);
         let first_error = Arc::clone(&first_error);
 
@@ -1185,7 +1143,6 @@ async fn run_downloads(
                 chunk_entry_offsets,
                 assemble_tx,
                 handle,
-                adaptive,
             )
             .await;
             if let Err(err) = result {
@@ -1200,12 +1157,6 @@ async fn run_downloads(
                 }
             }
         });
-
-        if join_set.len() >= MAX_PENDING {
-            if join_set.join_next().await.is_none() {
-                break;
-            }
-        }
     }
 
     while join_set.join_next().await.is_some() {}
@@ -1580,9 +1531,7 @@ pub async fn install(
             total_files: total,
         });
 
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(
-            super::adaptive_max_concurrency(),
-        ));
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(128));
         let checked_files = Arc::new(AtomicU64::new(0));
         let resume_bytes_offset_arc = Arc::new(AtomicU64::new(0));
         let pre_assembled_arc = Arc::new(AtomicU64::new(0));
@@ -1816,9 +1765,6 @@ pub async fn install(
         ctx.last_update.store(now_nanos(), Ordering::Relaxed);
     }
 
-    let adaptive = Arc::new(AdaptiveSemaphore::new());
-    let cancel_token = spawn_adaptive_adjuster(&adaptive);
-
     let results = run_downloads(
         Arc::clone(&ctx),
         download_items,
@@ -1826,11 +1772,8 @@ pub async fn install(
         chunk_entry_offsets,
         &assemble_tx,
         options.handle,
-        Arc::clone(&adaptive),
     )
     .await;
-
-    cancel_token.cancel();
 
     {
         let handle = {
@@ -1926,9 +1869,7 @@ pub async fn verify_integrity(
     let mut last_emit = Instant::now();
 
     // Phase 1: Verify all files in parallel (bounded by semaphore)
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(
-        super::adaptive_max_concurrency(),
-    ));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(128));
     let scanned_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
 

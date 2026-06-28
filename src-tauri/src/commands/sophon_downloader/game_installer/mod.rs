@@ -1,6 +1,5 @@
 //! Core game installer module for Sophon chunk-based downloads.
 mod adaptive_assembly;
-mod adaptive_download;
 mod api;
 mod assembly;
 mod assembly_opt;
@@ -127,17 +126,6 @@ pub fn compute_eta_speed(
     }
 }
 
-/// Minimum concurrent downloads in adaptive mode.
-pub const ADAPTIVE_MIN_CONCURRENCY: usize = 32;
-/// Maximum concurrent downloads in adaptive mode.
-pub fn adaptive_max_concurrency() -> usize {
-    128
-}
-/// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 128;
-/// Time window for throughput measurement (seconds).
-pub const ADAPTIVE_WINDOW_SECS: u64 = 1;
-
 pub const FRONT_DOOR_URL: &str = concat!(
     "\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x67\x2d\x68\x79\x70\x2d\x61\x70\x69\x2e\x68\x6f\x79\x6f\x76\x65\x72\x73\x65\x2e\x63\x6f\x6d",
     "\x2f\x68\x79\x70\x2f\x68\x79\x70\x2d\x63\x6f\x6e\x6e\x65\x63\x74",
@@ -202,11 +190,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_installed_tag(dir.path(), "2.0.0").unwrap();
         assert_eq!(read_installed_tag(dir.path()), Some("2.0.0".to_string()));
-    }
-
-    #[test]
-    fn adaptive_max_concurrency_fixed() {
-        assert_eq!(adaptive_max_concurrency(), 128);
     }
 
     #[test]
