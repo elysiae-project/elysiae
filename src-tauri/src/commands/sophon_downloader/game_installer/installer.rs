@@ -33,6 +33,7 @@ impl ChunkNameArena {
         let (offset, len) = self.spans[idx];
         &self.data[offset as usize..(offset + len) as usize]
     }
+}
 
 impl From<&[&str]> for ChunkNameArena {
     fn from(names: &[&str]) -> Self {
@@ -1114,18 +1115,17 @@ async fn run_downloads(
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
 ) -> DownloadSummary {
+    const WORKER_COUNT: usize = 128;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
-    let mut join_set = tokio::task::JoinSet::new();
+    let total: usize = download_items.len();
+    let queue: Arc<Mutex<VecDeque<(usize, DownloadItem)>>> =
+        Arc::new(Mutex::new(download_items.into_iter().enumerate().collect()));
+    let remaining: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(total));
+    let mut workers = tokio::task::JoinSet::new();
 
-    for (item_idx, item) in download_items.into_iter().enumerate() {
-        if handle.is_cancelled() {
-            join_set.abort_all();
-            while join_set.join_next().await.is_some() {}
-            cancelled.store(1, Ordering::Relaxed);
-            break;
-        }
-
+    for _ in 0..WORKER_COUNT {
+        let queue = Arc::clone(&queue);
         let ctx = Arc::clone(&ctx);
         let chunk_entries = Arc::clone(&chunk_entries);
         let chunk_entry_offsets = Arc::clone(&chunk_entry_offsets);
@@ -1133,33 +1133,47 @@ async fn run_downloads(
         let handle = handle.clone();
         let cancelled = Arc::clone(&cancelled);
         let first_error = Arc::clone(&first_error);
+        let remaining = Arc::clone(&remaining);
 
-        join_set.spawn(async move {
-            let result = process_download_item(
-                item,
-                item_idx,
-                ctx,
-                chunk_entries,
-                chunk_entry_offsets,
-                assemble_tx,
-                handle,
-            )
-            .await;
-            if let Err(err) = result {
-                if matches!(err, SophonError::Cancelled) {
-                    cancelled.store(1, Ordering::Relaxed);
-                } else if first_error
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .is_none()
-                {
-                    *first_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
+        workers.spawn(async move {
+            loop {
+                if handle.is_cancelled() {
+                    return;
+                }
+                let (item_idx, item) = {
+                    let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
+                    match q.pop_front() {
+                        Some(v) => v,
+                        None => break,
+                    }
+                };
+                let result = process_download_item(
+                    item,
+                    item_idx,
+                    Arc::clone(&ctx),
+                    Arc::clone(&chunk_entries),
+                    Arc::clone(&chunk_entry_offsets),
+                    assemble_tx.clone(),
+                    handle.clone(),
+                )
+                .await;
+                if let Err(err) = result {
+                    if matches!(err, SophonError::Cancelled) {
+                        cancelled.store(1, Ordering::Relaxed);
+                    } else if let Ok(mut guard) = first_error.lock() {
+                        if guard.is_none() {
+                            *guard = Some(err);
+                        }
+                    }
+                }
+                if remaining.fetch_sub(1, Ordering::AcqRel) == 1 {
+                    break;
                 }
             }
         });
     }
 
-    while join_set.join_next().await.is_some() {}
+    while workers.join_next().await.is_some() {}
 
     DownloadSummary {
         cancelled: cancelled.load(Ordering::Relaxed) != 0,
