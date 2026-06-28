@@ -703,7 +703,6 @@ fn make_assembly_params(
         game_dir: ctx.game_dir.clone(),
         chunks_dir: Arc::clone(&ctx.chunks_dir),
         chunk_refcounts: Arc::clone(ctx.chunk_refcounts.get().unwrap()),
-        chunk_name_to_idx: Arc::clone(ctx.chunk_names.get().unwrap()),
         chunk_names: Arc::clone(ctx.chunk_names.get().unwrap()),
         verify_cache: Arc::clone(&ctx.verify_cache),
         assembled_files: Arc::clone(&ctx.assembled_files),
@@ -2070,7 +2069,7 @@ async fn redownload_asset(
     for c in &asset.asset_chunks {
         chunk_arena.push(&c.chunk_name);
     }
-    let chunk_name_to_idx = ChunkNameLookup::from_arena(chunk_arena);
+    let chunk_lookup = ChunkNameLookup::from_arena(chunk_arena);
     let chunk_refcounts: Vec<AtomicUsize> = asset
         .asset_chunks
         .iter()
@@ -2081,9 +2080,8 @@ async fn redownload_asset(
         game_dir,
         chunks_dir,
         &tmp_dir,
-        &chunk_name_to_idx,
+        &chunk_lookup,
         &chunk_refcounts,
-        &chunk_name_to_idx,
         verify_cache,
     );
     let _ = fs::remove_dir_all(&tmp_dir);

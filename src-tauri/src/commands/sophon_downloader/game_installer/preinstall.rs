@@ -2178,7 +2178,7 @@ async fn apply_download_over(
             for c in &file_entry.asset_chunks {
                 chunk_arena.push(&c.chunk_name);
             }
-            let chunk_name_to_idx = super::installer::ChunkNameLookup::from_arena(chunk_arena);
+            let chunk_lookup = super::installer::ChunkNameLookup::from_arena(chunk_arena);
             let chunk_refcounts: Vec<AtomicUsize> = file_entry
                 .asset_chunks
                 .iter()
@@ -2189,9 +2189,8 @@ async fn apply_download_over(
                 &gd,
                 &cd,
                 &tmp_dir,
-                &chunk_name_to_idx,
+                &chunk_lookup,
                 &chunk_refcounts,
-                &chunk_name_to_idx,
                 &vc,
             );
             if let Err(err) = fs::remove_dir_all(&tmp_dir) {

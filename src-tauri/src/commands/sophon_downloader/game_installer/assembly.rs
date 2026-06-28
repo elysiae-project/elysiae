@@ -35,20 +35,19 @@ pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
 #[inline]
 pub fn decrement_chunk_refcount(
     chunk_name: &str,
-    chunk_name_to_idx: &ChunkNameLookup,
+    chunk_lookup: &ChunkNameLookup,
     chunk_refcounts: &[AtomicUsize],
-    chunk_names: &ChunkNameLookup,
     chunks_dir: &Path,
 ) {
     if !validate_chunk_name(chunk_name) {
         return;
     }
-    let Some(idx) = chunk_name_to_idx.lookup(chunk_name) else {
+    let Some(idx) = chunk_lookup.lookup(chunk_name) else {
         return;
     };
     let prev = chunk_refcounts[idx].fetch_sub(1, Ordering::AcqRel);
     if prev == 1 {
-        let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_names.get(idx))));
+        let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_lookup.get(idx))));
     }
 }
 
@@ -125,9 +124,8 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
 
 struct DecrementGuard<'a> {
     chunks: Vec<&'a str>,
-    chunk_name_to_idx: &'a ChunkNameLookup,
+    chunk_lookup: &'a ChunkNameLookup,
     chunk_refcounts: &'a [AtomicUsize],
-    chunk_names: &'a ChunkNameLookup,
     chunks_dir: &'a Path,
 }
 
@@ -136,9 +134,8 @@ impl Drop for DecrementGuard<'_> {
         for chunk_name in self.chunks.drain(..) {
             decrement_chunk_refcount(
                 chunk_name,
-                self.chunk_name_to_idx,
+                self.chunk_lookup,
                 self.chunk_refcounts,
-                self.chunk_names,
                 self.chunks_dir,
             );
         }
@@ -150,9 +147,8 @@ pub fn assemble_file(
     game_dir: &Path,
     chunks_dir: &Path,
     temp_dir: &Path,
-    chunk_name_to_idx: &ChunkNameLookup,
+    chunk_lookup: &ChunkNameLookup,
     chunk_refcounts: &[AtomicUsize],
-    chunk_names: &ChunkNameLookup,
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
     validate_asset_name(&file.asset_name)?;
@@ -188,9 +184,8 @@ pub fn assemble_file(
             for chunk in &file.asset_chunks {
                 decrement_chunk_refcount(
                     &chunk.chunk_name,
-                    chunk_name_to_idx,
+                    chunk_lookup,
                     chunk_refcounts,
-                    chunk_names,
                     chunks_dir,
                 );
             }
@@ -244,9 +239,8 @@ pub fn assemble_file(
     });
     let mut guard = DecrementGuard {
         chunks: Vec::new(),
-        chunk_name_to_idx,
+        chunk_lookup,
         chunk_refcounts,
-        chunk_names,
         chunks_dir,
     };
 
@@ -584,7 +578,6 @@ pub struct AssemblyTaskParams {
     pub game_dir: std::path::PathBuf,
     pub chunks_dir: Arc<std::path::PathBuf>,
     pub chunk_refcounts: Arc<Vec<AtomicUsize>>,
-    pub chunk_name_to_idx: Arc<ChunkNameLookup>,
     pub chunk_names: Arc<ChunkNameLookup>,
     pub verify_cache: Arc<DashMap<String, VerificationEntry>>,
     pub assembled_files: Arc<AtomicU64>,
@@ -606,7 +599,6 @@ pub fn run_assembly_task(
         game_dir,
         chunks_dir,
         chunk_refcounts,
-        chunk_name_to_idx: _,
         chunk_names,
         verify_cache,
         assembled_files,
@@ -642,7 +634,6 @@ pub fn run_assembly_task(
         tmp_dir,
         &chunk_names,
         &chunk_refcounts,
-        &chunk_names,
         &verify_cache,
     )
     .map_err(|err| SophonError::AssemblyFailed {
@@ -845,7 +836,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -898,7 +888,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -945,7 +934,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -995,7 +983,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -1016,13 +1003,7 @@ mod tests {
         let chunk_names = make_chunk_names(&["vanish"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
 
-        decrement_chunk_refcount(
-            "vanish",
-            &chunk_names,
-            &chunk_refcounts,
-            &chunk_names,
-            &chunks_dir,
-        );
+        decrement_chunk_refcount("vanish", &chunk_names, &chunk_refcounts, &chunks_dir);
 
         assert_eq!(chunk_refcounts[0].load(Ordering::Acquire), 0);
         assert!(!chunk_file.exists());
@@ -1040,13 +1021,7 @@ mod tests {
         let chunk_names = make_chunk_names(&["keep"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(2)];
 
-        decrement_chunk_refcount(
-            "keep",
-            &chunk_names,
-            &chunk_refcounts,
-            &chunk_names,
-            &chunks_dir,
-        );
+        decrement_chunk_refcount("keep", &chunk_names, &chunk_refcounts, &chunks_dir);
 
         assert_eq!(chunk_refcounts[0].load(Ordering::Acquire), 1);
         assert!(chunk_file.exists());
@@ -1096,9 +1071,6 @@ mod tests {
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
-            chunk_name_to_idx: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
-                [].as_slice(),
-            ))),
             chunk_names: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
                 [].as_slice(),
             ))),
@@ -1161,7 +1133,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         )
         .unwrap();
@@ -1214,7 +1185,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         );
 
@@ -1243,9 +1213,6 @@ mod tests {
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
-            chunk_name_to_idx: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
-                [].as_slice(),
-            ))),
             chunk_names: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
                 [].as_slice(),
             ))),
@@ -1607,7 +1574,6 @@ mod tests {
             &temp_dir,
             &chunk_names,
             &chunk_refcounts,
-            &chunk_names,
             &verify_cache,
         );
 
@@ -1622,7 +1588,7 @@ mod tests {
         assert_eq!(&result_data, old_data);
 
         // Verify no chunk was downloaded — refcounts vec is still empty
-        // (chunk_name_to_idx has no entry for "not_used", so decrement was a no-op)
+        // (chunk_lookup has no entry for "not_used", so decrement was a no-op)
         assert!(chunk_refcounts.is_empty());
     }
 }
