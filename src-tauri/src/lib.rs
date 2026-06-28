@@ -27,14 +27,10 @@ pub fn run() {
                 .pool_max_idle_per_host(128)
                 .pool_idle_timeout(Duration::from_secs(30))
                 .tcp_nodelay(true)
-                .http2_adaptive_window(false)
-                .http2_keep_alive_interval(Duration::from_secs(10))
-                .http2_keep_alive_timeout(Duration::from_secs(5))
+                .http1_only()
                 .tcp_keepalive(Duration::from_secs(30))
                 .connect_timeout(Duration::from_secs(10))
                 .read_timeout(Duration::from_secs(300))
-                .http2_initial_stream_window_size(Some(64 * 1024 * 1024))
-                .http2_initial_connection_window_size(Some(256 * 1024 * 1024))
                 .user_agent(format!(
                     "{}/{}",
                     env!("CARGO_PKG_NAME"),
