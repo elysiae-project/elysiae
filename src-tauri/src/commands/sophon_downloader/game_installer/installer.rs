@@ -1054,12 +1054,18 @@ async fn process_download_item(
             let _ = h.await;
         }
         let new_handle = tokio::task::spawn_blocking(move || {
-            let map = if let (Some(dc), Some(cn)) = (dc.get(), cn.get()) {
+            let map: HashMap<String, u64> = if let (Some(dc), Some(cn)) = (dc.get(), cn.get()) {
                 dc.iter()
                     .enumerate()
-                    .filter(|(_, v)| v.load(Ordering::Relaxed) > 0)
-                    .map(|(i, v)| (cn.get(i).to_string(), v.load(Ordering::Relaxed)))
-                    .collect::<HashMap<String, u64>>()
+                    .filter_map(|(i, v)| {
+                        let val = v.load(Ordering::Relaxed);
+                        if val > 0 {
+                            Some((cn.get(i).to_string(), val))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             } else {
                 HashMap::new()
             };
