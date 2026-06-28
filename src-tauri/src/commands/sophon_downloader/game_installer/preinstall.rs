@@ -699,19 +699,15 @@ pub async fn preinstall_download(
     }
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
-    let mut join_set = tokio::task::JoinSet::new();
+    const WORKER_COUNT: usize = 128;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
+    let queue: Arc<Mutex<VecDeque<PatchChunkInfo>>> =
+        Arc::new(Mutex::new(chunk_infos.into_iter().collect()));
+    let mut workers = tokio::task::JoinSet::new();
 
-    for chunk_info in chunk_infos.into_iter() {
-        if cancelled.load(Ordering::Relaxed) != 0 {
-            join_set.abort_all();
-            while join_set.join_next().await.is_some() {}
-            cancelled.store(1, Ordering::Relaxed);
-            break;
-        }
-
-        let already_downloaded = chunk_bytes_map.contains_key(&chunk_info.patch_name);
+    for _ in 0..WORKER_COUNT {
+        let queue = Arc::clone(&queue);
         let cancelled = Arc::clone(&cancelled);
         let first_error = Arc::clone(&first_error);
         let chunk_bytes_map_clone = Arc::clone(&chunk_bytes_map);
@@ -728,43 +724,55 @@ pub async fn preinstall_download(
         let last_speed_time_clone = Arc::clone(&last_speed_time);
         let smooth_speed_bps_clone = Arc::clone(&smooth_speed_bps);
         let eta_speed_history_clone = Arc::clone(&eta_speed_history);
-        join_set.spawn(async move {
-            let result = process_preinstall_chunk(
-                chunk_info,
-                client_clone,
-                diff_download_clone,
-                chunks_dir_clone,
-                handle_clone,
-                updater_clone,
-                downloaded_bytes_clone,
-                resume_offset,
-                total_bytes,
-                chunk_bytes_map_clone,
-                already_downloaded,
-                state_saver_clone,
-                last_update_clone,
-                chunks_since_save_clone,
-                last_speed_bytes_clone,
-                last_speed_time_clone,
-                smooth_speed_bps_clone,
-                eta_speed_history_clone,
-            )
-            .await;
-            if let Err(err) = result {
-                if matches!(err, SophonError::Cancelled) {
-                    cancelled.store(1, Ordering::Relaxed);
-                } else if first_error
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .is_none()
-                {
-                    *first_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
+
+        workers.spawn(async move {
+            loop {
+                if handle_clone.is_cancelled() {
+                    return;
+                }
+                let chunk_info = {
+                    let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
+                    match q.pop_front() {
+                        Some(v) => v,
+                        None => break,
+                    }
+                };
+                let already_downloaded = chunk_bytes_map_clone.contains_key(&chunk_info.patch_name);
+                let result = process_preinstall_chunk(
+                    chunk_info,
+                    client_clone.clone(),
+                    diff_download_clone.clone(),
+                    chunks_dir_clone.clone(),
+                    handle_clone.clone(),
+                    updater_clone.clone(),
+                    downloaded_bytes_clone.clone(),
+                    resume_offset,
+                    total_bytes,
+                    chunk_bytes_map_clone.clone(),
+                    already_downloaded,
+                    state_saver_clone.clone(),
+                    last_update_clone.clone(),
+                    chunks_since_save_clone.clone(),
+                    last_speed_bytes_clone.clone(),
+                    last_speed_time_clone.clone(),
+                    smooth_speed_bps_clone.clone(),
+                    eta_speed_history_clone.clone(),
+                )
+                .await;
+                if let Err(err) = result {
+                    if matches!(err, SophonError::Cancelled) {
+                        cancelled.store(1, Ordering::Relaxed);
+                    } else if let Ok(mut guard) = first_error.lock() {
+                        if guard.is_none() {
+                            *guard = Some(err);
+                        }
+                    }
                 }
             }
         });
     }
 
-    while join_set.join_next().await.is_some() {}
+    while workers.join_next().await.is_some() {}
 
     if cancelled.load(Ordering::Relaxed) != 0 {
         return Err(SophonError::Cancelled);
@@ -774,7 +782,8 @@ pub async fn preinstall_download(
     }
 
     // Final save to ensure all downloaded chunks are persisted
-    let map: HashMap<String, u64> = chunk_bytes_map
+    let final_map = Arc::clone(&chunk_bytes_map);
+    let map: HashMap<String, u64> = final_map
         .iter()
         .map(|r| (r.key().clone(), *r.value()))
         .collect();
