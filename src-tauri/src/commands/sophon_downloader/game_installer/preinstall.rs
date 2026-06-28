@@ -704,7 +704,7 @@ pub async fn preinstall_download(
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
     let mut join_set = tokio::task::JoinSet::new();
-    const MAX_PENDING: usize = 128;
+    const MAX_PENDING: usize = 256;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
 

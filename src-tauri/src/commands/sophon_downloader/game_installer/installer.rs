@@ -1104,7 +1104,7 @@ async fn run_downloads(
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let mut join_set = tokio::task::JoinSet::new();
-    const MAX_PENDING: usize = 128;
+    const MAX_PENDING: usize = 256;
 
     for (item_idx, item) in download_items.into_iter().enumerate() {
         if handle.is_cancelled() {

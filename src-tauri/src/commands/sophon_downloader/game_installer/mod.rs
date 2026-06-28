@@ -131,10 +131,10 @@ pub fn compute_eta_speed(
 pub const ADAPTIVE_MIN_CONCURRENCY: usize = 32;
 /// Maximum concurrent downloads in adaptive mode.
 pub fn adaptive_max_concurrency() -> usize {
-    64
+    128
 }
 /// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 64;
+pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 128;
 /// Time window for throughput measurement (seconds).
 pub const ADAPTIVE_WINDOW_SECS: u64 = 1;
 
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn adaptive_max_concurrency_fixed() {
-        assert_eq!(adaptive_max_concurrency(), 64);
+        assert_eq!(adaptive_max_concurrency(), 128);
     }
 
     #[test]

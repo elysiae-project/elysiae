@@ -24,7 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(commands::sophon_downloader::HttpClient(
             reqwest::Client::builder()
-                .pool_max_idle_per_host(64)
+                .pool_max_idle_per_host(128)
                 .pool_idle_timeout(Duration::from_secs(30))
                 .tcp_nodelay(true)
                 .http2_adaptive_window(true)
@@ -34,7 +34,7 @@ pub fn run() {
                 .connect_timeout(Duration::from_secs(10))
                 .read_timeout(Duration::from_secs(60))
                 .http2_initial_stream_window_size(Some(16 * 1024 * 1024))
-                .http2_initial_connection_window_size(Some(64 * 1024 * 1024))
+                .http2_initial_connection_window_size(Some(128 * 1024 * 1024))
                 .user_agent(format!(
                     "{}/{}",
                     env!("CARGO_PKG_NAME"),
