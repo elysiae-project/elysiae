@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -18,7 +17,7 @@ thread_local! {
 
 use super::cache::VerificationEntry;
 use super::error::{SophonError, SophonResult};
-use super::installer::ChunkNameArena;
+use super::installer::ChunkNameLookup;
 use super::{FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
 use crate::commands::sophon_downloader::SophonProgress;
 use crate::commands::sophon_downloader::proto_parse::{
@@ -36,15 +35,15 @@ pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
 #[inline]
 pub fn decrement_chunk_refcount(
     chunk_name: &str,
-    chunk_name_to_idx: &HashMap<String, usize>,
+    chunk_name_to_idx: &ChunkNameLookup,
     chunk_refcounts: &[AtomicUsize],
-    chunk_names: &ChunkNameArena,
+    chunk_names: &ChunkNameLookup,
     chunks_dir: &Path,
 ) {
     if !validate_chunk_name(chunk_name) {
         return;
     }
-    let Some(&idx) = chunk_name_to_idx.get(chunk_name) else {
+    let Some(idx) = chunk_name_to_idx.lookup(chunk_name) else {
         return;
     };
     let prev = chunk_refcounts[idx].fetch_sub(1, Ordering::AcqRel);
@@ -126,9 +125,9 @@ pub fn validate_asset_name(name: &str) -> SophonResult<()> {
 
 struct DecrementGuard<'a> {
     chunks: Vec<&'a str>,
-    chunk_name_to_idx: &'a HashMap<String, usize>,
+    chunk_name_to_idx: &'a ChunkNameLookup,
     chunk_refcounts: &'a [AtomicUsize],
-    chunk_names: &'a ChunkNameArena,
+    chunk_names: &'a ChunkNameLookup,
     chunks_dir: &'a Path,
 }
 
@@ -151,9 +150,9 @@ pub fn assemble_file(
     game_dir: &Path,
     chunks_dir: &Path,
     temp_dir: &Path,
-    chunk_name_to_idx: &HashMap<String, usize>,
+    chunk_name_to_idx: &ChunkNameLookup,
     chunk_refcounts: &[AtomicUsize],
-    chunk_names: &ChunkNameArena,
+    chunk_names: &ChunkNameLookup,
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
     validate_asset_name(&file.asset_name)?;
@@ -585,8 +584,8 @@ pub struct AssemblyTaskParams {
     pub game_dir: std::path::PathBuf,
     pub chunks_dir: Arc<std::path::PathBuf>,
     pub chunk_refcounts: Arc<Vec<AtomicUsize>>,
-    pub chunk_name_to_idx: Arc<HashMap<String, usize>>,
-    pub chunk_names: Arc<ChunkNameArena>,
+    pub chunk_name_to_idx: Arc<ChunkNameLookup>,
+    pub chunk_names: Arc<ChunkNameLookup>,
     pub verify_cache: Arc<DashMap<String, VerificationEntry>>,
     pub assembled_files: Arc<AtomicU64>,
     pub last_assembly_update: Arc<Mutex<Instant>>,
@@ -607,7 +606,7 @@ pub fn run_assembly_task(
         game_dir,
         chunks_dir,
         chunk_refcounts,
-        chunk_name_to_idx,
+        chunk_name_to_idx: _,
         chunk_names,
         verify_cache,
         assembled_files,
@@ -641,7 +640,7 @@ pub fn run_assembly_task(
         &game_dir,
         &chunks_dir,
         tmp_dir,
-        &chunk_name_to_idx,
+        &chunk_names,
         &chunk_refcounts,
         &chunk_names,
         &verify_cache,
@@ -690,14 +689,11 @@ pub async fn spawn_assembly_task(
 
 #[cfg(test)]
 mod tests {
+    use super::super::installer::ChunkNameArena;
     use super::*;
 
-    fn make_chunk_names(names: &[&str]) -> (HashMap<String, usize>, ChunkNameArena) {
-        let mut arena = ChunkNameArena::from(names);
-        let map: HashMap<String, usize> = (0..names.len())
-            .map(|i| (arena.get(i).to_string(), i))
-            .collect();
-        (map, arena)
+    fn make_chunk_names(names: &[&str]) -> Arc<ChunkNameLookup> {
+        Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(names)))
     }
 
     #[test]
@@ -838,7 +834,7 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunk0"]);
+        let chunk_names = make_chunk_names(&["chunk0"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
@@ -847,7 +843,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,
@@ -891,7 +887,7 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunkA", "chunkB"]);
+        let chunk_names = make_chunk_names(&["chunkA", "chunkB"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1), AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
@@ -900,7 +896,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,
@@ -938,7 +934,7 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunk_skip"]);
+        let chunk_names = make_chunk_names(&["chunk_skip"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
@@ -947,7 +943,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,
@@ -988,7 +984,7 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunk_fix"]);
+        let chunk_names = make_chunk_names(&["chunk_fix"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
@@ -997,7 +993,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,
@@ -1017,12 +1013,12 @@ mod tests {
         let chunk_file = chunks_dir.join("vanish.zstd");
         fs::write(&chunk_file, b"dummy").unwrap();
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["vanish"]);
+        let chunk_names = make_chunk_names(&["vanish"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
 
         decrement_chunk_refcount(
             "vanish",
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &chunks_dir,
@@ -1041,12 +1037,12 @@ mod tests {
         let chunk_file = chunks_dir.join("keep.zstd");
         fs::write(&chunk_file, b"dummy").unwrap();
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["keep"]);
+        let chunk_names = make_chunk_names(&["keep"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(2)];
 
         decrement_chunk_refcount(
             "keep",
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &chunks_dir,
@@ -1100,8 +1096,12 @@ mod tests {
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
-            chunk_name_to_idx: Arc::new(HashMap::new()),
-            chunk_names: Arc::new(ChunkNameArena::from([].as_slice())),
+            chunk_name_to_idx: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
+                [].as_slice(),
+            ))),
+            chunk_names: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
+                [].as_slice(),
+            ))),
             verify_cache: Arc::new(DashMap::new()),
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
@@ -1150,7 +1150,7 @@ mod tests {
             asset_hash_md5: file_md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["ck0"]);
+        let chunk_names = make_chunk_names(&["ck0"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
@@ -1159,7 +1159,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,
@@ -1203,7 +1203,7 @@ mod tests {
             asset_hash_md5: file_md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["ck1"]);
+        let chunk_names = make_chunk_names(&["ck1"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
@@ -1212,7 +1212,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,
@@ -1243,8 +1243,12 @@ mod tests {
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
-            chunk_name_to_idx: Arc::new(HashMap::new()),
-            chunk_names: Arc::new(ChunkNameArena::from([].as_slice())),
+            chunk_name_to_idx: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
+                [].as_slice(),
+            ))),
+            chunk_names: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
+                [].as_slice(),
+            ))),
             verify_cache: Arc::new(DashMap::new()),
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
@@ -1591,7 +1595,7 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&[]);
+        let chunk_names = make_chunk_names(&[]);
         let chunk_refcounts: Vec<AtomicUsize> = Vec::new();
         let verify_cache = DashMap::new();
 
@@ -1601,7 +1605,7 @@ mod tests {
             &game_dir,
             &chunks_dir,
             &temp_dir,
-            &chunk_name_to_idx,
+            &chunk_names,
             &chunk_refcounts,
             &chunk_names,
             &verify_cache,

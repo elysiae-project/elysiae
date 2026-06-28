@@ -2171,19 +2171,14 @@ async fn apply_download_over(
                 .iter()
                 .map(|c| c.chunk_name.len())
                 .sum();
-            let mut chunk_names = super::installer::ChunkNameArena::with_capacity(
+            let mut chunk_arena = super::installer::ChunkNameArena::with_capacity(
                 file_entry.asset_chunks.len(),
                 total_bytes,
             );
-            let chunk_name_to_idx: HashMap<String, usize> = file_entry
-                .asset_chunks
-                .iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    chunk_names.push(&c.chunk_name);
-                    (c.chunk_name.clone(), i)
-                })
-                .collect();
+            for c in &file_entry.asset_chunks {
+                chunk_arena.push(&c.chunk_name);
+            }
+            let chunk_name_to_idx = super::installer::ChunkNameLookup::from_arena(chunk_arena);
             let chunk_refcounts: Vec<AtomicUsize> = file_entry
                 .asset_chunks
                 .iter()
@@ -2196,7 +2191,7 @@ async fn apply_download_over(
                 &tmp_dir,
                 &chunk_name_to_idx,
                 &chunk_refcounts,
-                &chunk_names,
+                &chunk_name_to_idx,
                 &vc,
             );
             if let Err(err) = fs::remove_dir_all(&tmp_dir) {

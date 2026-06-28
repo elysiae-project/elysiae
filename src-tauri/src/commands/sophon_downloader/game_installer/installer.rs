@@ -45,6 +45,45 @@ impl From<&[&str]> for ChunkNameArena {
         arena
     }
 }
+
+/// Compact sorted index over a `ChunkNameArena` enabling `&str -> usize` lookup
+/// via binary search. Uses ~4 bytes per chunk (just an arena index), versus the
+/// ~24 bytes per entry a `HashMap<String, usize>` would need.
+pub struct ChunkNameLookup {
+    arena: ChunkNameArena,
+    sorted_indices: Vec<u32>,
+}
+
+impl ChunkNameLookup {
+    pub fn from_arena(arena: ChunkNameArena) -> Self {
+        let n = arena.spans.len();
+        let mut sorted_indices: Vec<u32> = (0..n as u32).collect();
+        sorted_indices.sort_by(|&a, &b| {
+            let sa = arena.get(a as usize);
+            let sb = arena.get(b as usize);
+            sa.cmp(sb)
+        });
+        Self {
+            arena,
+            sorted_indices,
+        }
+    }
+
+    pub fn get(&self, idx: usize) -> &str {
+        self.arena.get(idx)
+    }
+
+    pub fn lookup(&self, name: &str) -> Option<usize> {
+        let arena = &self.arena;
+        let result = self
+            .sorted_indices
+            .binary_search_by(|&i| arena.get(i as usize).cmp(name));
+        match result {
+            Ok(pos) => Some(self.sorted_indices[pos] as usize),
+            Err(_) => None,
+        }
+    }
+}
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -96,8 +135,7 @@ struct InstallContext {
     resume_bytes_offset: Arc<AtomicU64>,
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
     chunk_refcounts: Arc<OnceLock<Arc<Vec<AtomicUsize>>>>,
-    chunk_name_to_idx: Arc<OnceLock<Arc<HashMap<String, usize>>>>,
-    chunk_names: Arc<OnceLock<Arc<ChunkNameArena>>>,
+    chunk_names: Arc<OnceLock<Arc<ChunkNameLookup>>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<AtomicU64>,
     /// EWMA-smoothed speed for display (bytes/sec, scaled by 1000).
@@ -554,8 +592,8 @@ async fn build_download_state(
     Arc<Vec<FileEntry>>,
     Arc<Vec<usize>>,
     Vec<AtomicUsize>,
-    Arc<HashMap<String, usize>>,
-    Arc<ChunkNameArena>,
+    Arc<ChunkNameLookup>,
+    Arc<ChunkNameLookup>,
 )> {
     let total_chunks: usize = ctx
         .all_files
@@ -636,23 +674,19 @@ async fn build_download_state(
         })
         .sum();
     let mut arena = ChunkNameArena::with_capacity(download_items.len(), total_name_bytes);
-    let mut chunk_name_to_idx: HashMap<String, usize> =
-        HashMap::with_capacity(download_items.len());
     for item in &download_items {
         let name = &ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx].chunk_name;
-        let idx = arena.push(name);
-        chunk_name_to_idx.insert(name.clone(), idx);
+        arena.push(name);
     }
-    let chunk_names_arena = Arc::new(arena);
-    let chunk_name_to_idx = Arc::new(chunk_name_to_idx);
+    let chunk_names_lookup = Arc::new(ChunkNameLookup::from_arena(arena));
 
     Ok((
         download_items,
         Arc::new(flat_chunk_entries),
         Arc::new(chunk_entry_offsets),
         chunk_refcounts,
-        chunk_name_to_idx,
-        chunk_names_arena,
+        chunk_names_lookup.clone(),
+        chunk_names_lookup,
     ))
 }
 
@@ -669,7 +703,7 @@ fn make_assembly_params(
         game_dir: ctx.game_dir.clone(),
         chunks_dir: Arc::clone(&ctx.chunks_dir),
         chunk_refcounts: Arc::clone(ctx.chunk_refcounts.get().unwrap()),
-        chunk_name_to_idx: Arc::clone(ctx.chunk_name_to_idx.get().unwrap()),
+        chunk_name_to_idx: Arc::clone(ctx.chunk_names.get().unwrap()),
         chunk_names: Arc::clone(ctx.chunk_names.get().unwrap()),
         verify_cache: Arc::clone(&ctx.verify_cache),
         assembled_files: Arc::clone(&ctx.assembled_files),
@@ -1699,7 +1733,6 @@ pub async fn install(
         resume_bytes_offset: Arc::new(AtomicU64::new(resume_bytes_offset)),
         verify_cache,
         chunk_refcounts: Arc::new(OnceLock::new()),
-        chunk_name_to_idx: Arc::new(OnceLock::new()),
         chunk_names: Arc::new(OnceLock::new()),
         last_assembly_update: Arc::new(Mutex::new(Instant::now())),
         last_update: Arc::new(AtomicU64::new(now_nanos())),
@@ -1742,8 +1775,8 @@ pub async fn install(
         chunk_entries,
         chunk_entry_offsets,
         chunk_refcounts_vec,
-        chunk_name_to_idx,
-        chunk_names,
+        chunk_names_lookup,
+        _chunk_names,
     ) = build_download_state(
         installer_data,
         &ctx,
@@ -1754,13 +1787,12 @@ pub async fn install(
     .await?;
 
     let _ = ctx.chunk_refcounts.set(Arc::new(chunk_refcounts_vec));
-    let _ = ctx.chunk_name_to_idx.set(Arc::clone(&chunk_name_to_idx));
-    let _ = ctx.chunk_names.set(Arc::clone(&chunk_names));
+    let _ = ctx.chunk_names.set(Arc::clone(&chunk_names_lookup));
 
     {
         let downloaded_chunks_vec: Vec<AtomicU64> = (0..download_items.len())
             .map(|i| {
-                let name = chunk_names.get(i);
+                let name = chunk_names_lookup.get(i);
                 let val = initial_chunks.get(name).copied().unwrap_or(0);
                 AtomicU64::new(val)
             })
@@ -2041,16 +2073,11 @@ async fn redownload_asset(
     let tmp_dir = game_dir.join(&tmp_dir_name);
     fs::create_dir_all(&tmp_dir)?;
     let total_bytes: usize = asset.asset_chunks.iter().map(|c| c.chunk_name.len()).sum();
-    let mut chunk_names = ChunkNameArena::with_capacity(asset.asset_chunks.len(), total_bytes);
-    let chunk_name_to_idx: HashMap<String, usize> = asset
-        .asset_chunks
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            chunk_names.push(&c.chunk_name);
-            (c.chunk_name.clone(), i)
-        })
-        .collect();
+    let mut chunk_arena = ChunkNameArena::with_capacity(asset.asset_chunks.len(), total_bytes);
+    for c in &asset.asset_chunks {
+        chunk_arena.push(&c.chunk_name);
+    }
+    let chunk_name_to_idx = ChunkNameLookup::from_arena(chunk_arena);
     let chunk_refcounts: Vec<AtomicUsize> = asset
         .asset_chunks
         .iter()
@@ -2063,7 +2090,7 @@ async fn redownload_asset(
         &tmp_dir,
         &chunk_name_to_idx,
         &chunk_refcounts,
-        &chunk_names,
+        &chunk_name_to_idx,
         verify_cache,
     );
     let _ = fs::remove_dir_all(&tmp_dir);
@@ -2496,7 +2523,6 @@ mod tests {
             resume_bytes_offset: Arc::new(AtomicU64::new(0)),
             verify_cache: Arc::new(DashMap::new()),
             chunk_refcounts: Arc::new(OnceLock::new()),
-            chunk_name_to_idx: Arc::new(OnceLock::new()),
             chunk_names: Arc::new(OnceLock::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(AtomicU64::new(now_nanos())),
@@ -2593,7 +2619,6 @@ mod tests {
             resume_bytes_offset: Arc::new(AtomicU64::new(0)),
             verify_cache: Arc::new(DashMap::new()),
             chunk_refcounts: Arc::new(OnceLock::new()),
-            chunk_name_to_idx: Arc::new(OnceLock::new()),
             chunk_names: Arc::new(OnceLock::new()),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             last_update: Arc::new(AtomicU64::new(now_nanos())),
