@@ -3,6 +3,52 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
+
+/// Compact string arena for chunk names. All names are concatenated into a
+/// single `String`, indexed by (offset, len) pairs. Eliminates per-string heap
+/// allocations and enables cheap HashMap keys via packed u64.
+pub struct ChunkNameArena {
+    data: String,
+    spans: Vec<(u32, u32)>,
+}
+
+impl ChunkNameArena {
+    pub fn with_capacity(cap: usize, total_name_bytes: usize) -> Self {
+        Self {
+            data: String::with_capacity(total_name_bytes),
+            spans: Vec::with_capacity(cap),
+        }
+    }
+
+    pub fn push(&mut self, name: &str) -> usize {
+        let idx = self.spans.len();
+        let offset = self.data.len() as u32;
+        let len = name.len() as u32;
+        self.data.push_str(name);
+        self.spans.push((offset, len));
+        idx
+    }
+
+    pub fn get(&self, idx: usize) -> &str {
+        let (offset, len) = self.spans[idx];
+        &self.data[offset as usize..(offset + len) as usize]
+    }
+
+    pub fn len(&self) -> usize {
+        self.spans.len()
+    }
+}
+
+impl From<&[&str]> for ChunkNameArena {
+    fn from(names: &[&str]) -> Self {
+        let total_bytes: usize = names.iter().map(|n| n.len()).sum();
+        let mut arena = ChunkNameArena::with_capacity(names.len(), total_bytes);
+        for name in names {
+            arena.push(name);
+        }
+        arena
+    }
+}
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -56,7 +102,7 @@ struct InstallContext {
     verify_cache: Arc<DashMap<String, VerificationEntry>>,
     chunk_refcounts: Arc<OnceLock<Arc<Vec<AtomicUsize>>>>,
     chunk_name_to_idx: Arc<OnceLock<Arc<HashMap<String, usize>>>>,
-    chunk_names: Arc<OnceLock<Arc<Vec<String>>>>,
+    chunk_names: Arc<OnceLock<Arc<ChunkNameArena>>>,
     last_assembly_update: Arc<Mutex<Instant>>,
     last_update: Arc<AtomicU64>,
     /// EWMA-smoothed speed for display (bytes/sec, scaled by 1000).
@@ -514,7 +560,7 @@ async fn build_download_state(
     Arc<Vec<usize>>,
     Vec<AtomicUsize>,
     Arc<HashMap<String, usize>>,
-    Arc<Vec<String>>,
+    Arc<ChunkNameArena>,
 )> {
     let total_chunks: usize = ctx
         .all_files
@@ -576,35 +622,42 @@ async fn build_download_state(
         all_files_index,
     );
 
+    let total_flat_entries: usize = chunk_entries.iter().map(|v| v.len()).sum();
     let mut chunk_entry_offsets: Vec<usize> = Vec::with_capacity(chunk_entries.len() + 1);
-    let mut flat_chunk_entries: Vec<FileEntry> = Vec::new();
+    let mut flat_chunk_entries: Vec<FileEntry> = Vec::with_capacity(total_flat_entries);
     chunk_entry_offsets.push(0);
-    for inner in &chunk_entries {
-        flat_chunk_entries.extend_from_slice(inner);
+    for inner in chunk_entries.drain(..) {
+        flat_chunk_entries.extend(inner);
         chunk_entry_offsets.push(flat_chunk_entries.len());
     }
+    // chunk_entries is now empty, its allocation freed
 
-    let chunk_names: Vec<String> = download_items
+    let total_name_bytes: usize = download_items
         .iter()
         .map(|item| {
             ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx]
                 .chunk_name
-                .clone()
+                .len()
         })
-        .collect();
-    let chunk_name_to_idx: HashMap<String, usize> = chunk_names
-        .iter()
-        .enumerate()
-        .map(|(idx, name)| (name.clone(), idx))
-        .collect();
+        .sum();
+    let mut arena = ChunkNameArena::with_capacity(download_items.len(), total_name_bytes);
+    let mut chunk_name_to_idx: HashMap<String, usize> =
+        HashMap::with_capacity(download_items.len());
+    for item in &download_items {
+        let name = &ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx].chunk_name;
+        let idx = arena.push(name);
+        chunk_name_to_idx.insert(name.clone(), idx);
+    }
+    let chunk_names_arena = Arc::new(arena);
+    let chunk_name_to_idx = Arc::new(chunk_name_to_idx);
 
     Ok((
         download_items,
         Arc::new(flat_chunk_entries),
         Arc::new(chunk_entry_offsets),
         chunk_refcounts,
-        Arc::new(chunk_name_to_idx),
-        Arc::new(chunk_names),
+        chunk_name_to_idx,
+        chunk_names_arena,
     ))
 }
 
@@ -1005,9 +1058,9 @@ async fn process_download_item(
         let new_handle = tokio::task::spawn_blocking(move || {
             let map = if let (Some(dc), Some(cn)) = (dc.get(), cn.get()) {
                 dc.iter()
-                    .zip(cn.iter())
-                    .filter(|(v, _)| v.load(Ordering::Relaxed) > 0)
-                    .map(|(v, k)| (k.clone(), v.load(Ordering::Relaxed)))
+                    .enumerate()
+                    .filter(|(_, v)| v.load(Ordering::Relaxed) > 0)
+                    .map(|(i, v)| (cn.get(i).to_string(), v.load(Ordering::Relaxed)))
                     .collect::<HashMap<String, u64>>()
             } else {
                 HashMap::new()
@@ -1220,9 +1273,9 @@ async fn finalize_install(
         tokio::task::spawn_blocking(move || {
             let map = if let (Some(dc), Some(cn)) = (dc.get(), cn.get()) {
                 dc.iter()
-                    .zip(cn.iter())
-                    .filter(|(v, _)| v.load(Ordering::Relaxed) > 0)
-                    .map(|(v, k)| (k.clone(), v.load(Ordering::Relaxed)))
+                    .enumerate()
+                    .filter(|(_, v)| v.load(Ordering::Relaxed) > 0)
+                    .map(|(i, v)| (cn.get(i).to_string(), v.load(Ordering::Relaxed)))
                     .collect::<HashMap<String, u64>>()
             } else {
                 HashMap::new()
@@ -1744,7 +1797,7 @@ pub async fn install(
     {
         let downloaded_chunks_vec: Vec<AtomicU64> = (0..download_items.len())
             .map(|i| {
-                let name = &chunk_names[i];
+                let name = chunk_names.get(i);
                 let val = initial_chunks.get(name).copied().unwrap_or(0);
                 AtomicU64::new(val)
             })
@@ -2032,21 +2085,21 @@ async fn redownload_asset(
     );
     let tmp_dir = game_dir.join(&tmp_dir_name);
     fs::create_dir_all(&tmp_dir)?;
+    let total_bytes: usize = asset.asset_chunks.iter().map(|c| c.chunk_name.len()).sum();
+    let mut chunk_names = ChunkNameArena::with_capacity(asset.asset_chunks.len(), total_bytes);
     let chunk_name_to_idx: HashMap<String, usize> = asset
         .asset_chunks
         .iter()
         .enumerate()
-        .map(|(i, c)| (c.chunk_name.clone(), i))
+        .map(|(i, c)| {
+            chunk_names.push(&c.chunk_name);
+            (c.chunk_name.clone(), i)
+        })
         .collect();
     let chunk_refcounts: Vec<AtomicUsize> = asset
         .asset_chunks
         .iter()
         .map(|_| AtomicUsize::new(1))
-        .collect();
-    let chunk_names: Vec<String> = asset
-        .asset_chunks
-        .iter()
-        .map(|c| c.chunk_name.clone())
         .collect();
     let result = assembly::assemble_file(
         asset,

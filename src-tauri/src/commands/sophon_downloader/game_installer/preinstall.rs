@@ -2170,21 +2170,28 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || {
             let tmp_dir = gd.join("tmp-patch-downloadover");
             fs::create_dir_all(&tmp_dir)?;
+            let total_bytes: usize = file_entry
+                .asset_chunks
+                .iter()
+                .map(|c| c.chunk_name.len())
+                .sum();
+            let mut chunk_names = super::installer::ChunkNameArena::with_capacity(
+                file_entry.asset_chunks.len(),
+                total_bytes,
+            );
             let chunk_name_to_idx: HashMap<String, usize> = file_entry
                 .asset_chunks
                 .iter()
                 .enumerate()
-                .map(|(i, c)| (c.chunk_name.clone(), i))
+                .map(|(i, c)| {
+                    chunk_names.push(&c.chunk_name);
+                    (c.chunk_name.clone(), i)
+                })
                 .collect();
             let chunk_refcounts: Vec<AtomicUsize> = file_entry
                 .asset_chunks
                 .iter()
                 .map(|_| AtomicUsize::new(1))
-                .collect();
-            let chunk_names: Vec<String> = file_entry
-                .asset_chunks
-                .iter()
-                .map(|c| c.chunk_name.clone())
                 .collect();
             let result = super::assembly::assemble_file(
                 &file_entry,

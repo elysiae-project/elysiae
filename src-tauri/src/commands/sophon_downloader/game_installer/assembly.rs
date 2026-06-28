@@ -18,6 +18,7 @@ thread_local! {
 
 use super::cache::VerificationEntry;
 use super::error::{SophonError, SophonResult};
+use super::installer::ChunkNameArena;
 use super::{FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
 use crate::commands::sophon_downloader::SophonProgress;
 use crate::commands::sophon_downloader::proto_parse::{
@@ -37,7 +38,7 @@ pub fn decrement_chunk_refcount(
     chunk_name: &str,
     chunk_name_to_idx: &HashMap<String, usize>,
     chunk_refcounts: &[AtomicUsize],
-    chunk_names: &[String],
+    chunk_names: &ChunkNameArena,
     chunks_dir: &Path,
 ) {
     if !validate_chunk_name(chunk_name) {
@@ -48,7 +49,7 @@ pub fn decrement_chunk_refcount(
     };
     let prev = chunk_refcounts[idx].fetch_sub(1, Ordering::AcqRel);
     if prev == 1 {
-        let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_names[idx])));
+        let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_names.get(idx))));
     }
 }
 
@@ -127,7 +128,7 @@ struct DecrementGuard<'a> {
     chunks: Vec<&'a str>,
     chunk_name_to_idx: &'a HashMap<String, usize>,
     chunk_refcounts: &'a [AtomicUsize],
-    chunk_names: &'a [String],
+    chunk_names: &'a ChunkNameArena,
     chunks_dir: &'a Path,
 }
 
@@ -152,7 +153,7 @@ pub fn assemble_file(
     temp_dir: &Path,
     chunk_name_to_idx: &HashMap<String, usize>,
     chunk_refcounts: &[AtomicUsize],
-    chunk_names: &[String],
+    chunk_names: &ChunkNameArena,
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
     validate_asset_name(&file.asset_name)?;
@@ -585,7 +586,7 @@ pub struct AssemblyTaskParams {
     pub chunks_dir: Arc<std::path::PathBuf>,
     pub chunk_refcounts: Arc<Vec<AtomicUsize>>,
     pub chunk_name_to_idx: Arc<HashMap<String, usize>>,
-    pub chunk_names: Arc<Vec<String>>,
+    pub chunk_names: Arc<ChunkNameArena>,
     pub verify_cache: Arc<DashMap<String, VerificationEntry>>,
     pub assembled_files: Arc<AtomicU64>,
     pub last_assembly_update: Arc<Mutex<Instant>>,
@@ -690,6 +691,14 @@ pub async fn spawn_assembly_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_chunk_names(names: &[&str]) -> (HashMap<String, usize>, ChunkNameArena) {
+        let mut arena = ChunkNameArena::from(names);
+        let map: HashMap<String, usize> = (0..names.len())
+            .map(|i| (arena.get(i).to_string(), i))
+            .collect();
+        (map, arena)
+    }
 
     #[test]
     fn validate_asset_name_empty() {
@@ -829,10 +838,8 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("chunk0".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunk0"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["chunk0".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -884,12 +891,8 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("chunkA".to_string(), 0), ("chunkB".to_string(), 1)]
-                .into_iter()
-                .collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunkA", "chunkB"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1), AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["chunkA".to_string(), "chunkB".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -935,10 +938,8 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("chunk_skip".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunk_skip"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["chunk_skip".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -987,10 +988,8 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("chunk_fix".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["chunk_fix"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["chunk_fix".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -1018,10 +1017,8 @@ mod tests {
         let chunk_file = chunks_dir.join("vanish.zstd");
         fs::write(&chunk_file, b"dummy").unwrap();
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("vanish".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["vanish"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["vanish".to_string()];
 
         decrement_chunk_refcount(
             "vanish",
@@ -1044,10 +1041,8 @@ mod tests {
         let chunk_file = chunks_dir.join("keep.zstd");
         fs::write(&chunk_file, b"dummy").unwrap();
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("keep".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["keep"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(2)];
-        let chunk_names: Vec<String> = vec!["keep".to_string()];
 
         decrement_chunk_refcount(
             "keep",
@@ -1106,7 +1101,7 @@ mod tests {
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
             chunk_name_to_idx: Arc::new(HashMap::new()),
-            chunk_names: Arc::new(Vec::new()),
+            chunk_names: Arc::new(ChunkNameArena::from([].as_slice())),
             verify_cache: Arc::new(DashMap::new()),
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
@@ -1155,10 +1150,8 @@ mod tests {
             asset_hash_md5: file_md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("ck0".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["ck0"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["ck0".to_string()];
         let verify_cache = DashMap::new();
 
         assemble_file(
@@ -1210,10 +1203,8 @@ mod tests {
             asset_hash_md5: file_md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> =
-            [("ck1".to_string(), 0)].into_iter().collect();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&["ck1"]);
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
-        let chunk_names: Vec<String> = vec!["ck1".to_string()];
         let verify_cache = DashMap::new();
 
         let result = assemble_file(
@@ -1253,7 +1244,7 @@ mod tests {
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
             chunk_name_to_idx: Arc::new(HashMap::new()),
-            chunk_names: Arc::new(Vec::new()),
+            chunk_names: Arc::new(ChunkNameArena::from([].as_slice())),
             verify_cache: Arc::new(DashMap::new()),
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
@@ -1600,9 +1591,8 @@ mod tests {
             asset_hash_md5: md5,
         };
 
-        let chunk_name_to_idx: HashMap<String, usize> = HashMap::new();
+        let (chunk_name_to_idx, chunk_names) = make_chunk_names(&[]);
         let chunk_refcounts: Vec<AtomicUsize> = Vec::new();
-        let chunk_names: Vec<String> = Vec::new();
         let verify_cache = DashMap::new();
 
         // This should reuse data from the existing file, not fail due to missing chunk
