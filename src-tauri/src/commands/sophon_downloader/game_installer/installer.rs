@@ -1013,7 +1013,7 @@ async fn process_download_item(
         was_actually_downloaded = true;
     }
     #[cfg(feature = "pipeline-profiling")]
-    _chunk_timer.record_phase(super::profiling::ChunkPhase::DownloadWait);
+    _chunk_timer.record_phase(super::profiling::ChunkPhase::Download);
 
     if was_actually_downloaded && item.is_pre_downloaded {
         ctx.resume_bytes_offset
@@ -1024,13 +1024,7 @@ async fn process_download_item(
     }
 
     #[cfg(feature = "pipeline-profiling")]
-    _chunk_timer.record_phase(super::profiling::ChunkPhase::StreamRead);
-    #[cfg(feature = "pipeline-profiling")]
-    if was_actually_downloaded {
-        ctx.profiler
-            .total_bytes_downloaded
-            .fetch_add(chunk.chunk_size, Ordering::Relaxed);
-    }
+    _chunk_timer.record_phase(super::profiling::ChunkPhase::PostDownload);
 
     if let Some(dc) = ctx.downloaded_chunks.get() {
         dc[item_idx].store(chunk.chunk_size, Ordering::Relaxed);
@@ -1135,7 +1129,7 @@ async fn process_download_item(
     notify_assembly_ready(item_idx, &chunk_entries, &chunk_entry_offsets, &assemble_tx);
 
     #[cfg(feature = "pipeline-profiling")]
-    _chunk_timer.finish();
+    _chunk_timer.finish(chunk.chunk_size, was_actually_downloaded);
 
     Ok(())
 }
@@ -1162,6 +1156,9 @@ async fn run_downloads(
     let remaining: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(total));
     let mut workers = tokio::task::JoinSet::new();
 
+    #[cfg(feature = "pipeline-profiling")]
+    ctx.profiler.total_chunks.store(total, Ordering::Relaxed);
+
     for _ in 0..WORKER_COUNT {
         let queue = Arc::clone(&queue);
         let ctx = Arc::clone(&ctx);
@@ -1178,6 +1175,8 @@ async fn run_downloads(
                 if handle.is_cancelled() {
                     return;
                 }
+                #[cfg(feature = "pipeline-profiling")]
+                let idle_start = std::time::Instant::now();
                 let (item_idx, item) = {
                     let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
                     match q.pop_front() {
@@ -1185,6 +1184,11 @@ async fn run_downloads(
                         None => break,
                     }
                 };
+                #[cfg(feature = "pipeline-profiling")]
+                {
+                    let idle_ns = idle_start.elapsed().as_nanos() as u64;
+                    ctx.profiler.record_idle(idle_ns);
+                }
                 let result = process_download_item(
                     item,
                     item_idx,

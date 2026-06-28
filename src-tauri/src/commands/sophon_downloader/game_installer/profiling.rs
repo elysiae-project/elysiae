@@ -1,21 +1,32 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::Instant;
 use tauri_plugin_log::log;
 
 pub struct PipelineProfiler {
     start: Instant,
 
-    // Download phase
-    pub semaphore_wait_ns: AtomicU64,
-    pub semaphore_wait_count: AtomicU64,
-    pub download_wait_ns: AtomicU64, // HTTP request + response time
-    pub download_wait_count: AtomicU64,
-    pub stream_read_ns: AtomicU64, // actual body streaming time
-    pub stream_read_count: AtomicU64,
-    pub verify_ns: AtomicU64, // check_needs_download verification
+    // Windowed download tracking
+    window_bytes: AtomicU64,
+    window_chunks: AtomicU64,
+    window_start_nanos: AtomicU64,
+
+    // Download phase (cumulative for ratio calculation)
+    pub download_ns: AtomicU64,
+    pub download_count: AtomicU64,
+    pub verify_ns: AtomicU64,
     pub verify_count: AtomicU64,
-    pub chunk_total_ns: AtomicU64, // end-to-end per chunk
-    pub chunk_total_count: AtomicU64,
+    pub post_download_ns: AtomicU64,
+    pub post_download_count: AtomicU64,
+
+    // Active worker tracking
+    active_downloads: AtomicUsize,
+    peak_active_downloads: AtomicUsize,
+
+    // Worker idle tracking (time between chunks in the worker loop)
+    idle_ns: AtomicU64,
+
+    // Windowed idle tracking
+    window_idle_ns: AtomicU64,
 
     // Assembly phase
     pub assembly_decompress_ns: AtomicU64,
@@ -26,23 +37,37 @@ pub struct PipelineProfiler {
     pub assembly_total_count: AtomicU64,
 
     pub total_bytes_downloaded: AtomicU64,
-    pub report_count: AtomicU64,
+    report_count: AtomicU64,
+
+    // Total chunks for progress
+    pub total_chunks: AtomicUsize,
+}
+
+static EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+
+#[inline]
+fn now_nanos() -> u64 {
+    EPOCH.elapsed().as_nanos() as u64
 }
 
 impl PipelineProfiler {
     pub fn new() -> Self {
+        let now = now_nanos();
         Self {
             start: Instant::now(),
-            semaphore_wait_ns: AtomicU64::new(0),
-            semaphore_wait_count: AtomicU64::new(0),
-            download_wait_ns: AtomicU64::new(0),
-            download_wait_count: AtomicU64::new(0),
-            stream_read_ns: AtomicU64::new(0),
-            stream_read_count: AtomicU64::new(0),
+            window_bytes: AtomicU64::new(0),
+            window_chunks: AtomicU64::new(0),
+            window_start_nanos: AtomicU64::new(now),
+            download_ns: AtomicU64::new(0),
+            download_count: AtomicU64::new(0),
             verify_ns: AtomicU64::new(0),
             verify_count: AtomicU64::new(0),
-            chunk_total_ns: AtomicU64::new(0),
-            chunk_total_count: AtomicU64::new(0),
+            post_download_ns: AtomicU64::new(0),
+            post_download_count: AtomicU64::new(0),
+            active_downloads: AtomicUsize::new(0),
+            peak_active_downloads: AtomicUsize::new(0),
+            idle_ns: AtomicU64::new(0),
+            window_idle_ns: AtomicU64::new(0),
             assembly_decompress_ns: AtomicU64::new(0),
             assembly_decompress_count: AtomicU64::new(0),
             assembly_write_ns: AtomicU64::new(0),
@@ -51,43 +76,63 @@ impl PipelineProfiler {
             assembly_total_count: AtomicU64::new(0),
             total_bytes_downloaded: AtomicU64::new(0),
             report_count: AtomicU64::new(0),
+            total_chunks: AtomicUsize::new(0),
         }
+    }
+
+    pub fn download_enter(&self) {
+        let prev = self.active_downloads.fetch_add(1, Ordering::Relaxed);
+        self.peak_active_downloads
+            .fetch_max(prev + 1, Ordering::Relaxed);
+    }
+
+    pub fn download_exit(&self) {
+        self.active_downloads.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn record_idle(&self, ns: u64) {
+        self.idle_ns.fetch_add(ns, Ordering::Relaxed);
+        self.window_idle_ns.fetch_add(ns, Ordering::Relaxed);
     }
 
     pub fn report(&self) {
         let count = self.report_count.fetch_add(1, Ordering::Relaxed) + 1;
         let elapsed = self.start.elapsed().as_secs_f64();
-        if elapsed < 0.5 {
+        if elapsed < 1.0 {
             return;
         }
 
-        let chunks = self.chunk_total_count.load(Ordering::Relaxed);
-        if chunks == 0 {
+        let total_chunks = self.download_count.load(Ordering::Relaxed);
+        if total_chunks == 0 {
             return;
         }
 
-        let total_bytes = self.total_bytes_downloaded.load(Ordering::Relaxed);
-        let throughput_mbps = total_bytes as f64 / elapsed / 1_048_576.0;
+        let now = now_nanos();
+        let window_start = self.window_start_nanos.swap(now, Ordering::Relaxed);
+        let window_elapsed_ns = now.saturating_sub(window_start);
+        let window_elapsed_s = window_elapsed_ns as f64 / 1_000_000_000.0;
 
-        let avg_semaphore_us = if self.semaphore_wait_count.load(Ordering::Relaxed) > 0 {
-            self.semaphore_wait_ns.load(Ordering::Relaxed) as f64
-                / self.semaphore_wait_count.load(Ordering::Relaxed) as f64
-                / 1000.0
+        let window_bytes = self.window_bytes.swap(0, Ordering::Relaxed);
+        let window_chunks = self.window_chunks.swap(0, Ordering::Relaxed);
+        let window_idle = self.window_idle_ns.swap(0, Ordering::Relaxed);
+
+        let window_throughput_mibs = if window_elapsed_s > 0.0 {
+            window_bytes as f64 / window_elapsed_s / 1_048_576.0
         } else {
             0.0
         };
 
-        let avg_download_us = if self.download_wait_count.load(Ordering::Relaxed) > 0 {
-            self.download_wait_ns.load(Ordering::Relaxed) as f64
-                / self.download_wait_count.load(Ordering::Relaxed) as f64
-                / 1000.0
-        } else {
-            0.0
+        let cumulative_throughput_mibs = {
+            let total_bytes = self.total_bytes_downloaded.load(Ordering::Relaxed);
+            total_bytes as f64 / elapsed / 1_048_576.0
         };
 
-        let avg_stream_us = if self.stream_read_count.load(Ordering::Relaxed) > 0 {
-            self.stream_read_ns.load(Ordering::Relaxed) as f64
-                / self.stream_read_count.load(Ordering::Relaxed) as f64
+        let active = self.active_downloads.load(Ordering::Relaxed);
+        let peak_active = self.peak_active_downloads.load(Ordering::Relaxed);
+
+        let avg_download_us = if self.download_count.load(Ordering::Relaxed) > 0 {
+            self.download_ns.load(Ordering::Relaxed) as f64
+                / self.download_count.load(Ordering::Relaxed) as f64
                 / 1000.0
         } else {
             0.0
@@ -101,25 +146,17 @@ impl PipelineProfiler {
             0.0
         };
 
-        let avg_chunk_us = if chunks > 0 {
-            self.chunk_total_ns.load(Ordering::Relaxed) as f64 / chunks as f64 / 1000.0
+        let avg_post_us = if self.post_download_count.load(Ordering::Relaxed) > 0 {
+            self.post_download_ns.load(Ordering::Relaxed) as f64
+                / self.post_download_count.load(Ordering::Relaxed) as f64
+                / 1000.0
         } else {
             0.0
         };
 
-        let avg_assembly_decompress_us =
-            if self.assembly_decompress_count.load(Ordering::Relaxed) > 0 {
-                self.assembly_decompress_ns.load(Ordering::Relaxed) as f64
-                    / self.assembly_decompress_count.load(Ordering::Relaxed) as f64
-                    / 1000.0
-            } else {
-                0.0
-            };
-
-        let avg_assembly_write_us = if self.assembly_write_count.load(Ordering::Relaxed) > 0 {
-            self.assembly_write_ns.load(Ordering::Relaxed) as f64
-                / self.assembly_write_count.load(Ordering::Relaxed) as f64
-                / 1000.0
+        let avg_chunk_us = avg_download_us + avg_verify_us + avg_post_us;
+        let download_pct = if avg_chunk_us > 0.0 {
+            avg_download_us / avg_chunk_us * 100.0
         } else {
             0.0
         };
@@ -132,42 +169,34 @@ impl PipelineProfiler {
             0.0
         };
 
-        let semaphore_pct = if avg_chunk_us > 0.0 {
-            avg_semaphore_us / avg_chunk_us * 100.0
-        } else {
-            0.0
-        };
-        let download_pct = if avg_chunk_us > 0.0 {
-            avg_download_us / avg_chunk_us * 100.0
-        } else {
-            0.0
-        };
-        let stream_pct = if avg_chunk_us > 0.0 {
-            avg_stream_us / avg_chunk_us * 100.0
-        } else {
-            0.0
-        };
-        let verify_pct = if avg_chunk_us > 0.0 {
-            avg_verify_us / avg_chunk_us * 100.0
+        let idle_s = window_idle as f64 / 1_000_000_000.0;
+        let total_worker_s =
+            self.total_chunks.load(Ordering::Relaxed) as f64 * avg_chunk_us / 1_000_000.0;
+        let total_available_s = elapsed * 128.0;
+        let utilization_pct = if total_available_s > 0.0 {
+            (total_worker_s / total_available_s * 100.0).min(100.0)
         } else {
             0.0
         };
 
-        log::info!(
-            "[PROFILE #{count}] elapsed={elapsed:.1}s chunks={chunks} throughput={throughput_mbps:.1}MiB/s",
-        );
-        log::info!(
-            "[PROFILE #{count}] chunk_avg={avg_chunk_us:.0}us semaphore_wait={avg_semaphore_us:.0}us({semaphore_pct:.0}%) http_transfer={avg_download_us:.0}us({download_pct:.0}%) post_download={avg_stream_us:.0}us({stream_pct:.0}%) verify={avg_verify_us:.0}us({verify_pct:.0}%)",
-        );
-        log::info!(
-            "[PROFILE #{count}] assembly_avg={avg_assembly_total_us:.0}us decompress={avg_assembly_decompress_us:.0}us write={avg_assembly_write_us:.0}us",
-        );
+        let remaining = self
+            .total_chunks
+            .load(Ordering::Relaxed)
+            .saturating_sub(total_chunks);
 
-        let download_pct = (avg_download_us + avg_stream_us) / avg_chunk_us * 100.0;
-        let overhead_pct = 100.0 - download_pct;
         log::info!(
-            "[PROFILE #{count}] transfer_portion={download_pct:.1}% overhead_portion={overhead_pct:.1}%",
+            "[PROFILE #{count}] elapsed={elapsed:.1}s chunks={total_chunks} remaining={remaining} \
+             window_throughput={window_throughput_mibs:.1}MiB/s cumulative_throughput={cumulative_throughput_mibs:.1}MiB/s"
         );
+        log::info!(
+            "[PROFILE #{count}] active={active}/{peak_active}peak workers=128 \
+             utilization={utilization_pct:.0}% idle={idle_s:.2}s"
+        );
+        log::info!(
+            "[PROFILE #{count}] per_chunk: download={avg_download_us:.0}us({download_pct:.0}%) \
+             verify={avg_verify_us:.0}us post={avg_post_us:.0}us"
+        );
+        log::info!("[PROFILE #{count}] assembly_avg={avg_assembly_total_us:.0}us");
     }
 }
 
@@ -179,6 +208,7 @@ pub struct ChunkTimer<'a> {
 
 impl<'a> ChunkTimer<'a> {
     pub fn new(profiler: &'a PipelineProfiler) -> Self {
+        profiler.download_enter();
         let now = Instant::now();
         Self {
             profiler,
@@ -193,54 +223,44 @@ impl<'a> ChunkTimer<'a> {
         let ns = elapsed.as_nanos() as u64;
 
         match phase {
-            ChunkPhase::SemaphoreWait => {
-                self.profiler
-                    .semaphore_wait_ns
-                    .fetch_add(ns, Ordering::Relaxed);
-                self.profiler
-                    .semaphore_wait_count
-                    .fetch_add(1, Ordering::Relaxed);
-            }
             ChunkPhase::Verify => {
                 self.profiler.verify_ns.fetch_add(ns, Ordering::Relaxed);
                 self.profiler.verify_count.fetch_add(1, Ordering::Relaxed);
             }
-            ChunkPhase::DownloadWait => {
-                self.profiler
-                    .download_wait_ns
-                    .fetch_add(ns, Ordering::Relaxed);
-                self.profiler
-                    .download_wait_count
-                    .fetch_add(1, Ordering::Relaxed);
+            ChunkPhase::Download => {
+                self.profiler.download_ns.fetch_add(ns, Ordering::Relaxed);
+                self.profiler.download_count.fetch_add(1, Ordering::Relaxed);
             }
-            ChunkPhase::StreamRead => {
+            ChunkPhase::PostDownload => {
                 self.profiler
-                    .stream_read_ns
+                    .post_download_ns
                     .fetch_add(ns, Ordering::Relaxed);
                 self.profiler
-                    .stream_read_count
+                    .post_download_count
                     .fetch_add(1, Ordering::Relaxed);
             }
         }
         self.phase_start = now;
     }
 
-    pub fn finish(self) {
-        let elapsed = self.start.elapsed().as_nanos() as u64;
-        self.profiler
-            .chunk_total_ns
-            .fetch_add(elapsed, Ordering::Relaxed);
-        self.profiler
-            .chunk_total_count
-            .fetch_add(1, Ordering::Relaxed);
+    pub fn finish(self, chunk_size: u64, was_downloaded: bool) {
+        self.profiler.download_exit();
+        if was_downloaded {
+            self.profiler
+                .window_bytes
+                .fetch_add(chunk_size, Ordering::Relaxed);
+            self.profiler
+                .total_bytes_downloaded
+                .fetch_add(chunk_size, Ordering::Relaxed);
+        }
+        self.profiler.window_chunks.fetch_add(1, Ordering::Relaxed);
     }
 }
 
 pub enum ChunkPhase {
-    SemaphoreWait,
     Verify,
-    DownloadWait,
-    StreamRead,
+    Download,
+    PostDownload,
 }
 
 pub struct AssemblyTimer<'a> {
@@ -257,7 +277,7 @@ impl<'a> AssemblyTimer<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn record_decompress_time(&self, duration: Duration) {
+    pub fn record_decompress_time(&self, duration: std::time::Duration) {
         let ns = duration.as_nanos() as u64;
         self.profiler
             .assembly_decompress_ns
@@ -268,7 +288,7 @@ impl<'a> AssemblyTimer<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn record_write_time(&self, duration: Duration) {
+    pub fn record_write_time(&self, duration: std::time::Duration) {
         let ns = duration.as_nanos() as u64;
         self.profiler
             .assembly_write_ns
