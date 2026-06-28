@@ -943,17 +943,15 @@ async fn process_download_item(
     }
 
     let _permit = if needs_download {
-        #[cfg(feature = "pipeline-profiling")]
-        _chunk_timer.record_phase(super::profiling::ChunkPhase::SemaphoreWait);
         Some(adaptive.acquire().await)
     } else {
         None
     };
+    #[cfg(feature = "pipeline-profiling")]
+    _chunk_timer.record_phase(super::profiling::ChunkPhase::SemaphoreWait);
 
     let mut was_actually_downloaded = false;
     if needs_download {
-        #[cfg(feature = "pipeline-profiling")]
-        _chunk_timer.record_phase(super::profiling::ChunkPhase::DownloadWait);
         download_chunk_with_retries(
             chunk,
             &ctx.installer_clients[item.installer_idx],
@@ -965,6 +963,8 @@ async fn process_download_item(
         .await?;
         was_actually_downloaded = true;
     }
+    #[cfg(feature = "pipeline-profiling")]
+    _chunk_timer.record_phase(super::profiling::ChunkPhase::DownloadWait);
 
     if was_actually_downloaded && item.is_pre_downloaded {
         ctx.resume_bytes_offset

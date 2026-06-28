@@ -157,7 +157,7 @@ impl PipelineProfiler {
             "[PROFILE #{count}] elapsed={elapsed:.1}s chunks={chunks} throughput={throughput_mbps:.1}MiB/s",
         );
         log::info!(
-            "[PROFILE #{count}] chunk_avg={avg_chunk_us:.0}us semaphore={avg_semaphore_us:.0}us({semaphore_pct:.0}%) download={avg_download_us:.0}us({download_pct:.0}%) stream={avg_stream_us:.0}us({stream_pct:.0}%) verify={avg_verify_us:.0}us({verify_pct:.0}%)",
+            "[PROFILE #{count}] chunk_avg={avg_chunk_us:.0}us semaphore_wait={avg_semaphore_us:.0}us({semaphore_pct:.0}%) http_transfer={avg_download_us:.0}us({download_pct:.0}%) post_download={avg_stream_us:.0}us({stream_pct:.0}%) verify={avg_verify_us:.0}us({verify_pct:.0}%)",
         );
         log::info!(
             "[PROFILE #{count}] assembly_avg={avg_assembly_total_us:.0}us decompress={avg_assembly_decompress_us:.0}us write={avg_assembly_write_us:.0}us",
@@ -166,7 +166,7 @@ impl PipelineProfiler {
         let download_pct = (avg_download_us + avg_stream_us) / avg_chunk_us * 100.0;
         let overhead_pct = 100.0 - download_pct;
         log::info!(
-            "[PROFILE #{count}] download_portion={download_pct:.1}% overhead_portion={overhead_pct:.1}%",
+            "[PROFILE #{count}] transfer_portion={download_pct:.1}% overhead_portion={overhead_pct:.1}%",
         );
     }
 }
