@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
 
 use futures_util::StreamExt;
 use libc;
@@ -7,10 +6,10 @@ use md5::{Digest, Md5};
 use reqwest::Client;
 use tauri_plugin_log::log;
 use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::time::timeout;
 
+use super::FILE_WRITE_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
-use super::{FILE_WRITE_BUFFER_SIZE, STREAM_POLL_INTERVAL_MS};
+use super::handle::DownloadHandle;
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
@@ -226,12 +225,14 @@ async fn do_download_chunk(
     download_full_file_with_response(resp, chunk, dest, handle).await
 }
 
-/// Optimized download using zero-copy buffers and buffer pooling.
+/// Download a full file from a response, streaming body chunks to disk with
+/// concurrent MD5 and optional XXH64 hashing. Uses tokio::select! for
+/// immediate cancellation response instead of a polling timeout.
 async fn download_full_file_with_response(
     resp: reqwest::Response,
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
-    handle: Option<&super::handle::DownloadHandle>,
+    handle: Option<&DownloadHandle>,
 ) -> SophonResult<()> {
     let content_length = resp.content_length();
     if let Some(len) = content_length
@@ -260,60 +261,52 @@ async fn download_full_file_with_response(
     let mut total_len = 0u64;
 
     loop {
-        match timeout(
-            Duration::from_millis(STREAM_POLL_INTERVAL_MS),
-            stream.next(),
-        )
-        .await
-        {
-            Ok(Some(chunk_bytes)) => match chunk_bytes {
-                Ok(bytes) => {
-                    if bytes.is_empty() && total_len < chunk.chunk_size {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Io(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "corrupted compressed data: empty chunk while data remaining",
-                        )));
-                    }
-                    total_len += bytes.len() as u64;
-                    if total_len > chunk.chunk_size {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::SizeMismatch {
-                            item: chunk.chunk_name.clone(),
-                            expected: chunk.chunk_size,
-                            actual: total_len,
-                        });
-                    }
-                    hasher.update(&bytes);
-                    if let Some(ref mut h) = xxh64_hasher {
-                        h.update(&bytes);
-                    }
-                    if let Err(err) = file.write_all(&bytes).await {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Io(err));
-                    }
-                    if let Some(handle) = handle
-                        && handle.is_cancelled()
-                    {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Cancelled);
-                    }
-                }
-                Err(_) => {
-                    let _ = tokio::fs::remove_file(dest).await;
-                    return Err(chunk_bytes.unwrap_err().into());
-                }
-            },
-            Ok(None) => break,
-            Err(_) => {
-                if let Some(handle) = handle
-                    && handle.is_cancelled()
-                {
+        let next_chunk = stream.next();
+        let result = if let Some(handle) = handle {
+            tokio::select! {
+                biased;
+                _ = handle.cancelled_future() => {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Cancelled);
                 }
-                continue;
+                result = next_chunk => result,
             }
+        } else {
+            next_chunk.await
+        };
+
+        match result {
+            Some(Ok(bytes)) => {
+                if bytes.is_empty() && total_len < chunk.chunk_size {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "corrupted compressed data: empty chunk while data remaining",
+                    )));
+                }
+                total_len += bytes.len() as u64;
+                if total_len > chunk.chunk_size {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::SizeMismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: chunk.chunk_size,
+                        actual: total_len,
+                    });
+                }
+                hasher.update(&bytes);
+                if let Some(ref mut h) = xxh64_hasher {
+                    h.update(&bytes);
+                }
+                if let Err(err) = file.write_all(&bytes).await {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(err));
+                }
+            }
+            Some(Err(e)) => {
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(e.into());
+            }
+            None => break,
         }
     }
 
@@ -388,7 +381,7 @@ async fn download_with_resume(
     chunk: &SophonManifestAssetChunk,
     dest: &Path,
     existing_size: u64,
-    handle: Option<&super::handle::DownloadHandle>,
+    handle: Option<&DownloadHandle>,
 ) -> SophonResult<()> {
     if resp.status() == reqwest::StatusCode::OK {
         let _ = tokio::fs::remove_file(dest).await;
@@ -448,60 +441,52 @@ async fn download_with_resume(
     let mut total_len = existing_size;
 
     loop {
-        match timeout(
-            Duration::from_millis(STREAM_POLL_INTERVAL_MS),
-            stream.next(),
-        )
-        .await
-        {
-            Ok(Some(chunk_bytes_res)) => match chunk_bytes_res {
-                Ok(bytes) => {
-                    if bytes.is_empty() && total_len < expected_total {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Io(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "corrupted compressed data: empty chunk while data remaining",
-                        )));
-                    }
-                    total_len += bytes.len() as u64;
-                    if total_len > expected_total {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::SizeMismatch {
-                            item: chunk.chunk_name.clone(),
-                            expected: expected_total,
-                            actual: total_len,
-                        });
-                    }
-                    if let Err(err) = file.write_all(&bytes).await {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Io(err));
-                    }
-                    hasher.update(&bytes);
-                    if let Some(ref mut h) = xxh64_hasher {
-                        h.update(&bytes);
-                    }
-                    if let Some(handle) = handle
-                        && handle.is_cancelled()
-                    {
-                        let _ = tokio::fs::remove_file(dest).await;
-                        return Err(SophonError::Cancelled);
-                    }
-                }
-                Err(_) => {
-                    let _ = tokio::fs::remove_file(dest).await;
-                    return Err(chunk_bytes_res.unwrap_err().into());
-                }
-            },
-            Ok(None) => break,
-            Err(_) => {
-                if let Some(handle) = handle
-                    && handle.is_cancelled()
-                {
+        let next_chunk = stream.next();
+        let result = if let Some(handle) = handle {
+            tokio::select! {
+                biased;
+                _ = handle.cancelled_future() => {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Cancelled);
                 }
-                continue;
+                result = next_chunk => result,
             }
+        } else {
+            next_chunk.await
+        };
+
+        match result {
+            Some(Ok(bytes)) => {
+                if bytes.is_empty() && total_len < expected_total {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "corrupted compressed data: empty chunk while data remaining",
+                    )));
+                }
+                total_len += bytes.len() as u64;
+                if total_len > expected_total {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::SizeMismatch {
+                        item: chunk.chunk_name.clone(),
+                        expected: expected_total,
+                        actual: total_len,
+                    });
+                }
+                if let Err(err) = file.write_all(&bytes).await {
+                    let _ = tokio::fs::remove_file(dest).await;
+                    return Err(SophonError::Io(err));
+                }
+                hasher.update(&bytes);
+                if let Some(ref mut h) = xxh64_hasher {
+                    h.update(&bytes);
+                }
+            }
+            Some(Err(e)) => {
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(e.into());
+            }
+            None => break,
         }
     }
 

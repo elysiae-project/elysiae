@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use tauri_plugin_log::log;
 use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 use super::error::{SophonError, SophonResult};
 use crate::commands::sophon_downloader::SophonProgress;
@@ -23,6 +24,7 @@ pub enum ControlState {
 #[derive(Clone)]
 pub struct DownloadHandle {
     state: Arc<AtomicU8>,
+    cancel_token: CancellationToken,
     pause_notify: Arc<Notify>,
 }
 
@@ -30,6 +32,7 @@ impl DownloadHandle {
     pub fn new() -> Self {
         Self {
             state: Arc::new(AtomicU8::new(STATE_RUNNING)),
+            cancel_token: CancellationToken::new(),
             pause_notify: Arc::new(Notify::new()),
         }
     }
@@ -76,11 +79,16 @@ impl DownloadHandle {
 
     pub fn cancel(&self) {
         self.state.store(STATE_CANCELLED, Ordering::Release);
+        self.cancel_token.cancel();
         self.pause_notify.notify_waiters();
     }
 
     pub fn is_cancelled(&self) -> bool {
         self.state.load(Ordering::Acquire) == STATE_CANCELLED
+    }
+
+    pub fn cancelled_future(&self) -> tokio_util::sync::WaitForCancellationFuture<'_> {
+        self.cancel_token.cancelled()
     }
 
     fn get_state(&self) -> ControlState {
