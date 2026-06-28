@@ -524,13 +524,13 @@ fn compute_totals(all_files: &[SophonManifestAssetProperty]) -> (u64, u64) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn register_chunks_for_file(
-    file: &SophonManifestAssetProperty,
+fn register_chunks_for_file<'a>(
+    file: &'a SophonManifestAssetProperty,
     file_idx: usize,
     tmp_dir_idx: usize,
     chunk_entries: &mut Vec<Vec<FileEntry>>,
     download_items: &mut Vec<DownloadItem>,
-    download_items_index: &mut HashMap<String, usize>,
+    download_items_index: &mut HashMap<&'a str, usize>,
     chunk_refcounts: &mut Vec<AtomicUsize>,
     installer_idx: usize,
     pre_downloaded: &HashMap<String, u64>,
@@ -565,7 +565,7 @@ fn register_chunks_for_file(
                 installer_idx,
                 is_pre_downloaded: is_pre,
             });
-            download_items_index.insert(chunk.chunk_name.clone(), idx);
+            download_items_index.insert(name, idx);
             idx
         };
 
@@ -601,7 +601,7 @@ async fn build_download_state(
         .map(|f| f.asset_chunks.len())
         .fold(0usize, |acc, x| acc.saturating_add(x));
     let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
-    let mut download_items_index: HashMap<String, usize> = HashMap::with_capacity(total_chunks);
+    let mut download_items_index: HashMap<&str, usize> = HashMap::with_capacity(total_chunks);
     let mut chunk_entries: Vec<Vec<FileEntry>> = Vec::with_capacity(total_chunks);
     let mut chunk_refcounts: Vec<AtomicUsize> = Vec::with_capacity(total_chunks);
 
