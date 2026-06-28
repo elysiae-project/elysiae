@@ -48,7 +48,7 @@ pub struct DownloadState {
     pub downloaded_chunks: HashMap<String, u64>,
 }
 
-pub const CHUNK_STATE_SAVE_INTERVAL: u64 = 25;
+pub const CHUNK_STATE_SAVE_INTERVAL: u64 = 500;
 
 /// Summary of persisted download state returned to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
