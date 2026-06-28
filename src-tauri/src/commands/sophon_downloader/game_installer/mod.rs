@@ -63,16 +63,16 @@ pub async fn cancelable_sleep(
     }
 }
 /// Maximum concurrent file assembly tasks.
-pub const ASSEMBLY_CONCURRENCY: usize = 2;
+pub const ASSEMBLY_CONCURRENCY: usize = 8;
 /// Size of the channel buffer for assembly task scheduling.
-pub const ASSEMBLY_CHANNEL_SIZE: usize = 64;
+pub const ASSEMBLY_CHANNEL_SIZE: usize = 4096;
 /// Filename for the installed version marker file.
 pub const VERSION_FILE_NAME: &str = ".sophon_version";
 /// Filename for the MD5 verification cache.
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
 /// Buffer size for file writes during assembly.
-pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
+pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
 
 /// Minimum interval between progress updates (ms).
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
@@ -128,13 +128,13 @@ pub fn compute_eta_speed(
 }
 
 /// Minimum concurrent downloads in adaptive mode.
-pub const ADAPTIVE_MIN_CONCURRENCY: usize = 8;
+pub const ADAPTIVE_MIN_CONCURRENCY: usize = 32;
 /// Maximum concurrent downloads in adaptive mode.
 pub fn adaptive_max_concurrency() -> usize {
     64
 }
 /// Initial concurrent downloads in adaptive mode.
-pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 32;
+pub const ADAPTIVE_INITIAL_CONCURRENCY: usize = 64;
 /// Time window for throughput measurement (seconds).
 pub const ADAPTIVE_WINDOW_SECS: u64 = 1;
 

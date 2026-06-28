@@ -715,15 +715,31 @@ fn spawn_assembly_coordinator(
                     }
                 }
             } else {
-                // No completed assembly tasks yet — yield briefly so we don't
-                // spin-loop, but stay responsive to new channel entries and
-                // cancellation.
                 tokio::select! {
                     biased;
                     _ = cancel.cancelled() => {
                         return drain_join_set(&mut join_set).await;
                     }
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+                    msg = rx.recv() => {
+                        let Some((file_idx, tmp_dir_idx)) = msg else {
+                            return drain_join_set(&mut join_set).await;
+                        };
+                        let params = make_assembly_params(&ctx, file_idx, tmp_dir_idx);
+                        let updater = Arc::clone(&ctx.updater);
+                        join_set.spawn(spawn_assembly_task(params, move |p| updater(p)));
+                    }
+                    res = join_set.join_next() => {
+                        match res {
+                            Some(Ok(Ok(()))) => {}
+                            Some(Ok(Err(err))) => {
+                                log::error!("Assembly task failed: {err}");
+                            }
+                            Some(Err(err)) => {
+                                log::error!("Assembly task join error: {err}");
+                            }
+                            None => {}
+                        }
+                    }
                 }
             }
         }
