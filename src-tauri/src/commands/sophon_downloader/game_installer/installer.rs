@@ -533,7 +533,7 @@ fn register_chunks_for_file(
     download_items_index: &mut HashMap<String, usize>,
     chunk_refcounts: &mut Vec<AtomicUsize>,
     installer_idx: usize,
-    pre_downloaded: &HashSet<String>,
+    pre_downloaded: &HashMap<String, u64>,
 ) {
     let downloadable: Vec<(usize, &SophonManifestAssetChunk)> = file
         .asset_chunks
@@ -550,7 +550,7 @@ fn register_chunks_for_file(
     let pending = Arc::new(AtomicUsize::new(chunk_count));
     for (chunk_idx, chunk) in downloadable {
         let name = chunk.chunk_name.as_str();
-        let is_pre = pre_downloaded.contains(name);
+        let is_pre = pre_downloaded.contains_key(name);
 
         let item_idx = if let Some(&idx) = download_items_index.get(name) {
             if is_pre {
@@ -586,7 +586,7 @@ async fn build_download_state(
     ctx: &InstallContext,
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     completed_indices: Option<&HashSet<usize>>,
-    pre_downloaded: &HashSet<String>,
+    pre_downloaded: &HashMap<String, u64>,
 ) -> SophonResult<(
     Vec<DownloadItem>,
     Arc<Vec<FileEntry>>,
@@ -1527,11 +1527,6 @@ pub async fn install(
     } else if game_code == "nap" {
         super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
     }
-    let filtered_set: HashSet<String> = all_files
-        .iter()
-        .map(|f| f.asset_name.as_str().to_owned())
-        .collect();
-    all_files.retain(|f| filtered_set.contains(f.asset_name.as_str()));
     for d in &mut installer_data {
         d.file_count = 0;
     }
@@ -1568,12 +1563,6 @@ pub async fn install(
         );
     }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
-
-    let pre_downloaded: HashSet<String> = if options.is_resume {
-        prev_downloaded_chunks.keys().cloned().collect()
-    } else {
-        HashSet::new()
-    };
 
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
@@ -1696,13 +1685,11 @@ pub async fn install(
         None
     };
 
-    for chunk_name in &pre_downloaded {
+    for (chunk_name, &size) in &prev_downloaded_chunks {
         if completed_chunk_names.contains(chunk_name.as_str()) {
             continue;
         }
-        if let Some(&size) = prev_downloaded_chunks.get(chunk_name) {
-            resume_bytes_offset += size;
-        }
+        resume_bytes_offset += size;
     }
 
     let initial_chunks = if options.is_resume {
@@ -1788,7 +1775,7 @@ pub async fn install(
         &ctx,
         &assemble_tx,
         completed_indices.as_ref(),
-        &pre_downloaded,
+        &initial_chunks,
     )
     .await?;
 
