@@ -179,7 +179,7 @@ impl PipelineProfiler {
         let idle_s = window_idle as f64 / 1_000_000_000.0;
         let total_worker_s =
             self.total_chunks.load(Ordering::Relaxed) as f64 * avg_chunk_us / 1_000_000.0;
-        let total_available_s = elapsed * 128.0;
+        let total_available_s = elapsed * 64.0;
         let utilization_pct = if total_available_s > 0.0 {
             (total_worker_s / total_available_s * 100.0).min(100.0)
         } else {
@@ -196,7 +196,7 @@ impl PipelineProfiler {
              window_throughput={window_throughput_mibs:.1}MiB/s cumulative_throughput={cumulative_throughput_mibs:.1}MiB/s"
         );
         log::info!(
-            "[PROFILE #{count}] active={active}/{peak_active}peak workers=128 \
+            "[PROFILE #{count}] active={active}/{peak_active}peak workers=64 \
              utilization={utilization_pct:.0}% idle={idle_s:.2}s"
         );
         log::info!(
