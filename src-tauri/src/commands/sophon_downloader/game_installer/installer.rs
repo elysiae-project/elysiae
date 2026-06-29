@@ -1485,29 +1485,34 @@ pub async fn install(
     if game_code == "nap" {
         super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
     }
-    let mut file_installer_map: HashMap<String, usize> = HashMap::new();
-    let mut idx: usize = 0;
-    for (inst_idx, d) in installer_data.iter().enumerate() {
-        for _ in 0..d.file_count {
-            if idx < all_files.len() {
-                file_installer_map.insert(all_files[idx].asset_name.clone(), inst_idx);
+    {
+        let file_installer_map: HashMap<String, usize> = {
+            let mut m = HashMap::with_capacity(all_files.len());
+            let mut idx: usize = 0;
+            for (inst_idx, d) in installer_data.iter().enumerate() {
+                for _ in 0..d.file_count {
+                    if idx < all_files.len() {
+                        m.insert(all_files[idx].asset_name.clone(), inst_idx);
+                    }
+                    idx += 1;
+                }
             }
-            idx += 1;
+            m
+        };
+        if game_code == "hkrpg" {
+            super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
+        } else if game_code == "hk4e" {
+            super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
+        } else if game_code == "nap" {
+            super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
         }
-    }
-    if game_code == "hkrpg" {
-        super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
-    } else if game_code == "hk4e" {
-        super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
-    } else if game_code == "nap" {
-        super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
-    }
-    for d in &mut installer_data {
-        d.file_count = 0;
-    }
-    for f in all_files.iter() {
-        if let Some(inst_idx) = file_installer_map.get(&f.asset_name) {
-            installer_data[*inst_idx].file_count += 1;
+        for d in &mut installer_data {
+            d.file_count = 0;
+        }
+        for f in all_files.iter() {
+            if let Some(&inst_idx) = file_installer_map.get(&f.asset_name) {
+                installer_data[inst_idx].file_count += 1;
+            }
         }
     }
     let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
