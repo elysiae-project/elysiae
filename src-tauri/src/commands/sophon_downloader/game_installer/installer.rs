@@ -1679,10 +1679,11 @@ pub async fn install(
         HashMap::new()
     };
 
+    let download_client = Arc::new(super::super::DownloadClient::new().0);
     let installer_clients: Arc<Vec<Arc<Client>>> = Arc::new(
         installer_data
             .iter()
-            .map(|d| Arc::clone(&d.client))
+            .map(|_| Arc::clone(&download_client))
             .collect(),
     );
     let installer_downloads: Arc<Vec<Arc<DownloadInfo>>> = Arc::new(
