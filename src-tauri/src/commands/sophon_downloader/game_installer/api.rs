@@ -123,10 +123,13 @@ pub async fn fetch_build(
     );
 
     let resp: SophonBuildResponse = fetch_json_with_retry(client, &url, 35).await?;
-    if resp.data.manifests.is_empty() {
+    let data = resp
+        .data
+        .ok_or_else(|| SophonError::ApiError(resp.retcode, resp.message))?;
+    if data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
-    Ok(resp.data)
+    Ok(data)
 }
 
 pub const SOPHON_PATCH_BUILD_URL_BASE: &str = concat!(
@@ -150,10 +153,13 @@ pub async fn fetch_patch_build(
     let raw_resp =
         tokio::time::timeout(Duration::from_secs(35), client.post(&url).send()).await??;
     let resp: SophonPatchBuildResponse = raw_resp.error_for_status()?.json().await?;
-    if resp.data.manifests.is_empty() {
+    let data = resp
+        .data
+        .ok_or_else(|| SophonError::ApiError(resp.retcode, resp.message))?;
+    if data.manifests.is_empty() {
         return Err(SophonError::NoManifests);
     }
-    Ok(resp.data)
+    Ok(data)
 }
 
 pub struct PatchManifestWithMeta {

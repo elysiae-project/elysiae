@@ -42,7 +42,7 @@ pub struct PackageBranch {
 pub struct SophonBuildResponse {
     pub retcode: i32,
     pub message: String,
-    pub data: SophonBuildData,
+    pub data: Option<SophonBuildData>,
 }
 
 #[allow(dead_code)]
@@ -219,7 +219,7 @@ pub struct Stats {
 pub struct SophonPatchBuildResponse {
     pub retcode: i32,
     pub message: String,
-    pub data: SophonPatchBuildData,
+    pub data: Option<SophonPatchBuildData>,
 }
 
 #[allow(dead_code)]
