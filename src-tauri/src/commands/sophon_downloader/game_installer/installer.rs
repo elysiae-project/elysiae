@@ -1535,6 +1535,7 @@ pub async fn install(
         );
     }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
+    log::info!("MEMORY: verify_cache={} entries", verify_cache.len());
 
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
@@ -1665,6 +1666,18 @@ pub async fn install(
     }
 
     let initial_chunks = if options.is_resume {
+        let chunk_name_bytes: usize = prev_downloaded_chunks.keys().map(|k| k.len()).sum();
+        log::info!(
+            "MEMORY: prev_downloaded_chunks={} entries, ~{:.1}MB (keys={}B + vals={}B + overhead=~{}B)",
+            prev_downloaded_chunks.len(),
+            (chunk_name_bytes
+                + prev_downloaded_chunks.len() * 8
+                + prev_downloaded_chunks.len() * 48) as f64
+                / 1_048_576.0,
+            chunk_name_bytes,
+            prev_downloaded_chunks.len() * 8,
+            prev_downloaded_chunks.len() * 48,
+        );
         prev_downloaded_chunks
     } else {
         HashMap::new()

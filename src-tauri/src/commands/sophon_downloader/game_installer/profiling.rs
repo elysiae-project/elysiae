@@ -2,6 +2,13 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 use tauri_plugin_log::log;
 
+fn process_rss_mb() -> Option<f64> {
+    let data = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let resident_pages: u64 = data.split_whitespace().nth(1)?.parse().ok()?;
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 };
+    Some(resident_pages as f64 * page_size as f64 / 1_048_576.0)
+}
+
 pub struct PipelineProfiler {
     start: Instant,
 
@@ -197,6 +204,10 @@ impl PipelineProfiler {
              verify={avg_verify_us:.0}us post={avg_post_us:.0}us"
         );
         log::info!("[PROFILE #{count}] assembly_avg={avg_assembly_total_us:.0}us");
+
+        if let Some(rss) = process_rss_mb() {
+            log::info!("[PROFILE #{count}] rss={rss:.0}MB");
+        }
     }
 }
 
