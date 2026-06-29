@@ -9,7 +9,7 @@ pub struct PipelineProfiler {
     #[cfg(feature = "pipeline-profiling")]
     window_chunks: AtomicU64,
     #[cfg(feature = "pipeline-profiling")]
-    window_start_nanos: AtomicU64,
+    last_report_nanos: AtomicU64,
     pub download_ns: AtomicU64,
     pub download_count: AtomicU64,
     pub verify_ns: AtomicU64,
@@ -39,11 +39,6 @@ pub struct PipelineProfiler {
 
 impl PipelineProfiler {
     pub fn new() -> Self {
-        #[cfg(feature = "pipeline-profiling")]
-        let now = {
-            static EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
-            EPOCH.elapsed().as_nanos() as u64
-        };
         Self {
             #[cfg(feature = "pipeline-profiling")]
             start: Instant::now(),
@@ -52,7 +47,7 @@ impl PipelineProfiler {
             #[cfg(feature = "pipeline-profiling")]
             window_chunks: AtomicU64::new(0),
             #[cfg(feature = "pipeline-profiling")]
-            window_start_nanos: AtomicU64::new(now),
+            last_report_nanos: AtomicU64::new(0),
             download_ns: AtomicU64::new(0),
             download_count: AtomicU64::new(0),
             verify_ns: AtomicU64::new(0),
@@ -126,17 +121,18 @@ impl PipelineProfiler {
                 return;
             }
 
-            static EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
-            let now = EPOCH.elapsed().as_nanos() as u64;
-            let window_start = self.window_start_nanos.swap(now, Ordering::Relaxed);
-            let window_elapsed_ns = now.saturating_sub(window_start);
+            let elapsed_since_start = self.start.elapsed().as_nanos() as u64;
+            let last_report = self
+                .last_report_nanos
+                .swap(elapsed_since_start, Ordering::Relaxed);
+            let window_elapsed_ns = elapsed_since_start.saturating_sub(last_report);
             let window_elapsed_s = window_elapsed_ns as f64 / 1_000_000_000.0;
 
             let window_bytes = self.window_bytes.swap(0, Ordering::Relaxed);
             let _window_chunks = self.window_chunks.swap(0, Ordering::Relaxed);
             let window_idle = self.window_idle_ns.swap(0, Ordering::Relaxed);
 
-            let window_throughput_mibs = if window_elapsed_s > 0.0 {
+            let window_throughput_mibs = if window_elapsed_s > 0.001 {
                 window_bytes as f64 / window_elapsed_s / 1_048_576.0
             } else {
                 0.0
