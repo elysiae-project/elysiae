@@ -438,6 +438,8 @@ async fn build_diff_installers(
                     .unwrap_or(-1);
             }
         }
+        drop(old_chunk_offsets);
+        drop(old_md5_map);
 
         if diff_files.is_empty() {
             continue;
