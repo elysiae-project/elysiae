@@ -78,8 +78,8 @@ pub struct SophonManifestAssetChunk {
 }
 
 #[inline]
-pub fn decode_manifest(buf: &[u8]) -> Result<SophonManifestProto, prost::DecodeError> {
-    SophonManifestProto::decode(buf)
+pub fn decode_manifest(buf: impl AsRef<[u8]>) -> Result<SophonManifestProto, prost::DecodeError> {
+    SophonManifestProto::decode(buf.as_ref())
 }
 
 #[derive(Clone, PartialEq, Message)]
@@ -176,8 +176,10 @@ pub struct SophonUnusedAssetFile {
 }
 
 #[inline]
-pub fn decode_patch_manifest(buf: &[u8]) -> Result<SophonPatchProto, prost::DecodeError> {
-    SophonPatchProto::decode(buf)
+pub fn decode_patch_manifest(
+    buf: impl AsRef<[u8]>,
+) -> Result<SophonPatchProto, prost::DecodeError> {
+    SophonPatchProto::decode(buf.as_ref())
 }
 
 #[cfg(test)]

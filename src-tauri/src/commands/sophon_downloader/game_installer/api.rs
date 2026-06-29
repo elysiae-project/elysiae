@@ -93,8 +93,8 @@ pub async fn fetch_manifest(
         .await
         .map_err(|_| SophonError::Timeout(300))??;
 
-    let raw = if dl.is_compressed() {
-        tokio::task::spawn_blocking(move || {
+    let manifest: SophonManifestProto = if dl.is_compressed() {
+        let raw = tokio::task::spawn_blocking(move || {
             let tmp = tempfile::NamedTempFile::new()?;
             {
                 let mut f = tmp.as_file();
@@ -104,13 +104,11 @@ pub async fn fetch_manifest(
             let raw = decompress_zstd_from_file(tmp.path())?;
             Ok::<Vec<u8>, SophonError>(raw)
         })
-        .await??
+        .await??;
+        decode_manifest(&raw).map_err(SophonError::ManifestDecode)?
     } else {
-        bytes.to_vec()
+        decode_manifest(&bytes).map_err(SophonError::ManifestDecode)?
     };
-
-    let manifest: SophonManifestProto =
-        decode_manifest(&raw).map_err(SophonError::ManifestDecode)?;
     let hash = compute_content_manifest_hash(&manifest);
     Ok(ManifestWithHash { manifest, hash })
 }
