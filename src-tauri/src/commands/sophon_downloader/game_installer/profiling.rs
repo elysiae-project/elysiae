@@ -189,7 +189,7 @@ impl PipelineProfiler {
         let remaining = self
             .total_chunks
             .load(Ordering::Relaxed)
-            .saturating_sub(total_chunks);
+            .saturating_sub(total_chunks as usize);
 
         log::info!(
             "[PROFILE #{count}] elapsed={elapsed:.1}s chunks={total_chunks} remaining={remaining} \
