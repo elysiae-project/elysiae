@@ -974,8 +974,8 @@ async fn process_download_item(
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(chunk));
 
     let needs_download = if item.is_pre_downloaded {
-        _chunk_timer.record_phase(super::profiling::ChunkPhase::Verify);
         let result = check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
+        _chunk_timer.record_phase(super::profiling::ChunkPhase::Verify);
         result
     } else {
         true
