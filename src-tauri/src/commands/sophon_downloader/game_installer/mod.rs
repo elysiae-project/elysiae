@@ -59,7 +59,7 @@ pub async fn cancelable_sleep(
     }
 }
 /// Max concurrent assembly tasks.
-pub const ASSEMBLY_CONCURRENCY: usize = 8;
+pub const ASSEMBLY_CONCURRENCY: usize = 4;
 /// Assembly task channel buffer size.
 pub const ASSEMBLY_CHANNEL_SIZE: usize = 4096;
 /// Installed version marker filename.
@@ -68,7 +68,7 @@ pub const VERSION_FILE_NAME: &str = ".sophon_version";
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
 /// File write buffer during assembly.
-pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
+pub const FILE_WRITE_BUFFER_SIZE: usize = 256 * 1024;
 /// File write buffer during chunk downloads.
 pub const CHUNK_WRITE_BUFFER_SIZE: usize = 256 * 1024;
 
