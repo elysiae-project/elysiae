@@ -629,7 +629,7 @@ async fn process_preinstall_chunk(
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn preinstall_download(
-    client: &Client,
+    download_client: &Client,
     plan: &PreinstallPlan,
     game_dir: &Path,
     game_id: &str,
@@ -689,7 +689,7 @@ pub async fn preinstall_download(
     }
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
-    const WORKER_COUNT: usize = 64;
+    const WORKER_COUNT: usize = 16;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let queue: Arc<Mutex<VecDeque<PatchChunkInfo>>> =
@@ -701,7 +701,7 @@ pub async fn preinstall_download(
         let cancelled = Arc::clone(&cancelled);
         let first_error = Arc::clone(&first_error);
         let chunk_bytes_map_clone = Arc::clone(&chunk_bytes_map);
-        let client_clone = client.clone();
+        let client_clone = download_client.clone();
         let diff_download_clone = plan.diff_download.clone();
         let chunks_dir_clone = chunks_dir.clone();
         let handle_clone = handle.clone();

@@ -787,8 +787,9 @@ pub async fn sophon_preinstall(
     let saver = make_state_saver(&app_handle, &state);
     let app_clone = app_handle.clone();
 
+    let download_client = DownloadClient::new().0;
     let result = game_installer::preinstall_download(
-        &client.0,
+        &download_client,
         &plan,
         &game_dir,
         &game_id,
@@ -906,8 +907,9 @@ pub async fn sophon_resume_download(
         *active.0.lock().await = Some(handle.clone());
 
         let app_clone = app_handle.clone();
+        let download_client = DownloadClient::new().0;
         let result = game_installer::preinstall_download(
-            &client.0,
+            &download_client,
             &plan,
             &game_dir,
             &game_id,
