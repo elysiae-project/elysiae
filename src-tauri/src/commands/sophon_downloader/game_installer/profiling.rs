@@ -9,6 +9,27 @@ fn process_rss_mb() -> Option<f64> {
     Some(resident_pages as f64 * page_size as f64 / 1_048_576.0)
 }
 
+fn jemalloc_stats_mb() -> Option<(f64, f64, f64, f64, f64)> {
+    #[cfg(not(target_env = "msvc"))]
+    {
+        let allocated: usize = tikv_jemalloc_ctl::stats::allocated::read().ok()?;
+        let active: usize = tikv_jemalloc_ctl::stats::active::read().ok()?;
+        let resident: usize = tikv_jemalloc_ctl::stats::resident::read().ok()?;
+        let mapped: usize = tikv_jemalloc_ctl::stats::mapped::read().ok()?;
+        let retained: usize = tikv_jemalloc_ctl::stats::retained::read().ok()?;
+        let mb = |v: usize| v as f64 / 1_048_576.0;
+        Some((
+            mb(allocated),
+            mb(active),
+            mb(resident),
+            mb(mapped),
+            mb(retained),
+        ))
+    }
+    #[cfg(target_env = "msvc")]
+    None
+}
+
 pub struct PipelineProfiler {
     start: Instant,
 
@@ -206,7 +227,14 @@ impl PipelineProfiler {
         log::info!("[PROFILE #{count}] assembly_avg={avg_assembly_total_us:.0}us");
 
         if let Some(rss) = process_rss_mb() {
-            log::info!("[PROFILE #{count}] rss={rss:.0}MB");
+            if let Some((allocated, active, resident, mapped, retained)) = jemalloc_stats_mb() {
+                let non_jemalloc = (rss - resident).max(0.0);
+                log::info!(
+                    "[PROFILE #{count}] rss={rss:.0}MB jemalloc: allocated={allocated:.0}MB active={active:.0}MB resident={resident:.0}MB mapped={mapped:.0}MB retained={retained:.0}MB non_jemalloc={non_jemalloc:.0}MB"
+                );
+            } else {
+                log::info!("[PROFILE #{count}] rss={rss:.0}MB");
+            }
         }
     }
 }
