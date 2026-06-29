@@ -13,6 +13,22 @@ use super::handle::DownloadHandle;
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
+/// Evict file pages from the OS page cache. Silently ignores errors.
+pub(crate) fn evict_from_page_cache(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return;
+    };
+    let fd = unsafe { libc::open(cpath.as_ptr(), libc::O_RDONLY) };
+    if fd < 0 {
+        return;
+    }
+    unsafe {
+        libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED);
+        libc::close(fd);
+    }
+}
+
 fn get_available_space(path: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let cpath = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
@@ -368,6 +384,8 @@ async fn download_full_file_with_response(
         );
     }
 
+    evict_from_page_cache(dest);
+
     Ok(())
 }
 
@@ -547,6 +565,8 @@ async fn download_with_resume(
             name = chunk.chunk_name
         );
     }
+
+    evict_from_page_cache(dest);
 
     Ok(())
 }

@@ -363,6 +363,8 @@ pub fn assemble_file(
         }
     }
 
+    super::download::evict_from_page_cache(&target_path);
+
     transfer_buffer.clear();
     TRANSFER_BUF.with(|cell| cell.replace(transfer_buffer));
 
@@ -378,82 +380,83 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
-    // Use optimized path for large chunks.
     const OPT_THRESHOLD: u64 = 1024 * 1024;
-    if expected_size >= OPT_THRESHOLD {
-        return super::assembly_opt::decompress_chunk_optimized(
+    let result = if expected_size >= OPT_THRESHOLD {
+        super::assembly_opt::decompress_chunk_optimized(
             chunk_path,
             writer,
             offset,
             expected_size,
             file_hasher,
             chunk_decompressed_hash_md5,
-        );
-    }
-
-    let f = File::open(chunk_path)?;
-    let buf_reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
-    let mut decoder = zstd::Decoder::new(buf_reader)?;
-    let window_log: u32 = if cfg!(target_pointer_width = "64") {
-        26
+        )
     } else {
-        25
-    };
-    decoder.set_parameter(zstd::zstd_safe::DParameter::WindowLogMax(window_log))?;
+        let f = File::open(chunk_path)?;
+        let buf_reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
+        let mut decoder = zstd::Decoder::new(buf_reader)?;
+        let window_log: u32 = if cfg!(target_pointer_width = "64") {
+            26
+        } else {
+            25
+        };
+        decoder.set_parameter(zstd::zstd_safe::DParameter::WindowLogMax(window_log))?;
 
-    writer.seek(SeekFrom::Start(offset))?;
+        writer.seek(SeekFrom::Start(offset))?;
 
-    let mut bytes_written: u64 = 0;
-    let mut chunk_hasher = Md5::new();
+        let mut bytes_written: u64 = 0;
+        let mut chunk_hasher = Md5::new();
 
-    match file_hasher {
-        Some(hasher) => {
-            let mut hw = HashWriter {
-                inner: writer,
-                hasher,
-            };
-            loop {
+        match file_hasher {
+            Some(hasher) => {
+                let mut hw = HashWriter {
+                    inner: writer,
+                    hasher,
+                };
+                loop {
+                    let n = decoder.read(buffer)?;
+                    if n == 0 {
+                        break;
+                    }
+                    chunk_hasher.update(&buffer[..n]);
+                    hw.write_all(&buffer[..n])?;
+                    bytes_written += n as u64;
+                }
+            }
+            None => loop {
                 let n = decoder.read(buffer)?;
                 if n == 0 {
                     break;
                 }
                 chunk_hasher.update(&buffer[..n]);
-                hw.write_all(&buffer[..n])?;
+                writer.write_all(&buffer[..n])?;
                 bytes_written += n as u64;
-            }
+            },
         }
-        None => loop {
-            let n = decoder.read(buffer)?;
-            if n == 0 {
-                break;
-            }
-            chunk_hasher.update(&buffer[..n]);
-            writer.write_all(&buffer[..n])?;
-            bytes_written += n as u64;
-        },
-    }
 
-    if bytes_written != expected_size {
-        return Err(SophonError::SizeMismatch {
-            item: chunk_path.display().to_string(),
-            expected: expected_size,
-            actual: bytes_written,
-        });
-    }
-
-    const EMPTY_MD5: &str = "00000000000000000000000000000000";
-    if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
-        let actual = hex::encode(chunk_hasher.finalize());
-        if actual != chunk_decompressed_hash_md5 {
-            return Err(SophonError::Md5Mismatch {
+        if bytes_written != expected_size {
+            return Err(SophonError::SizeMismatch {
                 item: chunk_path.display().to_string(),
-                expected: chunk_decompressed_hash_md5.to_string(),
-                actual,
+                expected: expected_size,
+                actual: bytes_written,
             });
         }
-    }
 
-    Ok(bytes_written)
+        const EMPTY_MD5: &str = "00000000000000000000000000000000";
+        if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
+            let actual = hex::encode(chunk_hasher.finalize());
+            if actual != chunk_decompressed_hash_md5 {
+                return Err(SophonError::Md5Mismatch {
+                    item: chunk_path.display().to_string(),
+                    expected: chunk_decompressed_hash_md5.to_string(),
+                    actual,
+                });
+            }
+        }
+
+        Ok(bytes_written)
+    };
+    super::download::evict_from_page_cache(chunk_path);
+    result
 }
 
 /// Read decompressed bytes from an existing file, verify MD5, and write to the
@@ -469,10 +472,9 @@ fn write_from_old_file<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
-    // Use memory-mapped I/O for large chunks.
     const MMA_THRESHOLD: u64 = 1024 * 1024;
-    if expected_size >= MMA_THRESHOLD {
-        return super::assembly_opt::write_chunk_from_mmap(
+    let result = if expected_size >= MMA_THRESHOLD {
+        super::assembly_opt::write_chunk_from_mmap(
             old_file_path,
             writer,
             new_offset,
@@ -480,67 +482,69 @@ fn write_from_old_file<W: Write + Seek>(
             expected_size,
             file_hasher,
             chunk_decompressed_hash_md5,
-        );
-    }
+        )
+    } else {
+        let f = File::open(old_file_path).map_err(SophonError::Io)?;
+        let mut reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
+        reader.seek(SeekFrom::Start(old_offset))?;
 
-    let f = File::open(old_file_path).map_err(SophonError::Io)?;
-    let mut reader = BufReader::with_capacity(FILE_WRITE_BUFFER_SIZE, f);
-    reader.seek(SeekFrom::Start(old_offset))?;
+        writer.seek(SeekFrom::Start(new_offset))?;
 
-    writer.seek(SeekFrom::Start(new_offset))?;
+        let mut bytes_written: u64 = 0;
+        let mut chunk_hasher = Md5::new();
+        let mut remaining = expected_size;
 
-    let mut bytes_written: u64 = 0;
-    let mut chunk_hasher = Md5::new();
-    let mut remaining = expected_size;
-
-    match file_hasher {
-        Some(hasher) => {
-            let mut hw = HashWriter {
-                inner: writer,
-                hasher,
-            };
-            while remaining > 0 {
-                let to_read = remaining.min(buffer.len() as u64) as usize;
-                reader.read_exact(&mut buffer[..to_read])?;
-                chunk_hasher.update(&buffer[..to_read]);
-                hw.write_all(&buffer[..to_read])?;
-                bytes_written += to_read as u64;
-                remaining = remaining.saturating_sub(to_read as u64);
+        match file_hasher {
+            Some(hasher) => {
+                let mut hw = HashWriter {
+                    inner: writer,
+                    hasher,
+                };
+                while remaining > 0 {
+                    let to_read = remaining.min(buffer.len() as u64) as usize;
+                    reader.read_exact(&mut buffer[..to_read])?;
+                    chunk_hasher.update(&mut buffer[..to_read]);
+                    hw.write_all(&buffer[..to_read])?;
+                    bytes_written += to_read as u64;
+                    remaining = remaining.saturating_sub(to_read as u64);
+                }
+            }
+            None => {
+                while remaining > 0 {
+                    let to_read = remaining.min(buffer.len() as u64) as usize;
+                    reader.read_exact(&mut buffer[..to_read])?;
+                    chunk_hasher.update(&mut buffer[..to_read]);
+                    writer.write_all(&buffer[..to_read])?;
+                    bytes_written += to_read as u64;
+                    remaining = remaining.saturating_sub(to_read as u64);
+                }
             }
         }
-        None => {
-            while remaining > 0 {
-                let to_read = remaining.min(buffer.len() as u64) as usize;
-                reader.read_exact(&mut buffer[..to_read])?;
-                chunk_hasher.update(&buffer[..to_read]);
-                writer.write_all(&buffer[..to_read])?;
-                bytes_written += to_read as u64;
-                remaining = remaining.saturating_sub(to_read as u64);
-            }
-        }
-    }
 
-    if bytes_written != expected_size {
-        return Err(SophonError::SizeMismatch {
-            item: old_file_path.display().to_string(),
-            expected: expected_size,
-            actual: bytes_written,
-        });
-    }
-
-    const EMPTY_MD5: &str = "00000000000000000000000000000000";
-    if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
-        let actual = hex::encode(chunk_hasher.finalize());
-        if actual != chunk_decompressed_hash_md5 {
-            return Err(SophonError::Md5Mismatch {
+        if bytes_written != expected_size {
+            return Err(SophonError::SizeMismatch {
                 item: old_file_path.display().to_string(),
-                expected: chunk_decompressed_hash_md5.to_string(),
-                actual,
+                expected: expected_size,
+                actual: bytes_written,
             });
         }
-    }
 
-    Ok(bytes_written)
+        const EMPTY_MD5: &str = "00000000000000000000000000000000";
+        if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
+            let actual = hex::encode(chunk_hasher.finalize());
+            if actual != chunk_decompressed_hash_md5 {
+                return Err(SophonError::Md5Mismatch {
+                    item: old_file_path.display().to_string(),
+                    expected: chunk_decompressed_hash_md5.to_string(),
+                    actual,
+                });
+            }
+        }
+
+        Ok(bytes_written)
+    };
+    super::download::evict_from_page_cache(old_file_path);
+    result
 }
 
 struct HashWriter<'a, W: Write> {
