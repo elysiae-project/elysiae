@@ -21,7 +21,7 @@ import { DownloadProvider } from "./contexts/DownloadContext.tsx";
 import { GameProvider } from "./contexts/GameContext.tsx";
 import { useApi } from "./hooks/useApi.ts";
 import { useGame } from "./hooks/useGame.ts";
-import { startListening } from "./lib/DeepLinkManager.ts";
+import { startListening } from "./lib/DeepLink.ts";
 import { createDesktopShortcut } from "./lib/Desktop.ts";
 import { type ModalHandle, Variants } from "./types";
 

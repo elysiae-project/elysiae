@@ -9,7 +9,7 @@ import type {
 } from "../types";
 import { exists, extractFile, mkdir } from "./Fs";
 import { getOption, setOption } from "./Settings";
-import { executeLocalBinary } from "./ShellCommands";
+import { executeLocalBinary } from "./Shell";
 import { downloadFile, getApiJson } from "./Web";
 
 const components: ((
