@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use std::time::Duration;
 
 use reqwest::Client;
@@ -95,14 +94,10 @@ pub async fn fetch_manifest(
 
     let manifest: SophonManifestProto = if dl.is_compressed() {
         let raw = tokio::task::spawn_blocking(move || {
-            let tmp = tempfile::NamedTempFile::new()?;
-            {
-                let mut f = tmp.as_file();
-                f.write_all(&bytes)?;
-                f.flush()?;
-            }
-            let raw = decompress_zstd_from_file(tmp.path())?;
-            Ok::<Vec<u8>, SophonError>(raw)
+            let mut decoder = zstd::Decoder::new(bytes.as_ref())?;
+            let mut out = Vec::new();
+            std::io::Read::read_to_end(&mut decoder, &mut out)?;
+            Ok::<Vec<u8>, SophonError>(out)
         })
         .await??;
         decode_manifest(&raw).map_err(SophonError::ManifestDecode)?
@@ -111,15 +106,6 @@ pub async fn fetch_manifest(
     };
     let hash = compute_content_manifest_hash(&manifest);
     Ok(ManifestWithHash { manifest, hash })
-}
-
-/// Decompress zstd data from a file into memory.
-fn decompress_zstd_from_file(path: &std::path::Path) -> SophonResult<Vec<u8>> {
-    let file = std::fs::File::open(path)?;
-    let mut decoder = zstd::Decoder::new(file)?;
-    let mut out = Vec::new();
-    decoder.read_to_end(&mut out)?;
-    Ok(out)
 }
 
 pub async fn fetch_build(
@@ -193,14 +179,10 @@ pub async fn fetch_patch_manifest(
 
     let raw = if meta.manifest_download.is_compressed() {
         tokio::task::spawn_blocking(move || {
-            let tmp = tempfile::NamedTempFile::new()?;
-            {
-                let mut f = tmp.as_file();
-                f.write_all(&bytes)?;
-                f.flush()?;
-            }
-            let raw = decompress_zstd_from_file(tmp.path())?;
-            Ok::<Vec<u8>, SophonError>(raw)
+            let mut decoder = zstd::Decoder::new(bytes.as_ref())?;
+            let mut out = Vec::new();
+            std::io::Read::read_to_end(&mut decoder, &mut out)?;
+            Ok::<Vec<u8>, SophonError>(out)
         })
         .await??
     } else {
