@@ -181,7 +181,7 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
             .by_index(i)
             .map_err(|err| SophonError::Decompression(err.to_string()))?;
 
-        // Reject symlink entries outright — silently treating a symlink-target
+        // Reject symlink entries outright, silently treating a symlink-target
         // string as the contents of a regular file is a data-integrity bug and
         // could leak attacker-controlled text into game_dir.
         if entry.is_symlink() {
@@ -884,7 +884,7 @@ mod tests {
 
     #[test]
     fn extract_zip_rejects_colon_entry() {
-        // NTFS-style alternate data stream: "safe/path:hidden" — `enclosed_name`
+        // NTFS-style alternate data stream: "safe/path:hidden", `enclosed_name`
         // would happily accept this on Linux, but the entry name embeds a ':'
         // which our adapter rejects as it's never legitimate for plugin/SDK
         // archives.

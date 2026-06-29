@@ -293,8 +293,8 @@ pub fn assemble_file(
                 let _ = fs::remove_file(&tmp_path);
             })?;
             total_written += bytes_written;
-            // No refcount to decrement — old-source chunks were never
-            // downloaded.
+        // No refcount to decrement, old-source chunks were never
+        // downloaded.
         } else {
             if !validate_chunk_name(&chunk.chunk_name) {
                 return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
@@ -1588,7 +1588,7 @@ mod tests {
         let result_data = fs::read(&target_path).unwrap();
         assert_eq!(&result_data, old_data);
 
-        // Verify no chunk was downloaded — refcounts vec is still empty
+        // Verify no chunk was downloaded ,  refcounts vec is still empty
         // (chunk_lookup has no entry for "not_used", so decrement was a no-op)
         assert!(chunk_refcounts.is_empty());
     }

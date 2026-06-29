@@ -347,7 +347,7 @@ pub(crate) fn tbytes_set_rle_vector_software(
     // Use split_at_mut to obtain two non-overlapping mutable slices from
     // buf. The pattern relies on the invariant that rle_idx and
     // (old_idx + decode_step) split the buffer so the two ranges are
-    // disjoint — true for all callers in this codebase. Iter-zip form
+    // disjoint ,  true for all callers in this codebase. Iter-zip form
     // enables LLVM autovectorization (vpaddb/AVX2).
     if rle_idx + decode_step <= old_idx || old_idx + decode_step <= rle_idx {
         if rle_idx < old_idx {

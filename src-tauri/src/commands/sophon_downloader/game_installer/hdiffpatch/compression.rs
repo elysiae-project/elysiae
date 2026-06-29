@@ -19,7 +19,7 @@ pub(crate) fn get_clip_stream(
     const MAX_BUFFERED_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
 
     if comp_mode == CompressionMode::Nocomp || comp_length == 0 {
-        // When comp_length=0 with a non-Nocomp mode, this is unusual — log
+        // When comp_length=0 with a non-Nocomp mode, this is unusual ,  log
         // a warning to surface potentially corrupt headers without breaking
         // compatibility with diff producers that emit empty compressed clips.
         if comp_mode != CompressionMode::Nocomp && comp_length == 0 {
@@ -78,7 +78,7 @@ pub(crate) fn get_clip_stream(
             // `deflateInit2(... -MAX_WBITS ...)` with a 1-byte `windowBits`
             // prefix prepended at write time. The prefix byte is compensated
             // by the caller (`patch_single.rs`) before `get_clip_stream` is
-            // invoked, so the bytes we receive here are plain raw deflate — no
+            // invoked, so the bytes we receive here are plain raw deflate ,  no
             // 0x78 0x9C header and no Adler32 trailer. Use DeflateDecoder (not
             // ZlibDecoder) accordingly.
             let limited = LimitedFile {

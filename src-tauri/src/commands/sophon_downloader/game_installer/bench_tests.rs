@@ -29,7 +29,7 @@ fn fmt_dur(d: std::time::Duration) -> String {
     if ns < 1_000.0 {
         format!("{ns:.0} ns")
     } else if ns < 1_000_000.0 {
-        format!("{:.1} µs", ns / 1_000.0)
+        format!("{:.1} us", ns / 1_000.0)
     } else if ns < 1_000_000_000.0 {
         format!("{:.2} ms", ns / 1_000_000.0)
     } else {
@@ -408,7 +408,7 @@ fn bench_pending_count_mutex_vs_atomic() {
 // 6. download_items lookup: linear scan vs HashMap (real production path)
 // ---------------------------------------------------------------------------
 // In register_chunks_for_file, when a chunk is shared (Occupied entry),
-// it does download_items.iter_mut().find() — O(N) per duplicate.
+// it does download_items.iter_mut().find() ,  O(N) per duplicate.
 
 #[test]
 fn bench_download_items_lookup() {
@@ -554,7 +554,7 @@ fn bench_is_filtered_asset_file_reads() {
 }
 
 // ---------------------------------------------------------------------------
-// 8. State save: DashMap → JSON → disk (real production path)
+// 8. State save: DashMap -> JSON -> disk (real production path)
 // ---------------------------------------------------------------------------
 // StateSaver iterates all DashMap entries, clones to HashMap, serializes to
 // JSON, writes to disk. Called every 25 chunks.
@@ -760,7 +760,7 @@ fn bench_cache_retain_stat() {
         n_stale = n_entries - n_real
     );
     println!(
-        "  time: {elapsed} ({us_per_entry:.1} µs/entry)",
+        "  time: {elapsed} ({us_per_entry:.1} us/entry)",
         elapsed = fmt_dur(elapsed),
         us_per_entry = elapsed.as_micros() as f64 / n_entries as f64
     );
@@ -834,7 +834,7 @@ fn bench_filter_assets_clone_all_vs_mutate() {
 
     // --- Memory counters ---
     // Each PatchAssetInfo clone duplicates all heap strings.
-    // Estimate heap per asset: 5 major strings × ~32 bytes avg ≈ 160 bytes
+    // Estimate heap per asset: 5 major strings x ~32 bytes avg ~ 160 bytes
     let heap_per_asset = std::mem::size_of::<PatchAssetInfo>() + 160;
     let clone_all_heap = n * heap_per_asset;
     let mutate_heap = 0usize; // production path: zero extra clones

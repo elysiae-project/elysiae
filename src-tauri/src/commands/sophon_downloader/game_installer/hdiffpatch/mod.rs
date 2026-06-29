@@ -131,13 +131,13 @@ impl HDiff {
         &self,
         on_progress: Option<&dyn Fn(u64)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Reject same source/destination — patching in-place would corrupt
+        // Reject same source/destination ,  patching in-place would corrupt
         // the source while reading it. Use canonical paths to handle equivalent
         // representations (./game/file.bin vs game/file.bin, symlinks, etc.).
         // Note: canonicalize requires the file to exist, so this check only
         // catches the case where both source AND dest already exist on disk.
         // When dest is a new temp file (the common case), this check is
-        // skipped — but that's fine because the dest doesn't exist yet and
+        // skipped ,  but that's fine because the dest doesn't exist yet and
         // can't be the same as source. The string comparison below provides
         // a fallback for the same-path-string case.
         let source_canonical: Option<PathBuf> = std::fs::canonicalize(&self.source_path).ok();
@@ -615,7 +615,7 @@ mod tests {
         fs::write(&old_path, OLD_TEXT).unwrap();
         fs::write(&diff_path, DIFF_V13_TEXT).unwrap();
 
-        // Use the same path for both source and dest — should fail
+        // Use the same path for both source and dest ,  should fail
         let path_str = old_path.to_string_lossy().to_string();
         let mut hdiff = HDiff::new(
             path_str.clone(),
@@ -1041,7 +1041,7 @@ mod tests {
 
     // ========== CoverHeader Validation Tests ==========
 
-    /// CoverHeader::new is a plain constructor — it stores all values including
+    /// CoverHeader::new is a plain constructor ,  it stores all values including
     /// negative cover_length. The actual rejection of negative lengths happens
     /// downstream in enumerate_cover_headers.
     #[test]
@@ -1053,7 +1053,7 @@ mod tests {
         );
     }
 
-    /// CoverHeader::new with negative old_pos — stored as-is, no rejection.
+    /// CoverHeader::new with negative old_pos ,  stored as-is, no rejection.
     #[test]
     fn cover_header_new_stores_negative_old_pos() {
         let ch = CoverHeader::new(-10, 0, 1, 0);
@@ -1094,7 +1094,7 @@ mod tests {
     }
 
     /// enumerate_cover_headers rejects cover data that decodes to negative
-    /// cover_length — this is where the actual validation happens.
+    /// cover_length ,  this is where the actual validation happens.
     #[test]
     fn enumerate_cover_headers_rejects_negative_cover_length() {
         use std::io::Cursor;
@@ -1123,18 +1123,18 @@ mod tests {
         use std::io::Cursor;
         // Encode: p_sign=0x80 (inc_old_pos_sign=1, tag_bit=1)
         //         inc_old_pos=1 (from prev_byte bits with tag_bit=1)
-        // Since last_old_pos_back starts at 0, subtracting 1 gives -1 → error.
-        // p_sign = 0x80 → bit 7 = 1 (sign=1), bits 0-6 with tag_bit=1 = bits 0-5
+        // Since last_old_pos_back starts at 0, subtracting 1 gives -1 -> error.
+        // p_sign = 0x80 -> bit 7 = 1 (sign=1), bits 0-6 with tag_bit=1 = bits 0-5
         // tag_bit from K_SIGN_TAG_BIT = 1
         // With tag_bit=1: mask = 0x3F, continuation bit = 0x40
         // 0x80: bits 0-5 = 0, bit 6 = 0x40 (0, no continuation), bit 7 = sign
-        // Wait, 0x80 = 1000_0000: bit 7 = 1 → inc_old_pos_sign = 1
+        // Wait, 0x80 = 1000_0000: bit 7 = 1 -> inc_old_pos_sign = 1
         // tag_bit=1, so mask = (1<<6)-1 = 0x3F, continuation = 1<<6 = 0x40
         // 0x80 & 0x3F = 0, 0x80 & 0x40 = 0 (no continuation)
-        // inc_old_pos = 0 → subtract 0 from 0 = 0 (not underflow)
+        // inc_old_pos = 0 -> subtract 0 from 0 = 0 (not underflow)
         // We need inc_old_pos > 0 to trigger underflow from old_pos_back=0
         // p_sign = 0x81: bit7=1(inc), bits0-5=1, bit6=0 (no continuation)
-        // → inc_old_pos = 1, old_pos = 0 - 1 = -1 → negative → error
+        // -> inc_old_pos = 1, old_pos = 0 - 1 = -1 -> negative -> error
         let buf = vec![
             0x81, // p_sign: sign=1, inc_old_pos=1 (varint tagged)
             0x00, // copy_length = 0
@@ -1494,7 +1494,7 @@ mod tests {
             0x64, 0x32, // new_data_size=100, old_data_size=50
             0x00, // cover_count = 0
             0x00, // cover_buf_size = 0
-            0x02, // compress_cover_buf_size = 2 (> 1 → counts as 1)
+            0x02, // compress_cover_buf_size = 2 (> 1 -> counts as 1)
             0x00, // rle_ctrl_buf_size = 0
             0x00, // compress_rle_ctrl_buf_size = 0
             0x00, // rle_code_buf_size = 0

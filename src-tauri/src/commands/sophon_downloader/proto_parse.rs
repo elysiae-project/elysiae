@@ -55,7 +55,7 @@ pub struct SophonManifestAssetChunk {
     pub chunk_decompressed_hash_md5: String,
 
     /// Byte offset in the output file where this chunk should be written.
-    /// Absent for the first chunk of a file → defaults to 0.
+    /// Absent for the first chunk of a file -> defaults to 0.
     #[prost(uint64, tag = "3")]
     pub chunk_on_file_offset: u64,
 
@@ -67,7 +67,7 @@ pub struct SophonManifestAssetChunk {
     #[prost(uint64, tag = "5")]
     pub chunk_size_decompressed: u64,
 
-    /// Undocumented hash field — not an xxh64 per the proto comment.
+    /// Undocumented hash field ,  not an xxh64 per the proto comment.
     /// Not used for verification.
     #[prost(uint64, tag = "6")]
     pub chunk_compressed_hash_xxh: u64,

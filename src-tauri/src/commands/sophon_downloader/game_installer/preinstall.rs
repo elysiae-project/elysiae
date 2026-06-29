@@ -1456,7 +1456,7 @@ impl FilterCache {
                         .filter_map(extract_blacklist_filename)
                         .map(|name| name.to_lowercase())
                         .collect();
-                    // Generate cross-path variants (Persistent ↔ StreamingAssets)
+                    // Generate cross-path variants (Persistent <-> StreamingAssets)
                     let variants: Vec<String> = entries
                         .iter()
                         .flat_map(|entry| {
@@ -1750,13 +1750,13 @@ fn apply_hdiff_patch(
             Err(err) => {
                 if is_filtered_asset(cache, asset) {
                     log::warn!(
-                        "Failed to read metadata for filtered asset {path}: {err} — skipping",
+                        "Failed to read metadata for filtered asset {path}: {err}, skipping",
                         path = asset.target_file_path
                     );
                     return Ok(());
                 }
                 log::warn!(
-                    "Failed to read metadata for original file {path}: {err} — falling back to DownloadOver",
+                    "Failed to read metadata for original file {path}: {err}, falling back to DownloadOver",
                     path = original_path.display()
                 );
                 return Err(SophonError::OriginalFileMissing(format!(
@@ -1774,7 +1774,7 @@ fn apply_hdiff_patch(
                 return Ok(());
             }
             log::warn!(
-                "Original file size mismatch for {path}: expected {expected_size}, got {actual_size} — deleting and falling back to DownloadOver",
+                "Original file size mismatch for {path}: expected {expected_size}, got {actual_size}, deleting and falling back to DownloadOver",
                 path = original_path.display(),
             );
             let _ = fs::remove_file(&original_path);
@@ -1805,7 +1805,7 @@ fn apply_hdiff_patch(
         && !is_filtered_asset(cache, asset)
     {
         log::warn!(
-            "Original file MD5 mismatch for {path} — deleting and falling back to DownloadOver",
+            "Original file MD5 mismatch for {path}, deleting and falling back to DownloadOver",
             path = original_path.display()
         );
         let _ = fs::remove_file(&original_path);
@@ -3211,7 +3211,7 @@ mod tests {
         let cache = FilterCache::new(dir.path());
         let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
 
-        // Should NOT return OriginalFileMissing — should create blank diff_ref and
+        // Should NOT return OriginalFileMissing, should create blank diff_ref and
         // proceed
         assert!(
             !matches!(result, Err(SophonError::OriginalFileMissing(_))),
@@ -3219,7 +3219,7 @@ mod tests {
             result
         );
         // The patch will fail because the dummy chunk isn't a real HDiff, but that's OK
-        // — the point is we got past the blank-file check and didn't error on
+        // The point is we got past the blank-file check and didn't error on
         // missing original. Verify the diff_ref was cleaned up after patching
         let diff_ref_path = dir.path().join("patching/patch_chunk.bin.diff_ref");
         assert!(
@@ -3257,7 +3257,7 @@ mod tests {
         let cache = FilterCache::new(dir.path());
         let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
 
-        // Should NOT return OriginalFileMissing — should create blank diff_ref and
+        // Should NOT return OriginalFileMissing, should create blank diff_ref and
         // proceed
         assert!(
             !matches!(result, Err(SophonError::OriginalFileMissing(_))),
@@ -3305,7 +3305,7 @@ mod tests {
         let cache = FilterCache::new(dir.path());
         let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
 
-        // Should NOT return OriginalFileMissing — hash takes precedence and
+        // Should NOT return OriginalFileMissing, hash takes precedence and
         // triggers blank-file handling.
         assert!(
             !matches!(result, Err(SophonError::OriginalFileMissing(_))),

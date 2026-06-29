@@ -398,7 +398,7 @@ async fn build_diff_installers(
 
                 deleted_files.extend(collect_deleted_files(&old_result.manifest, &new_names));
 
-                // Build old-chunk (asset_name, hash) → offset map BEFORE
+                // Build old-chunk (asset_name, hash) -> offset map BEFORE
                 // consuming old_result.manifest. Keying by (asset_name, hash)
                 // preserves file provenance: when a chunk's decompressed hash
                 // matches an old chunk, the offset must come from the same old
@@ -1814,7 +1814,7 @@ pub async fn install(
                 * std::mem::size_of::<SophonManifestAssetChunk>(),
     );
     log::info!(
-        "MEMORY: download_items={di_len}×{di_sz}B chunk_entries={ce_len}×{ce_sz}B refcounts={rc_len}×{rc_sz}B downloaded_chunks={dc_len}×{dc_sz}B",
+        "MEMORY: download_items={di_len}x{di_sz}B chunk_entries={ce_len}x{ce_sz}B refcounts={rc_len}x{rc_sz}B downloaded_chunks={dc_len}x{dc_sz}B",
         di_len = download_items.len(),
         di_sz = std::mem::size_of::<DownloadItem>(),
         ce_len = chunk_entries.len(),

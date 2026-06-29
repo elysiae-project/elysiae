@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn read_long_7bit_tagged_truncated_stream_returns_error() {
         let mut c = src(b"");
-        // prev_byte=0x4A: tag_bit=1 → bits 0-5 = 0x0A (10), bit 6 set → continuation
+        // prev_byte=0x4A: tag_bit=1 -> bits 0-5 = 0x0A (10), bit 6 set -> continuation
         let result = c.read_long_7bit_tagged(1, 0x4A);
         assert!(
             result.is_err(),
@@ -546,7 +546,7 @@ mod tests {
     // ========== Varint with tag_bit=2 ==========
 
     /// tag_bit=2 means 5 value bits and bit 5 is the continuation flag.
-    /// prev_byte=0x1F → value bits = 0x1F & 0x1F = 31, no continuation.
+    /// prev_byte=0x1F -> value bits = 0x1F & 0x1F = 31, no continuation.
     #[test]
     fn read_long_7bit_tagged_tag_bit_2_no_continuation() {
         let mut c = src(b"\xFF"); // extra byte should not be consumed
@@ -556,7 +556,7 @@ mod tests {
         assert_eq!(c.position(), 0, "no bytes should be read from stream");
     }
 
-    /// tag_bit=2 with continuation: prev_byte=0x25 → bits 0-4 = 5, bit 5 set.
+    /// tag_bit=2 with continuation: prev_byte=0x25 -> bits 0-4 = 5, bit 5 set.
     /// Next byte = 0x03 (no continuation), so value = (5 << 7) | 3 = 643.
     #[test]
     fn read_long_7bit_tagged_tag_bit_2_with_continuation() {
@@ -590,7 +590,7 @@ mod tests {
         let buf = b"\x00"; // should not be consumed
         let mut offset = 0;
         let val = read_long_7bit_from_slice(buf, &mut offset, 2, 0x1F).unwrap();
-        assert_eq!(val, 31i64, "tag_bit=2, prev_byte=0x1F → value=31");
+        assert_eq!(val, 31i64, "tag_bit=2, prev_byte=0x1F -> value=31");
         assert_eq!(offset, 0, "no bytes should be consumed from buffer");
     }
 
@@ -608,7 +608,7 @@ mod tests {
     /// a sequence that keeps growing until it exceeds i64 capacity.
     #[test]
     fn read_long_7bit_tagged_overflow_returns_error() {
-        // With tag_bit=1, prev_byte=0x7F: bits 0-5 = 0x3F (63), bit 6 set →
+        // With tag_bit=1, prev_byte=0x7F: bits 0-5 = 0x3F (63), bit 6 set ->
         // continuation. Feed 12 more 0xFF bytes to trigger overflow.
         let data = vec![0xFFu8; 12];
         let mut c = Cursor::new(data);
@@ -645,7 +645,7 @@ mod tests {
     #[test]
     fn read_long_7bit_multi_byte_truncated_returns_error() {
         // 0x81 = continuation bit set, value 1
-        // 0x82 = continuation bit set, value 2 — but no more bytes follow
+        // 0x82 = continuation bit set, value 2 ,  but no more bytes follow
         let mut c = src(b"\x81\x82");
         let result = c.read_long_7bit();
         assert!(
@@ -675,7 +675,7 @@ mod tests {
     // ========== Varint with tag_bit=3 ==========
 
     /// tag_bit=3 means 4 value bits and bit 4 is the continuation flag.
-    /// prev_byte=0x0A → value bits = 0x0A & 0x0F = 10, no continuation.
+    /// prev_byte=0x0A -> value bits = 0x0A & 0x0F = 10, no continuation.
     #[test]
     fn read_long_7bit_tagged_tag_bit_3_no_continuation() {
         let mut c = src(b"\xFF");
@@ -684,7 +684,7 @@ mod tests {
         assert_eq!(c.position(), 0, "no bytes should be read from stream");
     }
 
-    /// tag_bit=3 with continuation: prev_byte=0x1A → bits 0-3 = 10, bit 4 set.
+    /// tag_bit=3 with continuation: prev_byte=0x1A -> bits 0-3 = 10, bit 4 set.
     /// Next byte = 0x7F (no continuation), so value = (10 << 7) | 127 = 1407.
     #[test]
     fn read_long_7bit_tagged_tag_bit_3_with_continuation() {
@@ -735,7 +735,7 @@ mod tests {
         let buf = b"\x00";
         let mut offset = 0;
         let val = read_long_7bit_from_slice(buf, &mut offset, 3, 0x0A).unwrap();
-        assert_eq!(val, 10i64, "tag_bit=3, prev_byte=0x0A → value=10");
+        assert_eq!(val, 10i64, "tag_bit=3, prev_byte=0x0A -> value=10");
         assert_eq!(offset, 0, "no bytes should be consumed from buffer");
     }
 

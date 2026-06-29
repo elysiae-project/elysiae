@@ -10,7 +10,7 @@ use crate::commands::sophon_downloader::SophonProgress;
 
 const STATE_RUNNING: u8 = 0;
 const STATE_PAUSED: u8 = 1;
-/// Terminal cancelled state — cannot be undone by resume().
+/// Terminal cancelled state - cannot be undone by resume().
 /// Uses value 3 to avoid collision with future intermediate states.
 const STATE_CANCELLED: u8 = 3;
 
@@ -39,7 +39,7 @@ impl DownloadHandle {
 
     pub fn pause(&self) {
         // Use compare_exchange to avoid race with concurrent cancel.
-        // Cancellation is terminal — never overwrite it with PAUSED.
+        // Cancellation is terminal - never overwrite it with PAUSED.
         while let Err(current) = self.state.compare_exchange(
             STATE_RUNNING,
             STATE_PAUSED,
@@ -55,7 +55,7 @@ impl DownloadHandle {
     }
 
     pub fn resume(&self) {
-        // Never resume a cancelled download — cancellation is terminal
+        // Never resume a cancelled download, cancellation is terminal
         if self.state.load(Ordering::Acquire) == STATE_CANCELLED {
             return;
         }

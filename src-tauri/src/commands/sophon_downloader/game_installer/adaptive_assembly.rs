@@ -41,7 +41,7 @@ impl AdaptiveAssembly {
 
         if new_target != current {
             log::info!(
-                "AdaptiveAssembly: available RAM {available_mb} MiB, adjusting assembly concurrency {current} → {new_target}",
+                "AdaptiveAssembly: available RAM {available_mb} MiB, adjusting assembly concurrency {current} -> {new_target}",
             );
             self.target.store(new_target, Ordering::Release);
         }
@@ -174,11 +174,11 @@ mod tests {
         let aa = Arc::new(AdaptiveAssembly::new());
         let token = tokio_util::sync::CancellationToken::new();
         aa.spawn_adjuster(token.clone());
-        // Cancel immediately — the interval future inside the loop has not
+        // Cancel immediately ,  the interval future inside the loop has not
         // yet fired, so cancellation must be observed on the next select.
         token.cancel();
         // The cancel propagation is synchronous; the background task should
-        // exit well within a tick interval. We give it 3× the tick interval
+        // exit well within a tick interval. We give it 3x the tick interval
         // to avoid flakes on heavily loaded CI.
         tokio::time::sleep(std::time::Duration::from_millis(
             ASSEMBLY_RAM_CHECK_INTERVAL_SECS * 3000,
@@ -189,6 +189,6 @@ mod tests {
             aa.current_target() <= ASSEMBLY_CONCURRENCY,
             "target must not exceed ASSEMBLY_CONCURRENCY after cancel"
         );
-        assert!(aa.current_target() >= 1, "target must always be ≥ 1");
+        assert!(aa.current_target() >= 1, "target must always be >= 1");
     }
 }

@@ -183,7 +183,7 @@ pub fn clear_download_state(app: &AppHandle) {
 
 /// Deletes the chunks directory under the given game output path.
 /// Returns `true` if the directory was removed, `false` if it didn't exist.
-/// Deletion errors are logged as warnings and do not propagate — this is a
+/// Deletion errors are logged as warnings and do not propagate, this is a
 /// best-effort cleanup.
 fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     let game_dir = match app.path().resolve(output_path, BaseDirectory::AppData) {
@@ -646,7 +646,7 @@ pub async fn sophon_update(
         .map_err(|err| err.to_string())?;
 
     let current_tag =
-        read_installed_tag(&game_dir).ok_or("No installed version found — cannot update")?;
+        read_installed_tag(&game_dir).ok_or("No installed version found, cannot update")?;
 
     log::warn!("Fetching manifest for game_id={game_id}");
     emit(&app_handle, SophonProgress::FetchingManifest);
@@ -1144,10 +1144,10 @@ fn emit_error(app: &AppHandle, error: &SophonError) {
 }
 
 /// Handles the final install result:
-/// - `Ok(())` → propagates success
-/// - `Cancelled` → silently returns `Ok(())` (download was intentionally
+/// - `Ok(())` propagates success
+/// - `Cancelled` silently returns `Ok(())` (download was intentionally
 ///   cancelled)
-/// - Other errors → emits a structured error event and returns `Err(string)`
+/// - Other errors emits a structured error event and returns `Err(string)`
 fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<(), String> {
     match result {
         Ok(()) => Ok(()),
@@ -1329,7 +1329,7 @@ mod tests {
     #[test]
     fn load_download_state_corrupted_removed_when_rename_fails() {
         // On Linux, cross-device rename fails. We simulate by setting up the
-        // state file as a directory — fs::rename will fail because the
+        // state file as a directory, fs::rename will fail because the
         // destination pattern resolves to a child of this dir that already
         // exists.
         let dir = tempfile::tempdir().unwrap();

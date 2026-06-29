@@ -247,7 +247,7 @@ impl<'a> Rle0Decoder<'a> {
                 let dst = &mut data[dp..dp + to_read];
                 // Iter-zip form enables LLVM autovectorization (vpaddb) on
                 // x86_64 hosts with AVX2. Functionally identical to the
-                // explicit index loop but typically 4–8× faster on large
+                // explicit index loop but typically 4-8x faster on large
                 // patches.
                 for (d, s) in dst.iter_mut().zip(src.iter()) {
                     *d = d.wrapping_add(*s);
@@ -648,7 +648,7 @@ mod tests {
         // then varint encode 0 for buf_rle_size.
         // 16777217 in 7-bit groups from MSB: 8, 0, 0, 1
         // Encoding: 0x88 0x80 0x80 0x01 (with continuation bits on first 3)
-        // 0 → byte: 0x00
+        // 0 -> byte: 0x00
         // Total diff data: 5 bytes
         let diff_data: Vec<u8> = vec![0x88, 0x80, 0x80, 0x01, 0x00];
         std::fs::write(&patch_path, &diff_data).unwrap();
@@ -731,7 +731,7 @@ mod tests {
         // buf_cover_size = 200, buf_rle_size = 0
         // step_end = 200 < MAX_STEP_SIZE (16MB)
         // But step_mem_size = 100, so step_buf.len() = 100
-        // 200 > 100 → should trigger "exceeds allocated buffer capacity"
+        // 200 > 100 -> should trigger "exceeds allocated buffer capacity"
         // 200 varint: 200 = 128 + 72 = (1 << 7) | 72
         // Encoding: 0x81 (0x80 | 1, continuation), 0x48 (72, no continuation)
         let diff_data: Vec<u8> = vec![
@@ -780,9 +780,9 @@ mod tests {
         let patch_path = dir.path().join("patch.hdiff");
 
         // buf_cover_size = 16777217 (MAX_STEP_SIZE + 1)
-        // 16777217 → 7-bit groups: 8, 0, 0, 1 → 0x88 0x80 0x80 0x01
+        // 16777217 -> 7-bit groups: 8, 0, 0, 1 -> 0x88 0x80 0x80 0x01
         // buf_rle_size = 16777216 (MAX_STEP_SIZE)
-        // 16777216 → 7-bit groups: 8, 0, 0, 0 → 0x88 0x80 0x80 0x00
+        // 16777216 -> 7-bit groups: 8, 0, 0, 0 -> 0x88 0x80 0x80 0x00
         // step_end = 16777217 + 16777216 = 33554433 >> MAX_STEP_SIZE
         let diff_data: Vec<u8> = vec![
             0x88, 0x80, 0x80, 0x01, // buf_cover_size = 16777217
