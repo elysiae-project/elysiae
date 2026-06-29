@@ -998,7 +998,11 @@ async fn process_download_item(
         .await?;
         was_actually_downloaded = true;
     }
-    _chunk_timer.record_phase(super::profiling::ChunkPhase::Download);
+    if was_actually_downloaded {
+        _chunk_timer.record_phase(super::profiling::ChunkPhase::Download);
+    } else {
+        _chunk_timer.skip_phase();
+    }
 
     if was_actually_downloaded && item.is_pre_downloaded {
         ctx.resume_bytes_offset

@@ -302,6 +302,17 @@ impl<'a> ChunkTimer<'a> {
         }
     }
 
+    /// Advance the phase timer without accumulating any stats. Used when a
+    /// phase was skipped (e.g., chunk was pre-downloaded so no download
+    /// happened).
+    #[inline]
+    pub fn skip_phase(&mut self) {
+        #[cfg(feature = "pipeline-profiling")]
+        {
+            self.phase_start = Instant::now();
+        }
+    }
+
     #[inline]
     pub fn finish(self, chunk_size: u64, was_downloaded: bool) {
         self.profiler.download_exit();
