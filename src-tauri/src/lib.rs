@@ -27,7 +27,6 @@ pub fn run() {
                 .pool_max_idle_per_host(64)
                 .pool_idle_timeout(Duration::from_secs(90))
                 .tcp_nodelay(true)
-                .http1_only()
                 .tcp_keepalive(Duration::from_secs(30))
                 .connect_timeout(Duration::from_secs(10))
                 .read_timeout(Duration::from_secs(300))
