@@ -114,6 +114,7 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
                 return Ok(false);
             }
         }?;
+        evict_from_page_cache(&path);
         Ok(actual == expected_hash)
     })
     .await?
