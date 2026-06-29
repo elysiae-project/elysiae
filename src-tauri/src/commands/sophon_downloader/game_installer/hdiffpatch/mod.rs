@@ -147,8 +147,8 @@ impl HDiff {
             && source_canonical == dest_canonical
         {
             return Err(format!(
-                "source and destination paths resolve to the same file: {}",
-                self.source_path
+                "source and destination paths resolve to the same file: {path}",
+                path = self.source_path
             )
             .into());
         }
@@ -163,9 +163,9 @@ impl HDiff {
         let h_info_arr: Vec<&str> = header_info_line.split('&').collect();
         if h_info_arr.len() < 2 || h_info_arr.len() > 3 {
             return Err(format!(
-                "unsupported HDiff header format: expected 2 or 3 parts, got {} (raw: {})",
-                h_info_arr.len(),
-                header_info_line
+                "unsupported HDiff header format: expected 2 or 3 parts, got {parts} (raw: {raw})",
+                parts = h_info_arr.len(),
+                raw = header_info_line
             )
             .into());
         }
@@ -215,8 +215,9 @@ impl HDiff {
             let old_len = old_file.metadata()?.len() as i64;
             if old_len != header_info.old_data_size {
                 return Err(format!(
-                    "input file size mismatch: expected {} bytes, got {} bytes",
-                    header_info.old_data_size, old_len
+                    "input file size mismatch: expected {expected} bytes, got {actual} bytes",
+                    expected = header_info.old_data_size,
+                    actual = old_len
                 )
                 .into());
             }
@@ -250,8 +251,7 @@ impl HDiff {
         let actual_size = std::fs::metadata(&self.dest_path)?.len() as i64;
         if actual_size != expected_size {
             return Err(format!(
-                "Patch output size mismatch: expected {} bytes, got {} bytes",
-                expected_size, actual_size
+                "Patch output size mismatch: expected {expected_size} bytes, got {actual_size} bytes",
             )
             .into());
         }

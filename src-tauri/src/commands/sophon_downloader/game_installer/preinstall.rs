@@ -225,8 +225,8 @@ fn validate_patch_chunk_fields(chunk: &SophonPatchAssetChunk, asset_name: &str) 
 fn validate_patch_asset_fields(asset: &SophonPatchAssetProperty) -> bool {
     if asset.asset_size < 0 {
         log::warn!(
-            "Skipping asset with negative asset_size: {}",
-            asset.asset_name
+            "Skipping asset with negative asset_size: {name}",
+            name = asset.asset_name
         );
         return false;
     }
@@ -312,9 +312,7 @@ pub async fn build_preinstall_plan(
     const MAX_PREINSTALL_ASSETS: usize = 1_000_000;
     if total_patch_assets > MAX_PREINSTALL_ASSETS {
         log::warn!(
-            "Preinstall manifest has {} assets, exceeding safe limit of {}",
-            total_patch_assets,
-            MAX_PREINSTALL_ASSETS
+            "Preinstall manifest has {total_patch_assets} assets, exceeding safe limit of {MAX_PREINSTALL_ASSETS}",
         );
     }
     all_patch_assets.reserve(total_patch_assets.min(MAX_PREINSTALL_ASSETS));
@@ -362,9 +360,8 @@ pub async fn build_preinstall_plan(
                                 });
                             } else {
                                 log::warn!(
-                                    "Patch info exists but chunk is None for asset {} (matching_field={}), and no main manifest",
-                                    asset_prop.asset_name,
-                                    matching_field
+                                    "Patch info exists but chunk is None for asset {name} (matching_field={matching_field}), and no main manifest",
+                                    name = asset_prop.asset_name,
                                 );
                             }
                             continue;
@@ -437,9 +434,8 @@ pub async fn build_preinstall_plan(
                 }
                 None => {
                     log::warn!(
-                        "No patch info for asset {} (matching_field={}) and no main manifest, skipping",
-                        asset_prop.asset_name,
-                        matching_field
+                        "No patch info for asset {name} (matching_field={matching_field}) and no main manifest, skipping",
+                        name = asset_prop.asset_name,
                     );
                 }
             }
@@ -859,10 +855,8 @@ async fn download_patch_chunk_with_retries(
                 }
                 if attempt < max_retries - 1 {
                     log::warn!(
-                        "Patch chunk {} failed (attempt {}/{}): {last_err}",
-                        patch_name,
-                        attempt + 1,
-                        max_retries
+                        "Patch chunk {patch_name} failed (attempt {attempt_num}/{max_retries}): {last_err}",
+                        attempt_num = attempt + 1,
                     );
                     let delay = retry_delay(attempt);
                     if cancelable_sleep(handle, delay).await.is_err() {
@@ -870,10 +864,8 @@ async fn download_patch_chunk_with_retries(
                     }
                 } else {
                     log::warn!(
-                        "Patch chunk {} failed (final attempt {}/{}): {last_err}",
-                        patch_name,
-                        attempt + 1,
-                        max_retries
+                        "Patch chunk {patch_name} failed (final attempt {attempt_num}/{max_retries}): {last_err}",
+                        attempt_num = attempt + 1,
                     );
                 }
             }
@@ -911,10 +903,9 @@ async fn download_chunk_with_retries(
                 }
                 if attempt < MAX_RETRIES - 1 {
                     log::warn!(
-                        "Chunk {} failed (attempt {}/{}): {last_err}",
-                        chunk.chunk_name,
-                        attempt + 1,
-                        MAX_RETRIES
+                        "Chunk {chunk_name} failed (attempt {attempt_num}/{MAX_RETRIES}): {last_err}",
+                        chunk_name = chunk.chunk_name,
+                        attempt_num = attempt + 1,
                     );
                     let delay = retry_delay(attempt);
                     if cancelable_sleep(handle, delay).await.is_err() {
@@ -922,10 +913,9 @@ async fn download_chunk_with_retries(
                     }
                 } else {
                     log::warn!(
-                        "Chunk {} failed (final attempt {}/{}): {last_err}",
-                        chunk.chunk_name,
-                        attempt + 1,
-                        MAX_RETRIES
+                        "Chunk {chunk_name} failed (final attempt {attempt_num}/{MAX_RETRIES}): {last_err}",
+                        chunk_name = chunk.chunk_name,
+                        attempt_num = attempt + 1,
                     );
                 }
             }
@@ -1042,9 +1032,8 @@ pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
                 Ok(n) => hasher.update(&buf[..n]),
                 Err(err) => {
                     log::warn!(
-                        "Failed to read file for MD5 verification: {}: {}",
-                        path.display(),
-                        err
+                        "Failed to read file for MD5 verification: {path_display}: {err}",
+                        path_display = path.display(),
                     );
                     return false;
                 }
@@ -1058,8 +1047,8 @@ pub(super) fn verify_chunk_md5(path: &Path, expected_md5: &str) -> bool {
 pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
     let Ok(file) = fs::File::open(path) else {
         log::warn!(
-            "Failed to open file for XXH64 verification: {}",
-            path.display()
+            "Failed to open file for XXH64 verification: {path_display}",
+            path_display = path.display()
         );
         return false;
     };
@@ -1078,9 +1067,8 @@ pub(super) fn verify_chunk_xxh64(path: &Path, expected_xxh64: &str) -> bool {
                 }
                 Err(err) => {
                     log::warn!(
-                        "Failed to read file for XXH64 verification: {}: {}",
-                        path.display(),
-                        err
+                        "Failed to read file for XXH64 verification: {path_display}: {err}",
+                        path_display = path.display(),
                     );
                     return false;
                 }
@@ -1101,9 +1089,9 @@ pub(super) fn verify_file_hash(path: &Path, expected_hash: &str) -> bool {
         16 => verify_chunk_xxh64(path, &normalized),
         _ => {
             log::warn!(
-                "Unknown hash format (length={}): {}",
-                expected_hash.len(),
-                expected_hash
+                "Unknown hash format (length={len}): {hash}",
+                len = expected_hash.len(),
+                hash = expected_hash
             );
             false
         }
@@ -1123,8 +1111,9 @@ pub async fn apply_preinstall(
 
     if current_tag != state.installed_tag {
         return Err(SophonError::PreinstallStateInvalid(format!(
-            "Installed version changed since preinstall (expected {}, got {})",
-            state.installed_tag, current_tag
+            "Installed version changed since preinstall (expected {expected}, got {actual})",
+            expected = state.installed_tag,
+            actual = current_tag
         )));
     }
 
@@ -1145,8 +1134,8 @@ pub async fn apply_preinstall(
         if asset.patch_method == PatchMethod::Skip {
             applied_files.fetch_add(1, Ordering::Relaxed);
             log::warn!(
-                "Skipping patch for removed feature asset: {}",
-                asset.target_file_path
+                "Skipping patch for removed feature asset: {path}",
+                path = asset.target_file_path
             );
             continue;
         }
@@ -1183,8 +1172,8 @@ pub async fn apply_preinstall(
                         Err(err) => {
                             if is_filtered {
                                 log::warn!(
-                                    "CopyOver failed for filtered asset, skipping: {} ({err})",
-                                    asset.target_file_path
+                                    "CopyOver failed for filtered asset, skipping: {path} ({err})",
+                                    path = asset.target_file_path,
                                 );
                                 applied_files.fetch_add(1, Ordering::Relaxed);
                                 skip_progress = true;
@@ -1192,9 +1181,9 @@ pub async fn apply_preinstall(
                             }
                             if attempt == COPY_MAX_RETRIES {
                                 log::warn!(
-                                    "CopyOver failed for {} after {} attempts: {err}, falling back to DownloadOver",
-                                    asset.target_file_path,
-                                    COPY_MAX_RETRIES + 1
+                                    "CopyOver failed for {path} after {attempts} attempts: {err}, falling back to DownloadOver",
+                                    path = asset.target_file_path,
+                                    attempts = COPY_MAX_RETRIES + 1,
                                 );
                                 fallback_to_download = true;
                             } else {
@@ -1203,11 +1192,11 @@ pub async fn apply_preinstall(
                                 }
                                 let delay = retry_delay(attempt as u32);
                                 log::warn!(
-                                    "CopyOver failed for {} (attempt {}/{}): {err}, retrying in {}ms...",
-                                    asset.target_file_path,
-                                    attempt + 1,
-                                    COPY_MAX_RETRIES + 1,
-                                    delay.as_millis()
+                                    "CopyOver failed for {path} (attempt {attempt_num}/{max_attempts}): {err}, retrying in {delay_ms}ms...",
+                                    path = asset.target_file_path,
+                                    attempt_num = attempt + 1,
+                                    max_attempts = COPY_MAX_RETRIES + 1,
+                                    delay_ms = delay.as_millis()
                                 );
                                 if cancelable_sleep(handle, delay).await.is_err() {
                                     return Err(SophonError::Cancelled);
@@ -1251,8 +1240,8 @@ pub async fn apply_preinstall(
                         Err(err) => {
                             if is_filtered {
                                 log::warn!(
-                                    "HDiff patch failed for filtered asset, skipping: {} ({err})",
-                                    asset.target_file_path
+                                    "HDiff patch failed for filtered asset, skipping: {path} ({err})",
+                                    path = asset.target_file_path,
                                 );
                                 applied_files.fetch_add(1, Ordering::Relaxed);
                                 skip_progress = true;
@@ -1260,9 +1249,9 @@ pub async fn apply_preinstall(
                             }
                             if attempt == PATCH_MAX_RETRIES {
                                 log::warn!(
-                                    "HDiff patch failed for {} after {} attempts: {err}, falling back to DownloadOver",
-                                    asset.target_file_path,
-                                    PATCH_MAX_RETRIES + 1
+                                    "HDiff patch failed for {path} after {attempts} attempts: {err}, falling back to DownloadOver",
+                                    path = asset.target_file_path,
+                                    attempts = PATCH_MAX_RETRIES + 1,
                                 );
                                 fallback_to_download = true;
                             } else {
@@ -1271,11 +1260,11 @@ pub async fn apply_preinstall(
                                 }
                                 let delay = retry_delay(attempt as u32);
                                 log::warn!(
-                                    "HDiff patch failed for {} (attempt {}/{}): {err}, retrying in {}ms...",
-                                    asset.target_file_path,
-                                    attempt + 1,
-                                    PATCH_MAX_RETRIES + 1,
-                                    delay.as_millis()
+                                    "HDiff patch failed for {path} (attempt {attempt_num}/{max_attempts}): {err}, retrying in {delay_ms}ms...",
+                                    path = asset.target_file_path,
+                                    attempt_num = attempt + 1,
+                                    max_attempts = PATCH_MAX_RETRIES + 1,
+                                    delay_ms = delay.as_millis()
                                 );
                                 if cancelable_sleep(handle, delay).await.is_err() {
                                     return Err(SophonError::Cancelled);
@@ -1742,8 +1731,8 @@ fn apply_hdiff_patch(
             diff_ref_guard = DiffRefGuard::new(diff_ref);
         } else if is_filtered_asset(cache, asset) {
             log::warn!(
-                "Original file missing for filtered asset, skipping: {}",
-                asset.target_file_path
+                "Original file missing for filtered asset, skipping: {path}",
+                path = asset.target_file_path
             );
             return Ok(());
         } else {
@@ -1761,39 +1750,37 @@ fn apply_hdiff_patch(
             Err(err) => {
                 if is_filtered_asset(cache, asset) {
                     log::warn!(
-                        "Failed to read metadata for filtered asset {}: {err} — skipping",
-                        asset.target_file_path
+                        "Failed to read metadata for filtered asset {path}: {err} — skipping",
+                        path = asset.target_file_path
                     );
                     return Ok(());
                 }
                 log::warn!(
-                    "Failed to read metadata for original file {}: {err} — falling back to DownloadOver",
-                    original_path.display()
+                    "Failed to read metadata for original file {path}: {err} — falling back to DownloadOver",
+                    path = original_path.display()
                 );
                 return Err(SophonError::OriginalFileMissing(format!(
-                    "{} (Metadata unreadable: {err})",
-                    original_path.display()
+                    "{path} (Metadata unreadable: {err})",
+                    path = original_path.display()
                 )));
             }
         };
         if actual_size != *expected_size {
             if is_filtered_asset(cache, asset) {
                 log::warn!(
-                    "Original file size mismatch for filtered asset, skipping: {}",
-                    asset.target_file_path
+                    "Original file size mismatch for filtered asset, skipping: {path}",
+                    path = asset.target_file_path
                 );
                 return Ok(());
             }
             log::warn!(
-                "Original file size mismatch for {}: expected {}, got {} — deleting and falling back to DownloadOver",
-                original_path.display(),
-                expected_size,
-                actual_size
+                "Original file size mismatch for {path}: expected {expected_size}, got {actual_size} — deleting and falling back to DownloadOver",
+                path = original_path.display(),
             );
             let _ = fs::remove_file(&original_path);
             return Err(SophonError::OriginalFileMissing(format!(
-                "{} (Size mismatch: expected {expected_size}, got {actual_size})",
-                original_path.display()
+                "{path} (Size mismatch: expected {expected_size}, got {actual_size})",
+                path = original_path.display(),
             )));
         }
     }
@@ -1805,8 +1792,8 @@ fn apply_hdiff_patch(
         && is_filtered_asset(cache, asset)
     {
         log::warn!(
-            "Original file MD5 mismatch for filtered asset, skipping: {}",
-            asset.target_file_path
+            "Original file MD5 mismatch for filtered asset, skipping: {path}",
+            path = asset.target_file_path
         );
         return Ok(());
     }
@@ -1818,8 +1805,8 @@ fn apply_hdiff_patch(
         && !is_filtered_asset(cache, asset)
     {
         log::warn!(
-            "Original file MD5 mismatch for {} — deleting and falling back to DownloadOver",
-            original_path.display()
+            "Original file MD5 mismatch for {path} — deleting and falling back to DownloadOver",
+            path = original_path.display()
         );
         let _ = fs::remove_file(&original_path);
         return Err(SophonError::OriginalFileMissing(
@@ -2091,12 +2078,11 @@ async fn apply_download_over_with_retry(
                 }
                 let delay = retry_delay(attempt);
                 log::warn!(
-                    "DownloadOver failed for {} (attempt {}/{}), retrying in {}ms: {}",
-                    asset.target_file_path,
-                    attempt + 1,
-                    MAX_RETRIES,
-                    delay.as_millis(),
-                    err_msg
+                    "DownloadOver failed for {path} (attempt {attempt_num}/{MAX_RETRIES}), retrying in {delay_ms}ms: {err}",
+                    path = asset.target_file_path,
+                    attempt_num = attempt + 1,
+                    delay_ms = delay.as_millis(),
+                    err = err_msg
                 );
                 if cancelable_sleep(handle, delay).await.is_err() {
                     return Err(SophonError::Cancelled);
@@ -2195,9 +2181,8 @@ async fn apply_download_over(
             );
             if let Err(err) = fs::remove_dir_all(&tmp_dir) {
                 log::warn!(
-                    "Failed to clean up temp directory {}: {}",
-                    tmp_dir.display(),
-                    err
+                    "Failed to clean up temp directory {path}: {err}",
+                    path = tmp_dir.display(),
                 );
             }
             result

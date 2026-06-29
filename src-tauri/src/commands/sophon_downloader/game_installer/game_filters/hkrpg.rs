@@ -219,8 +219,7 @@ pub fn write_binary_version_files(game_dir: &Path) -> std::io::Result<()> {
     )?;
 
     log::info!(
-        "write_binary_version_files: wrote AppIdentity.txt, DownloadedFullAssets.txt, InstallVersion.bin (hash={}, version={major}.{minor}.{patch})",
-        hash_str
+        "write_binary_version_files: wrote AppIdentity.txt, DownloadedFullAssets.txt, InstallVersion.bin (hash={hash_str}, version={major}.{minor}.{patch})",
     );
     Ok(())
 }

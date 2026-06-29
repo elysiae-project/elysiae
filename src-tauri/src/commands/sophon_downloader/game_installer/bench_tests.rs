@@ -73,12 +73,16 @@ fn bench_cache_key_computation() {
     let per = elapsed.as_nanos() as f64 / paths.len() as f64;
 
     println!("bench_cache_key_computation:");
-    println!("  total: {} ({} paths)", fmt_dur(elapsed), paths.len());
+    println!(
+        "  total: {total} ({n_paths} paths)",
+        total = fmt_dur(elapsed),
+        n_paths = paths.len()
+    );
     println!("  per-key: {per:.1} ns");
     println!(
-        "  heap allocated: ~{} KB ({} strings x avg ~60 bytes)",
-        keys.len() * 60 / 1024,
-        keys.len()
+        "  heap allocated: ~{heap_kb} KB ({n_strings} strings x avg ~60 bytes)",
+        heap_kb = keys.len() * 60 / 1024,
+        n_strings = keys.len()
     );
 
     // --- Alternative: if we could use Cow and avoid the .to_string() ---
@@ -96,10 +100,9 @@ fn bench_cache_key_computation() {
     let ratio = elapsed.as_nanos() as f64 / elapsed_cow.as_nanos().max(1) as f64;
     let saved_bytes = keys.len() * 60; // rough estimate of saved heap
     println!(
-        "  Cow alternative: {} ({:.2}x faster, ~{} KB less heap)",
-        fmt_dur(elapsed_cow),
-        ratio,
-        saved_bytes / 1024
+        "  Cow alternative: {elapsed_cow} ({ratio:.2}x faster, ~{saved_kb} KB less heap)",
+        elapsed_cow = fmt_dur(elapsed_cow),
+        saved_kb = saved_bytes / 1024
     );
 }
 
@@ -141,10 +144,16 @@ fn bench_md5_file_verification() {
     let throughput_mb = (file_size as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64();
 
     println!("bench_md5_file_verification:");
-    println!("  file: {} MiB", file_size / (1024 * 1024));
-    println!("  time: {}", fmt_dur(elapsed));
+    println!(
+        "  file: {file_size_mib} MiB",
+        file_size_mib = file_size / (1024 * 1024)
+    );
+    println!("  time: {elapsed}", elapsed = fmt_dur(elapsed));
     println!("  throughput: {throughput_mb:.1} MiB/s");
-    println!("  peak buffer: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
+    println!(
+        "  peak buffer: {buffer_kib} KiB",
+        buffer_kib = FILE_WRITE_BUFFER_SIZE / 1024
+    );
 }
 
 #[test]
@@ -180,10 +189,16 @@ fn bench_xxh64_file_verification() {
     let throughput_mb = (file_size as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64();
 
     println!("bench_xxh64_file_verification:");
-    println!("  file: {} MiB", file_size / (1024 * 1024));
-    println!("  time: {}", fmt_dur(elapsed));
+    println!(
+        "  file: {file_size_mib} MiB",
+        file_size_mib = file_size / (1024 * 1024)
+    );
+    println!("  time: {elapsed}", elapsed = fmt_dur(elapsed));
     println!("  throughput: {throughput_mb:.1} MiB/s");
-    println!("  peak buffer: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
+    println!(
+        "  peak buffer: {buffer_kib} KiB",
+        buffer_kib = FILE_WRITE_BUFFER_SIZE / 1024
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -227,13 +242,19 @@ fn bench_download_stream_write() {
 
     println!("bench_download_stream_write:");
     println!(
-        "  total: {} MiB in {}",
-        total_size / (1024 * 1024),
-        fmt_dur(elapsed)
+        "  total: {total_mib} MiB in {elapsed}",
+        total_mib = total_size / (1024 * 1024),
+        elapsed = fmt_dur(elapsed)
     );
     println!("  throughput: {throughput_mb:.1} MiB/s");
-    println!("  buffer size: {} KiB", FILE_WRITE_BUFFER_SIZE / 1024);
-    println!("  peak buffer memory: {} KiB", buffer.capacity() / 1024);
+    println!(
+        "  buffer size: {buffer_kib} KiB",
+        buffer_kib = FILE_WRITE_BUFFER_SIZE / 1024
+    );
+    println!(
+        "  peak buffer memory: {peak_kib} KiB",
+        peak_kib = buffer.capacity() / 1024
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -297,27 +318,26 @@ fn bench_zstd_decompress_write() {
 
     println!("bench_zstd_decompress_write:");
     println!(
-        " chunk: {} MiB, {} iterations",
-        raw_size / (1024 * 1024),
-        iterations
+        " chunk: {chunk_mib} MiB, {iterations} iterations",
+        chunk_mib = raw_size / (1024 * 1024),
     );
     println!(
-        " without BufReader: {} per chunk, {throughput_mb:.1} MiB/s",
-        fmt_dur(per)
+        " without BufReader: {per_chunk} per chunk, {throughput_mb:.1} MiB/s",
+        per_chunk = fmt_dur(per)
     );
     println!(
-        " with BufReader(256 KiB): {} per chunk, {throughput_bufread:.1} MiB/s",
-        fmt_dur(per_bufread)
+        " with BufReader(256 KiB): {per_chunk_bufread} per chunk, {throughput_bufread:.1} MiB/s",
+        per_chunk_bufread = fmt_dur(per_bufread)
     );
     println!(" speedup: {ratio:.2}x");
 
     println!(
-        " peak buffer (old): {} KiB (write only)",
-        super::FILE_WRITE_BUFFER_SIZE / 1024
+        " peak buffer (old): {buffer_kib} KiB (write only)",
+        buffer_kib = super::FILE_WRITE_BUFFER_SIZE / 1024
     );
     println!(
-        " peak buffer (new): {} KiB (read+write)",
-        (super::FILE_WRITE_BUFFER_SIZE + 256 * 1024) / 1024
+        " peak buffer (new): {buffer_kib} KiB (read+write)",
+        buffer_kib = (super::FILE_WRITE_BUFFER_SIZE + 256 * 1024) / 1024
     );
 }
 
@@ -369,15 +389,18 @@ fn bench_pending_count_mutex_vs_atomic() {
     println!("bench_pending_count_mutex_vs_atomic:");
     println!("  files: {n_files}, chunks/file: {chunks_per_file}");
     println!(
-        "  Mutex<usize>:    {} ({ratio:.2}x)",
-        fmt_dur(elapsed_mutex)
+        "  Mutex<usize>:    {elapsed_mutex} ({ratio:.2}x)",
+        elapsed_mutex = fmt_dur(elapsed_mutex)
     );
-    println!("  AtomicUsize:     {} (baseline)", fmt_dur(elapsed_atomic));
+    println!(
+        "  AtomicUsize:     {elapsed_atomic} (baseline)",
+        elapsed_atomic = fmt_dur(elapsed_atomic)
+    );
     println!("  Mutex heap:      ~{mutex_heap} bytes");
     println!("  Atomic heap:     ~{atomic_heap} bytes");
     println!(
-        "  memory saved:    ~{} bytes per file",
-        (std::mem::size_of::<Mutex<usize>>() - std::mem::size_of::<AtomicUsize>())
+        "  memory saved:    ~{memory_saved} bytes per file",
+        memory_saved = (std::mem::size_of::<Mutex<usize>>() - std::mem::size_of::<AtomicUsize>())
     );
 }
 
@@ -439,17 +462,17 @@ fn bench_download_items_lookup() {
     println!("bench_download_items_lookup:");
     println!("  unique chunks: {n_unique}, duplicates: {n_duplicates}");
     println!(
-        "  linear scan:  {} (found {found_linear})",
-        fmt_dur(elapsed_linear)
+        "  linear scan:  {elapsed_linear} (found {found_linear})",
+        elapsed_linear = fmt_dur(elapsed_linear)
     );
     println!(
-        "  HashMap:      {} (found {found_hashmap})",
-        fmt_dur(elapsed_hmap)
+        "  HashMap:      {elapsed_hmap} (found {found_hashmap})",
+        elapsed_hmap = fmt_dur(elapsed_hmap)
     );
     println!("  speedup: {ratio:.2}x");
     println!(
-        "  HashMap overhead: ~{} KB",
-        (n_unique * (32 + 8 + 8)) / 1024
+        "  HashMap overhead: ~{overhead_kb} KB",
+        overhead_kb = (n_unique * (32 + 8 + 8)) / 1024
     );
 }
 
@@ -516,15 +539,18 @@ fn bench_is_filtered_asset_file_reads() {
     println!("bench_is_filtered_asset_file_reads:");
     println!("  assets: {n_assets}");
     println!(
-        "  uncached (read per call): {} ({read_count} reads)",
-        fmt_dur(elapsed_uncached)
+        "  uncached (read per call): {elapsed_uncached} ({read_count} reads)",
+        elapsed_uncached = fmt_dur(elapsed_uncached)
     );
     println!(
-        "  cached (read once):       {} ({cached_read_count} iterations)",
-        fmt_dur(elapsed_cached)
+        "  cached (read once):       {elapsed_cached} ({cached_read_count} iterations)",
+        elapsed_cached = fmt_dur(elapsed_cached)
     );
     println!("  speedup: {ratio:.2}x");
-    println!("  blacklist file: ~{} bytes", blacklist_content.len());
+    println!(
+        "  blacklist file: ~{blacklist_bytes} bytes",
+        blacklist_bytes = blacklist_content.len()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -562,10 +588,13 @@ fn bench_state_save_serialization() {
 
     println!("bench_state_save_serialization:");
     println!("  entries: {n_entries}");
-    println!("  per-save: {} ({iterations} iterations)", fmt_dur(per));
     println!(
-        "  JSON size: ~{} KB",
-        fs::metadata(&save_path)
+        "  per-save: {per_save} ({iterations} iterations)",
+        per_save = fmt_dur(per)
+    );
+    println!(
+        "  JSON size: ~{json_size_kb} KB",
+        json_size_kb = fs::metadata(&save_path)
             .map(|m| m.len() / 1024)
             .unwrap_or(0)
     );
@@ -573,8 +602,8 @@ fn bench_state_save_serialization() {
     // Memory: the intermediate HashMap holds all entries during serialization
     let entry_bytes: usize = dashmap.iter().map(|entry| entry.key().len() + 8).sum();
     println!(
-        "  transient heap per save: ~{} KB (HashMap clone)",
-        (entry_bytes + n_entries * 48) / 1024
+        "  transient heap per save: ~{transient_kb} KB (HashMap clone)",
+        transient_kb = (entry_bytes + n_entries * 48) / 1024
     );
 }
 
@@ -613,9 +642,18 @@ fn bench_chunk_filename_format() {
 
     println!("bench_chunk_filename_format:");
     println!("  calls: {n}");
-    println!("  format!:     {} ({ratio:.2}x)", fmt_dur(elapsed_format));
-    println!("  reuse buf:   {} (baseline)", fmt_dur(elapsed_reuse));
-    println!("  heap per call: ~{} bytes", chunk_names[0].len() + 5);
+    println!(
+        "  format!:     {elapsed_format} ({ratio:.2}x)",
+        elapsed_format = fmt_dur(elapsed_format)
+    );
+    println!(
+        "  reuse buf:   {elapsed_reuse} (baseline)",
+        elapsed_reuse = fmt_dur(elapsed_reuse)
+    );
+    println!(
+        "  heap per call: ~{heap_bytes} bytes",
+        heap_bytes = chunk_names[0].len() + 5
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -662,16 +700,15 @@ fn bench_patch_chunk_read() {
 
         let ratio = elapsed_alloc_read.as_nanos() as f64 / elapsed_stream.as_nanos().max(1) as f64;
 
-        println!("bench_patch_chunk_read ({} MiB):", size_mib);
+        println!("bench_patch_chunk_read ({size_mib} MiB):",);
         println!(
-            "  alloc+read:  {} (peak heap: {} MiB)",
-            fmt_dur(elapsed_alloc_read),
-            peak_heap / (1024 * 1024)
+            "  alloc+read:  {elapsed_alloc_read} (peak heap: {peak_heap_mib} MiB)",
+            elapsed_alloc_read = fmt_dur(elapsed_alloc_read),
+            peak_heap_mib = peak_heap / (1024 * 1024)
         );
         println!(
-            "  stream copy: {} (peak heap: 256 KiB) {:.2}x",
-            fmt_dur(elapsed_stream),
-            ratio
+            "  stream copy: {elapsed_stream} (peak heap: 256 KiB) {ratio:.2}x",
+            elapsed_stream = fmt_dur(elapsed_stream)
         );
     }
 }
@@ -719,14 +756,13 @@ fn bench_cache_retain_stat() {
 
     println!("bench_cache_retain_stat:");
     println!(
-        "  entries: {n_entries} ({} exist, {} stale)",
-        n_real,
-        n_entries - n_real
+        "  entries: {n_entries} ({n_real} exist, {n_stale} stale)",
+        n_stale = n_entries - n_real
     );
     println!(
-        "  time: {} ({:.1} µs/entry)",
-        fmt_dur(elapsed),
-        elapsed.as_micros() as f64 / n_entries as f64
+        "  time: {elapsed} ({us_per_entry:.1} µs/entry)",
+        elapsed = fmt_dur(elapsed),
+        us_per_entry = elapsed.as_micros() as f64 / n_entries as f64
     );
     println!("  stat() calls: {n_entries}");
 }
@@ -806,18 +842,18 @@ fn bench_filter_assets_clone_all_vs_mutate() {
     println!("bench_filter_assets_clone_all_vs_mutate:");
     println!("  assets: {n}, filtered: ~5%");
     println!(
-        "  clone_all (bad):  {} (baseline)",
-        fmt_dur(elapsed_clone_all)
+        "  clone_all (bad):  {elapsed_clone_all} (baseline)",
+        elapsed_clone_all = fmt_dur(elapsed_clone_all)
     );
     println!(
-        "  in_place_mutate (production): {} (~{:.1}x)",
-        fmt_dur(elapsed_mutate),
-        elapsed_clone_all.as_nanos() as f64 / elapsed_mutate.as_nanos().max(1) as f64
+        "  in_place_mutate (production): {elapsed_mutate} (~{speedup:.1}x)",
+        elapsed_mutate = fmt_dur(elapsed_mutate),
+        speedup = elapsed_clone_all.as_nanos() as f64 / elapsed_mutate.as_nanos().max(1) as f64
     );
     println!(
-        "  extra heap: clone_all = ~{} KB, mutate = ~{} KB",
-        clone_all_heap / 1024,
-        mutate_heap / 1024
+        "  extra heap: clone_all = ~{clone_all_kb} KB, mutate = ~{mutate_kb} KB",
+        clone_all_kb = clone_all_heap / 1024,
+        mutate_kb = mutate_heap / 1024
     );
     println!("  production clones: 0 (mutates &mut [PatchAssetInfo] in place)");
 }
@@ -916,15 +952,21 @@ fn bench_parallel_vs_sequential_verification() {
 
     println!("bench_parallel_vs_sequential_verification:");
     println!(
-        "  files: {num_files}, size each: {} MiB, total: {} MiB",
-        file_size / (1024 * 1024),
-        num_files * file_size / (1024 * 1024)
+        "  files: {num_files}, size each: {size_each_mib} MiB, total: {total_mib} MiB",
+        size_each_mib = file_size / (1024 * 1024),
+        total_mib = num_files * file_size / (1024 * 1024)
     );
-    println!("  sequential: {}", fmt_dur(sequential_time));
-    println!("  parallel:   {}", fmt_dur(parallel_time));
     println!(
-        "  speedup:    {:.1}x",
-        sequential_time.as_nanos() as f64 / parallel_time.as_nanos().max(1) as f64
+        "  sequential: {sequential_time}",
+        sequential_time = fmt_dur(sequential_time)
+    );
+    println!(
+        "  parallel:   {parallel_time}",
+        parallel_time = fmt_dur(parallel_time)
+    );
+    println!(
+        "  speedup:    {speedup:.1}x",
+        speedup = sequential_time.as_nanos() as f64 / parallel_time.as_nanos().max(1) as f64
     );
 }
 
@@ -973,12 +1015,18 @@ fn bench_verify_buffer_reuse() {
 
     let total_mb = (num_files * file_size) as f64 / (1024.0 * 1024.0);
     println!("bench_verify_buffer_reuse:");
-    println!("  files: {num_files} x {} KiB", file_size / 1024);
-    println!("  total: {total_mb:.1} MiB");
-    println!("  reusable buffer:  {}", fmt_dur(reused));
-    println!("  fresh alloc each: {}", fmt_dur(fresh_alloc));
     println!(
-        "  ratio:  {:.2}x (reusable / fresh)",
-        reused.as_nanos() as f64 / fresh_alloc.as_nanos().max(1) as f64
+        "  files: {num_files} x {file_size_kib} KiB",
+        file_size_kib = file_size / 1024
+    );
+    println!("  total: {total_mb:.1} MiB");
+    println!("  reusable buffer:  {reused}", reused = fmt_dur(reused));
+    println!(
+        "  fresh alloc each: {fresh_alloc}",
+        fresh_alloc = fmt_dur(fresh_alloc)
+    );
+    println!(
+        "  ratio:  {ratio:.2}x (reusable / fresh)",
+        ratio = reused.as_nanos() as f64 / fresh_alloc.as_nanos().max(1) as f64
     );
 }

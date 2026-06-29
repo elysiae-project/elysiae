@@ -47,7 +47,8 @@ pub fn decrement_chunk_refcount(
     };
     let prev = chunk_refcounts[idx].fetch_sub(1, Ordering::AcqRel);
     if prev == 1 {
-        let _ = fs::remove_file(chunks_dir.join(format!("{}.zstd", chunk_lookup.get(idx))));
+        let _ =
+            fs::remove_file(chunks_dir.join(format!("{name}.zstd", name = chunk_lookup.get(idx))));
     }
 }
 
@@ -176,10 +177,10 @@ pub fn assemble_file(
 
         if already_valid {
             log::debug!(
-                "assemble_file: skipping already-valid file '{}' ({} bytes, md5={})",
-                file.asset_name,
-                file.asset_size,
-                file.asset_hash_md5
+                "assemble_file: skipping already-valid file '{name}' ({size} bytes, md5={md5})",
+                name = file.asset_name,
+                size = file.asset_size,
+                md5 = file.asset_hash_md5
             );
             for chunk in &file.asset_chunks {
                 decrement_chunk_refcount(
@@ -192,8 +193,8 @@ pub fn assemble_file(
             return Ok(());
         }
         log::warn!(
-            "assemble_file: file '{}' exists but MD5 mismatch, re-assembling",
-            file.asset_name
+            "assemble_file: file '{name}' exists but MD5 mismatch, re-assembling",
+            name = file.asset_name
         );
     }
 
@@ -215,8 +216,8 @@ pub fn assemble_file(
     let mut file_hasher = if file.asset_hash_md5.is_empty() {
         if !file.is_directory() {
             log::warn!(
-                "File '{}' has no asset_hash_md5; assembled without file-level verification",
-                file.asset_name
+                "File '{name}' has no asset_hash_md5; assembled without file-level verification",
+                name = file.asset_name
             );
         }
         None

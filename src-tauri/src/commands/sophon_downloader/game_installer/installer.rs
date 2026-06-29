@@ -649,10 +649,9 @@ async fn build_download_state(
     }
 
     log::info!(
-        "build_download_state: {} download items, {} chunk entries, all_files_index={}",
-        download_items.len(),
-        chunk_entries.len(),
-        all_files_index,
+        "build_download_state: {items} download items, {entries} chunk entries, all_files_index={all_files_index}",
+        items = download_items.len(),
+        entries = chunk_entries.len(),
     );
 
     let total_flat_entries: usize = chunk_entries.iter().map(|v| v.len()).sum();
@@ -879,23 +878,17 @@ async fn download_chunk_with_retries(
                     return Err(SophonError::DownloadFailed {
                         chunk: chunk.chunk_name.clone(),
                         attempts: hash_failures,
-                        error: format!(
-                            "hash verification failed after {} retries",
-                            MAX_HASH_RETRIES
-                        ),
+                        error: format!("hash verification failed after {MAX_HASH_RETRIES} retries"),
                     });
                 }
                 log::warn!(
-                    "MD5 mismatch for {} (hash retry {}/{}), re-downloading",
-                    chunk.chunk_name,
-                    hash_failures,
-                    MAX_HASH_RETRIES
+                    "MD5 mismatch for {chunk} (hash retry {hash_failures}/{MAX_HASH_RETRIES}), re-downloading",
+                    chunk = chunk.chunk_name,
                 );
                 if let Err(err) = tokio::fs::remove_file(dest).await {
                     log::warn!(
-                        "Failed to discard corrupted chunk {} before retry: {}",
-                        chunk.chunk_name,
-                        err
+                        "Failed to discard corrupted chunk {chunk} before retry: {err}",
+                        chunk = chunk.chunk_name,
                     );
                 }
                 if cancelable_sleep(handle, retry_delay(hash_failures))
@@ -914,8 +907,8 @@ async fn download_chunk_with_retries(
                     let err_msg = err.to_string();
                     (ctx.updater)(SophonProgress::Warning {
                         message: format!(
-                            "Chunk {} failed (attempt {}/{}): {err_msg}",
-                            chunk.chunk_name, network_attempts, MAX_RETRIES
+                            "Chunk {chunk} failed (attempt {network_attempts}/{MAX_RETRIES}): {err_msg}",
+                            chunk = chunk.chunk_name,
                         ),
                     });
                     if cancelable_sleep(handle, retry_delay(network_attempts))
@@ -1243,9 +1236,8 @@ async fn finalize_install(
         tokio::task::spawn_blocking(move || {
             if let Err(err) = fs::remove_dir_all(&*cd) {
                 log::warn!(
-                    "Failed to remove chunks directory {} on cancel: {}",
-                    cd.display(),
-                    err
+                    "Failed to remove chunks directory {dir} on cancel: {err}",
+                    dir = cd.display(),
                 );
             }
         })
@@ -1263,10 +1255,8 @@ async fn finalize_install(
         let total = ctx.total_files;
         if assembled != total {
             log::warn!(
-                "Sophon install completed but assembled_files ({}) != total_files ({}). {} files may be missing!",
-                assembled,
-                total,
-                total - assembled,
+                "Sophon install completed but assembled_files ({assembled}) != total_files ({total}). {missing} files may be missing!",
+                missing = total - assembled,
             );
         } else {
             log::info!("Sophon install: all {total} files assembled successfully");
@@ -1427,8 +1417,8 @@ pub async fn install(
             if asset.is_directory() {
                 if let Err(err) = validate_asset_name(&asset.asset_name) {
                     log::warn!(
-                        "Skipping directory with invalid asset_name \"{}\": {err}",
-                        asset.asset_name
+                        "Skipping directory with invalid asset_name \"{name}\": {err}",
+                        name = asset.asset_name
                     );
                     continue;
                 }
@@ -1462,10 +1452,8 @@ pub async fn install(
                 let removed = before - prev_downloaded_chunks.len();
                 if removed > 0 {
                     log::warn!(
-                        "Removed {}/{} stale chunk entries from resume state (chunks dir: {})",
-                        removed,
-                        before,
-                        chunks_dir_validate.display()
+                        "Removed {removed}/{before} stale chunk entries from resume state (chunks dir: {dir})",
+                        dir = chunks_dir_validate.display()
                     );
                 }
                 prev_downloaded_chunks
@@ -1474,9 +1462,7 @@ pub async fn install(
         }
         if manifest_changed {
             log::warn!(
-                "Manifest changed on resume (old={}, new={}), re-verifying all chunks",
-                prev_manifest_hash,
-                current_manifest_hash
+                "Manifest changed on resume (old={prev_manifest_hash}, new={current_manifest_hash}), re-verifying all chunks",
             );
             // The cached chunks reference names from the previous manifest.
             // Filter them down to names that still exist in the new manifest
@@ -1494,16 +1480,13 @@ pub async fn install(
             let dropped = before - prev_downloaded_chunks.len();
             if dropped > 0 {
                 log::warn!(
-                    "Dropped {}/{} stale chunk entries whose names are absent from the new manifest",
-                    dropped,
-                    before
+                    "Dropped {dropped}/{before} stale chunk entries whose names are absent from the new manifest"
                 );
             }
         } else {
             log::info!(
-                "Manifest unchanged on resume (hash={}), preserving {} cached chunks",
-                current_manifest_hash,
-                prev_downloaded_chunks.len()
+                "Manifest unchanged on resume (hash={current_manifest_hash}), preserving {count} cached chunks",
+                count = prev_downloaded_chunks.len()
             );
         }
     }
@@ -1550,18 +1533,15 @@ pub async fn install(
 
     let (total_compressed, total_files) = compute_totals(&all_files);
     log::info!(
-        "Sophon install: {} total files across {} installers, {} compressed bytes",
-        total_files,
-        installer_data.len(),
-        total_compressed,
+        "Sophon install: {total_files} total files across {installers} installers, {total_compressed} compressed bytes",
+        installers = installer_data.len(),
     );
     for (i, d) in installer_data.iter().enumerate() {
         log::info!(
-            "  installer[{}]: label={}, matching_field={}, files={}",
-            i,
-            d.label,
-            d.matching_field,
-            d.file_count,
+            "  installer[{i}]: label={label}, matching_field={matching_field}, files={file_count}",
+            label = d.label,
+            matching_field = d.matching_field,
+            file_count = d.file_count,
         );
     }
     let verify_cache = Arc::new(cache::load_verification_cache(game_dir));
@@ -1782,9 +1762,9 @@ pub async fn install(
     .await?;
 
     log::info!(
-        "MEMORY: all_files={} files, approx {:.1}MB ({}B strings + {}B chunks + {}B struct)",
-        ctx.all_files.len(),
-        {
+        "MEMORY: all_files={file_count} files, approx {mb:.1}MB ({name_bytes}B strings + {chunk_bytes}B chunks + {struct_bytes}B struct)",
+        file_count = ctx.all_files.len(),
+        mb = {
             let total_name_bytes: usize = ctx
                 .all_files
                 .iter()
@@ -1811,11 +1791,13 @@ pub async fn install(
                     * std::mem::size_of::<SophonManifestAssetChunk>();
             (total_name_bytes + total_chunk_bytes + total_struct) as f64 / 1_048_576.0
         },
-        ctx.all_files
+        name_bytes = ctx
+            .all_files
             .iter()
             .map(|f| f.asset_name.len() + f.asset_hash_md5.len())
             .sum::<usize>(),
-        ctx.all_files
+        chunk_bytes = ctx
+            .all_files
             .iter()
             .flat_map(|f| f.asset_chunks.iter())
             .map(|c| c.chunk_name.len()
@@ -1823,7 +1805,7 @@ pub async fn install(
                 + c.chunk_compressed_hash_md5.len()
                 + 48)
             .sum::<usize>(),
-        ctx.all_files.len() * std::mem::size_of::<SophonManifestAssetProperty>()
+        struct_bytes = ctx.all_files.len() * std::mem::size_of::<SophonManifestAssetProperty>()
             + ctx
                 .all_files
                 .iter()
@@ -1832,15 +1814,15 @@ pub async fn install(
                 * std::mem::size_of::<SophonManifestAssetChunk>(),
     );
     log::info!(
-        "MEMORY: download_items={}×{}B chunk_entries={}×{}B refcounts={}×{}B downloaded_chunks={}×{}B",
-        download_items.len(),
-        std::mem::size_of::<DownloadItem>(),
-        chunk_entries.len(),
-        std::mem::size_of::<FileEntry>(),
-        chunk_refcounts_vec.len(),
-        std::mem::size_of::<AtomicUsize>(),
-        download_items.len(),
-        std::mem::size_of::<AtomicU64>(),
+        "MEMORY: download_items={di_len}×{di_sz}B chunk_entries={ce_len}×{ce_sz}B refcounts={rc_len}×{rc_sz}B downloaded_chunks={dc_len}×{dc_sz}B",
+        di_len = download_items.len(),
+        di_sz = std::mem::size_of::<DownloadItem>(),
+        ce_len = chunk_entries.len(),
+        ce_sz = std::mem::size_of::<FileEntry>(),
+        rc_len = chunk_refcounts_vec.len(),
+        rc_sz = std::mem::size_of::<AtomicUsize>(),
+        dc_len = download_items.len(),
+        dc_sz = std::mem::size_of::<AtomicU64>(),
     );
 
     let _ = ctx.chunk_refcounts.set(Arc::new(chunk_refcounts_vec));
@@ -2018,7 +2000,7 @@ pub async fn verify_integrity(
                 Some((asset, chunk_download, file_path))
             } else {
                 if scanned.is_multiple_of(100) {
-                    log::debug!("Verified {}/{} files", scanned, total_files);
+                    log::debug!("Verified {scanned}/{total_files} files");
                 }
                 None
             }
@@ -2037,8 +2019,8 @@ pub async fn verify_integrity(
     for (asset, chunk_download, file_path) in failed_verifications {
         emit(SophonProgress::Warning {
             message: format!(
-                "File {} failed integrity check, re-downloading",
-                asset.asset_name
+                "File {name} failed integrity check, re-downloading",
+                name = asset.asset_name
             ),
         });
 
@@ -2124,8 +2106,8 @@ async fn redownload_asset(
     let _ = fs::remove_file(file_path);
 
     let tmp_dir_name = format!(
-        "tmp-verify-{}",
-        asset.asset_name.replace(['/', '\\', ':'], "_")
+        "tmp-verify-{name}",
+        name = asset.asset_name.replace(['/', '\\', ':'], "_")
     );
     let tmp_dir = game_dir.join(&tmp_dir_name);
     fs::create_dir_all(&tmp_dir)?;
@@ -2535,7 +2517,7 @@ mod tests {
             encryption: 0,
             password: String::new(),
             compression: Compression::None,
-            url_prefix: format!("{}/", server.uri()),
+            url_prefix: format!("{uri}/", uri = server.uri()),
             url_suffix: "chunks".to_string(),
         });
 

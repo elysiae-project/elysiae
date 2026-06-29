@@ -41,10 +41,7 @@ impl AdaptiveAssembly {
 
         if new_target != current {
             log::info!(
-                "AdaptiveAssembly: available RAM {} MiB, adjusting assembly concurrency {} → {}",
-                available_mb,
-                current,
-                new_target,
+                "AdaptiveAssembly: available RAM {available_mb} MiB, adjusting assembly concurrency {current} → {new_target}",
             );
             self.target.store(new_target, Ordering::Release);
         }

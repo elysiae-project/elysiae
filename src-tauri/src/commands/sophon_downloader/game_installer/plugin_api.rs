@@ -143,8 +143,9 @@ where
 
 pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<PluginPackageInfo>> {
     let url = format!(
-        "{}?launcher_id={}&game_ids[]={}&language=en",
-        PLUGIN_URL, LAUNCHER_ID, game_id
+        "{base}?launcher_id={launcher_id}&game_ids[]={game_id}&language=en",
+        base = PLUGIN_URL,
+        launcher_id = LAUNCHER_ID,
     );
 
     let resp: PluginApiResponse = client
@@ -197,8 +198,9 @@ pub async fn fetch_channel_sdks(
     game_id: &str,
 ) -> SophonResult<Vec<ChannelSdkData>> {
     let url = format!(
-        "{}?launcher_id={}&game_ids[]={}&language=en",
-        SDK_URL, LAUNCHER_ID, game_id
+        "{base}?launcher_id={launcher_id}&game_ids[]={game_id}&language=en",
+        base = SDK_URL,
+        launcher_id = LAUNCHER_ID,
     );
 
     let resp: SdkApiResponse = client

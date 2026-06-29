@@ -92,8 +92,8 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
             16 => compute_file_xxh64(&path),
             _ => {
                 log::warn!(
-                    "Unknown hash format (length={}) for verification",
-                    expected_hash.len()
+                    "Unknown hash format (length={len}) for verification",
+                    len = expected_hash.len()
                 );
                 return Ok(false);
             }
@@ -139,10 +139,9 @@ async fn do_download_chunk(
                 Ok(f) => {
                     if let Err(err) = f.set_len(chunk.chunk_size).await {
                         log::warn!(
-                            "Failed to truncate {} to {}: {}; deleting and re-downloading",
-                            chunk.chunk_name,
-                            chunk.chunk_size,
-                            err
+                            "Failed to truncate {name} to {size}: {err}; deleting and re-downloading",
+                            name = chunk.chunk_name,
+                            size = chunk.chunk_size
                         );
                         let _ = tokio::fs::remove_file(dest).await;
                         existing_size = 0;
@@ -152,9 +151,8 @@ async fn do_download_chunk(
                 }
                 Err(err) => {
                     log::warn!(
-                        "Failed to open {} for truncation: {}; deleting and re-downloading",
-                        chunk.chunk_name,
-                        err
+                        "Failed to open {name} for truncation: {err}; deleting and re-downloading",
+                        name = chunk.chunk_name
                     );
                     let _ = tokio::fs::remove_file(dest).await;
                     existing_size = 0;
@@ -170,14 +168,14 @@ async fn do_download_chunk(
                 let _ = tokio::fs::remove_file(dest).await;
             } else if chunk.chunk_decompressed_hash_md5.is_empty() {
                 log::warn!(
-                    "Chunk {} has no compressed or decompressed MD5; trusting size match",
-                    chunk.chunk_name
+                    "Chunk {name} has no compressed or decompressed MD5; trusting size match",
+                    name = chunk.chunk_name
                 );
                 return Ok(());
             } else {
                 log::warn!(
-                    "Chunk {} has no compressed MD5; re-downloading for integrity",
-                    chunk.chunk_name
+                    "Chunk {name} has no compressed MD5; re-downloading for integrity",
+                    name = chunk.chunk_name
                 );
                 let _ = tokio::fs::remove_file(dest).await;
             }
@@ -239,10 +237,9 @@ async fn download_full_file_with_response(
         && len != chunk.chunk_size
     {
         log::warn!(
-            "Content-Length ({}) != expected chunk_size ({}) for {}, proceeding anyway",
-            len,
-            chunk.chunk_size,
-            chunk.chunk_name
+            "Content-Length ({len}) != expected chunk_size ({expected}) for {name}, proceeding anyway",
+            expected = chunk.chunk_size,
+            name = chunk.chunk_name
         );
     }
 
@@ -360,16 +357,16 @@ async fn download_full_file_with_response(
             }
             _ => {
                 log::warn!(
-                    "Unknown compressed hash format (length={}) for chunk {}",
-                    expected.len(),
-                    chunk.chunk_name
+                    "Unknown compressed hash format (length={len}) for chunk {name}",
+                    len = expected.len(),
+                    name = chunk.chunk_name
                 );
             }
         }
     } else {
         log::warn!(
-            "Chunk {} downloaded without compressed hash verification",
-            chunk.chunk_name
+            "Chunk {name} downloaded without compressed hash verification",
+            name = chunk.chunk_name
         );
     }
 
@@ -540,16 +537,16 @@ async fn download_with_resume(
             }
             _ => {
                 log::warn!(
-                    "Unknown compressed hash format (length={}) for chunk {}",
-                    expected.len(),
-                    chunk.chunk_name
+                    "Unknown compressed hash format (length={len}) for chunk {name}",
+                    len = expected.len(),
+                    name = chunk.chunk_name
                 );
             }
         }
     } else {
         log::warn!(
-            "Chunk {} downloaded without compressed hash verification",
-            chunk.chunk_name
+            "Chunk {name} downloaded without compressed hash verification",
+            name = chunk.chunk_name
         );
     }
 

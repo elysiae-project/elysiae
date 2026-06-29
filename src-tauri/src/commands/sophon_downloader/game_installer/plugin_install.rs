@@ -166,8 +166,8 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
 
     if archive.len() > ZIP_MAX_ENTRIES {
         return Err(SophonError::Decompression(format!(
-            "archive has {} entries, exceeds limit of {ZIP_MAX_ENTRIES}",
-            archive.len()
+            "archive has {archive_len} entries, exceeds limit of {ZIP_MAX_ENTRIES}",
+            archive_len = archive.len()
         )));
     }
 
@@ -186,8 +186,8 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
         // could leak attacker-controlled text into game_dir.
         if entry.is_symlink() {
             log::warn!(
-                "Rejecting symlink entry '{}' in plugin archive",
-                entry.name()
+                "Rejecting symlink entry '{name}' in plugin archive",
+                name = entry.name()
             );
             continue;
         }
@@ -196,8 +196,8 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
         // Legitimate plugin/SDK paths never contain ':'.
         if entry.name().contains(':') {
             log::warn!(
-                "Rejecting entry with alternate-data-stream name '{}'",
-                entry.name()
+                "Rejecting entry with alternate-data-stream name '{name}'",
+                name = entry.name()
             );
             continue;
         }
@@ -205,8 +205,8 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
         let declared = entry.size();
         if declared > ZIP_MAX_ENTRY_BYTES {
             return Err(SophonError::Decompression(format!(
-                "entry '{}' declares {declared} bytes, exceeds per-entry limit of {ZIP_MAX_ENTRY_BYTES}",
-                entry.name()
+                "entry '{name}' declares {declared} bytes, exceeds per-entry limit of {ZIP_MAX_ENTRY_BYTES}",
+                name = entry.name()
             )));
         }
         // Ratio check on the declared compressed size; skip if the entry did
@@ -214,9 +214,9 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
         let cc = entry.compressed_size();
         if cc > 0 && declared > cc.saturating_mul(ZIP_MAX_RATIO) {
             return Err(SophonError::Decompression(format!(
-                "entry '{}' ratio {} exceeds {ZIP_MAX_RATIO}",
-                entry.name(),
-                declared / cc,
+                "entry '{name}' ratio {ratio} exceeds {ZIP_MAX_RATIO}",
+                name = entry.name(),
+                ratio = declared / cc,
             )));
         }
         total_extracted = match total_extracted.checked_add(declared) {
@@ -246,9 +246,8 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
                 log::warn!("Skipping path traversal attempt: {:?}", out_path);
                 if let Err(err) = fs::remove_dir_all(&out_path) {
                     log::warn!(
-                        "Failed to clean up symlink-traversal directory {}: {}",
-                        out_path.display(),
-                        err
+                        "Failed to clean up symlink-traversal directory {path}: {err}",
+                        path = out_path.display(),
                     );
                 }
                 continue;
@@ -301,10 +300,9 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
             && meta.len() != expected_size
         {
             log::warn!(
-                "Validation file size mismatch: {} (expected {}, got {})",
-                entry.path,
-                expected_size,
-                meta.len()
+                "Validation file size mismatch: {path} (expected {expected_size}, got {actual})",
+                path = entry.path,
+                actual = meta.len()
             );
             return false;
         }
@@ -320,10 +318,9 @@ fn verify_validation(game_dir: &Path, validation: &[ValidationEntry]) -> bool {
             };
             if computed != *expected_md5 {
                 log::warn!(
-                    "Validation file MD5 mismatch: {} (expected {}, got {})",
-                    entry.path,
-                    expected_md5,
-                    computed
+                    "Validation file MD5 mismatch: {path} (expected {expected_md5}, got {actual})",
+                    path = entry.path,
+                    actual = computed
                 );
                 return false;
             }

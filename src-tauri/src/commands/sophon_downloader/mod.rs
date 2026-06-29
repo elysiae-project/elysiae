@@ -130,9 +130,8 @@ pub(crate) fn load_download_state_from(path: &Path) -> Option<DownloadState> {
         Ok(c) => c,
         Err(err) => {
             log::warn!(
-                "Failed to read download state file {}: {}",
-                path.display(),
-                err
+                "Failed to read download state file {path}: {err}",
+                path = path.display(),
             );
             return None;
         }
@@ -153,22 +152,20 @@ fn preserve_corrupted_state(path: &Path, parse_err: &serde_json::Error) -> Optio
         .unwrap_or(0);
     let backup_path = path.with_extension(format!("corrupted-{timestamp}.json"));
     log::warn!(
-        "Download state file corrupted ({}), preserving as {}",
-        parse_err,
-        backup_path.display()
+        "Download state file corrupted ({parse_err}), preserving as {backup}",
+        backup = backup_path.display()
     );
     match fs::rename(path, &backup_path) {
         Ok(()) => {
             log::warn!(
-                "Corrupted download state preserved at {}; user will resume from scratch",
-                backup_path.display()
+                "Corrupted download state preserved at {backup}; user will resume from scratch",
+                backup = backup_path.display()
             );
         }
         Err(rename_err) => {
             log::warn!(
-                "Failed to preserve corrupted download state at {}: {}; removing instead",
-                backup_path.display(),
-                rename_err
+                "Failed to preserve corrupted download state at {backup}: {rename_err}; removing instead",
+                backup = backup_path.display()
             );
             let _ = fs::remove_file(path);
         }
@@ -202,9 +199,8 @@ fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(err) => {
             log::warn!(
-                "Failed to delete chunks directory {}: {}",
-                chunks_dir.display(),
-                err
+                "Failed to delete chunks directory {dir}: {err}",
+                dir = chunks_dir.display()
             );
             false
         }
