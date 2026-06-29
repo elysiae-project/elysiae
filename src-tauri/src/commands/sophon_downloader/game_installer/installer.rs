@@ -160,7 +160,6 @@ fn now_nanos() -> u64 {
 }
 
 pub(crate) struct InstallerData {
-    client: Arc<Client>,
     chunk_download: Arc<DownloadInfo>,
     file_count: usize,
     label: String,
@@ -178,7 +177,6 @@ type PendingCount = Arc<AtomicUsize>;
 type FileEntry = (usize, usize, PendingCount);
 
 pub struct SophonInstaller {
-    pub client: Client,
     pub manifest: SophonManifestProto,
     pub chunk_download: DownloadInfo,
     pub label: String,
@@ -201,7 +199,6 @@ impl SophonInstaller {
             }
         }
         Ok(Self {
-            client: client.clone(),
             manifest,
             chunk_download: meta.chunk_download.clone(),
             label: meta
@@ -445,7 +442,6 @@ async fn build_diff_installers(
         }
 
         installers.push(SophonInstaller {
-            client: client.clone(),
             manifest: SophonManifestProto { assets: diff_files },
             chunk_download: new_meta.chunk_download.clone(),
             label: new_meta
@@ -496,7 +492,6 @@ fn build_installer_data(
         data.push(InstallerData {
             label: inst.label,
             matching_field: inst.matching_field,
-            client: Arc::new(inst.client),
             chunk_download: Arc::new(inst.chunk_download),
             file_count,
         });
@@ -2194,7 +2189,6 @@ mod tests {
 
     fn make_installer_data(files: Vec<SophonManifestAssetProperty>) -> InstallerData {
         InstallerData {
-            client: Arc::new(Client::new()),
             chunk_download: Arc::new(make_download_info()),
             file_count: files.len(),
             label: "test".into(),
@@ -2204,7 +2198,6 @@ mod tests {
 
     fn make_sophon_installer(hash: &str) -> SophonInstaller {
         SophonInstaller {
-            client: Client::new(),
             manifest: SophonManifestProto { assets: vec![] },
             chunk_download: make_download_info(),
             label: "test".into(),
@@ -2738,7 +2731,6 @@ mod tests {
     #[test]
     fn build_installer_data_filters_directories() {
         let installer = SophonInstaller {
-            client: Client::new(),
             manifest: SophonManifestProto {
                 assets: vec![
                     make_dir("GameData"),
