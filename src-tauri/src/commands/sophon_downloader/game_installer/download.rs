@@ -103,7 +103,7 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
     .await?
 }
 
-/// Download a single chunk with optimizations from the original Sophon DLL.
+/// Download a single chunk.
 pub async fn download_chunk(
     client: &Client,
     chunk_download: &DownloadInfo,
@@ -223,9 +223,7 @@ async fn do_download_chunk(
     download_full_file_with_response(resp, chunk, dest, handle).await
 }
 
-/// Download a full file from a response, streaming body chunks to disk with
-/// concurrent MD5 and optional XXH64 hashing. Uses tokio::select! for
-/// immediate cancellation response instead of a polling timeout.
+/// Download a full file, streaming body chunks to disk with MD5/XXH64 hashing.
 async fn download_full_file_with_response(
     resp: reqwest::Response,
     chunk: &SophonManifestAssetChunk,

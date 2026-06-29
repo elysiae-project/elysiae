@@ -156,19 +156,15 @@ pub async fn fetch_plugins(client: &Client, game_id: &str) -> SophonResult<Vec<P
         .json()
         .await?;
 
-    // Validate API response code before processing data.
-    // A non-zero retcode indicates an upstream error (e.g. invalid game ID, auth
-    // failure) and the response data should not be trusted.
+    // Reject upstream errors before processing data.
     if resp.retcode != 0 {
         return Err(SophonError::ApiError(resp.retcode, resp.message));
     }
 
-    // Non-adjacent duplicate plugin_ids can appear when the upstream returns
-    // multiple releases. `Vec::dedup_by` only removes consecutive duplicates,
-    // so we'd otherwise surface the same plugin multiple times (causing
-    // double-install attempts and UI confusion). Use a HashSet to dedup
-    // across the entire flat-map output, preserving upstream ordering so the
-    // newest (typically first) version wins when both are present.
+    // Deduplicate plugin_ids across all releases using a HashSet. The
+    // upstream may return the same plugin in non-adjacent releases, and
+    // `Vec::dedup_by` only removes consecutive duplicates. The first
+    // occurrence (newest version) is retained.
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let plugins: Vec<PluginPackageInfo> = resp
         .data
@@ -422,11 +418,9 @@ mod tests {
 
     #[test]
     fn dedup_non_adjacent_duplicate_plugin_ids() {
-        // Same plugin_id p1 across two releases with other plugins between them.
-        // The prior `dedup_by` only removed *consecutive* duplicates so p1
-        // would have appeared twice in the result. The HashSet-based dedup
-        // keeps the first occurrence (typically the newest version when the
-        // upstream returns releases in newest-first order).
+        // Same plugin_id across two releases with other plugins between them.
+        // `dedup_by` only removes consecutive duplicates; the HashSet dedup
+        // keeps the first occurrence (newest version).
         let json = r#"{
             "retcode": 0,
             "message": "OK",
@@ -488,8 +482,8 @@ mod tests {
             }
         }"#;
         let resp: PluginApiResponse = serde_json::from_str(json).unwrap();
-        // Replicate the dedup logic from `fetch_plugins` (locally because the
-        // function is async + requires an HTTP client).
+        // Replicate the dedup logic from `fetch_plugins` locally (the
+        // function is async and requires an HTTP client).
         let mut seen = std::collections::HashSet::new();
         let plugins: Vec<PluginPackageInfo> = resp
             .data

@@ -10,8 +10,7 @@ use crate::commands::sophon_downloader::SophonProgress;
 
 const STATE_RUNNING: u8 = 0;
 const STATE_PAUSED: u8 = 1;
-/// Terminal cancelled state - cannot be undone by resume().
-/// Uses value 3 to avoid collision with future intermediate states.
+/// Terminal cancelled state; value 3 avoids collision with future states.
 const STATE_CANCELLED: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,16 +37,14 @@ impl DownloadHandle {
     }
 
     pub fn pause(&self) {
-        // Use compare_exchange to avoid race with concurrent cancel.
-        // Cancellation is terminal - never overwrite it with PAUSED.
+        // compare_exchange avoids racing with cancel; cancellation is terminal.
         while let Err(current) = self.state.compare_exchange(
             STATE_RUNNING,
             STATE_PAUSED,
             Ordering::AcqRel,
             Ordering::Acquire,
         ) {
-            // If we lost the race to something other than RUNNING, give up.
-            // STATE_CANCELLED is terminal; STATE_PAUSED means already paused.
+            // Abort if state changed (cancelled or already paused).
             if current != STATE_RUNNING {
                 return;
             }
@@ -55,14 +52,11 @@ impl DownloadHandle {
     }
 
     pub fn resume(&self) {
-        // Never resume a cancelled download, cancellation is terminal
+        // Cancellation is terminal.
         if self.state.load(Ordering::Acquire) == STATE_CANCELLED {
             return;
         }
-        // Only transition from PAUSED to RUNNING and only wake waiters when the
-        // transition actually happened; otherwise we'd spuriously notify when no
-        // task is parked on `pause_notify` (e.g. resume called without a prior
-        // pause, or resume called twice in a row).
+        // Transition PAUSED→RUNNING and wake waiters only on actual transition.
         if self
             .state
             .compare_exchange(
@@ -229,7 +223,7 @@ mod tests {
     #[test]
     fn handle_resume_without_prior_pause_is_noop() {
         let handle = DownloadHandle::new();
-        // Resume while state is RUNNING (not PAUSED) must not transition or notify
+        // Resuming a running handle must not change state or notify.
         handle.resume();
         assert_eq!(handle.get_state(), ControlState::Running);
     }
@@ -244,7 +238,7 @@ mod tests {
             });
             handle.cancel();
             tokio::task::yield_now().await;
-            // final state must be Cancelled (cancel takes precedence)
+            // Cancel wins over pause.
             assert!(handle.is_cancelled());
         }
     }

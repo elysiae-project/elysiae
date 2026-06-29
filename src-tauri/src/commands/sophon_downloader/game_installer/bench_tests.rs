@@ -1,8 +1,4 @@
-//! Application-level benchmarks for the Sophon game installer.
-//!
-//! These measure real hot-path performance of the actual production code,
-//! not synthetic comparisons of before/after implementations.
-//!
+//! Application-level benchmarks for the Sophon installer.
 //! Run with: cargo test --lib -- --nocapture bench_
 
 use std::fs;
@@ -21,9 +17,7 @@ const HK4E_DATA_DIR_GLOBAL: &str =
     "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x5f\x44\x61\x74\x61";
 const HKRPG_DATA_DIR: &str = "\x53\x74\x61\x72\x52\x61\x69\x6c\x5f\x44\x61\x74\x61";
 
-// ---------------------------------------------------------------------------
-// Helper: format duration with appropriate unit
-// ---------------------------------------------------------------------------
+// Format duration with appropriate unit.
 fn fmt_dur(d: std::time::Duration) -> String {
     let ns = d.as_nanos() as f64;
     if ns < 1_000.0 {
@@ -37,12 +31,7 @@ fn fmt_dur(d: std::time::Duration) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 1. Cache key computation (real production path)
-// ---------------------------------------------------------------------------
-// This benchmarks the actual check_file_md5_cached cache-key path:
-//   path.strip_prefix(game_dir).unwrap_or(path).to_string_lossy().to_string()
-// Called for every chunk skip-check + every file verification = 62K+ times.
+// Benchmark cache key computation.
 
 #[test]
 fn bench_cache_key_computation() {
@@ -58,7 +47,7 @@ fn bench_cache_key_computation() {
         })
         .collect();
 
-    // --- Production path: strip_prefix + to_string_lossy + to_string ---
+    // Production path: strip_prefix + to_string_lossy + to_string
     let mut keys: Vec<String> = Vec::with_capacity(paths.len());
     let start = Instant::now();
     for path in &paths {
@@ -85,7 +74,7 @@ fn bench_cache_key_computation() {
         n_strings = keys.len()
     );
 
-    // --- Alternative: if we could use Cow and avoid the .to_string() ---
+    // Alternative: if we could use Cow and avoid the .to_string()
     let start = Instant::now();
     let mut cow_keys: Vec<std::borrow::Cow<str>> = Vec::with_capacity(paths.len());
     for path in &paths {
@@ -106,10 +95,7 @@ fn bench_cache_key_computation() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 2. MD5 file verification (real production path)
-// ---------------------------------------------------------------------------
-// Benchmarks the actual verify loop with 1 MiB buffer, matching production.
+// Benchmark MD5 file verification.
 
 #[test]
 fn bench_md5_file_verification() {
@@ -126,7 +112,7 @@ fn bench_md5_file_verification() {
         }
     }
 
-    // --- Production-style MD5 with 1 MiB buffer ---
+    // Production-style MD5 with 1 MiB buffer
     let start = Instant::now();
     let file = fs::File::open(&file_path).expect("open");
     let mut reader = std::io::BufReader::new(file);
@@ -201,10 +187,7 @@ fn bench_xxh64_file_verification() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 3. Download stream write path (real production pattern)
-// ---------------------------------------------------------------------------
-// Simulates the exact loop in download_chunk: BytesMut + stream + disk write.
+// Benchmark download stream write.
 
 #[test]
 fn bench_download_stream_write() {
@@ -257,11 +240,7 @@ fn bench_download_stream_write() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 4. Assembly: zstd decompress + write (real production path)
-// ---------------------------------------------------------------------------
-// Benchmarks the write_decompressed_chunk_at pattern: open zstd file,
-// decode, write via BufWriter. This is the CPU+I/O hot path.
+// Benchmark zstd decompression and write.
 
 #[test]
 fn bench_zstd_decompress_write() {
@@ -280,7 +259,7 @@ fn bench_zstd_decompress_write() {
 
     let output_path = dir.path().join("assembled.bin");
 
-    // --- Without BufReader (old approach) ---
+    // Without BufReader (old approach)
     let iterations = 10;
     let start = Instant::now();
     for _ in 0..iterations {
@@ -297,7 +276,7 @@ fn bench_zstd_decompress_write() {
     let per = elapsed / iterations;
     let throughput_mb = (raw_size as f64 / (1024.0 * 1024.0)) / per.as_secs_f64();
 
-    // --- With BufReader (current production path) ---
+    // With BufReader (current production path)
     let start = Instant::now();
     for _ in 0..iterations {
         let f = fs::File::open(&compressed_path).expect("open compressed");
@@ -341,19 +320,14 @@ fn bench_zstd_decompress_write() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 5. PendingCount: Mutex<usize> vs AtomicUsize (real production pattern)
-// ---------------------------------------------------------------------------
-// In register_chunks_for_file, every file gets Arc<Mutex<usize>> for
-// tracking how many chunks remain. notify_assembly_ready locks each one.
-// Benchmarks the real contention pattern.
+// Benchmark Mutex<usize> vs AtomicUsize for pending counts.
 
 #[test]
 fn bench_pending_count_mutex_vs_atomic() {
     let n_files = 50_000;
     let chunks_per_file = 3;
 
-    // --- Current: Arc<Mutex<usize>> ---
+    // Current: Arc<Mutex<usize>>
     let pending_mutex: Vec<Arc<Mutex<usize>>> = (0..n_files)
         .map(|_| Arc::new(Mutex::new(chunks_per_file)))
         .collect();
@@ -367,7 +341,7 @@ fn bench_pending_count_mutex_vs_atomic() {
     }
     let elapsed_mutex = start.elapsed();
 
-    // --- Alternative: Arc<AtomicUsize> ---
+    // Alternative: Arc<AtomicUsize>
     let pending_atomic: Vec<Arc<AtomicUsize>> = (0..n_files)
         .map(|_| Arc::new(AtomicUsize::new(chunks_per_file)))
         .collect();
@@ -404,11 +378,7 @@ fn bench_pending_count_mutex_vs_atomic() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 6. download_items lookup: linear scan vs HashMap (real production path)
-// ---------------------------------------------------------------------------
-// In register_chunks_for_file, when a chunk is shared (Occupied entry),
-// it does download_items.iter_mut().find() ,  O(N) per duplicate.
+// Benchmark download items lookup: linear scan vs HashMap.
 
 #[test]
 fn bench_download_items_lookup() {
@@ -420,7 +390,7 @@ fn bench_download_items_lookup() {
         .map(|i| (format!("chunk_{i:06}"), i as u64))
         .collect();
 
-    // --- Current: linear scan ---
+    // Current: linear scan
     let mut items_vec = items.clone();
     let dup_names: Vec<String> = (n_unique..(n_unique + n_duplicates))
         .map(|i| format!("chunk_{i:06}"))
@@ -440,7 +410,7 @@ fn bench_download_items_lookup() {
     }
     let elapsed_linear = start.elapsed();
 
-    // --- Alternative: HashMap index ---
+    // Alternative: HashMap index
     let items_vec2 = items.clone();
     let index: std::collections::HashMap<String, usize> = items_vec2
         .iter()
@@ -476,11 +446,7 @@ fn bench_download_items_lookup() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 7. is_filtered_asset: repeated file reads (real production problem)
-// ---------------------------------------------------------------------------
-// is_filtered_asset reads KDelResource/DownloadBlacklist.json/audio_lang_*
-// from disk on EVERY call. For 50K patch assets, this is 50K+ file reads.
+// Benchmark is_filtered_asset file reads.
 
 #[test]
 fn bench_is_filtered_asset_file_reads() {
@@ -506,7 +472,7 @@ fn bench_is_filtered_asset_file_reads() {
         .map(|i| format!("{HK4E_DATA_DIR_GLOBAL}/StreamingAssets/Audio/voice_{i:05}.pck"))
         .collect();
 
-    // --- Current: read file on every call ---
+    // Current: read file on every call
     let start = Instant::now();
     let mut read_count = 0u64;
     for _asset_path in &asset_paths {
@@ -519,7 +485,7 @@ fn bench_is_filtered_asset_file_reads() {
     }
     let elapsed_uncached = start.elapsed();
 
-    // --- Alternative: read once, cache in memory ---
+    // Alternative: read once, cache in memory
     let cached_content = fs::read_to_string(game_dir.join(format!(
         "{HKRPG_DATA_DIR}/Persistent/DownloadBlacklist.json"
     )))
@@ -553,11 +519,7 @@ fn bench_is_filtered_asset_file_reads() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 8. State save: DashMap -> JSON -> disk (real production path)
-// ---------------------------------------------------------------------------
-// StateSaver iterates all DashMap entries, clones to HashMap, serializes to
-// JSON, writes to disk. Called every 25 chunks.
+// Benchmark state save serialization.
 
 #[test]
 fn bench_state_save_serialization() {
@@ -573,7 +535,7 @@ fn bench_state_save_serialization() {
 
     let iterations = 20;
 
-    // --- Production path: iter + clone to HashMap + serde_json ---
+    // Production path: iter + clone to HashMap + serde_json
     let start = Instant::now();
     for _ in 0..iterations {
         let map: std::collections::HashMap<String, u64> = dashmap
@@ -607,18 +569,14 @@ fn bench_state_save_serialization() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 9. Assembly: chunk_filename format! allocation (real production path)
-// ---------------------------------------------------------------------------
-// chunk_filename is called for every chunk in every file, both in assembly
-// and in decrement_chunk_refcount. Measures the format! overhead.
+// Benchmark chunk_filename format! allocation.
 
 #[test]
 fn bench_chunk_filename_format() {
     let n = 100_000;
     let chunk_names: Vec<String> = (0..n).map(|i| format!("abcdef1234567890_{i:06}")).collect();
 
-    // --- Current: format!("{}.zstd", chunk_name) per call ---
+    // Current: format!("{}.zstd", chunk_name) per call
     let start = Instant::now();
     let mut filenames = Vec::with_capacity(n);
     for name in &chunk_names {
@@ -626,7 +584,7 @@ fn bench_chunk_filename_format() {
     }
     let elapsed_format = start.elapsed();
 
-    // --- Alternative: push_str into a reusable buffer ---
+    // Alternative: push_str into a reusable buffer
     let start = Instant::now();
     let mut filenames_buf = Vec::with_capacity(n);
     let mut buf = String::with_capacity(64);
@@ -656,11 +614,7 @@ fn bench_chunk_filename_format() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 10. Preinstall: patch chunk loading (memory usage)
-// ---------------------------------------------------------------------------
-// apply_copy_over and apply_hdiff_patch load the entire patch chunk into
-// a Vec<u8>. Measures allocation + read time for various sizes.
+// Benchmark patch chunk loading.
 
 #[test]
 fn bench_patch_chunk_read() {
@@ -679,7 +633,7 @@ fn bench_patch_chunk_read() {
             }
         }
 
-        // --- Production: vec![0u8; size] + read_exact ---
+        // Production: vec![0u8; size] + read_exact
         let start = Instant::now();
         let mut chunk_file = fs::File::open(&chunk_path).expect("open");
         let mut data = vec![0u8; size];
@@ -688,7 +642,7 @@ fn bench_patch_chunk_read() {
 
         let peak_heap = size;
 
-        // --- Alternative: streaming copy via io::copy ---
+        // Alternative: streaming copy via io::copy
         let dest_path = dir.path().join(format!("patch_{size_mib}_out.bin"));
         let start = Instant::now();
         let mut chunk_file = fs::File::open(&chunk_path).expect("open");
@@ -713,11 +667,7 @@ fn bench_patch_chunk_read() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 11. Verification cache: retain with stat() per entry
-// ---------------------------------------------------------------------------
-// On load, the cache does retain() checking path.exists() for every entry.
-// For 200K entries, this is 200K stat() syscalls.
+// Benchmark verification cache retain with stat.
 
 #[test]
 fn bench_cache_retain_stat() {
@@ -746,7 +696,7 @@ fn bench_cache_retain_stat() {
         );
     }
 
-    // --- Production: retain with path.exists() ---
+    // Production: retain with path.exists()
     let start = Instant::now();
     cache.retain(|rel_path, _| {
         let full_path = game_dir.join(rel_path);
@@ -767,12 +717,7 @@ fn bench_cache_retain_stat() {
     println!("  stat() calls: {n_entries}");
 }
 
-// ---------------------------------------------------------------------------
-// 12. filter_patch_assets_for_removed_features: clone all vs mutate
-// ---------------------------------------------------------------------------
-// Production code (filter_patch_assets_for_removed_features) mutates in
-// place with zero clones. This benchmark compares that approach against a
-// hypothetical bad approach that clones every asset.
+// Benchmark filter assets: clone all vs mutate.
 
 #[test]
 fn bench_filter_assets_clone_all_vs_mutate() {
@@ -810,7 +755,7 @@ fn bench_filter_assets_clone_all_vs_mutate() {
         ignored_lang_patterns: None,
     };
 
-    // --- Hypothetical bad approach: clone every asset into a new Vec ---
+    // Hypothetical bad approach: clone every asset into a new Vec
     let start = Instant::now();
     let _result: Vec<PatchAssetInfo> = assets
         .iter()
@@ -826,13 +771,13 @@ fn bench_filter_assets_clone_all_vs_mutate() {
         .collect();
     let elapsed_clone_all = start.elapsed();
 
-    // --- Production approach: in-place mutation with zero clones ---
+    // Production approach: in-place mutation with zero clones
     let mut owned_assets = assets.clone(); // baseline: one full clone to own the data
     let start = Instant::now();
     filter_patch_assets_for_removed_features(&filter_cache, &mut owned_assets);
     let elapsed_mutate = start.elapsed();
 
-    // --- Memory counters ---
+    // Memory counters
     // Each PatchAssetInfo clone duplicates all heap strings.
     // Estimate heap per asset: 5 major strings x ~32 bytes avg ~ 160 bytes
     let heap_per_asset = std::mem::size_of::<PatchAssetInfo>() + 160;
@@ -858,8 +803,7 @@ fn bench_filter_assets_clone_all_vs_mutate() {
     println!("  production clones: 0 (mutates &mut [PatchAssetInfo] in place)");
 }
 
-/// Simplified filter used only in the benchmark to stand in for the real
-/// is_filtered_asset without needing a temp dir.
+/// Simplified filter for benchmarking.
 fn is_filtered_asset_quick(
     asset: &super::preinstall::PatchAssetInfo,
     cache: &super::preinstall::FilterCache,
@@ -874,12 +818,7 @@ fn is_filtered_asset_quick(
     false
 }
 
-// ---------------------------------------------------------------------------
-// 12. Parallel vs sequential file verification (real production pattern)
-// ---------------------------------------------------------------------------
-// Compares sequential verification (one file at a time) against parallel
-// verification (multiple files concurrently). This tests the actual code path
-// used by verify_integrity.
+// Benchmark parallel vs sequential verification.
 
 #[test]
 fn bench_parallel_vs_sequential_verification() {

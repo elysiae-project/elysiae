@@ -59,9 +59,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    // -----------------------------------------------------------------------
     // write_lang_file
-    // -----------------------------------------------------------------------
     #[test]
     fn test_write_lang_file_new_file() {
         let dir = tempfile::tempdir().unwrap();

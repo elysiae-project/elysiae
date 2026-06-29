@@ -1,7 +1,4 @@
-//! Optimized assembly helpers using memory-mapped I/O and zero-copy techniques.
-//!
-//! These functions are designed to match the performance of the original Sophon
-//! DLL's assembly pipeline, which uses memory-mapped files and large buffers.
+//! Optimized assembly helpers with memory-mapped I/O and zero-copy.
 
 use std::cell::RefCell;
 use std::fs::File;
@@ -19,37 +16,36 @@ thread_local! {
     static OPT_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Trait alias for write + seek operations.
+/// Write + seek trait alias.
 pub trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-/// Memory-mapped file reader for efficient old file chunk reuse.
+/// Memory-mapped file reader for chunk reuse.
 pub struct MmapReader {
     mmap: memmap2::Mmap,
 }
 
 impl MmapReader {
-    /// Create a new memory-mapped reader for the given file.
+    /// Create a new memory-mapped reader.
     pub fn new(path: &Path) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
         Ok(Self { mmap })
     }
 
-    /// Read bytes starting from the given offset.
+    /// Read bytes at the given offset.
     pub fn read_at(&self, offset: usize, len: usize) -> &[u8] {
         let end = (offset + len).min(self.mmap.len());
         &self.mmap[offset..end]
     }
 
-    /// Get the total length of the mapped file.
+    /// Length of the mapped file.
     pub fn len(&self) -> usize {
         self.mmap.len()
     }
 }
 
-/// Write a chunk from an old file to the output using memory-mapped I/O.
-/// This is significantly faster than buffered I/O for large chunks.
+/// Write a chunk from an old file using memory-mapped I/O.
 pub fn write_chunk_from_mmap(
     old_file_path: &Path,
     writer: &mut dyn WriteSeek,
@@ -100,7 +96,7 @@ pub fn write_chunk_from_mmap(
     Ok(expected_size as u64)
 }
 
-/// Optimized decompression using a large buffer for better throughput.
+/// Decompress a chunk using a large buffer.
 pub fn decompress_chunk_optimized(
     chunk_path: &Path,
     writer: &mut dyn WriteSeek,

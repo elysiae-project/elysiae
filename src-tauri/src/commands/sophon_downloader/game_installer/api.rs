@@ -115,8 +115,7 @@ pub async fn fetch_manifest(
     Ok(ManifestWithHash { manifest, hash })
 }
 
-/// Decompresses zstd data from a file, keeping only the decompressed output in
-/// memory.
+/// Decompress zstd data from a file into memory.
 fn decompress_zstd_from_file(path: &std::path::Path) -> SophonResult<Vec<u8>> {
     let file = std::fs::File::open(path)?;
     let mut decoder = zstd::Decoder::new(file)?;

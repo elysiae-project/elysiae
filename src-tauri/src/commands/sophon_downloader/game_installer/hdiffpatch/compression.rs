@@ -19,9 +19,8 @@ pub(crate) fn get_clip_stream(
     const MAX_BUFFERED_SIZE: u64 = 512 * 1024 * 1024; // 512 MB
 
     if comp_mode == CompressionMode::Nocomp || comp_length == 0 {
-        // When comp_length=0 with a non-Nocomp mode, this is unusual ,  log
-        // a warning to surface potentially corrupt headers without breaking
-        // compatibility with diff producers that emit empty compressed clips.
+        // Non-Nocomp with comp_length=0: fall back to uncompressed read;
+        // tolerates diff producers that omit comp_length for tiny clips.
         if comp_mode != CompressionMode::Nocomp && comp_length == 0 {
             log::warn!(
                 "Compressed stream (mode={comp_mode:?}) has comp_length=0; \
@@ -398,21 +397,14 @@ mod tests {
             "should report exceeding max buffered size, got: {msg}"
         );
     }
-    /// Test that Nocomp mode returns error when reached in the match arm
-    /// (should not happen in normal operation since Nocomp is handled early)
+    /// Nocomp falls through the match arm only when entered with the wrong
+    /// shape.
     #[test]
     fn get_clip_stream_nocomp_with_comp_length_succeeds() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.bin");
         std::fs::write(&path, b"Hello World!").unwrap();
         let file = std::fs::File::open(&path).unwrap();
-        // This should not happen in normal operation, but test the error path
-        // by passing comp_length > 0 with Nocomp mode (which bypasses the early return)
-        // Actually, the early return at line 21 catches Nocomp, so we can't reach
-        // the match arm. This test documents the expected behavior.
-        // The error at line 122-126 is a safety net that should never be reached.
-        // To test it, we'd need to modify the code, which defeats the purpose.
-        // Instead, this test verifies that Nocomp works correctly in normal operation.
         let result = get_clip_stream(file, CompressionMode::Nocomp, 0, 5, 5, false);
         assert!(result.is_ok(), "Nocomp should succeed with comp_length > 0");
     }

@@ -663,16 +663,12 @@ pub(crate) fn enumerate_cover_headers_checked<'a>(
     CoverHeaderIterator::new(cover_reader, cover_size, cover_count)
 }
 
-// ========== RLE Unit Tests ==========
-
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
     use super::RleRefClip;
     use super::{tbytes_set_rle_single, tbytes_set_rle_vector_software};
-
-    // ========== RleRefClip Struct Tests ==========
 
     #[test]
     fn rle_ref_clip_default_initialization() {
@@ -697,8 +693,6 @@ mod tests {
             "original should be unchanged after copy modification"
         );
     }
-
-    // ========== tbytes_set_rle_single Tests ==========
 
     /// Test mem_set_value == 0 behavior: should skip bytes without modification
     #[test]
@@ -849,8 +843,6 @@ mod tests {
             "cache position should not advance"
         );
     }
-
-    // ========== tbytes_set_rle_vector_software Tests ==========
 
     /// Test wrapping_add edge case: 0xFF + 0x01 = 0x00
     #[test]
@@ -1014,8 +1006,6 @@ mod tests {
         assert_eq!(copy_length, 2, "copy_length should be 5 - 3 = 2");
     }
 
-    // ========== RLE Edge Case: mem_set_step capping ==========
-
     /// When mem_set_length exceeds shared_buffer.len(), the step should be
     /// capped to the buffer size. Only shared_buffer.len() bytes are processed.
     #[test]
@@ -1107,8 +1097,6 @@ mod tests {
         );
     }
 
-    // ========== RLE Edge Case: empty streams ==========
-
     /// When both mem_set_length and mem_copy_length are 0, tbytes_set_rle
     /// should return immediately without doing anything.
     #[test]
@@ -1145,8 +1133,6 @@ mod tests {
         );
     }
 
-    // ========== RLE Edge Case: mem_copy_length bounds ==========
-
     /// When mem_copy_length exceeds MAX_ARRAY_POOL_SECOND_OFFSET, the decode
     /// step is capped to MAX_ARRAY_POOL_SECOND_OFFSET in tbytes_set_rle.
     #[test]
@@ -1179,7 +1165,7 @@ mod tests {
         }
 
         // decode_step = min(mem_copy_length, copy_length, MAX_ARRAY_POOL_SECOND_OFFSET)
-        // = min(offset+100, offset+100, offset) = offset
+        // min(offset+100, offset+100, offset) = offset
         let result = tbytes_set_rle_vector_software(
             &mut rle_loader,
             &mut cache,
@@ -1234,8 +1220,6 @@ mod tests {
         assert_eq!(copy_length, 8, "nothing consumed");
     }
 
-    // ========== tbytes_copy_stream_from_old_clip Negative Tests ==========
-
     /// tbytes_copy_stream_from_old_clip with negative copy_length should return
     /// an error.
     #[test]
@@ -1251,8 +1235,6 @@ mod tests {
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("copy_length is negative"), "msg={msg}");
     }
-
-    // ========== tbytes_set_rle_single Additional Wrapping Tests ==========
 
     /// tbytes_set_rle_single with basic non-zero addition (add 0x10).
     #[test]

@@ -14,9 +14,7 @@ const AUDIO_LANG_FILE: &str = "audio_lang";
 const KDEL_RESOURCE_FILE: &str = "KDelResource";
 const KDEL_SEPARATORS: &[char] = &['|', ';', ',', '$', '#', '@', '+', ' '];
 
-/// Nap does not currently require asset-level filtering.
-/// Audio language filtering is handled at the installer level
-/// via `filter_nap_installers` and `write_nap_audio_lang_records`.
+/// Nap asset filtering is a no-op; handled at the installer level.
 pub fn filter_nap_asset_list(game_dir: &Path, assets: &mut Vec<SophonManifestAssetProperty>) {
     let _ = (game_dir, assets);
 }
@@ -115,9 +113,7 @@ mod tests {
         base.join(format!("{GAME_DATA_DIR}/Persistent"))
     }
 
-    // -----------------------------------------------------------------------
-    // filter_nap_asset_list (no-op)
-    // -----------------------------------------------------------------------
+    // filter_nap_asset_list
     #[test]
     fn test_filter_nap_asset_list_does_not_modify() {
         let dir = tempfile::tempdir().unwrap();
@@ -134,9 +130,7 @@ mod tests {
         assert_eq!(assets.len(), 1);
     }
 
-    // -----------------------------------------------------------------------
-    // locale_code_to_audio_lang_name (tested via super::)
-    // -----------------------------------------------------------------------
+    // locale_code_to_audio_lang_name
     #[test]
     fn test_nap_locale_code_to_audio_lang_name_zh_cn() {
         assert_eq!(locale_code_to_audio_lang_name("zh-cn"), Some("Chinese"));
@@ -183,9 +177,7 @@ mod tests {
         assert_eq!(locale_code_to_audio_lang_name(""), None);
     }
 
-    // -----------------------------------------------------------------------
-    // locale_code_to_abbrev_lang_name (tested via super::)
-    // -----------------------------------------------------------------------
+    // locale_code_to_abbrev_lang_name
     #[test]
     fn test_locale_code_to_abbrev_lang_name_zh_cn() {
         assert_eq!(locale_code_to_abbrev_lang_name("zh-cn"), Some("Cn"));
@@ -232,9 +224,7 @@ mod tests {
         assert_eq!(locale_code_to_abbrev_lang_name(""), None);
     }
 
-    // -----------------------------------------------------------------------
     // read_kdel_resource_matching_fields
-    // -----------------------------------------------------------------------
     #[test]
     fn test_read_kdel_resource_matching_fields_with_pipe_separator() {
         let dir = tempfile::tempdir().unwrap();
@@ -245,7 +235,7 @@ mod tests {
         let result = read_kdel_resource_matching_fields(dir.path());
         assert!(result.is_some());
         let fields = result.unwrap();
-        // Case-insensitive dedup: field_B and field_b would be same if both present
+        // Case-insensitive dedup.
         assert_eq!(fields.len(), 3);
         assert!(fields.iter().any(|f| f.eq_ignore_ascii_case("field_a")));
         assert!(fields.iter().any(|f| f.eq_ignore_ascii_case("field_B")));
@@ -307,7 +297,7 @@ mod tests {
     #[test]
     fn test_read_kdel_resource_matching_fields_missing_file() {
         let dir = tempfile::tempdir().unwrap();
-        // No KDelResource file created
+        // No KDelResource file..
 
         let result = read_kdel_resource_matching_fields(dir.path());
         assert!(result.is_none());
@@ -321,7 +311,7 @@ mod tests {
         fs::write(kdel_dir.join("KDelResource"), "").unwrap();
 
         let result = read_kdel_resource_matching_fields(dir.path());
-        // Empty file -> content.lines().next() will return None -> returns None
+        // Empty file returns None.
         assert!(result.is_none());
     }
 
@@ -335,14 +325,11 @@ mod tests {
         let result = read_kdel_resource_matching_fields(dir.path());
         assert!(result.is_some());
         let fields = result.unwrap();
-        // All three are case-insensitively equal, so only one should remain
+        // Case-insensitive dedup leaves one entry.
         assert_eq!(fields.len(), 1);
     }
 
-    // -----------------------------------------------------------------------
-    // filter_nap_installers (tested with empty vec since InstallerData is in
-    // another module)
-    // -----------------------------------------------------------------------
+    // filter_nap_installers
     #[test]
     fn test_filter_nap_installers_empty_vec() {
         let dir = tempfile::tempdir().unwrap();
@@ -355,17 +342,15 @@ mod tests {
     #[test]
     fn test_filter_nap_installers_no_kdel_file() {
         let dir = tempfile::tempdir().unwrap();
-        // No KDelResource file
+        // No KDelResource file.
 
         let mut installers: Vec<InstallerData> = Vec::new();
         filter_nap_installers(dir.path(), &mut installers);
-        // Should not crash, just return early
+        // Should return early without crashing.
         assert!(installers.is_empty());
     }
 
-    // -----------------------------------------------------------------------
     // write_nap_audio_lang_records
-    // -----------------------------------------------------------------------
     #[test]
     fn test_write_nap_audio_lang_records_creates_both_files() {
         let dir = tempfile::tempdir().unwrap();
@@ -380,12 +365,12 @@ mod tests {
         let persistent_dir = persistent_dir(dir.path());
         assert!(persistent_dir.exists());
 
-        // audio_lang_launcher uses full names
+        // audio_lang_launcher uses full names.
         let launcher_content =
             fs::read_to_string(persistent_dir.join("audio_lang_launcher")).unwrap();
         assert_eq!(launcher_content, "Chinese\nEnglish(US)\nJapanese\n");
 
-        // audio_lang uses abbreviations
+        // audio_lang uses abbreviations.
         let lang_content = fs::read_to_string(persistent_dir.join("audio_lang")).unwrap();
         assert_eq!(lang_content, "Cn\nEn\nJp\n");
     }

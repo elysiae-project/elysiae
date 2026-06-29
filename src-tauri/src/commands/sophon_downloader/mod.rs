@@ -1,8 +1,5 @@
-//! Sophon game downloader module.
-//!
-//! This module implements the Sophon chunk-based download system used by
-//! supported games. It handles downloading, assembling, and updating
-//! game files using a manifest-based approach with zstd-compressed chunks.
+//! Sophon game downloader. Manifest-based chunk downloads with zstd
+//! compression.
 
 pub mod api_scrape;
 pub mod game_installer;
@@ -71,10 +68,7 @@ fn download_state_path(app: &AppHandle) -> Option<PathBuf> {
         .map(|p| p.join(DOWNLOAD_STATE_FILE))
 }
 
-/// Persists download state to disk atomically (write to unique .tmp, then
-/// rename) to prevent corrupted state files on crash or power loss.
-/// Each call uses a unique temporary file to avoid races between concurrent
-/// `spawn_blocking` saves that could otherwise collide on a shared `.tmp` path.
+/// Atomically persist download state (write to unique .tmp, then rename).
 pub fn save_download_state(app: &AppHandle, state: &DownloadState) -> Result<(), String> {
     let Some(path) = download_state_path(app) else {
         let msg = "Failed to resolve download state path".to_string();
@@ -121,10 +115,9 @@ pub fn load_download_state(app: &AppHandle) -> Option<DownloadState> {
     load_download_state_from(&path)
 }
 
-/// Loads and parses a download state file from `path`. On parse failure the
-/// corrupt file is renamed to `<path>.corrupted-<unix-timestamp>.json` for
-/// post-mortem inspection instead of being silently deleted. Returns `None`
-/// if the file is missing or unparseable.
+/// Load and parse a download state file. On failure, rename the corrupt file
+/// to `<path>.corrupted-<timestamp>.json` for inspection. Returns `None` if
+/// the file is missing or unparseable.
 pub(crate) fn load_download_state_from(path: &Path) -> Option<DownloadState> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
@@ -181,10 +174,8 @@ pub fn clear_download_state(app: &AppHandle) {
     let _ = fs::remove_file(path);
 }
 
-/// Deletes the chunks directory under the given game output path.
-/// Returns `true` if the directory was removed, `false` if it didn't exist.
-/// Deletion errors are logged as warnings and do not propagate, this is a
-/// best-effort cleanup.
+/// Delete the chunks directory. Returns `true` if removed, `false` if not
+/// found. Errors are logged but not propagated (best-effort cleanup).
 fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     let game_dir = match app.path().resolve(output_path, BaseDirectory::AppData) {
         Ok(p) => p,
@@ -207,16 +198,12 @@ fn delete_chunks_dir(app: &AppHandle, output_path: &str) -> bool {
     }
 }
 
-/// Computes a deterministic content-based hash of a Sophon manifest.
+/// Compute a deterministic content-based hash of a Sophon manifest.
 ///
-/// Unlike the legacy `compute_manifest_hash` which hashed raw protobuf bytes
-/// (fragile due to non-deterministic serialization), this function hashes the
-/// semantic content of the parsed manifest, making it resilient to byte-level
-/// differences in the API response.
-///
-/// Assets are sorted by `asset_name` before hashing. The
-/// `chunk_compressed_hash_xxh` field is excluded as it is undocumented and
-/// not used for verification. Uses SHA-256 truncated to 8 hex chars.
+/// Hashes the semantic content (not raw protobuf bytes) for stability across
+/// API response variations. Assets are sorted by name; the undocumented
+/// `chunk_compressed_hash_xxh` field is excluded. Returns SHA-256 truncated
+/// to 8 hex chars.
 pub fn compute_content_manifest_hash(manifest: &proto_parse::SophonManifestProto) -> String {
     let mut assets: Vec<_> = manifest.assets.iter().collect();
     assets.sort_by_key(|a| &a.asset_name);
@@ -303,8 +290,6 @@ pub enum SophonProgress {
 }
 
 /// Structured error payload for the Tauri IPC boundary.
-/// Allows the frontend to programmatically distinguish error types
-/// rather than parsing flat error strings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum CommandError {
@@ -812,11 +797,7 @@ pub async fn sophon_apply_preinstall(
     app_handle: AppHandle,
     client: State<'_, HttpClient>,
 ) -> Result<(), String> {
-    // Validate preinstall_tag to prevent path traversal attacks.
-    // The tag is interpolated directly into state file paths; an attacker
-    // controlling the frontend (or a supply-chain compromised bundle)
-    // could pass "..\..\etc\cron.daily/evil" to access files outside
-    // game_dir. Reject any component that would produce path traversal.
+    // Reject path traversal in preinstall_tag before using it in file paths.
     game_installer::validate_asset_name(&preinstall_tag).map_err(|err| err.to_string())?;
 
     let game_dir = app_handle
@@ -847,9 +828,7 @@ pub async fn sophon_apply_preinstall(
     })
 }
 
-/// Resumes a download that was interrupted (e.g., by app close/crash).
-/// Loads the saved download state, dispatches to the correct builder
-/// based on download type, and skips already-completed files.
+/// Resume an interrupted download using the saved state.
 #[command]
 pub async fn sophon_resume_download(
     app_handle: AppHandle,
@@ -1143,11 +1122,8 @@ fn emit_error(app: &AppHandle, error: &SophonError) {
     let _ = app.emit("sophon://error", CommandError::from(error));
 }
 
-/// Handles the final install result:
-/// - `Ok(())` propagates success
-/// - `Cancelled` silently returns `Ok(())` (download was intentionally
-///   cancelled)
-/// - Other errors emits a structured error event and returns `Err(string)`
+/// Handle the final install result. Success and cancellation both return
+/// `Ok(())`; other errors are emitted and returned as `Err(string)`.
 fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<(), String> {
     match result {
         Ok(()) => Ok(()),
@@ -1159,8 +1135,8 @@ fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<()
     }
 }
 
-/// Maps a `SophonResult<T>` to `Result<T, String>` while emitting a structured
-/// error event for the frontend. Useful for intermediate non-terminal errors.
+/// Map `SophonResult<T>` to `Result<T, String>` and emit a structured error
+/// event.
 fn map_sophon_error<T>(result: Result<T, SophonError>, app: &AppHandle) -> Result<T, String> {
     result.map_err(|err| {
         emit_error(app, &err);
@@ -1285,9 +1261,7 @@ mod tests {
         assert_eq!(hash.len(), 16);
     }
 
-    /// When the resume state JSON is corrupt, the file should be preserved
-    /// under a timestamped backup name so the user can diagnose, instead of
-    /// being silently removed.
+    /// Corrupt state files are preserved as timestamped backups for diagnosis.
     #[test]
     fn load_download_state_corrupted_preserves_backup() {
         let dir = tempfile::tempdir().unwrap();
@@ -1322,10 +1296,8 @@ mod tests {
         );
     }
 
-    /// Renaming can fail in edge cases (read-only filesystem, cross-device
-    /// moves on some OSes). When it does, we must still avoid returning the
-    /// parse error indefinitely: the corrupt file should be removed so the
-    /// next load attempts a fresh state.
+    /// If renaming fails (e.g. read-only filesystem), remove the corrupt file
+    /// so the next load starts fresh.
     #[test]
     fn load_download_state_corrupted_removed_when_rename_fails() {
         // On Linux, cross-device rename fails. We simulate by setting up the
@@ -1353,8 +1325,7 @@ mod tests {
         }
     }
 
-    /// A valid state file should load successfully without producing a
-    /// backup file.
+    /// Valid state files load without creating backups.
     #[test]
     fn load_download_state_valid_does_not_create_backup() {
         use crate::commands::sophon_downloader::DownloadState;

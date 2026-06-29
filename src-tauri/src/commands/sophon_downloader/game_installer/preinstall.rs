@@ -5,13 +5,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 thread_local! {
-    /// Reusable per-thread copy buffer. The copyover preinstall path streams
-    /// each chunk from a downloaded file into a target temp file; allocating
-    /// a fresh `FILE_WRITE_BUFFER_SIZE` byte vector per asset is wasteful.
+    /// Reusable per-thread copy buffer for streaming chunks into temp files.
+    /// Avoids allocating a fresh buffer per asset.
     static COPY_BUFFER: std::cell::RefCell<Vec<u8>> =
         const { std::cell::RefCell::new(Vec::new()) };
-    /// Reusable per-thread verification buffer. Used by verify_chunk_md5
-    /// and verify_chunk_xxh64 to avoid allocating 256 KiB per call.
+    /// Reusable per-thread verification buffer. Avoids allocating 256 KiB per call.
     static VERIFY_BUFFER: std::cell::RefCell<Vec<u8>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -76,9 +74,7 @@ const HKRPG_DATA_DIR: &str = "\x53\x74\x61\x72\x52\x61\x69\x6c\x5f\x44\x61\x74\x
 const NAP_GAME_DATA_DIR: &str =
     "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x5f\x44\x61\x74\x61";
 const NAP_GAME_NAME: &str = "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f";
-/// RAII guard that cleans up a blank diff_ref file when dropped.
-/// Ensures the temp file is removed on all return paths (normal return,
-/// early return, or panic).
+/// RAII guard that removes a blank diff_ref file on drop.
 struct DiffRefGuard(Option<PathBuf>);
 
 impl Drop for DiffRefGuard {
@@ -200,8 +196,7 @@ pub struct PreinstallPlan {
     pub main_manifest_ids: Vec<(String, String)>,
 }
 
-/// Validates that all i64 fields from the patch protobuf are non-negative,
-/// preventing silent wrapping when cast to u64.
+/// Validates that all i64 fields from the patch protobuf are non-negative.
 fn validate_patch_chunk_fields(chunk: &SophonPatchAssetChunk, asset_name: &str) -> bool {
     if chunk.patch_size < 0 {
         log::warn!("Skipping chunk with negative patch_size for asset {asset_name}");
@@ -457,10 +452,9 @@ pub async fn build_preinstall_plan(
 
     let diff_download = diff_download.ok_or(SophonError::NoGameManifest)?;
 
-    // Main-asset sweep: walk every main-manifest asset and emit DownloadOver
-    // for any file not already covered by the patch manifest. Without this,
-    // brand-new files introduced in the target version are silently dropped
-    // from the preinstall plan.
+    // Emit DownloadOver for main-manifest assets not already covered by the
+    // patch manifest. Without this, new files in the target version are
+    // silently dropped from the preinstall plan.
     for (matching_field, meta) in main_by_field.iter() {
         let manifest_result =
             fetch_manifest(client, &meta.manifest_download, &meta.manifest.id).await?;
@@ -777,7 +771,7 @@ pub async fn preinstall_download(
         return Err(err);
     }
 
-    // Final save to ensure all downloaded chunks are persisted
+    // Persist all downloaded chunks.
     let final_map = Arc::clone(&chunk_bytes_map);
     let map: HashMap<String, u64> = final_map
         .iter()
@@ -1456,7 +1450,7 @@ impl FilterCache {
                         .filter_map(extract_blacklist_filename)
                         .map(|name| name.to_lowercase())
                         .collect();
-                    // Generate cross-path variants (Persistent <-> StreamingAssets)
+                    // Generate cross-path variants.
                     let variants: Vec<String> = entries
                         .iter()
                         .flat_map(|entry| {
@@ -1579,8 +1573,7 @@ pub(super) fn filter_patch_assets_for_removed_features(
     }
 }
 
-/// Apply copyover patch to target file. Path validation is performed by the
-/// caller (`apply_preinstall`) before invoking this function.
+/// Apply copyover patch to target file. Caller performs path validation.
 fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -> SophonResult<()> {
     validate_patch_name(&asset.patch_name)?;
     let chunk_path = chunks_dir.join(&asset.patch_name);
@@ -1646,15 +1639,14 @@ fn apply_copy_over(game_dir: &Path, chunks_dir: &Path, asset: &PatchAssetInfo) -
         }
     }
 
-    // Stream copy: seek back past magic bytes and copy all chunk data
+    // Seek past magic bytes and copy all chunk data.
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     let safe_hash = asset.target_file_hash.replace(['/', '\\', '\0'], "_");
     let safe_path = asset.target_file_path.replace(['/', '\\', '\0', ':'], "_");
-    // Use both hash AND path to avoid collisions when target_file_hash is
-    // empty (which would produce the same safe_hash "" for multiple assets).
+    // Use both hash and path to avoid collisions when target_file_hash is empty.
     let temp_path = game_dir.join(format!("patching/copyover_{safe_path}_{safe_hash}.tmp"));
     chunk_file.seek(SeekFrom::Start(asset.patch_offset))?;
     {
@@ -1934,8 +1926,7 @@ fn apply_hdiff_patch_from_files(
             fs::create_dir_all(parent)?;
         }
         fs::File::create(&empty_original_path)?;
-        // BlankFileMd5Hash represents an empty original file.
-        // Verify our freshly-created diff_ref is actually empty before proceeding.
+        // Verify the freshly-created diff_ref is empty before proceeding.
         if !verify_file_hash(&empty_original_path, BLANK_FILE_MD5) {
             let _ = fs::remove_file(&empty_original_path);
             return Err(SophonError::HDiffPatchFailed {
@@ -2399,8 +2390,6 @@ mod tests {
         assert!(!verify_file_hash(&path, "0123456789abcdef"));
     }
 
-    // --- Group 8: Positive lowercase and negative wrong-hash cases ---
-
     /// Lowercase MD5 hash must be accepted (verify_file_hash normalizes to
     /// lowercase).
     #[test]
@@ -2419,7 +2408,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_md5_wrong");
         fs::write(&path, b"hello world").unwrap();
-        // real md5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        // MD5 of "hello world"
         assert!(!verify_file_hash(&path, "00000000000000000000000000000000"));
     }
 
@@ -2443,7 +2432,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test_xxh64_wrong");
         fs::write(&path, b"hello world").unwrap();
-        // 16 all-zero chars is not the real XXH64
+        // All-zero string is not a valid XXH64.
         assert!(!verify_file_hash(&path, "0000000000000000"));
     }
 
@@ -2551,48 +2540,31 @@ mod tests {
 
     #[test]
     fn validate_patch_name_rejects_relative_parent_component() {
-        // Path-component `..` check (not literal substring): a single leading
-        // `..` segment must still be rejected as traversal.
-        // ARRANGE: a name whose first path component is `..`
+        // Leading `..` must be rejected as traversal (not InvalidAssetName).
         let name = "../etc/passwd";
-
-        // ACT: validate the patch name
         let result = validate_patch_name(name);
-
-        // ASSERT: rejected as PathTraversal (not InvalidAssetName)
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
     }
 
     #[test]
     fn validate_patch_name_rejects_parent_component_in_middle() {
-        // Path-component `..` check: `..` may legally appear as a *substring*
-        // (e.g. `foo..bar`) but is still rejected when it appears as a
-        // directory component between separators.
-        // ARRANGE: a name with `..` as a middle directory component
+        // `..` as a middle directory component must be rejected as traversal.
         let name = "path/../file";
-
-        // ACT
         let result = validate_patch_name(name);
-
-        // ASSERT
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SophonError::PathTraversal(_)));
     }
 
     #[test]
     fn validate_patch_name_accepts_consecutive_dots_in_filename() {
-        // Consecutive dots within a single filename component are NOT
-        // path traversal and must remain accepted.
-        // ARRANGE / ACT / ASSERT
+        // Consecutive dots within a single filename component are not path traversal.
         assert!(validate_patch_name("foo..bar").is_ok());
     }
 
     #[test]
     fn validate_patch_name_accepts_version_like_name() {
-        // Version-like names such as `2.0..hotfix.pak` are legitimate
-        // patch filenames and must be accepted.
-        // ARRANGE / ACT / ASSERT
+        // Version-like names with consecutive dots are legitimate patch filenames.
         assert!(validate_patch_name("2.0..hotfix.pak").is_ok());
     }
 
@@ -2603,7 +2575,7 @@ mod tests {
         assert!(validate_patch_name(".\\foo").is_err());
         assert!(validate_patch_name("./foo/bar").is_err());
         assert!(validate_patch_name(".\\foo\\bar").is_err());
-        // But "foo..bar" (consecutive dots in filename) is still OK
+        // Consecutive dots in a filename are allowed.
         assert!(validate_patch_name("foo..bar").is_ok());
     }
 
@@ -2647,77 +2619,60 @@ mod tests {
 
     #[test]
     fn is_file_already_patched_returns_false_when_file_missing() {
-        // TOCTOU fix: function must fail soft (return false) when the file
-        // handle cannot be opened, rather than panicking or returning true.
-        // ARRANGE: an isolated tempdir containing no target file
+        // Return false when the file handle cannot be opened (TOCTOU fix).
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("does_not_exist.bin");
-        // `dir` must outlive the call so the tempdir stays valid for `path`.
+        // Keep tempdir alive for the duration of the test.
         let _keep_dir_alive = &dir;
 
-        // ACT
         let result = is_file_already_patched(&path, 0, "d41d8cd98f00b204e9800998ecf8427e");
 
-        // ASSERT: missing file -> false, regardless of expected hash/size
         assert!(!result);
     }
 
     #[test]
     fn is_file_already_patched_returns_false_when_size_mismatch() {
-        // Size check must short-circuit before hashing, so incorrect
-        // expected size must return false without computing any hash.
-        // ARRANGE: a 5-byte file but expected size is far larger
+        // Size check must short-circuit before hashing.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("size_mismatch.bin");
         let data = b"short";
         fs::write(&path, data).unwrap();
         let actual_size = data.len() as u64;
 
-        // ACT
         let result = is_file_already_patched(
             &path,
             actual_size + 9_999,
             "00000000000000000000000000000000",
         );
 
-        // ASSERT
         assert!(!result);
     }
 
     #[test]
     fn is_file_already_patched_returns_true_when_size_and_md5_match() {
-        // Happy path: when both the on-disk size and the computed MD5 of
-        // the *same* file handle match, the function returns true.
-        // This exercises the open-then-hash-from-same-handle flow.
-        // ARRANGE
+        // Happy path: both size and MD5 match on the same file handle.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("match.bin");
         let data = b"hello world";
         let expected_md5 = hex::encode(md5::Md5::digest(data));
         fs::write(&path, data).unwrap();
 
-        // ACT
         let result = is_file_already_patched(&path, data.len() as u64, &expected_md5);
 
-        // ASSERT
         assert!(result);
     }
 
     #[test]
     fn is_file_already_patched_returns_false_when_only_md5_mismatch() {
-        // When size matches but the MD5 computed from the file handle does
-        // not equal expected_md5, the function must return false.
-        // ARRANGE
+        // Return false when the MD5 computed from the file handle does not match.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("md5_mismatch.bin");
         let data = b"hello world";
         fs::write(&path, data).unwrap();
 
-        // ACT: pass the correct size but a deliberately wrong hash
         let result =
             is_file_already_patched(&path, data.len() as u64, "00000000000000000000000000000000");
 
-        // ASSERT
         assert!(!result);
     }
 
@@ -3098,7 +3053,7 @@ mod tests {
         let chunks_dir = dir.path().join("patching/chunk");
         fs::create_dir_all(&chunks_dir).unwrap();
 
-        // Create a chunk with HDIFF magic but invalid hdiff data
+        // Chunk with HDIFF magic but invalid data.
         let hdiff_data = b"HDIFFinvalid_data_that_cannot_be_patched";
         fs::write(chunks_dir.join("patch_hdiff_fail"), hdiff_data).unwrap();
 
@@ -3120,10 +3075,10 @@ mod tests {
 
         let result = apply_copy_over(dir.path(), &chunks_dir, &asset);
 
-        // Should fail because the hdiff data is invalid
+        // Should fail because the HDiff data is invalid.
         assert!(result.is_err());
 
-        // The diff_temp file should have been cleaned up
+        // diff_temp was cleaned up.
         let diff_temp = dir.path().join("patching/patch_hdiff_fail.diff");
         assert!(
             !diff_temp.exists(),
@@ -3137,12 +3092,12 @@ mod tests {
         let chunks_dir = dir.path().join("patching/chunk");
         fs::create_dir_all(&chunks_dir).unwrap();
 
-        // Create an original file with the wrong size
+        // Original file with the wrong size.
         let original_path = dir.path().join("original.bin");
         fs::write(&original_path, b"short data that has wrong size").unwrap();
         let actual_size = fs::metadata(&original_path).unwrap().len();
 
-        // Create a dummy chunk file so the patch chunk exists check passes
+        // Dummy chunk file so the patch chunk exists check passes.
         fs::write(chunks_dir.join("patch_chunk.bin"), b"dummy chunk data").unwrap();
 
         let asset = PatchAssetInfo {
@@ -3175,7 +3130,7 @@ mod tests {
             err_str.contains("Size mismatch"),
             "Error should mention 'Size mismatch': {err_str}"
         );
-        // Also verify the error message includes expected and actual sizes
+        // Error message includes expected and actual sizes.
         assert!(
             err_str.contains("999") && err_str.contains(&actual_size.to_string()),
             "Error should include expected and actual sizes: {err_str}"
@@ -3188,10 +3143,10 @@ mod tests {
         let chunks_dir = dir.path().join("patching/chunk");
         fs::create_dir_all(&chunks_dir).unwrap();
 
-        // Create a dummy chunk file so the patch chunk exists check passes
+        // Dummy chunk file so the patch chunk exists check passes.
         fs::write(chunks_dir.join("patch_chunk.bin"), b"dummy chunk data").unwrap();
 
-        // Asset where original file doesn't exist but hash indicates blank file
+        // Original file does not exist but hash indicates blank file.
         let asset = PatchAssetInfo {
             target_file_path: "new_file.bin".to_string(),
             target_file_size: 0,
@@ -3211,16 +3166,13 @@ mod tests {
         let cache = FilterCache::new(dir.path());
         let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
 
-        // Should NOT return OriginalFileMissing, should create blank diff_ref and
-        // proceed
+        // Should not return OriginalFileMissing; creates blank diff_ref and proceeds.
         assert!(
             !matches!(result, Err(SophonError::OriginalFileMissing(_))),
             "Should not return OriginalFileMissing for blank original: {:?}",
             result
         );
-        // The patch will fail because the dummy chunk isn't a real HDiff, but that's OK
-        // The point is we got past the blank-file check and didn't error on
-        // missing original. Verify the diff_ref was cleaned up after patching
+        // Patch fails because the chunk is not a real HDiff, but the blank-file check passes.
         let diff_ref_path = dir.path().join("patching/patch_chunk.bin.diff_ref");
         assert!(
             !diff_ref_path.exists(),
@@ -3234,10 +3186,10 @@ mod tests {
         let chunks_dir = dir.path().join("patching/chunk");
         fs::create_dir_all(&chunks_dir).unwrap();
 
-        // Create a dummy chunk file so the patch chunk exists check passes
+        // Dummy chunk file so the patch chunk exists check passes.
         fs::write(chunks_dir.join("patch_chunk2.bin"), b"dummy chunk data").unwrap();
 
-        // Asset where original file doesn't exist and original_file_size is 0
+        // Original file does not exist and original_file_size is 0.
         let asset = PatchAssetInfo {
             target_file_path: "another_new_file.bin".to_string(),
             target_file_size: 0,
@@ -3257,35 +3209,31 @@ mod tests {
         let cache = FilterCache::new(dir.path());
         let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
 
-        // Should NOT return OriginalFileMissing, should create blank diff_ref and
-        // proceed
+        // Should not return OriginalFileMissing; creates blank diff_ref and proceeds.
         assert!(
             !matches!(result, Err(SophonError::OriginalFileMissing(_))),
             "Should not return OriginalFileMissing for blank original (size=0): {:?}",
             result
         );
-        // Verify the diff_ref was cleaned up after patching
+        // diff_ref was cleaned up after patching.
         let diff_ref_path = dir.path().join("patching/patch_chunk2.bin.diff_ref");
         assert!(
             !diff_ref_path.exists(),
             "diff_ref file should have been cleaned up after patching"
         );
     }
-    /// Test that original_file_hash == BLANK_FILE_MD5 triggers blank-file
-    /// handling even when original_file_size is non-zero. The hash is
-    /// authoritative for blank detection; size inconsistency is a manifest
-    /// bug but we handle it gracefully by treating the file as blank.
+    /// BLANK_FILE_MD5 triggers blank-file handling even when
+    /// original_file_size is non-zero. Hash takes precedence over size.
     #[test]
     fn apply_hdiff_patch_blank_original_by_hash_ignores_size() {
         let dir = tempfile::tempdir().unwrap();
         let chunks_dir = dir.path().join("patching/chunk");
         fs::create_dir_all(&chunks_dir).unwrap();
 
-        // Create a dummy chunk file so the patch chunk exists check passes
+        // Dummy chunk file so the patch chunk exists check passes.
         fs::write(chunks_dir.join("patch_chunk3.bin"), b"dummy chunk data").unwrap();
 
-        // Asset where original file doesn't exist, hash indicates blank, but
-        // size is inconsistent (non-zero). Hash should take precedence.
+        // Original file does not exist; hash indicates blank but size is inconsistent.
         let asset = PatchAssetInfo {
             target_file_path: "new_file2.bin".to_string(),
             target_file_size: 0,
@@ -3305,14 +3253,13 @@ mod tests {
         let cache = FilterCache::new(dir.path());
         let result = apply_hdiff_patch(dir.path(), &chunks_dir, &asset, &cache);
 
-        // Should NOT return OriginalFileMissing, hash takes precedence and
-        // triggers blank-file handling.
+        // Should not return OriginalFileMissing when hash indicates blank.
         assert!(
             !matches!(result, Err(SophonError::OriginalFileMissing(_))),
             "Should not return OriginalFileMissing when hash indicates blank: {:?}",
             result
         );
-        // Verify the diff_ref was cleaned up after patching
+        // diff_ref was cleaned up after patching.
         let diff_ref_path = dir.path().join("patching/patch_chunk3.bin.diff_ref");
         assert!(
             !diff_ref_path.exists(),
@@ -3324,7 +3271,7 @@ mod tests {
     fn apply_hdiff_patch_from_files_blank_diff_ref_hash_matches() {
         let dir = tempfile::tempdir().unwrap();
 
-        // Create a mock diff file
+        // Mock diff file.
         let diff_path = dir.path().join("patching/mock.diff");
         fs::create_dir_all(diff_path.parent().unwrap()).unwrap();
         fs::write(&diff_path, b"mock hdiff data").unwrap();
@@ -3345,12 +3292,11 @@ mod tests {
             matching_field: "game".to_string(),
         };
 
-        // This will fail because the diff data is invalid, but the blank diff_ref
-        // hash verification should pass (not fail with hash mismatch) before
-        // getting to the hdiff application step.
+        // Invalid diff data will fail, but the blank diff_ref hash verification
+        // should pass (not fail with hash mismatch) before reaching the hdiff step.
         let result = apply_hdiff_patch_from_files(dir.path(), &diff_path, &asset);
 
-        // Verify that we did not fail on the blank diff_ref hash verification step
+        // Did not fail on the blank diff_ref hash verification step.
         if let Err(SophonError::HDiffPatchFailed { error, .. }) = &result {
             assert!(
                 !error.contains("hash mismatch"),
@@ -3358,7 +3304,7 @@ mod tests {
             );
         }
 
-        // Directly verify that BLANK_FILE_MD5 is the hash of an empty file
+        // BLANK_FILE_MD5 matches the hash of an empty file.
         let empty_path = dir.path().join("empty_file.txt");
         fs::write(&empty_path, b"").unwrap();
         assert!(
@@ -3617,11 +3563,9 @@ mod tests {
         assert!(chunks.to_string_lossy().contains("chunk"));
     }
 
-    // --- Group 11: Retry delay formula tests ---
-
     #[test]
     fn retry_delay_first_attempt_is_1000ms() {
-        // Base 1000ms + jitter (0-999ms)
+        // Base 1000 ms + jitter (0-999 ms).
         let delay = retry_delay(0_u32).as_millis();
         assert!(
             (1000..2000).contains(&delay),
@@ -3632,42 +3576,42 @@ mod tests {
 
     #[test]
     fn retry_delay_doubles_up_to_fifth_attempt() {
-        // attempt 0 -> 1s + jitter
+        // attempt 0 -> 1 s + jitter
         let d0 = retry_delay(0_u32).as_millis();
         assert!(
             (1000..2000).contains(&d0),
             "attempt 0: expected 1000-1999, got {}",
             d0
         );
-        // attempt 1 -> 2s + jitter
+        // attempt 1 -> 2 s + jitter
         let d1 = retry_delay(1_u32).as_millis();
         assert!(
             (2000..3000).contains(&d1),
             "attempt 1: expected 2000-2999, got {}",
             d1
         );
-        // attempt 2 -> 4s + jitter
+        // attempt 2 -> 4 s + jitter
         let d2 = retry_delay(2_u32).as_millis();
         assert!(
             (4000..5000).contains(&d2),
             "attempt 2: expected 4000-4999, got {}",
             d2
         );
-        // attempt 3 -> 8s + jitter
+        // attempt 3 -> 8 s + jitter
         let d3 = retry_delay(3_u32).as_millis();
         assert!(
             (8000..9000).contains(&d3),
             "attempt 3: expected 8000-8999, got {}",
             d3
         );
-        // attempt 4 -> 16s + jitter
+        // attempt 4 -> 16 s + jitter
         let d4 = retry_delay(4_u32).as_millis();
         assert!(
             (16000..17000).contains(&d4),
             "attempt 4: expected 16000-16999, got {}",
             d4
         );
-        // attempt 5 -> 32s, capped to 30s + jitter
+        // attempt 5 -> 32 s, capped to 30 s + jitter
         let d5 = retry_delay(5_u32).as_millis();
         assert!(
             (30000..31000).contains(&d5),
@@ -3678,7 +3622,7 @@ mod tests {
 
     #[test]
     fn retry_delay_caps_at_30_seconds_for_larger_attempts() {
-        // Capped at 30000 + jitter (up to ~30999ms)
+        // Capped at 30000 + jitter (up to ~30999 ms)
         let d5 = retry_delay(5_u32).as_millis();
         assert!(
             (30000..31000).contains(&d5),

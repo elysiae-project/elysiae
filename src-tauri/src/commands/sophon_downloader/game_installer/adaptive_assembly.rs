@@ -115,8 +115,7 @@ mod tests {
     fn adjust_updates_target() {
         let aa = AdaptiveAssembly::new();
         let _ = aa.adjust();
-        // adjust() reads available RAM via sysinfo; on failure, returns u64::MAX (full
-        // concurrency)
+        // adjust() reads available RAM via sysinfo.
         let target = aa.current_target();
         assert!(target >= 1);
         assert!(target <= ASSEMBLY_CONCURRENCY);
@@ -165,26 +164,21 @@ mod tests {
         assert!(aa.current_target() <= ASSEMBLY_CONCURRENCY);
     }
 
-    /// The spawned adjuster task must terminate promptly after cancel so it
-    /// does not leak across install runs. We assert that spawning-then-cancel
-    /// returns control without task leaks, and that the target field is
-    /// always within configured bounds.
+    /// The spawned adjuster task must terminate promptly after cancel to avoid
+    /// leaking across install runs.
     #[tokio::test(flavor = "current_thread")]
     async fn spawn_adjuster_returns_to_runtime_after_cancel() {
         let aa = Arc::new(AdaptiveAssembly::new());
         let token = tokio_util::sync::CancellationToken::new();
         aa.spawn_adjuster(token.clone());
-        // Cancel immediately ,  the interval future inside the loop has not
-        // yet fired, so cancellation must be observed on the next select.
+        // Cancel immediately before the interval fires.
         token.cancel();
-        // The cancel propagation is synchronous; the background task should
-        // exit well within a tick interval. We give it 3x the tick interval
-        // to avoid flakes on heavily loaded CI.
+        // Give the task time to exit (3x tick interval for CI stability).
         tokio::time::sleep(std::time::Duration::from_millis(
             ASSEMBLY_RAM_CHECK_INTERVAL_SECS * 3000,
         ))
         .await;
-        // The target must remain in the valid range, never grow unbounded.
+        // Target must stay within valid bounds.
         assert!(
             aa.current_target() <= ASSEMBLY_CONCURRENCY,
             "target must not exceed ASSEMBLY_CONCURRENCY after cancel"

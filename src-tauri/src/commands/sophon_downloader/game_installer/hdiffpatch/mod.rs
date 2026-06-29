@@ -131,15 +131,9 @@ impl HDiff {
         &self,
         on_progress: Option<&dyn Fn(u64)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Reject same source/destination ,  patching in-place would corrupt
-        // the source while reading it. Use canonical paths to handle equivalent
-        // representations (./game/file.bin vs game/file.bin, symlinks, etc.).
-        // Note: canonicalize requires the file to exist, so this check only
-        // catches the case where both source AND dest already exist on disk.
-        // When dest is a new temp file (the common case), this check is
-        // skipped ,  but that's fine because the dest doesn't exist yet and
-        // can't be the same as source. The string comparison below provides
-        // a fallback for the same-path-string case.
+        // Reject in-place patching: canonicalize detects same file on disk
+        // when both exist; string comparison catches same-path-string when
+        // the destination does not yet exist.
         let source_canonical: Option<PathBuf> = std::fs::canonicalize(&self.source_path).ok();
         let dest_canonical: Option<PathBuf> = std::fs::canonicalize(&self.dest_path).ok();
         if source_canonical.is_some()
@@ -204,11 +198,10 @@ impl HDiff {
             Self::read_non_single_file_header(&mut diff_file, &mut header_info)?;
         }
 
-        // Newfile hdiff detection: when old_data_size == 0, the patch contains
-        // a complete new file rather than a diff. The source file is optional.
+        // Newfile patch: old_data_size == 0 means source is optional.
         let mut old_file: File;
         if header_info.old_data_size == 0 && !std::path::Path::new(&self.source_path).exists() {
-            // For newfile patches, create a temp empty file as the source
+            // Use /dev/null as empty source for newfile patches.
             old_file = File::open("/dev/null")?;
         } else {
             old_file = File::open(&self.source_path)?;
@@ -553,8 +546,7 @@ mod tests {
             "should fail for nonexistent source file"
         );
     }
-    /// Test that newfile hdiff patches (old_data_size == 0) work even when
-    /// the source file doesn't exist.
+    /// Newfile hdiff patches work without a source file.
     #[test]
     fn hdiff_newfile_no_source_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -574,12 +566,10 @@ mod tests {
         let tp = out_path.to_string_lossy().to_string();
 
         let mut hdiff = HDiff::new(op, dp, tp);
-        // This should succeed because old_data_size == 0 in the patch
-        // Note: the synthetic fixture may not produce valid output, but
-        // the patcher should not fail due to missing source file
+        // old_data_size == 0 means the source is optional; the patcher should
+        // not fail due to a missing source file.
         let result = hdiff.apply(None);
-        // We expect this to either succeed or fail for reasons other than
-        // missing source file (e.g., invalid patch data)
+        // Expect success or failure for reasons other than a missing source.
         if result {
             let output = fs::read(&out_path).unwrap();
             assert_eq!(output, NEW_FROM_EMPTY, "newfile hdiff output mismatch");
@@ -615,7 +605,7 @@ mod tests {
         fs::write(&old_path, OLD_TEXT).unwrap();
         fs::write(&diff_path, DIFF_V13_TEXT).unwrap();
 
-        // Use the same path for both source and dest ,  should fail
+        // Same source and dest path should fail.
         let path_str = old_path.to_string_lossy().to_string();
         let mut hdiff = HDiff::new(
             path_str.clone(),
@@ -628,14 +618,11 @@ mod tests {
         );
     }
 
-    // ========== Bounds Check Tests ==========
-
-    /// Test that enumerate_cover_headers returns error when cover_count > 0 but
-    /// cover_size == 0
+    /// enumerate_cover_headers rejects cover_count > 0 with cover_size == 0.
     #[test]
     fn enumerate_cover_headers_cover_count_gt_zero_cover_size_zero() {
         use std::io::Cursor;
-        // Call the internal function via super (tests are in a submodule of mod.rs)
+        // Tests are in a submodule of mod.rs.
         let result = super::patch_core::enumerate_cover_headers(
             &mut Cursor::new(Vec::new()),
             0, // cover_size == 0
@@ -690,10 +677,7 @@ mod tests {
         );
     }
 
-    // ========== Overflow Protection Tests ==========
-
-    /// Test overflow protection: cover_count exceeding MAX_COVER_COUNT should
-    /// be rejected.
+    /// cover_count exceeding MAX_COVER_COUNT is rejected.
     #[test]
     fn enumerate_cover_headers_cover_count_exceeds_max() {
         use std::io::Cursor;
@@ -759,9 +743,7 @@ mod tests {
         );
     }
 
-    // ========== Compression Mode Tests ==========
-
-    /// Test that LZ4 compression mode can be parsed from string
+    /// LZ4 compression mode parses from string.
     #[test]
     fn compression_mode_lz4_parsing() {
         let mode: Result<super::CompressionMode, _> = "lz4".parse();
@@ -822,10 +804,7 @@ mod tests {
         }
     }
 
-    // ========== Cover Padding Tests ==========
-
-    /// Test that compress_cover_buf_size == 1 triggers padding (whereas > 1
-    /// would not). Padding is applied when compress_cover_buf_size > 0.
+    /// compress_cover_buf_size == 1 triggers padding (whereas > 1 would not).
     #[test]
     fn cover_padding_with_small_compressed_size() {
         // Padding is applied when compress_cover_buf_size > 0.
@@ -1039,11 +1018,9 @@ mod tests {
         assert_sync::<HDiff>();
     }
 
-    // ========== CoverHeader Validation Tests ==========
-
-    /// CoverHeader::new is a plain constructor ,  it stores all values including
-    /// negative cover_length. The actual rejection of negative lengths happens
-    /// downstream in enumerate_cover_headers.
+    /// CoverHeader::new is a plain constructor; it stores all values
+    /// including negative cover_length. Rejection of negative lengths
+    /// happens downstream in enumerate_cover_headers.
     #[test]
     fn cover_header_new_stores_negative_cover_length() {
         let ch = CoverHeader::new(0, 0, -5, 0);
@@ -1053,7 +1030,7 @@ mod tests {
         );
     }
 
-    /// CoverHeader::new with negative old_pos ,  stored as-is, no rejection.
+    /// CoverHeader::new stores negative old_pos as-is; no rejection.
     #[test]
     fn cover_header_new_stores_negative_old_pos() {
         let ch = CoverHeader::new(-10, 0, 1, 0);
@@ -1093,48 +1070,23 @@ mod tests {
         assert_eq!(ch.next_cover_index, 0);
     }
 
-    /// enumerate_cover_headers rejects cover data that decodes to negative
-    /// cover_length ,  this is where the actual validation happens.
+    /// Empty input returns no headers.
     #[test]
     fn enumerate_cover_headers_rejects_negative_cover_length() {
         use std::io::Cursor;
 
-        // Cover header data for one cover in buffer mode (< MAX_MEM_BUFFER_LEN):
-        // p_sign=0x00 (inc_old_pos_sign=0, inc_old_pos=0), old_pos=0
-        // copy_length=0 (varint 0x00)
-        // cover_length=-1 is impossible in varint encoding (varints are unsigned),
-        // so we construct a scenario where the buffer decodes properly but
-        // copy_length or cover_length < 0 would be caught.
-        // Since varints are always non-negative, the only way to get negative
-        // values is via old_pos subtraction underflow. We test that instead.
-        // But the validation `copy_length < 0 || cover_length < 0` is still
-        // important for safety. Verify it by testing with a crafted cover that
-        // has a valid old_pos but overflow on subtraction.
+        // Empty input succeeds.
         let mut c = Cursor::new(Vec::new());
         let result = super::patch_core::enumerate_cover_headers(&mut c, 0, 0);
-        // With cover_count=0 and cover_size=0, it should succeed and return empty
         assert!(result.is_ok());
     }
 
-    /// enumerate_cover_headers properly flags negative cover values when
-    /// old_pos underflows due to subtraction (inc_old_pos_sign=1).
+    /// enumerate_cover_headers rejects negative old_pos from underflow.
     #[test]
     fn enumerate_cover_headers_old_pos_underflow_fails() {
         use std::io::Cursor;
-        // Encode: p_sign=0x80 (inc_old_pos_sign=1, tag_bit=1)
-        //         inc_old_pos=1 (from prev_byte bits with tag_bit=1)
-        // Since last_old_pos_back starts at 0, subtracting 1 gives -1 -> error.
-        // p_sign = 0x80 -> bit 7 = 1 (sign=1), bits 0-6 with tag_bit=1 = bits 0-5
-        // tag_bit from K_SIGN_TAG_BIT = 1
-        // With tag_bit=1: mask = 0x3F, continuation bit = 0x40
-        // 0x80: bits 0-5 = 0, bit 6 = 0x40 (0, no continuation), bit 7 = sign
-        // Wait, 0x80 = 1000_0000: bit 7 = 1 -> inc_old_pos_sign = 1
-        // tag_bit=1, so mask = (1<<6)-1 = 0x3F, continuation = 1<<6 = 0x40
-        // 0x80 & 0x3F = 0, 0x80 & 0x40 = 0 (no continuation)
-        // inc_old_pos = 0 -> subtract 0 from 0 = 0 (not underflow)
-        // We need inc_old_pos > 0 to trigger underflow from old_pos_back=0
-        // p_sign = 0x81: bit7=1(inc), bits0-5=1, bit6=0 (no continuation)
-        // -> inc_old_pos = 1, old_pos = 0 - 1 = -1 -> negative -> error
+        // p_sign = 0x81: bit7=1 (sign=1), bits0-5=1 (inc_old_pos=1),
+        // bit6=0 (no continuation). old_pos = last_old_pos_back - 1 = -1.
         let buf = vec![
             0x81, // p_sign: sign=1, inc_old_pos=1 (varint tagged)
             0x00, // copy_length = 0
@@ -1154,8 +1106,6 @@ mod tests {
             err
         );
     }
-
-    // ========== Compression Mode Detection Tests ==========
 
     /// Verify that zlib mode produces padding of 1 (used in patch_single for
     /// compressed stream alignment).
@@ -1283,8 +1233,6 @@ mod tests {
         );
     }
 
-    // ========== try_get_version Edge Case Tests ==========
-
     /// try_get_version without "HDIFF" in the string should fail.
     #[test]
     fn try_get_version_no_hdiff_fails() {
@@ -1336,8 +1284,6 @@ mod tests {
         let version = HDiff::try_get_version("HDIFF42").unwrap();
         assert_eq!(version, 42);
     }
-
-    // ========== read_single_file_header Tests ==========
 
     /// read_single_file_header with valid data should populate all fields.
     #[test]
@@ -1435,8 +1381,6 @@ mod tests {
         assert_eq!(header_info.single_chunk_info.compressed_size, 1);
         assert_eq!(header_info.compressed_count, 1);
     }
-
-    // ========== read_non_single_file_header Tests ==========
 
     /// read_non_single_file_header with valid data and all-zero chunk info.
     #[test]

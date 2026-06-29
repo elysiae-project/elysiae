@@ -4,9 +4,9 @@ use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
-/// Compact string arena for chunk names. All names are concatenated into a
-/// single `String`, indexed by (offset, len) pairs. Eliminates per-string heap
-/// allocations and enables cheap HashMap keys via packed u64.
+/// Compact string arena for chunk names. Concatenates all names into a
+/// single `String`, indexed by (offset, len). Avoids per-string heap
+/// allocations.
 pub struct ChunkNameArena {
     data: String,
     spans: Vec<(u32, u32)>,
@@ -46,9 +46,8 @@ impl From<&[&str]> for ChunkNameArena {
     }
 }
 
-/// Compact sorted index over a `ChunkNameArena` enabling `&str -> usize` lookup
-/// via binary search. Uses ~4 bytes per chunk (just an arena index), versus the
-/// ~24 bytes per entry a `HashMap<String, usize>` would need.
+/// Compact sorted index over a `ChunkNameArena` for `&str -> usize` lookup
+/// via binary search. Avoids per-entry HashMap overhead.
 pub struct ChunkNameLookup {
     arena: ChunkNameArena,
     sorted_indices: Vec<u32>,
@@ -398,11 +397,9 @@ async fn build_diff_installers(
 
                 deleted_files.extend(collect_deleted_files(&old_result.manifest, &new_names));
 
-                // Build old-chunk (asset_name, hash) -> offset map BEFORE
-                // consuming old_result.manifest. Keying by (asset_name, hash)
-                // preserves file provenance: when a chunk's decompressed hash
-                // matches an old chunk, the offset must come from the same old
-                // source file that the new file will reuse.
+                // Build (asset_name, hash) -> offset map from old manifest. Offsets
+                // are keyed by both fields so reused chunks always come from the
+                // correct source file.
                 let old_chunk_offsets: HashMap<(String, String), u64> = old_result
                     .manifest
                     .assets
@@ -427,10 +424,8 @@ async fn build_diff_installers(
 
         let mut diff_files = compute_diff_files(new_result.manifest, &old_md5_map);
 
-        // Chunk-level diff: annotate each chunk with the old-file offset only
-        // when the corresponding old chunk belonged to the same asset. Chunks
-        // introduced in the new version (no entry in the map) are marked -1 so
-        // they get downloaded.
+        // Annotate each chunk with the matching old-file offset. New chunks
+        // (no entry in the map) are marked -1 to trigger a download.
         for file in &mut diff_files {
             for chunk in &mut file.asset_chunks {
                 let key = (
@@ -1409,9 +1404,8 @@ pub async fn install(
     let chunks_dir = Arc::new(game_dir.join("chunks"));
     prepare_directories(game_dir, &chunks_dir).await?;
 
-    // Create all new directories from asset manifests before they are
-    // filtered out by `build_installer_data`. This ensures that new
-    // directories introduced in updates actually exist on disk.
+    // Create directories before `build_installer_data` filters them out,
+    // so new directories from updates exist on disk.
     for installer in &installers {
         for asset in &installer.manifest.assets {
             if asset.is_directory() {
@@ -1438,10 +1432,8 @@ pub async fn install(
     let current_manifest_hash = combine_manifest_hashes(&installers);
     let manifest_changed = prev_manifest_hash != current_manifest_hash;
     if options.is_resume {
-        // Validate that chunk files referenced in persisted state actually exist on
-        // disk. Stale entries (e.g. user deleted game files between sessions)
-        // would otherwise inflate the resume offset, causing incorrect progress
-        // and skipped downloads.
+        // Drop stale entries where the chunk file no longer exists on disk.
+        // Keeping them would inflate the resume offset and skip needed downloads.
         {
             let chunks_dir_validate = Arc::clone(&chunks_dir);
             prev_downloaded_chunks = tokio::task::spawn_blocking(move || {
@@ -1464,10 +1456,8 @@ pub async fn install(
             log::warn!(
                 "Manifest changed on resume (old={prev_manifest_hash}, new={current_manifest_hash}), re-verifying all chunks",
             );
-            // The cached chunks reference names from the previous manifest.
-            // Filter them down to names that still exist in the new manifest
-            // so we don't waste I/O on MD5-validating chunks that have no
-            // consumer.
+            // Only keep cached chunks whose names still exist in the new manifest.
+            // Avoids MD5-validating chunks with no consumer.
             let manifest_chunk_names: HashSet<&str> = installers
                 .iter()
                 .flat_map(|inst| inst.manifest.assets.iter())
@@ -1738,9 +1728,8 @@ pub async fn install(
     }
 
     let (assemble_tx, assemble_rx) = mpsc::channel::<(usize, usize)>(ASSEMBLY_CHANNEL_SIZE);
-    // Single token shared by AdaptiveAssembly::spawn_adjuster and the coordinator
-    // loop. Cancelling it cuts the RAM adjuster AND wakes the recv() race
-    // above.
+    // Shared cancellation token. Cancelling stops the RAM adjuster and
+    // wakes any blocked recv().
     let assembly_cancel_token = tokio_util::sync::CancellationToken::new();
     let assembly_task =
         spawn_assembly_coordinator(&ctx, assemble_rx, assembly_cancel_token.clone());
@@ -2586,10 +2575,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    /// When a chunk download recovers via HTTP Range resume and still fails
-    /// MD5 verification, the partial file must be discarded before retrying.
-    /// Otherwise the next attempt would append fresh bytes on top of
-    /// corrupted ones and the MD5 would still never match.
+    /// Discards partial files when MD5 verification fails after a resumed
+    /// download. Prevents appending fresh bytes to corrupted data.
     #[tokio::test]
     async fn download_chunk_with_retries_mismatch_discards_partial() {
         use crate::commands::sophon_downloader::api_scrape::Compression;
@@ -2679,17 +2666,15 @@ mod tests {
         let result =
             download_chunk_with_retries(&chunk, &client, &chunk_download, &dest, &ctx, &handle)
                 .await;
-        // After MAX_HASH_RETRIES attempts, the operation should fail; the
-        // point of this test is that the partial file was discarded on each
-        // Md5Mismatch retry (so the retry attempt always starts from size 0).
+        // After MAX_HASH_RETRIES, the operation fails. Each retry starts from
+        // size 0 because the partial file is discarded on mismatch.
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("hash verification failed"),
             "expected hash failure, got: {err_msg}"
         );
-        // The destination file must NOT exist after the failures because we
-        // discarded it on every mismatch.
+        // The destination file was discarded on every mismatch.
         assert!(
             !dest.exists(),
             "partial file should be deleted after MD5 mismatch retries"

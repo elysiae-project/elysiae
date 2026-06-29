@@ -498,11 +498,8 @@ mod tests {
         assert_eq!(offset, 3);
     }
 
-    // ========== Varint truncated stream tests ==========
-
     /// When the first byte has a continuation bit set but the stream has no
-    /// more bytes, read_long_7bit should return an error (UnexpectedEof
-    /// from read_exact).
+    /// more bytes, read_long_7bit returns an error.
     #[test]
     fn read_long_7bit_truncated_stream_returns_error() {
         let mut c = src(b"\x80"); // continuation bit set, but no follow-up byte
@@ -542,8 +539,6 @@ mod tests {
             "should fail when continuation byte is missing from stream"
         );
     }
-
-    // ========== Varint with tag_bit=2 ==========
 
     /// tag_bit=2 means 5 value bits and bit 5 is the continuation flag.
     /// prev_byte=0x1F -> value bits = 0x1F & 0x1F = 31, no continuation.
@@ -654,9 +649,7 @@ mod tests {
         );
     }
 
-    // ========== Varint edge cases: empty stream ==========
-
-    /// read_long_7bit on a completely empty stream should return UnexpectedEof.
+    /// read_long_7bit on a completely empty stream returns UnexpectedEof.
     #[test]
     fn read_long_7bit_empty_stream_returns_error() {
         let mut c = src(b"");
@@ -671,8 +664,6 @@ mod tests {
         let result = c.read_int_7bit();
         assert!(result.is_err(), "should fail on empty stream");
     }
-
-    // ========== Varint with tag_bit=3 ==========
 
     /// tag_bit=3 means 4 value bits and bit 4 is the continuation flag.
     /// prev_byte=0x0A -> value bits = 0x0A & 0x0F = 10, no continuation.
@@ -774,8 +765,6 @@ mod tests {
             "should report buffer underflow"
         );
     }
-
-    // ========== read_string_to_null edge cases ==========
 
     /// read_string_to_null with buffer_size=0 and first byte null returns empty
     /// string.

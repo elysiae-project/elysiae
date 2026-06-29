@@ -1,4 +1,4 @@
-//! Core game installer module for Sophon chunk-based downloads.
+//! Sophon chunk-based game installer.
 mod adaptive_assembly;
 mod api;
 mod assembly;
@@ -23,20 +23,18 @@ mod bench_tests;
 #[cfg(test)]
 mod integration_tests;
 
-/// Maximum retry attempts for failed chunk downloads.
+/// Max retries for failed chunk downloads.
 pub const MAX_RETRIES: u32 = 5;
 pub const MAX_HASH_RETRIES: u32 = 5;
 
-/// Streaming-download idle-poll interval. The HTTP body streaming loop wakes
-/// at this cadence to re-check cancellation and pause state.
+/// How often the download loop polls for cancellation/pause (ms).
 pub const STREAM_POLL_INTERVAL_MS: u64 = 250;
 
 use std::time::Duration;
 
 pub fn retry_delay(attempt: u32) -> Duration {
     let exp = 1000u64.saturating_mul(1u64 << attempt.min(5));
-    // Add jitter to prevent thundering herd when multiple chunks fail
-    // simultaneously Use timestamp-based pseudo-random jitter
+    // Jitter prevents thundering-herd when multiple chunks fail at once.
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -61,31 +59,27 @@ pub async fn cancelable_sleep(
         } => Err(()),
     }
 }
-/// Maximum concurrent file assembly tasks.
+/// Max concurrent assembly tasks.
 pub const ASSEMBLY_CONCURRENCY: usize = 8;
-/// Size of the channel buffer for assembly task scheduling.
+/// Assembly task channel buffer size.
 pub const ASSEMBLY_CHANNEL_SIZE: usize = 4096;
-/// Filename for the installed version marker file.
+/// Installed version marker filename.
 pub const VERSION_FILE_NAME: &str = ".sophon_version";
-/// Filename for the MD5 verification cache.
+/// MD5 verification cache filename.
 pub const VERIFICATION_CACHE_FILE: &str = ".sophon_verify_cache";
 
-/// Buffer size for file writes during assembly.
+/// File write buffer during assembly.
 pub const FILE_WRITE_BUFFER_SIZE: usize = 1024 * 1024;
-/// Buffer size for file writes during chunk downloads (smaller to save memory
-/// with many concurrent downloads).
+/// File write buffer during chunk downloads.
 pub const CHUNK_WRITE_BUFFER_SIZE: usize = 64 * 1024;
 
-/// Minimum interval between progress updates (ms).
+/// Minimum progress update interval (ms).
 pub const PROGRESS_UPDATE_INTERVAL_MS: u64 = 1000;
 
-/// Smoothing window for displayed download speed (seconds).
-/// Uses EWMA with alpha derived from this window size.
+/// Download speed smoothing window (seconds).
 pub const SPEED_SMOOTH_WINDOW_SECS: f64 = 5.0;
 
-/// Update an EWMA-smoothed value stored as scaled u64 in an AtomicU64.
-/// `alpha = 1.0 / (window_secs * update_hz)` approximates a window-sized moving
-/// average.
+/// Update an EWMA-smoothed value stored as a scaled u64.
 pub fn ewma_update(atomic: &std::sync::atomic::AtomicU64, raw_value: f64, alpha: f64) -> f64 {
     const SCALE: f64 = 1000.0;
     use std::sync::atomic::Ordering;
@@ -100,9 +94,9 @@ pub fn ewma_update(atomic: &std::sync::atomic::AtomicU64, raw_value: f64, alpha:
     new_val
 }
 
-/// Number of speed samples kept in the ETA history ring buffer.
+/// ETA speed sample window size.
 pub const ETA_WINDOW_SAMPLES: usize = 30;
-/// Minimum samples needed before ETA is shown.
+/// Minimum samples before ETA is displayed.
 pub const ETA_MIN_SAMPLES: usize = 5;
 
 /// Compute ETA speed using median filtering over recent speed samples.
@@ -147,14 +141,14 @@ fn version_file_path(game_dir: &Path) -> PathBuf {
     game_dir.join(VERSION_FILE_NAME)
 }
 
-/// Reads the installed version tag from the game directory, if present.
+/// Read the installed version tag, if present.
 pub fn read_installed_tag(game_dir: &Path) -> Option<String> {
     fs::read_to_string(version_file_path(game_dir))
         .ok()
         .map(|s| s.trim().to_owned())
 }
 
-/// Writes the installed version tag to the game directory.
+/// Write the installed version tag.
 pub fn write_installed_tag(game_dir: &Path, tag: &str) -> io::Result<()> {
     fs::write(version_file_path(game_dir), tag)
 }

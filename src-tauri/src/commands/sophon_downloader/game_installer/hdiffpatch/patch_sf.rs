@@ -45,13 +45,8 @@ impl PatchSF {
         let new_data_size = self.header_info.new_data_size as u64;
         let step_mem_size = (self.header_info.step_mem_size as usize).min(MAX_STEP_SIZE);
         let total_size = step_mem_size * 2;
-        // Both halves of the work buffer are fully written via read_exact
-        // before any byte is read from them. We skip the zero-init that
-        // `vec![0; n]` would perform. The clippy `uninit_vec` lint is
-        // silenced because we have a documented fill-before-read invariant
-        // established in `patch_loop`.
-        // Safety: every index 0..total_size is populated by read_exact before
-        // being read in patch_loop.
+        // Skip zero-init: both halves are fully written via read_exact
+        // before any byte is read (fill-before-read invariant).
         #[allow(clippy::uninit_vec)]
         let mut work_buf = Vec::with_capacity(total_size);
         #[allow(clippy::uninit_vec)]
@@ -245,10 +240,7 @@ impl<'a> Rle0Decoder<'a> {
                 let to_read = self.lenv.min(rem);
                 let src = &self.buf[self.pos..self.pos + to_read];
                 let dst = &mut data[dp..dp + to_read];
-                // Iter-zip form enables LLVM autovectorization (vpaddb) on
-                // x86_64 hosts with AVX2. Functionally identical to the
-                // explicit index loop but typically 4-8x faster on large
-                // patches.
+                // Iter-zip form enables LLVM autovectorization (vpaddb).
                 for (d, s) in dst.iter_mut().zip(src.iter()) {
                     *d = d.wrapping_add(*s);
                 }

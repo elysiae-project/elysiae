@@ -26,9 +26,7 @@ struct VerificationCacheSerializable {
 pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationEntry> {
     let cache_path = game_dir.join(VERIFICATION_CACHE_FILE);
 
-    // Clean up any leftover .tmp files from a previous crash (the
-    // atomic-write pattern in save_verification_cache writes to a .tmp
-    // before rename; if the process crashed during rename, the .tmp lingers).
+    // Clean up leftover .tmp files from a previous crash.
     if let Some(parent) = cache_path.parent()
         && let Ok(entries) = parent.read_dir()
     {
@@ -52,9 +50,7 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
             files: HashMap::new(),
         },
     };
-    // Size cap: if cache is excessively large, evict oldest entries rather than
-    // clearing everything. Trims down to half the maximum to avoid immediate
-    // re-trimming. Collect keys to remove BEFORE consuming serializable.files.
+    // Trim cache to half the max if it exceeds the limit.
     const MAX_CACHE_ENTRIES: usize = 50_000;
     let trim_keys: Vec<String> = if serializable.files.len() > MAX_CACHE_ENTRIES {
         let count = serializable.files.len();
@@ -86,11 +82,7 @@ pub fn load_verification_cache(game_dir: &Path) -> DashMap<String, VerificationE
         log::debug!("Trimmed verification cache to {cache_len} entries");
     }
 
-    // Stale entries (where the file no longer exists on disk) are not eagerly
-    // pruned here because doing so would require an O(n) filesystem stat storm on
-    // startup. Instead, stale entries are naturally handled lazily during the next
-    // `check_file_md5_cached` call, where `path.metadata()` returns `NotFound` for
-    // missing files, causing a cache miss and re-validation.
+    // Stale entries are pruned lazily during the next check_file_md5_cached call.
 
     cache
 }
@@ -239,7 +231,7 @@ mod tests {
     #[test]
     fn save_load_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        // Create actual files so load_verification_cache doesn't prune them as stale
+        // Create actual files for the cache.
         let game_dir = dir.path().join("game");
         fs::create_dir_all(&game_dir).unwrap();
         let f1 = game_dir.join("file1");

@@ -1,84 +1,77 @@
-// Protobuf data fetched from the Sophon protocol
+// Sophon protobuf manifest
 use prost::Message;
 
-// Top level of the protobuf
+// Top-level manifest
 #[derive(Clone, PartialEq, Message)]
 pub struct SophonManifestProto {
     #[prost(message, repeated, tag = "1")]
     pub assets: Vec<SophonManifestAssetProperty>,
 }
 
-// Files (nested in top level)
+// Asset properties
 #[derive(Clone, PartialEq, Message)]
 pub struct SophonManifestAssetProperty {
-    /// Path to the file relative to the game directory.
+    /// Asset path relative to the game directory.
     #[prost(string, tag = "1")]
     pub asset_name: String,
 
-    /// Ordered list of chunks that make up this file.
+    /// Chunks composing this asset.
     #[prost(message, repeated, tag = "2")]
     pub asset_chunks: Vec<SophonManifestAssetChunk>,
 
-    /// 0 = regular file, 64 = directory.
+    /// 0 = file, 64 = directory.
     #[prost(uint32, tag = "3")]
     pub asset_type: u32,
 
-    /// Total uncompressed file size.
+    /// Uncompressed file size.
     #[prost(uint64, tag = "4")]
     pub asset_size: u64,
 
-    /// MD5 of the fully assembled file.
+    /// MD5 of the assembled file.
     #[prost(string, tag = "5")]
     pub asset_hash_md5: String,
 }
 
 impl SophonManifestAssetProperty {
-    /// Returns true if this entry represents a directory (not a data file).
-    /// A directory is identified by either:
-    /// - `asset_type != 0` (proto value: 64 = directory), OR
-    /// - `asset_hash_md5` being empty (directories have no file content hash)
+    /// Check if this asset is a directory.
     #[inline]
     pub fn is_directory(&self) -> bool {
         self.asset_type != 0 || self.asset_hash_md5.is_empty()
     }
 }
 
-// Chunks (nested in file)
+// Chunk properties
 #[derive(Clone, PartialEq, Message)]
 pub struct SophonManifestAssetChunk {
-    /// CDN object name (used to build the download URL).
+    /// CDN object name for the download URL.
     #[prost(string, tag = "1")]
     pub chunk_name: String,
 
-    /// MD5 of the **decompressed** chunk bytes.
+    /// MD5 of the decompressed chunk.
     #[prost(string, tag = "2")]
     pub chunk_decompressed_hash_md5: String,
 
-    /// Byte offset in the output file where this chunk should be written.
-    /// Absent for the first chunk of a file -> defaults to 0.
+    /// Offset in the output file. Defaults to 0 for the first chunk.
     #[prost(uint64, tag = "3")]
     pub chunk_on_file_offset: u64,
 
-    /// Size of the **compressed** chunk as served by the CDN.
+    /// Compressed chunk size from the CDN.
     #[prost(uint64, tag = "4")]
     pub chunk_size: u64,
 
-    /// Size of the chunk after decompression.
+    /// Decompressed chunk size.
     #[prost(uint64, tag = "5")]
     pub chunk_size_decompressed: u64,
 
-    /// Undocumented hash field ,  not an xxh64 per the proto comment.
-    /// Not used for verification.
+    /// Undocumented hash field. Not used for verification.
     #[prost(uint64, tag = "6")]
     pub chunk_compressed_hash_xxh: u64,
 
-    /// MD5 of the **compressed** chunk bytes as served by the CDN.
+    /// MD5 of the compressed chunk from the CDN.
     #[prost(string, tag = "7")]
     pub chunk_compressed_hash_md5: String,
 
-    /// Runtime-only field (not from CDN proto). -1 = new data, >= 0 = offset
-    /// in the old game file where this chunk's decompressed data can be
-    /// sourced for reuse during updates (chunk-level diff detection).
+    /// Runtime-only: -1 = new data, >= 0 = offset in the old file for chunk reuse.
     #[prost(int64, tag = "8")]
     pub chunk_old_offset: i64,
 }

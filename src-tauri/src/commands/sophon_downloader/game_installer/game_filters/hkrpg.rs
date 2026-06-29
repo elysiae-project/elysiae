@@ -104,8 +104,6 @@ fn extract_filename(line: &str) -> Option<String> {
 }
 
 /// Case-insensitive version of `str::strip_prefix`.
-/// Converts both the string and prefix to lowercase for comparison, but
-/// returns the original string slice (preserving case) on match.
 fn strip_prefix_case_insensitive<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     let prefix = prefix.to_lowercase();
     let lower_s = s.to_lowercase();
@@ -237,9 +235,7 @@ mod tests {
         base.join(format!("{GAME_DATA_DIR}/StreamingAssets"))
     }
 
-    // -----------------------------------------------------------------------
     // strip_prefix_case_insensitive
-    // -----------------------------------------------------------------------
     #[test]
     fn test_strip_prefix_case_insensitive_matching() {
         let path = format!("{GAME_DATA_DIR}/StreamingAssets/foo/bar");
@@ -277,9 +273,7 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    // -----------------------------------------------------------------------
     // extract_filename
-    // -----------------------------------------------------------------------
     #[test]
     fn test_extract_filename_backslash() {
         let line = r#"{"fileName":"audio\voice\file.pck"}"#;
@@ -300,9 +294,7 @@ mod tests {
         assert_eq!(extract_filename(""), None);
     }
 
-    // -----------------------------------------------------------------------
     // add_both_persistent_or_streaming_assets
-    // -----------------------------------------------------------------------
     #[test]
     fn test_add_both_persistent_or_streaming_streaming_to_persistent() {
         let mut blacklist = vec![];
@@ -342,9 +334,7 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // locale_code_to_audio_lang_name (tested via super::)
-    // -----------------------------------------------------------------------
+    // locale_code_to_audio_lang_name
     #[test]
     fn test_hkrpg_locale_code_to_audio_lang_name_zh_cn() {
         assert_eq!(locale_code_to_audio_lang_name("zh-cn"), Some("Chinese"));
@@ -395,13 +385,11 @@ mod tests {
         assert_eq!(locale_code_to_audio_lang_name("fr-fr"), None);
     }
 
-    // -----------------------------------------------------------------------
     // filter_hkrpg_asset_list
-    // -----------------------------------------------------------------------
     #[test]
     fn test_filter_hkrpg_asset_list_missing_blacklist_no_filtering() {
         let dir = tempfile::tempdir().unwrap();
-        // No DownloadBlacklist.json created
+        // No blacklist file.
 
         let mut assets = vec![SophonManifestAssetProperty {
             asset_name: format!("{GAME_DATA_DIR}/StreamingAssets/audio/voice.pck"),
@@ -528,14 +516,12 @@ mod tests {
         ];
 
         filter_hkrpg_asset_list(dir.path(), &mut assets);
-        // The malformed line is skipped, but the valid one filters "audio/bad.pck"
+        // Malformed line skipped; valid line filters "audio/bad.pck".
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].asset_name, "audio/good.pck");
     }
 
-    // -----------------------------------------------------------------------
     // write_audio_lang_record
-    // -----------------------------------------------------------------------
     #[test]
     fn test_hkrpg_write_audio_lang_record_creates_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -552,9 +538,7 @@ mod tests {
         assert_eq!(content, "Chinese\nEnglish(US)\n");
     }
 
-    // -----------------------------------------------------------------------
     // write_app_info
-    // -----------------------------------------------------------------------
     #[test]
     fn test_write_app_info_creates_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -568,38 +552,33 @@ mod tests {
         assert_eq!(content, format!("{APP_VENDOR}\nhkrpg_global\n"));
     }
 
-    // -----------------------------------------------------------------------
     // write_binary_version_files
-    // -----------------------------------------------------------------------
     fn make_valid_binary_version_bytes() -> Vec<u8> {
         let hash = "abcdef0123456789abcdef0123456789abcd";
         let version_str = "OSRelWin64";
         let mut buf: Vec<u8> = Vec::new();
 
-        // String length as u16 BE
+        // String length (u16 BE).
         buf.extend_from_slice(&(version_str.len() as u16).to_be_bytes());
-        // Version string bytes
+        // Version string bytes.
         buf.extend_from_slice(version_str.as_bytes());
-        // Patch, Major, Minor as u32 BE
+        // Patch, Major, Minor (u32 BE).
         buf.extend_from_slice(&5u32.to_be_bytes());
         buf.extend_from_slice(&3u32.to_be_bytes());
         buf.extend_from_slice(&2u32.to_be_bytes());
 
-        // Padding to push hash to correct position
-        // data = buf[..buf.len()-3]; data.len() needs to have hash at data.len()-40
-        // Current buf = 2 + 11 + 12 = 25 bytes
-        // We want data.len() - 40 = 25, so data.len() = 65, buf.len() = 68
+        // Padding to position hash correctly.
         let buf_len = buf.len();
         let padding = 65 - buf_len;
         buf.resize(buf_len + padding, 0xFF);
 
-        // Hash at position 65-40=25 in data = position 25 in buf before trailing trim
+        // Hash at position 25.
         buf.extend_from_slice(hash.as_bytes());
 
-        // 4 bytes after hash (before trailing trim)
+        // 4 bytes after hash.
         buf.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]);
 
-        // 3 trailing bytes that will be trimmed
+        // 3 trailing bytes to trim.
         buf.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
 
         buf
@@ -632,7 +611,7 @@ mod tests {
     #[test]
     fn test_write_binary_version_files_missing() {
         let dir = tempfile::tempdir().unwrap();
-        // No BinaryVersion.bytes created
+        // No BinaryVersion.bytes.
 
         let result = write_binary_version_files(dir.path());
         assert!(result.is_err());
@@ -644,7 +623,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bv_dir = streaming_dir(dir.path());
         fs::create_dir_all(&bv_dir).unwrap();
-        // Write fewer than 16 bytes
+        // Write fewer than 16 bytes.
         fs::write(bv_dir.join("BinaryVersion.bytes"), b"too short").unwrap();
 
         let result = write_binary_version_files(dir.path());

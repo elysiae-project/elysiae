@@ -28,10 +28,8 @@ impl PatchSingle {
         let hi = &self.header_info;
         let ci = &hi.chunk_info;
 
-        // Open the patch file separately for each stream to avoid file
-        // position interference. Using try_clone() would share the same
-        // file descriptor and position across all handles, causing corrupted
-        // output when sections are read in parallel.
+        // Open separately per stream: try_clone would share file descriptor
+        // position, corrupting parallel reads.
         let f0 = File::open(patch_path)?;
         let f1 = File::open(patch_path)?;
         let f2 = File::open(patch_path)?;
@@ -145,8 +143,6 @@ mod tests {
     fn patch_single_new_creates_struct() {
         let header_info = super::HeaderInfo::default();
         let ps = PatchSingle::new(header_info);
-        // Verify patch returns an error (file not found) to confirm the struct was
-        // created
         let mut input = Cursor::new(Vec::<u8>::new());
         let mut output = Vec::<u8>::new();
         let result = ps.patch(

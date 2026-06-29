@@ -157,9 +157,7 @@ pub fn assemble_file(
         return Ok(());
     }
     let target_path = game_dir.join(&file.asset_name);
-    // Use hex-encoded hash of the asset name as tmp filename to avoid
-    // collisions from path sanitization (e.g. "a/b" and "a_b" both become "a_b"
-    // when '/' is replaced with '_', but have different hashes).
+    // Hash the asset name to avoid tmp filename collisions.
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
@@ -230,11 +228,7 @@ pub fn assemble_file(
         if buf.capacity() < FILE_WRITE_BUFFER_SIZE {
             buf = Vec::with_capacity(FILE_WRITE_BUFFER_SIZE);
         }
-        // Safety: the entire buffer is overwritten by read() before any byte
-        // is observed via write_all(). The buffer is initialized only when
-        // first allocated (set to 0 in with_capacity branch above), and
-        // kept across calls. Resetting len here lets us skip the zero-fill
-        // on the hot path.
+        // Safety: buffer is fully overwritten by read() before write_all().
         unsafe { buf.set_len(FILE_WRITE_BUFFER_SIZE) };
         buf
     });
@@ -273,8 +267,7 @@ pub fn assemble_file(
 
     for chunk in &file.asset_chunks {
         if chunk.chunk_old_offset >= 0 {
-            // Chunk-level reuse: read decompressed data from the existing game
-            // file at the old offset instead of downloading & decompressing.
+            // Reuse chunk data from the existing file at the old offset.
             debug_assert!(
                 chunk.chunk_old_offset >= 0,
                 "chunk_old_offset must be non-negative"
@@ -293,8 +286,7 @@ pub fn assemble_file(
                 let _ = fs::remove_file(&tmp_path);
             })?;
             total_written += bytes_written;
-        // No refcount to decrement, old-source chunks were never
-        // downloaded.
+        // Old-source chunks were never downloaded.
         } else {
             if !validate_chunk_name(&chunk.chunk_name) {
                 return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
@@ -386,7 +378,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
-    // Use optimized version for large chunks
+    // Use optimized path for large chunks.
     const OPT_THRESHOLD: u64 = 1024 * 1024;
     if expected_size >= OPT_THRESHOLD {
         return super::assembly_opt::decompress_chunk_optimized(
@@ -464,12 +456,8 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
     Ok(bytes_written)
 }
 
-/// Read decompressed bytes directly from an existing game file (old file) at
-/// the given old offset, verify the chunk's decompressed MD5, and write to the
-/// output writer at the new file offset. Used for chunk-level reuse during
-/// updates.
-///
-/// For large chunks (>= 1 MiB), uses memory-mapped I/O for better performance.
+/// Read decompressed bytes from an existing file, verify MD5, and write to the
+/// output. Uses memory-mapped I/O for large chunks (>= 1 MiB).
 #[allow(clippy::too_many_arguments)]
 fn write_from_old_file<W: Write + Seek>(
     old_file_path: &Path,
@@ -481,7 +469,7 @@ fn write_from_old_file<W: Write + Seek>(
     buffer: &mut [u8],
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
-    // Use memory-mapped I/O for large chunks (>= 1 MiB) for better performance
+    // Use memory-mapped I/O for large chunks.
     const MMA_THRESHOLD: u64 = 1024 * 1024;
     if expected_size >= MMA_THRESHOLD {
         return super::assembly_opt::write_chunk_from_mmap(
@@ -1254,11 +1242,7 @@ mod tests {
         assert!(!validate_chunk_name("/etc/passwd"));
     }
 
-    // --- Group 6: Additional chunk name security and acceptance tests ---
-
-    /// Double-dot as a path component must be rejected (e.g. `foo/../bar`).
-    /// Consecutive dots within a filename component are allowed (e.g.
-    /// `foo..bar`).
+    /// Reject `..` as a path component; allow consecutive dots in filenames.
     #[test]
     fn validate_chunk_name_rejects_double_dot_component() {
         assert!(!validate_chunk_name("../etc/passwd"));
@@ -1274,22 +1258,21 @@ mod tests {
         assert!(validate_chunk_name("2.0..hotfix.pak"));
     }
 
-    /// Backslash-prefixed names (Windows-style absolute paths) must be
-    /// rejected.
+    /// Reject backslash-prefixed names.
     #[test]
     fn validate_chunk_name_rejects_backslash_prefix() {
         assert!(!validate_chunk_name("\\Windows\\System32"));
         assert!(!validate_chunk_name("\\etc\\passwd"));
     }
 
-    /// Drive-letter style strings (e.g. C:\...) must be rejected.
+    /// Reject drive-letter prefixes.
     #[test]
     fn validate_chunk_name_rejects_drive_letter() {
         assert!(!validate_chunk_name("C:\\Windows"));
         assert!(!validate_chunk_name("Z:\\"));
     }
 
-    /// Alphanumeric chunk names with underscores, hyphens and dots are valid.
+    /// Accept valid special characters in chunk names.
     #[test]
     fn validate_chunk_name_accepts_valid_special_chars() {
         assert!(validate_chunk_name("chunk_001"));
@@ -1298,7 +1281,7 @@ mod tests {
         assert!(validate_chunk_name("my_chunk-abc.xyz"));
     }
 
-    /// Purely numeric chunk names (common for indexed chunks) must be accepted.
+    /// Accept numeric chunk names.
     #[test]
     fn validate_chunk_name_accepts_numeric() {
         assert!(validate_chunk_name("12345"));
@@ -1359,7 +1342,7 @@ mod tests {
         assert_eq!(hex::encode(hasher.finalize()), combined_hash);
     }
 
-    /// Test write_from_old_file reads from correct offset and verifies hash
+    /// Verify write_from_old_file reads at the correct offset.
     #[test]
     fn write_from_old_file_reads_correct_offset() {
         use std::io::Write;
@@ -1367,17 +1350,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let old_file_path = dir.path().join("old_file.bin");
 
-        // Create old file with known content: "AAAA" at offset 0, "BBBB" at offset 4
+        // Old file: "AAAABBBB"
         let mut old_file = fs::File::create(&old_file_path).unwrap();
         old_file.write_all(b"AAAABBBB").unwrap();
         drop(old_file);
 
-        // Create output file
+        // Output file
         let output_path = dir.path().join("output.bin");
         let mut output_file = fs::File::create(&output_path).unwrap();
         let mut writer = std::io::BufWriter::new(&mut output_file);
 
-        // Read 4 bytes from offset 4 (should get "BBBB")
+        // Read 4 bytes from offset 4.
         let mut transfer_buf = vec![0u8; 1024];
         let bytes_written = write_from_old_file(
             &old_file_path,
@@ -1400,7 +1383,7 @@ mod tests {
         assert_eq!(&result, b"BBBB");
     }
 
-    /// Test write_from_old_file verifies chunk hash correctly
+    /// Verify chunk hash validation in write_from_old_file.
     #[test]
     fn write_from_old_file_verifies_chunk_hash() {
         use md5::{Digest, Md5};
@@ -1441,7 +1424,7 @@ mod tests {
         let old_file_path = dir.path().join("old_file.bin");
 
         let data = b"test data";
-        let wrong_md5 = "ffffffffffffffffffffffffffffffff"; // Not EMPTY_MD5
+        let wrong_md5 = "ffffffffffffffffffffffffffffffff"; // Wrong MD5 (not EMPTY_MD5).
 
         let mut old_file = fs::File::create(&old_file_path).unwrap();
         old_file.write_all(data).unwrap();
@@ -1470,13 +1453,13 @@ mod tests {
         ));
     }
 
-    /// Test write_from_old_file fails when old file is too short
+    /// Verify failure when old file is too short.
     #[test]
     fn write_from_old_file_too_short_fails() {
         let dir = tempfile::tempdir().unwrap();
         let old_file_path = dir.path().join("old_file.bin");
 
-        // Create file with only 5 bytes
+        // 5-byte file
         let data = b"short";
         let mut old_file = fs::File::create(&old_file_path).unwrap();
         old_file.write_all(data).unwrap();
@@ -1487,7 +1470,7 @@ mod tests {
         let mut writer = std::io::BufWriter::new(&mut output_file);
 
         let mut transfer_buf = vec![0u8; 1024];
-        // Try to read 10 bytes from a 5-byte file
+        // Request 10 bytes from a 5-byte file.
         let result = write_from_old_file(
             &old_file_path,
             &mut writer,
@@ -1502,7 +1485,7 @@ mod tests {
         assert!(result.is_err(), "should fail when file is too short");
     }
 
-    /// Test write_from_old_file fails when old file doesn't exist
+    /// Verify failure when old file is missing.
     #[test]
     fn write_from_old_file_missing_file_fails() {
         let dir = tempfile::tempdir().unwrap();
@@ -1527,7 +1510,7 @@ mod tests {
         assert!(result.is_err(), "should fail when old file doesn't exist");
     }
 
-    /// Test assemble_file with chunk_old_offset reuses data from old file
+    /// Verify chunk reuse from the old file.
     #[test]
     fn assemble_file_reuses_chunk_from_old_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -1538,14 +1521,14 @@ mod tests {
         fs::create_dir_all(&chunks_dir).unwrap();
         fs::create_dir_all(&temp_dir).unwrap();
 
-        // Create old file with content that will be reused
+        // Old file to reuse from.
         let old_data = b"reused chunk data here!";
         let target_path = game_dir.join("reused.bin");
         fs::write(&target_path, old_data).unwrap();
 
         let md5 = compute_md5_hex(old_data);
 
-        // Create asset with chunk_old_offset >= 0 (reuse from old file)
+        // Asset with chunk_old_offset >= 0.
         let file = SophonManifestAssetProperty {
             asset_name: "reused.bin".to_string(),
             asset_chunks: vec![SophonManifestAssetChunk {
@@ -1567,7 +1550,7 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = Vec::new();
         let verify_cache = DashMap::new();
 
-        // This should reuse data from the existing file, not fail due to missing chunk
+        // Should reuse from the existing file.
         let result = assemble_file(
             &file,
             &game_dir,
@@ -1588,8 +1571,7 @@ mod tests {
         let result_data = fs::read(&target_path).unwrap();
         assert_eq!(&result_data, old_data);
 
-        // Verify no chunk was downloaded ,  refcounts vec is still empty
-        // (chunk_lookup has no entry for "not_used", so decrement was a no-op)
+        // No chunk was downloaded.
         assert!(chunk_refcounts.is_empty());
     }
 }

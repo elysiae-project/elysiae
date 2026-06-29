@@ -37,9 +37,8 @@ fn read_plugin_versions(game_dir: &Path) -> HashMap<String, String> {
 }
 
 fn write_plugin_version(game_dir: &Path, key: &str, value: &str) -> std::io::Result<()> {
-    // Acquire the global lock so that concurrent calls do not race on the
-    // read-modify-write of plugin_versions.json. The lock is held only during
-    // the synchronous I/O section; no await points exist inside this function.
+    // Hold the global lock during synchronous I/O to prevent races on
+    // plugin_versions.json. No await points exist inside this function.
     let _lock = PLUGIN_VERSION_LOCK
         .lock()
         .unwrap_or_else(|err| err.into_inner());
@@ -133,8 +132,7 @@ async fn download_zip(
     file.flush().await?;
 
     let actual_md5 = hex::encode(hasher.finalize());
-    // Compare case-insensitively: hex::encode always emits lowercase, but the
-    // upstream API has no contract on the case of its returned hex digest.
+    // hex::encode emits lowercase, but the upstream API does not guarantee case.
     if actual_md5 != expected_md5.to_ascii_lowercase() {
         let _ = fs::remove_file(dest);
         return Err(SophonError::Md5Mismatch {
@@ -181,9 +179,8 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
             .by_index(i)
             .map_err(|err| SophonError::Decompression(err.to_string()))?;
 
-        // Reject symlink entries outright, silently treating a symlink-target
-        // string as the contents of a regular file is a data-integrity bug and
-        // could leak attacker-controlled text into game_dir.
+        // Reject symlink entries. Treating a symlink target as file contents
+        // is a data-integrity bug.
         if entry.is_symlink() {
             log::warn!(
                 "Rejecting symlink entry '{name}' in plugin archive",
@@ -265,9 +262,7 @@ fn extract_zip(zip_path: &Path, game_dir: &Path) -> SophonResult<()> {
             let mut out_file = File::create(&out_path)?;
             std::io::copy(&mut entry, &mut out_file)?;
 
-            // Preserve Unix mode bits from the ZIP entry when present so that
-            // shipped executables retain their +x bit instead of falling back
-            // to the umask (which on many distros is 0o644).
+            // Preserve Unix mode bits from the ZIP entry so executables retain +x.
             if let Some(mode) = entry.unix_mode() {
                 use std::os::unix::fs::PermissionsExt;
                 let _ = fs::set_permissions(&out_path, fs::Permissions::from_mode(mode & 0o7777));
@@ -792,10 +787,7 @@ mod tests {
     /// uncompressed size and stores only a few bytes of payload. Used to
     /// exercise the per-entry size cap in `extract_zip`.
     fn write_forged_zip(path: &Path, declared_uncompressed: u32) {
-        // Build the ZIP bytes without the ambiguity of std::io::Write
-        // vs tokio::io::AsyncWriteExt (both of which impl write_all for
-        // Vec<u8>), by directly constructing the on-disk bytes via array
-        // concat on a primitive buffer.
+        // Build the ZIP bytes directly to avoid trait ambiguity.
         let mut src = std::fs::File::create(path).unwrap();
         use std::io::Write as _;
 
@@ -820,12 +812,8 @@ mod tests {
         src.write_all(fname).unwrap();
         src.write_all(payload).unwrap();
 
-        // Compute the central-directory offset from bytes written so far.
-        // 30 bytes of local header + 4 bytes payload declared-comp-size + 4
-        // bytes payload declared-uncomp-size + 2 + 2 + 9 + payload length
-        //   = 30 + 4 + 4 + 2 + 2 + sizeof(payload) + 9 + filename length
-        // We'll rely on the offset being deterministic: it's the size of the
-        // local header entry + payload.
+        // Central-directory offset equals the size of the local header entry plus
+        // payload.
         let local_header_size: u32 = 30 + (fname.len() as u32) + (payload.len() as u32);
         let cd_offset: u32 = local_header_size;
 
@@ -884,10 +872,9 @@ mod tests {
 
     #[test]
     fn extract_zip_rejects_colon_entry() {
-        // NTFS-style alternate data stream: "safe/path:hidden", `enclosed_name`
-        // would happily accept this on Linux, but the entry name embeds a ':'
-        // which our adapter rejects as it's never legitimate for plugin/SDK
-        // archives.
+        // NTFS alternate data stream: "safe/path:hidden". `enclosed_name`
+        // accepts this on Linux, but the ':' is rejected as it's never
+        // legitimate for plugin/SDK archives.
         let dir = tempfile::tempdir().unwrap();
         let zip_path = dir.path().join("ads.zip");
         let file = File::create(&zip_path).unwrap();

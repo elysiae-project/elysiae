@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn download_info_url_for_trims_slashes() {
-        // Test that trailing/leading slashes are properly trimmed
+        // Verify slash trimming.
         let dl = DownloadInfo {
             encryption: 0,
             password: String::new(),
@@ -294,7 +294,7 @@ mod tests {
             url_prefix: "https://example.com//".to_string(),
             url_suffix: "/v1/".to_string(),
         };
-        // Should not have double slashes (except in protocol)
+        // Check for double slashes.
         let url = dl.url_for("manifest.dat");
         // Check for double slashes not in protocol
         let after_protocol = url.strip_prefix("https://").unwrap_or(&url);
