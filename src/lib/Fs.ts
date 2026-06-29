@@ -10,6 +10,8 @@ import {
 	readTextFile as tauriReadTextFile,
 	remove as tauriRemove,
 	rename as tauriRename,
+	writeFile as tauriWriteFile,
+	writeTextFile as tauriWriteTextFile,
 } from "@tauri-apps/plugin-fs";
 import { error, info } from "@tauri-apps/plugin-log";
 import type { Variants } from "../types";
@@ -34,6 +36,34 @@ export const readFile = async (
 export const readTextFile = async (path: string): Promise<string> => {
 	return new Promise((resolve, reject) => {
 		tauriReadTextFile(path, { baseDir: BaseDir.AppData })
+			.then(resolve)
+			.catch(reject);
+	});
+};
+
+export const writeFile = async (
+	path: string,
+	contents:
+		| ReadableStream<Uint8Array<ArrayBufferLike>>
+		| Uint8Array<ArrayBufferLike>,
+): Promise<void> => {
+	return new Promise((resolve, reject) => {
+		tauriWriteFile(path, contents, {
+			baseDir: BaseDir.AppData,
+		})
+			.then(resolve)
+			.catch(reject);
+	});
+};
+
+export const writeTextFile = async (
+	path: string,
+	contents: string,
+): Promise<void> => {
+	return new Promise((resolve, reject) => {
+		tauriWriteTextFile(path, contents, {
+			baseDir: BaseDir.AppData,
+		})
 			.then(resolve)
 			.catch(reject);
 	});
