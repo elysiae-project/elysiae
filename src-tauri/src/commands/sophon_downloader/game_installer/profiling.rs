@@ -224,6 +224,7 @@ impl PipelineProfiler {
             fn jemalloc_stats_mb() -> Option<(f64, f64, f64, f64, f64)> {
                 #[cfg(not(target_env = "msvc"))]
                 {
+                    tikv_jemalloc_ctl::epoch::advance().ok()?;
                     let allocated: usize = tikv_jemalloc_ctl::stats::allocated::read().ok()?;
                     let active: usize = tikv_jemalloc_ctl::stats::active::read().ok()?;
                     let resident: usize = tikv_jemalloc_ctl::stats::resident::read().ok()?;
