@@ -1539,7 +1539,7 @@ pub async fn install(
 
     let mut resume_bytes_offset: u64 = 0;
     let mut pre_assembled: u64 = 0;
-    let mut completed_chunk_names: HashSet<String> = HashSet::new();
+    let completed_chunk_names: Arc<DashSet<String>>;
     let completed_indices = if options.is_resume {
         let total = all_files.len() as u64;
         (callbacks.updater)(SophonProgress::CalculatingDownloads {
@@ -1645,9 +1645,7 @@ pub async fn install(
 
         resume_bytes_offset = resume_bytes_offset_arc.load(Ordering::Relaxed);
         pre_assembled = pre_assembled_arc.load(Ordering::Relaxed);
-        for name in completed_chunk_names_arc.iter() {
-            completed_chunk_names.insert(name.key().clone());
-        }
+        completed_chunk_names = completed_chunk_names_arc;
 
         (callbacks.updater)(SophonProgress::CalculatingDownloads {
             checked_files: total,
@@ -1655,6 +1653,7 @@ pub async fn install(
         });
         Some(indices_arc.iter().map(|r| *r.key()).collect())
     } else {
+        completed_chunk_names = Arc::new(DashSet::new());
         None
     };
 
