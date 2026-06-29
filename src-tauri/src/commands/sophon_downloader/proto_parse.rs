@@ -71,7 +71,8 @@ pub struct SophonManifestAssetChunk {
     #[prost(string, tag = "7")]
     pub chunk_compressed_hash_md5: String,
 
-    /// Runtime-only: -1 = new data, >= 0 = offset in the old file for chunk reuse.
+    /// Runtime-only: -1 = new data, >= 0 = offset in the old file for chunk
+    /// reuse.
     #[prost(int64, tag = "8")]
     pub chunk_old_offset: i64,
 }

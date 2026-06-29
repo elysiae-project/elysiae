@@ -3172,7 +3172,8 @@ mod tests {
             "Should not return OriginalFileMissing for blank original: {:?}",
             result
         );
-        // Patch fails because the chunk is not a real HDiff, but the blank-file check passes.
+        // Patch fails because the chunk is not a real HDiff, but the blank-file check
+        // passes.
         let diff_ref_path = dir.path().join("patching/patch_chunk.bin.diff_ref");
         assert!(
             !diff_ref_path.exists(),
