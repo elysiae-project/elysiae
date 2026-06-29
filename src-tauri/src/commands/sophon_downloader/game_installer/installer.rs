@@ -1130,7 +1130,7 @@ async fn run_downloads(
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
 ) -> DownloadSummary {
-    const WORKER_COUNT: usize = 64;
+    const WORKER_COUNT: usize = 16;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let total: usize = download_items.len();
@@ -1544,7 +1544,7 @@ pub async fn install(
             total_files: total,
         });
 
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(64));
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(16));
         let checked_files = Arc::new(AtomicU64::new(0));
         let resume_bytes_offset_arc = Arc::new(AtomicU64::new(0));
         let pre_assembled_arc = Arc::new(AtomicU64::new(0));
@@ -1952,7 +1952,7 @@ pub async fn verify_integrity(
     let mut last_emit = Instant::now();
 
     // Phase 1: Verify all files in parallel (bounded by semaphore)
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(64));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(16));
     let scanned_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
 
