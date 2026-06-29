@@ -1723,6 +1723,7 @@ pub async fn install(
         profiler: Arc::new(super::profiling::PipelineProfiler::new()),
     });
 
+    #[cfg(feature = "pipeline-profiling")]
     {
         let profiler = Arc::clone(&ctx.profiler);
         tokio::spawn(async move {
