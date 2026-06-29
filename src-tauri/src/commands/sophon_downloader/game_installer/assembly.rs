@@ -572,7 +572,6 @@ pub struct AssemblyTaskParams {
     pub assembled_files: Arc<AtomicU64>,
     pub last_assembly_update: Arc<Mutex<Instant>>,
     pub total_files: u64,
-    #[cfg(feature = "pipeline-profiling")]
     pub profiler: Arc<super::profiling::PipelineProfiler>,
 }
 
@@ -593,11 +592,9 @@ pub fn run_assembly_task(
         assembled_files,
         last_assembly_update,
         total_files,
-        #[cfg(feature = "pipeline-profiling")]
         profiler,
     } = params;
 
-    #[cfg(feature = "pipeline-profiling")]
     let _assembly_timer = super::profiling::AssemblyTimer::new(&profiler);
 
     if file_idx >= all_files.len() {
@@ -644,7 +641,6 @@ pub fn run_assembly_task(
         }
     }
 
-    #[cfg(feature = "pipeline-profiling")]
     _assembly_timer.finish();
 
     Ok(())
@@ -670,6 +666,7 @@ pub async fn spawn_assembly_task(
 #[cfg(test)]
 mod tests {
     use super::super::installer::ChunkNameArena;
+    use super::super::profiling::PipelineProfiler;
     use super::*;
 
     fn make_chunk_names(names: &[&str]) -> Arc<ChunkNameLookup> {
@@ -1067,6 +1064,7 @@ mod tests {
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             total_files: 0,
+            profiler: Arc::new(PipelineProfiler::new()),
         };
 
         let result = run_assembly_task(params, |_| {});
@@ -1209,6 +1207,7 @@ mod tests {
             assembled_files: Arc::new(AtomicU64::new(0)),
             last_assembly_update: Arc::new(Mutex::new(Instant::now())),
             total_files: 1,
+            profiler: Arc::new(PipelineProfiler::new()),
         };
 
         let result = run_assembly_task(params, |_| {});

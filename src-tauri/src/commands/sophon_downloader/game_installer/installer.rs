@@ -149,7 +149,6 @@ struct InstallContext {
     last_save: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     state_saver: StateSaver,
     adaptive_assembly: Arc<AdaptiveAssembly>,
-    #[cfg(feature = "pipeline-profiling")]
     profiler: Arc<super::profiling::PipelineProfiler>,
 }
 
@@ -704,7 +703,6 @@ fn make_assembly_params(
         assembled_files: Arc::clone(&ctx.assembled_files),
         last_assembly_update: Arc::clone(&ctx.last_assembly_update),
         total_files: ctx.total_files,
-        #[cfg(feature = "pipeline-profiling")]
         profiler: Arc::clone(&ctx.profiler),
     }
 }
@@ -955,7 +953,6 @@ async fn process_download_item(
     assemble_tx: mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
 ) -> SophonResult<()> {
-    #[cfg(feature = "pipeline-profiling")]
     let mut _chunk_timer = super::profiling::ChunkTimer::new(&ctx.profiler);
 
     {
@@ -977,7 +974,6 @@ async fn process_download_item(
     let dest = ctx.chunks_dir.join(assembly::chunk_filename(chunk));
 
     let needs_download = if item.is_pre_downloaded {
-        #[cfg(feature = "pipeline-profiling")]
         _chunk_timer.record_phase(super::profiling::ChunkPhase::Verify);
         let result = check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
         result
@@ -1002,7 +998,6 @@ async fn process_download_item(
         .await?;
         was_actually_downloaded = true;
     }
-    #[cfg(feature = "pipeline-profiling")]
     _chunk_timer.record_phase(super::profiling::ChunkPhase::Download);
 
     if was_actually_downloaded && item.is_pre_downloaded {
@@ -1013,7 +1008,6 @@ async fn process_download_item(
             .ok();
     }
 
-    #[cfg(feature = "pipeline-profiling")]
     _chunk_timer.record_phase(super::profiling::ChunkPhase::PostDownload);
 
     if let Some(dc) = ctx.downloaded_chunks.get() {
@@ -1118,7 +1112,6 @@ async fn process_download_item(
 
     notify_assembly_ready(item_idx, &chunk_entries, &chunk_entry_offsets, &assemble_tx);
 
-    #[cfg(feature = "pipeline-profiling")]
     _chunk_timer.finish(chunk.chunk_size, was_actually_downloaded);
 
     Ok(())
@@ -1146,7 +1139,6 @@ async fn run_downloads(
     let remaining: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(total));
     let mut workers = tokio::task::JoinSet::new();
 
-    #[cfg(feature = "pipeline-profiling")]
     ctx.profiler.total_chunks.store(total, Ordering::Relaxed);
 
     for _ in 0..WORKER_COUNT {
@@ -1165,7 +1157,6 @@ async fn run_downloads(
                 if handle.is_cancelled() {
                     return;
                 }
-                #[cfg(feature = "pipeline-profiling")]
                 let idle_start = std::time::Instant::now();
                 let (item_idx, item) = {
                     let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -1174,7 +1165,6 @@ async fn run_downloads(
                         None => break,
                     }
                 };
-                #[cfg(feature = "pipeline-profiling")]
                 {
                     let idle_ns = idle_start.elapsed().as_nanos() as u64;
                     ctx.profiler.record_idle(idle_ns);
@@ -1730,11 +1720,9 @@ pub async fn install(
         last_save: Arc::new(Mutex::new(None)),
         state_saver: callbacks.state_saver,
         adaptive_assembly: Arc::clone(&adaptive_assembly),
-        #[cfg(feature = "pipeline-profiling")]
         profiler: Arc::new(super::profiling::PipelineProfiler::new()),
     });
 
-    #[cfg(feature = "pipeline-profiling")]
     {
         let profiler = Arc::clone(&ctx.profiler);
         tokio::spawn(async move {
@@ -2582,7 +2570,6 @@ mod tests {
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
-            #[cfg(feature = "pipeline-profiling")]
             profiler: Arc::new(super::profiling::PipelineProfiler::new()),
         });
 
@@ -2676,7 +2663,6 @@ mod tests {
             last_save: Arc::new(Mutex::new(None)),
             state_saver: Arc::new(|_| {}),
             adaptive_assembly: Arc::new(AdaptiveAssembly::new()),
-            #[cfg(feature = "pipeline-profiling")]
             profiler: Arc::new(super::profiling::PipelineProfiler::new()),
         });
 
