@@ -221,6 +221,37 @@ impl PipelineProfiler {
                 Some(resident_pages as f64 * page_size as f64 / 1_048_576.0)
             }
 
+            fn process_memory_breakdown() -> Option<String> {
+                let data = std::fs::read_to_string("/proc/self/status").ok()?;
+                let mut rss = 0u64;
+                let mut size = 0u64;
+                let mut data_size = 0u64;
+                let mut lib_size = 0u64;
+                let mut pte = 0u64;
+                for line in data.lines() {
+                    if let Some(v) = line.strip_prefix("VmRSS:") {
+                        rss = v.split_whitespace().next()?.parse().ok()?;
+                    } else if let Some(v) = line.strip_prefix("VmSize:") {
+                        size = v.split_whitespace().next()?.parse().ok()?;
+                    } else if let Some(v) = line.strip_prefix("VmData:") {
+                        data_size = v.split_whitespace().next()?.parse().ok()?;
+                    } else if let Some(v) = line.strip_prefix("VmLib:") {
+                        lib_size = v.split_whitespace().next()?.parse().ok()?;
+                    } else if let Some(v) = line.strip_prefix("VmPTE:") {
+                        pte = v.split_whitespace().next()?.parse().ok()?;
+                    }
+                }
+                let mb = |v: u64| v as f64 / 1024.0;
+                Some(format!(
+                    "vm: rss={:.0}MB size={:.0}MB data={:.0}MB lib={:.0}MB pte={:.0}MB",
+                    mb(rss),
+                    mb(size),
+                    mb(data_size),
+                    mb(lib_size),
+                    mb(pte),
+                ))
+            }
+
             fn jemalloc_stats_mb() -> Option<(f64, f64, f64, f64, f64)> {
                 #[cfg(not(target_env = "msvc"))]
                 {
@@ -246,8 +277,9 @@ impl PipelineProfiler {
             if let Some(rss) = process_rss_mb() {
                 if let Some((allocated, active, resident, mapped, retained)) = jemalloc_stats_mb() {
                     let non_jemalloc = (rss - resident).max(0.0);
+                    let vm_info = process_memory_breakdown().unwrap_or_default();
                     log::info!(
-                        "[PROFILE #{count}] rss={rss:.0}MB jemalloc: allocated={allocated:.0}MB active={active:.0}MB resident={resident:.0}MB mapped={mapped:.0}MB retained={retained:.0}MB non_jemalloc={non_jemalloc:.0}MB"
+                        "[PROFILE #{count}] rss={rss:.0}MB jemalloc: allocated={allocated:.0}MB active={active:.0}MB resident={resident:.0}MB mapped={mapped:.0}MB retained={retained:.0}MB non_jemalloc={non_jemalloc:.0}MB {vm_info}"
                     );
                 } else {
                     log::info!("[PROFILE #{count}] rss={rss:.0}MB");
