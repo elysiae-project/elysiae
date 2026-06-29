@@ -113,14 +113,23 @@ pub async fn fetch_build(
     branch: &PackageBranch,
     tag: Option<&str>,
 ) -> SophonResult<SophonBuildData> {
-    let tag_str = tag.unwrap_or(&branch.tag);
-    let url = format!(
-        "{base}?branch={branch}&package_id={package_id}&password={password}&tag={tag_str}",
-        base = SOPHON_BUILD_URL_BASE,
-        branch = branch.branch,
-        package_id = branch.package_id,
-        password = branch.password,
-    );
+    let url = if let Some(tag_str) = tag {
+        format!(
+            "{base}?branch={branch}&package_id={package_id}&password={password}&tag={tag_str}",
+            base = SOPHON_BUILD_URL_BASE,
+            branch = branch.branch,
+            package_id = branch.package_id,
+            password = branch.password,
+        )
+    } else {
+        format!(
+            "{base}?branch={branch}&package_id={package_id}&password={password}",
+            base = SOPHON_BUILD_URL_BASE,
+            branch = branch.branch,
+            package_id = branch.package_id,
+            password = branch.password,
+        )
+    };
 
     let resp: SophonBuildResponse = fetch_json_with_retry(client, &url, 35).await?;
     let data = resp
