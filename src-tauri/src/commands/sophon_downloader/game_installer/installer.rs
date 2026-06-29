@@ -1129,7 +1129,7 @@ async fn run_downloads(
     assemble_tx: &mpsc::Sender<(usize, usize)>,
     handle: DownloadHandle,
 ) -> DownloadSummary {
-    const WORKER_COUNT: usize = 16;
+    const WORKER_COUNT: usize = 24;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let total: usize = download_items.len();

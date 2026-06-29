@@ -13,8 +13,10 @@ use super::handle::DownloadHandle;
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
-/// Evict file pages from the OS page cache. Silently ignores errors.
-pub(crate) fn evict_from_page_cache(path: &Path) {
+/// Evict file pages from the OS page cache. Synchronous variant for use
+/// inside `spawn_blocking` contexts where the runtime is already off the
+/// async path.
+pub(crate) fn evict_from_page_cache_sync(path: &Path) {
     use std::os::unix::ffi::OsStrExt;
     let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
         return;
@@ -27,6 +29,15 @@ pub(crate) fn evict_from_page_cache(path: &Path) {
         libc::posix_fadvise(fd, 0, 0, libc::POSIX_FADV_DONTNEED);
         libc::close(fd);
     }
+}
+
+/// Evict file pages from the OS page cache on a blocking thread, so the
+/// async runtime is not stalled by the three syscalls.
+pub(crate) async fn evict_from_page_cache(path: &Path) {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || evict_from_page_cache_sync(&path))
+        .await
+        .ok();
 }
 
 fn get_available_space(path: &Path) -> Option<u64> {
@@ -114,7 +125,7 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
                 return Ok(false);
             }
         }?;
-        evict_from_page_cache(&path);
+        evict_from_page_cache_sync(&path);
         Ok(actual == expected_hash)
     })
     .await?
@@ -385,7 +396,7 @@ async fn download_full_file_with_response(
         );
     }
 
-    evict_from_page_cache(dest);
+    evict_from_page_cache(dest).await;
 
     Ok(())
 }
@@ -567,7 +578,7 @@ async fn download_with_resume(
         );
     }
 
-    evict_from_page_cache(dest);
+    evict_from_page_cache(dest).await;
 
     Ok(())
 }

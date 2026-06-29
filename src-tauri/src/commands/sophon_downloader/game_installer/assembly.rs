@@ -363,7 +363,7 @@ pub fn assemble_file(
         }
     }
 
-    super::download::evict_from_page_cache(&target_path);
+    super::download::evict_from_page_cache_sync(&target_path);
 
     transfer_buffer.clear();
     TRANSFER_BUF.with(|cell| cell.replace(transfer_buffer));
@@ -455,7 +455,7 @@ fn write_decompressed_chunk_at<W: Write + Seek>(
 
         Ok(bytes_written)
     };
-    super::download::evict_from_page_cache(chunk_path);
+    super::download::evict_from_page_cache_sync(chunk_path);
     result
 }
 
@@ -543,7 +543,7 @@ fn write_from_old_file<W: Write + Seek>(
 
         Ok(bytes_written)
     };
-    super::download::evict_from_page_cache(old_file_path);
+    super::download::evict_from_page_cache_sync(old_file_path);
     result
 }
 
