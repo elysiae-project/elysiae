@@ -59,7 +59,7 @@ pub async fn cancelable_sleep(
     }
 }
 /// Max concurrent assembly tasks.
-pub const ASSEMBLY_CONCURRENCY: usize = 4;
+pub const ASSEMBLY_CONCURRENCY: usize = 2;
 /// Assembly task channel buffer size.
 pub const ASSEMBLY_CHANNEL_SIZE: usize = 4096;
 /// Installed version marker filename.
