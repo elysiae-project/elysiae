@@ -676,7 +676,7 @@ pub async fn spawn_assembly_task(
 
 #[cfg(test)]
 mod tests {
-    use super::super::installer::ChunkNameArena;
+    use super::super::compact_manifest::StringArena;
     use super::super::profiling::PipelineProfiler;
     use super::*;
     use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
@@ -685,7 +685,7 @@ mod tests {
     };
 
     fn make_chunk_names(names: &[&str]) -> Arc<ChunkNameLookup> {
-        Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(names)))
+        Arc::new(ChunkNameLookup::from_arena(StringArena::from(names)))
     }
 
     fn assemble_test_file(
@@ -1084,7 +1084,7 @@ mod tests {
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
-            chunk_names: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
+            chunk_names: Arc::new(ChunkNameLookup::from_arena(StringArena::from(
                 [].as_slice(),
             ))),
             verify_cache: Arc::new(DashMap::new()),
@@ -1227,7 +1227,7 @@ mod tests {
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             chunk_refcounts: Arc::new(Vec::new()),
-            chunk_names: Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(
+            chunk_names: Arc::new(ChunkNameLookup::from_arena(StringArena::from(
                 [].as_slice(),
             ))),
             verify_cache: Arc::new(DashMap::new()),

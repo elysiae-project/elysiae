@@ -70,6 +70,17 @@ impl StringArena {
     }
 }
 
+impl From<&[&str]> for StringArena {
+    fn from(names: &[&str]) -> Self {
+        let total_bytes: usize = names.iter().map(|n| n.len()).sum();
+        let mut arena = StringArena::with_capacity(names.len(), total_bytes);
+        for name in names {
+            arena.intern(name);
+        }
+        arena
+    }
+}
+
 /// Zero-copy view into a single chunk row in `CompactManifest`.
 #[derive(Clone, Copy)]
 pub struct ChunkRef<'a> {

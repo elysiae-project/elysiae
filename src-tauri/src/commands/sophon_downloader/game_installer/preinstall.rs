@@ -2156,9 +2156,9 @@ async fn apply_download_over(
                 .map(|i| manifest.chunk(i).chunk_name.len())
                 .sum();
             let mut chunk_arena =
-                super::installer::ChunkNameArena::with_capacity(chunk_count, total_bytes);
+                super::compact_manifest::StringArena::with_capacity(chunk_count, total_bytes);
             for ci in 0..chunk_count {
-                chunk_arena.push(manifest.chunk(ci).chunk_name);
+                chunk_arena.intern(manifest.chunk(ci).chunk_name);
             }
             let chunk_lookup = super::installer::ChunkNameLookup::from_arena(chunk_arena);
             let chunk_refcounts: Vec<AtomicUsize> =

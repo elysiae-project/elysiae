@@ -4,62 +4,20 @@ use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
-/// Compact string arena for chunk names. Concatenates all names into a
-/// single `String`, indexed by (offset, len). Avoids per-string heap
-/// allocations.
-pub struct ChunkNameArena {
-    data: String,
-    spans: Vec<(u32, u32)>,
-}
-
-impl ChunkNameArena {
-    pub fn with_capacity(cap: usize, total_name_bytes: usize) -> Self {
-        Self {
-            data: String::with_capacity(total_name_bytes),
-            spans: Vec::with_capacity(cap),
-        }
-    }
-
-    pub fn push(&mut self, name: &str) -> usize {
-        let idx = self.spans.len();
-        let offset = self.data.len() as u32;
-        let len = name.len() as u32;
-        self.data.push_str(name);
-        self.spans.push((offset, len));
-        idx
-    }
-
-    pub fn get(&self, idx: usize) -> &str {
-        let (offset, len) = self.spans[idx];
-        &self.data[offset as usize..(offset + len) as usize]
-    }
-}
-
-impl From<&[&str]> for ChunkNameArena {
-    fn from(names: &[&str]) -> Self {
-        let total_bytes: usize = names.iter().map(|n| n.len()).sum();
-        let mut arena = ChunkNameArena::with_capacity(names.len(), total_bytes);
-        for name in names {
-            arena.push(name);
-        }
-        arena
-    }
-}
-
-/// Compact sorted index over a `ChunkNameArena` for `&str -> usize` lookup
+/// Compact sorted index over a `StringArena` for `&str -> usize` lookup
 /// via binary search. Avoids per-entry HashMap overhead.
 pub struct ChunkNameLookup {
-    arena: ChunkNameArena,
+    arena: super::compact_manifest::StringArena,
     sorted_indices: Vec<u32>,
 }
 
 impl ChunkNameLookup {
-    pub fn from_arena(arena: ChunkNameArena) -> Self {
-        let n = arena.spans.len();
+    pub fn from_arena(arena: super::compact_manifest::StringArena) -> Self {
+        let n = arena.len();
         let mut sorted_indices: Vec<u32> = (0..n as u32).collect();
         sorted_indices.sort_by(|&a, &b| {
-            let sa = arena.get(a as usize);
-            let sb = arena.get(b as usize);
+            let sa = arena.get(a);
+            let sb = arena.get(b);
             sa.cmp(sb)
         });
         Self {
@@ -69,14 +27,14 @@ impl ChunkNameLookup {
     }
 
     pub fn get(&self, idx: usize) -> &str {
-        self.arena.get(idx)
+        self.arena.get(idx as u32)
     }
 
     pub fn lookup(&self, name: &str) -> Option<usize> {
         let arena = &self.arena;
         let result = self
             .sorted_indices
-            .binary_search_by(|&i| arena.get(i as usize).cmp(name));
+            .binary_search_by(|&i| arena.get(i).cmp(name));
         match result {
             Ok(pos) => Some(self.sorted_indices[pos] as usize),
             Err(_) => None,
@@ -662,13 +620,14 @@ async fn build_download_state(
                 .len()
         })
         .sum();
-    let mut arena = ChunkNameArena::with_capacity(download_items.len(), total_name_bytes);
+    let mut arena =
+        super::compact_manifest::StringArena::with_capacity(download_items.len(), total_name_bytes);
     for item in &download_items {
         let name = ctx
             .all_files
             .file_chunk(item.file_idx, item.chunk_idx)
             .chunk_name;
-        arena.push(name);
+        arena.intern(name);
     }
     let chunk_names_lookup = Arc::new(ChunkNameLookup::from_arena(arena));
 
@@ -2086,9 +2045,10 @@ async fn redownload_asset(
     let total_bytes: usize = (0..chunk_count)
         .map(|i| manifest.chunk(i).chunk_name.len())
         .sum();
-    let mut chunk_arena = ChunkNameArena::with_capacity(chunk_count, total_bytes);
+    let mut chunk_arena =
+        super::compact_manifest::StringArena::with_capacity(chunk_count, total_bytes);
     for i in 0..chunk_count {
-        chunk_arena.push(manifest.chunk(i).chunk_name);
+        chunk_arena.intern(manifest.chunk(i).chunk_name);
     }
     let chunk_lookup = ChunkNameLookup::from_arena(chunk_arena);
     let chunk_refcounts: Vec<AtomicUsize> = (0..chunk_count).map(|_| AtomicUsize::new(1)).collect();
