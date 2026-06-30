@@ -10,7 +10,7 @@ use md5::{Digest, Md5};
 use super::FILE_WRITE_BUFFER_SIZE;
 use super::error::{SophonError, SophonResult};
 
-const ASSEMBLY_BUFFER_SIZE: usize = 256 * 1024;
+const ASSEMBLY_BUFFER_SIZE: usize = 128 * 1024;
 
 thread_local! {
     static OPT_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
