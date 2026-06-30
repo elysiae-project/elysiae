@@ -966,7 +966,9 @@ async fn process_download_item(
     if !validate_chunk_name(&chunk.chunk_name) {
         return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
     }
-    let dest = ctx.chunks_dir.join(assembly::chunk_filename(chunk));
+    let dest = ctx
+        .chunks_dir
+        .join(assembly::chunk_filename(&chunk.chunk_name));
 
     let needs_download = if item.is_pre_downloaded {
         let result = check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
@@ -2076,7 +2078,7 @@ async fn redownload_asset(
         if !validate_chunk_name(&chunk.chunk_name) {
             return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
         }
-        let chunk_path = chunks_dir.join(assembly::chunk_filename(chunk));
+        let chunk_path = chunks_dir.join(assembly::chunk_filename(&chunk.chunk_name));
         let needs_download = !chunk_path.exists()
             || !cache::check_file_md5_cached(
                 &chunk_path,

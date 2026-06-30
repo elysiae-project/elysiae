@@ -2123,7 +2123,7 @@ async fn apply_download_over(
     }
 
     let chunk_futures = file_entry.asset_chunks.iter().map(|chunk| {
-        let chunk_path = chunks_dir.join(super::assembly::chunk_filename(chunk));
+        let chunk_path = chunks_dir.join(super::assembly::chunk_filename(&chunk.chunk_name));
         let client = client.clone();
         let chunk_download = chunk_download.clone();
         let chunk = chunk.clone();

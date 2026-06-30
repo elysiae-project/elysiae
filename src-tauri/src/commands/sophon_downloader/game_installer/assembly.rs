@@ -20,14 +20,12 @@ use super::error::{SophonError, SophonResult};
 use super::installer::ChunkNameLookup;
 use super::{FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
 use crate::commands::sophon_downloader::SophonProgress;
-use crate::commands::sophon_downloader::proto_parse::{
-    SophonManifestAssetChunk, SophonManifestAssetProperty,
-};
+use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
 #[inline]
-pub fn chunk_filename(chunk: &SophonManifestAssetChunk) -> String {
-    let mut s = String::with_capacity(chunk.chunk_name.len() + 5);
-    s.push_str(&chunk.chunk_name);
+pub fn chunk_filename(chunk_name: &str) -> String {
+    let mut s = String::with_capacity(chunk_name.len() + 5);
+    s.push_str(chunk_name);
     s.push_str(".zstd");
     s
 }
@@ -291,7 +289,7 @@ pub fn assemble_file(
             if !validate_chunk_name(&chunk.chunk_name) {
                 return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
             }
-            let chunk_path = chunks_dir.join(chunk_filename(chunk));
+            let chunk_path = chunks_dir.join(chunk_filename(&chunk.chunk_name));
 
             let bytes_written = write_decompressed_chunk_at(
                 &chunk_path,
@@ -672,6 +670,7 @@ mod tests {
     use super::super::installer::ChunkNameArena;
     use super::super::profiling::PipelineProfiler;
     use super::*;
+    use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
     fn make_chunk_names(names: &[&str]) -> Arc<ChunkNameLookup> {
         Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(names)))
@@ -756,17 +755,7 @@ mod tests {
 
     #[test]
     fn chunk_filename_format() {
-        let chunk = SophonManifestAssetChunk {
-            chunk_name: "abc123".into(),
-            chunk_decompressed_hash_md5: String::new(),
-            chunk_on_file_offset: 0,
-            chunk_size: 0,
-            chunk_size_decompressed: 0,
-            chunk_compressed_hash_xxh: 0,
-            chunk_compressed_hash_md5: String::new(),
-            chunk_old_offset: -1,
-        };
-        assert_eq!(chunk_filename(&chunk), "abc123.zstd");
+        assert_eq!(chunk_filename("abc123"), "abc123.zstd");
     }
 
     fn make_chunk_file(chunks_dir: &Path, chunk_name: &str, data: &[u8]) {
