@@ -2,7 +2,9 @@ import { useEffect, useState } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
 import {
+	checkGameUpdate,
 	downloadGame,
+	downloadUpdate,
 	isGameInstalled,
 	resumeDownloadInterrupted,
 	runGame,
@@ -24,13 +26,17 @@ export const InstallerButton = () => {
 		useDownload();
 	const [protonAvailable, setProtonAvailable] = useState<boolean>(false);
 	const [gameInstalled, setGameInstalled] = useState<boolean>(false);
+	const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+	const [preinstallDownloaded, setPreinstallDownloaded] =
+		useState<boolean>(false);
 
 	const downloadActive =
 		state.isDownloading ||
 		state.isAssembling ||
 		state.isVerifying ||
 		state.isFetchingManifest ||
-		state.isPaused;
+		state.isPaused ||
+		state.isApplyingPreinstall;
 	const isDownloadForActiveGame = state.downloadingGame === game;
 	const canResume =
 		state.isResumable &&
@@ -51,10 +57,26 @@ export const InstallerButton = () => {
 	}, [game]);
 
 	useEffect(() => {
+		if (!gameInstalled) return;
+		let cancelled = false;
+		checkGameUpdate(game).then((res) => {
+			if (!cancelled && res) {
+				setUpdateAvailable(res.updateAvailable);
+				setPreinstallDownloaded(res.preinstallDownloaded);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [game, gameInstalled, state.isFinished]);
+
+	useEffect(() => {
 		if (state.isFinished && isDownloadForActiveGame) {
 			setGameInstalled(true);
 		}
 	}, [state.isFinished, isDownloadForActiveGame]);
+
+	const showUpdate = updateAvailable && gameInstalled && !preinstallDownloaded;
 
 	const resumeVariant = state.resumeInfo
 		? gameCodeToVariant[state.resumeInfo.gameId as GameCodes]
@@ -80,6 +102,9 @@ export const InstallerButton = () => {
 					} else if (!gameInstalled) {
 						setDownloadingGame(game);
 						await downloadGame(game);
+					} else if (showUpdate) {
+						setDownloadingGame(game);
+						await downloadUpdate(game, false);
 					} else {
 						await runGame(game);
 					}
@@ -96,6 +121,10 @@ export const InstallerButton = () => {
 						return downloadActive && isDownloadForActiveGame
 							? "Downloading..."
 							: "Download";
+					} else if (showUpdate) {
+						return downloadActive && isDownloadForActiveGame
+							? "Updating..."
+							: "Update";
 					} else {
 						return "Play";
 					}

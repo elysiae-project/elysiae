@@ -1,4 +1,4 @@
-import { Play, Save } from "lucide-preact";
+import { Check, Play, Save } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
@@ -47,6 +47,20 @@ export const PreinstallButton = () => {
 				}}
 			>
 				<Play className="-m-1 leading-0" />
+			</Button>
+		);
+	}
+
+	if (preinstallState === "downloaded") {
+		return (
+			<Button
+				variant="secondary"
+				width={4}
+				height={4}
+				disabled
+				onClick={() => {}}
+			>
+				<Check className="-m-1 leading-0" />
 			</Button>
 		);
 	}

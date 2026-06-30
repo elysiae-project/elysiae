@@ -12,11 +12,12 @@ import {
 	variantToGameName,
 } from "./VariantConverter";
 
-export type PreinstallState = "download" | "apply" | "hidden";
+export type PreinstallState = "download" | "downloaded" | "apply" | "hidden";
 
 /**
  * Determine the preinstall button state for a game.
  * - "download": preinstall is available but not yet downloaded
+ * - "downloaded": preinstall is downloaded, waiting for update release
  * - "apply": update is released and preinstall was already downloaded
  * - "hidden": no preinstall action available
  */
@@ -39,6 +40,8 @@ export const getPreinstallState = async (
 	});
 
 	if (info.update_available && info.preinstall_downloaded) return "apply";
+	if (info.preinstall_available && info.preinstall_downloaded)
+		return "downloaded";
 	if (info.preinstall_available && !info.preinstall_downloaded)
 		return "download";
 	return "hidden";
