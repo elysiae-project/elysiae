@@ -1,4 +1,4 @@
-//! Optimized assembly helpers with memory-mapped I/O and zero-copy.
+//! Optimized assembly helpers with zero-copy chunk reading.
 
 use std::cell::RefCell;
 use std::fs::File;
@@ -20,66 +20,75 @@ thread_local! {
 pub trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-/// Memory-mapped file reader for chunk reuse.
-pub struct MmapReader {
-    mmap: memmap2::Mmap,
-}
-
-impl MmapReader {
-    /// Create a new memory-mapped reader.
-    pub fn new(path: &Path) -> std::io::Result<Self> {
-        let file = File::open(path)?;
-        let mmap = unsafe { memmap2::Mmap::map(&file)? };
-        Ok(Self { mmap })
-    }
-
-    /// Read bytes at the given offset.
-    pub fn read_at(&self, offset: usize, len: usize) -> &[u8] {
-        let end = (offset + len).min(self.mmap.len());
-        &self.mmap[offset..end]
-    }
-
-    /// Length of the mapped file.
-    pub fn len(&self) -> usize {
-        self.mmap.len()
-    }
-}
-
-/// Write a chunk from an old file using memory-mapped I/O.
+/// Write a chunk from an old file using direct `pread` reads. Avoids the
+/// page-table overhead of mapping the entire old file into the process.
 pub fn write_chunk_from_mmap(
     old_file_path: &Path,
     writer: &mut dyn WriteSeek,
     new_offset: u64,
     old_offset: u64,
     expected_size: u64,
-    file_hasher: Option<&mut Md5>,
+    mut file_hasher: Option<&mut Md5>,
     chunk_decompressed_hash_md5: &str,
 ) -> SophonResult<u64> {
-    let reader = MmapReader::new(old_file_path).map_err(SophonError::Io)?;
+    use std::os::unix::fs::FileExt;
+    let file = File::open(old_file_path).map_err(SophonError::Io)?;
+    let file_len = file.metadata().map_err(SophonError::Io)?.len();
 
     writer.seek(SeekFrom::Start(new_offset))?;
 
-    let old_offset = old_offset as usize;
-    let expected_size = expected_size as usize;
+    let expected_size_u = expected_size as usize;
 
-    if old_offset + expected_size > reader.len() {
+    if old_offset + expected_size > file_len {
         return Err(SophonError::SizeMismatch {
             item: old_file_path.display().to_string(),
-            expected: expected_size as u64,
-            actual: (reader.len() - old_offset) as u64,
+            expected: expected_size,
+            actual: file_len.saturating_sub(old_offset),
         });
     }
 
-    let chunk_data = reader.read_at(old_offset, expected_size);
-
     let mut chunk_hasher = Md5::new();
-    chunk_hasher.update(chunk_data);
+    let mut buf = OPT_BUFFER.with(|cell| {
+        let mut buf = cell.take();
+        if buf.capacity() < ASSEMBLY_BUFFER_SIZE {
+            buf = Vec::with_capacity(ASSEMBLY_BUFFER_SIZE);
+        }
+        unsafe { buf.set_len(ASSEMBLY_BUFFER_SIZE) };
+        buf
+    });
 
-    if let Some(hasher) = file_hasher {
-        hasher.update(chunk_data);
+    let mut remaining = expected_size_u;
+    while remaining > 0 {
+        let to_read = remaining.min(buf.len());
+        let n = file
+            .read_at(
+                &mut buf[..to_read],
+                old_offset + (expected_size_u - remaining) as u64,
+            )
+            .map_err(SophonError::Io)?;
+        if n == 0 {
+            break;
+        }
+        chunk_hasher.update(&buf[..n]);
+        if let Some(hasher) = file_hasher.as_deref_mut() {
+            hasher.update(&buf[..n]);
+        }
+        writer.write_all(&buf[..n])?;
+        remaining -= n;
+        buf.clear();
     }
 
-    writer.write_all(chunk_data)?;
+    buf.clear();
+    OPT_BUFFER.with(|cell| cell.replace(buf));
+
+    let bytes_written = (expected_size_u - remaining) as u64;
+    if bytes_written != expected_size {
+        return Err(SophonError::SizeMismatch {
+            item: old_file_path.display().to_string(),
+            expected: expected_size,
+            actual: bytes_written,
+        });
+    }
 
     const EMPTY_MD5: &str = "00000000000000000000000000000000";
     if chunk_decompressed_hash_md5.len() == 32 && chunk_decompressed_hash_md5 != EMPTY_MD5 {
@@ -93,7 +102,7 @@ pub fn write_chunk_from_mmap(
         }
     }
 
-    Ok(expected_size as u64)
+    Ok(bytes_written)
 }
 
 /// Decompress a chunk using a large buffer.
@@ -185,15 +194,14 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn mmap_reader_basic() {
+    fn write_chunk_from_mmap_basic() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.txt");
-        std::fs::write(&path, b"hello world").unwrap();
+        let src = dir.path().join("src.bin");
+        std::fs::write(&src, b"hello world").unwrap();
 
-        let reader = MmapReader::new(&path).unwrap();
-        assert_eq!(reader.len(), 11);
-
-        let data = reader.read_at(0, 5);
-        assert_eq!(data, b"hello");
+        let mut output = Cursor::new(Vec::new());
+        let bytes = write_chunk_from_mmap(&src, &mut output, 0, 0, 11, None, "").unwrap();
+        assert_eq!(bytes, 11);
+        assert_eq!(&output.into_inner()[..], b"hello world");
     }
 }
