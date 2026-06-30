@@ -264,6 +264,7 @@ export const DownloadProvider = ({
 						return {
 							...initialState,
 							isFinished: true,
+							downloadingGame: prev.downloadingGame,
 						};
 				}
 			});
