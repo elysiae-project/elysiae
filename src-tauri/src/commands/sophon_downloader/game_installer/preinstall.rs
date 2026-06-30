@@ -124,6 +124,7 @@ pub struct PatchChunkInfo {
     pub patch_name: String,
     pub patch_size: u64,
     pub patch_md5: String,
+    pub matching_field: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,7 +137,7 @@ pub struct PreinstallState {
     pub patch_assets: Vec<PatchAssetInfo>,
     pub deleted_files: Vec<String>,
     pub downloaded_chunks: HashSet<String>,
-    pub diff_download: DownloadInfo,
+    pub diff_downloads: HashMap<String, DownloadInfo>,
     pub main_chunk_download: DownloadInfo,
     pub main_manifest_ids: Vec<(String, String)>,
 }
@@ -189,7 +190,7 @@ pub struct PreinstallPlan {
     pub patch_assets: Vec<PatchAssetInfo>,
     pub deleted_files: Vec<String>,
     pub unique_chunks: Vec<PatchChunkInfo>,
-    pub diff_download: DownloadInfo,
+    pub diff_downloads: HashMap<String, DownloadInfo>,
     pub main_chunk_download: DownloadInfo,
     pub tag: String,
     pub main_manifest_ids: Vec<(String, String)>,
@@ -291,7 +292,7 @@ pub async fn build_preinstall_plan(
     let mut seen_chunk_names: HashSet<String> = HashSet::new();
     let mut seen_patch_targets: HashSet<String> = HashSet::new();
     let mut unique_chunks: Vec<PatchChunkInfo> = Vec::new();
-    let mut diff_download: Option<DownloadInfo> = None;
+    let mut diff_downloads: HashMap<String, DownloadInfo> = HashMap::new();
 
     let fetch_futures: Vec<_> = qualifying_patch
         .iter()
@@ -315,9 +316,7 @@ pub async fn build_preinstall_plan(
         let patch_manifest = result.patch_manifest;
         let matching_field = result.matching_field;
 
-        if diff_download.is_none() {
-            diff_download = Some(result.diff_download.clone());
-        }
+        diff_downloads.insert(matching_field.clone(), result.diff_download.clone());
 
         for asset_prop in &patch_manifest.patch_assets {
             let patch_info = asset_prop
@@ -386,6 +385,7 @@ pub async fn build_preinstall_plan(
                             patch_name: chunk.patch_name.clone(),
                             patch_size: chunk.patch_size as u64,
                             patch_md5: chunk.patch_md5.clone(),
+                            matching_field: matching_field.clone(),
                         });
                     }
 
@@ -449,7 +449,9 @@ pub async fn build_preinstall_plan(
         }
     }
 
-    let diff_download = diff_download.ok_or(SophonError::NoGameManifest)?;
+    if diff_downloads.is_empty() {
+        return Err(SophonError::NoGameManifest);
+    }
 
     // Emit DownloadOver for main-manifest assets not already covered by the
     // patch manifest. Without this, new files in the target version are
@@ -488,7 +490,7 @@ pub async fn build_preinstall_plan(
         patch_assets: all_patch_assets,
         deleted_files: all_deleted_files,
         unique_chunks,
-        diff_download,
+        diff_downloads,
         main_chunk_download,
         tag,
         main_manifest_ids,
@@ -695,13 +697,15 @@ pub async fn preinstall_download(
         Arc::new(Mutex::new(chunk_infos.into_iter().collect()));
     let mut workers = tokio::task::JoinSet::new();
 
+    let diff_downloads = plan.diff_downloads.clone();
+
     for _ in 0..WORKER_COUNT {
         let queue = Arc::clone(&queue);
         let cancelled = Arc::clone(&cancelled);
         let first_error = Arc::clone(&first_error);
         let chunk_bytes_map_clone = Arc::clone(&chunk_bytes_map);
         let client_clone = download_client.clone();
-        let diff_download_clone = plan.diff_download.clone();
+        let diff_downloads_clone = diff_downloads.clone();
         let chunks_dir_clone = chunks_dir.clone();
         let handle_clone = handle.clone();
         let updater_clone = Arc::clone(&updater);
@@ -727,10 +731,24 @@ pub async fn preinstall_download(
                     }
                 };
                 let already_downloaded = chunk_bytes_map_clone.contains_key(&chunk_info.patch_name);
+                let diff_download = diff_downloads_clone
+                    .get(&chunk_info.matching_field)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        log::error!(
+                            "No diff_download for matching_field={field}, using first available",
+                            field = chunk_info.matching_field
+                        );
+                        diff_downloads_clone
+                            .values()
+                            .next()
+                            .cloned()
+                            .expect("diff_downloads must not be empty")
+                    });
                 let result = process_preinstall_chunk(
                     chunk_info,
                     client_clone.clone(),
-                    diff_download_clone.clone(),
+                    diff_download,
                     chunks_dir_clone.clone(),
                     handle_clone.clone(),
                     updater_clone.clone(),
@@ -800,7 +818,7 @@ pub async fn preinstall_download(
         patch_assets: plan.patch_assets.clone(),
         deleted_files: plan.deleted_files.clone(),
         downloaded_chunks,
-        diff_download: plan.diff_download.clone(),
+        diff_downloads: plan.diff_downloads.clone(),
         main_chunk_download: plan.main_chunk_download.clone(),
         main_manifest_ids: plan.main_manifest_ids.clone(),
     };
@@ -935,7 +953,17 @@ async fn download_patch_chunk_inner(
     expected_md5: &str,
     handle: &DownloadHandle,
 ) -> SophonResult<()> {
-    let resp = client.get(url).send().await?.error_for_status()?;
+    let resp = client.get(url).send().await?;
+    if resp.status().is_client_error() {
+        let status = resp.status().as_u16() as i32;
+        let url_clone = url.to_string();
+        let _body = resp.text().await.unwrap_or_default();
+        return Err(SophonError::ApiError(
+            status,
+            format!("{status} for {url_clone}"),
+        ));
+    }
+    let resp = resp.error_for_status()?;
     let content_length: Option<u64> = resp
         .headers()
         .get(reqwest::header::CONTENT_LENGTH)
@@ -2267,7 +2295,7 @@ mod tests {
             }],
             deleted_files: vec!["old_file.pak".to_string()],
             downloaded_chunks: HashSet::from(["chunk_0".to_string()]),
-            diff_download: make_download_info(),
+            diff_downloads: HashMap::from([("game".to_string(), make_download_info())]),
             main_chunk_download: DownloadInfo {
                 encryption: 0,
                 password: String::new(),
@@ -2771,7 +2799,7 @@ mod tests {
             ],
             deleted_files: vec![],
             downloaded_chunks: HashSet::new(),
-            diff_download: make_download_info(),
+            diff_downloads: HashMap::from([("game".to_string(), make_download_info())]),
             main_chunk_download: make_download_info(),
             main_manifest_ids: vec![],
         };
@@ -2810,7 +2838,7 @@ mod tests {
             }],
             deleted_files: vec![],
             downloaded_chunks: HashSet::new(),
-            diff_download: make_download_info(),
+            diff_downloads: HashMap::from([("game".to_string(), make_download_info())]),
             main_chunk_download: make_download_info(),
             main_manifest_ids: vec![],
         };
@@ -3347,7 +3375,7 @@ mod tests {
             patch_assets: vec![],
             deleted_files: vec![],
             downloaded_chunks: HashSet::new(),
-            diff_download: make_download_info(),
+            diff_downloads: HashMap::from([("game".to_string(), make_download_info())]),
             main_chunk_download: make_download_info(),
             main_manifest_ids: vec![],
         };

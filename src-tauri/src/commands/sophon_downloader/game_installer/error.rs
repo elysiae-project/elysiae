@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SophonError {
-    #[error("HTTP request failed")]
+    #[error("HTTP request failed: {0}")]
     Http(
         #[from]
         #[source]
