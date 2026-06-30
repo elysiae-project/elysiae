@@ -101,7 +101,7 @@ use super::assembly::{
     validate_chunk_name,
 };
 use super::cache::{self, VerificationEntry};
-use super::compact_manifest::ChunkRef;
+use super::compact_manifest::{ChunkRef, CompactManifest};
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::*;
@@ -127,7 +127,7 @@ struct InstallContext {
     chunks_dir: Arc<PathBuf>,
     game_dir: PathBuf,
     all_tmp_dirs: Arc<Vec<std::path::PathBuf>>,
-    all_files: Arc<Vec<SophonManifestAssetProperty>>,
+    all_files: Arc<CompactManifest>,
     downloaded_bytes: Arc<AtomicU64>,
     assembled_files: Arc<AtomicU64>,
     total_bytes: u64,
@@ -500,24 +500,23 @@ fn build_installer_data(
     (data, all_files)
 }
 
-fn compute_totals(all_files: &[SophonManifestAssetProperty]) -> (u64, u64) {
+fn compute_totals(all_files: &CompactManifest) -> (u64, u64) {
     let mut seen_chunks: HashSet<&str> = HashSet::new();
-    let total_compressed: u64 = all_files
-        .iter()
-        .flat_map(|f| f.asset_chunks.iter())
+    let total_compressed: u64 = (0..all_files.num_chunks())
+        .map(|i| all_files.chunk(i))
         .filter(|c| c.chunk_old_offset < 0)
-        .filter(|c| seen_chunks.insert(c.chunk_name.as_str()))
+        .filter(|c| seen_chunks.insert(c.chunk_name))
         .map(|c| c.chunk_size)
         .fold(0u64, |acc, x| acc.saturating_add(x));
 
-    let total_files: u64 = all_files.len() as u64;
+    let total_files: u64 = all_files.num_files() as u64;
 
     (total_compressed, total_files)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn register_chunks_for_file<'a>(
-    file: &'a SophonManifestAssetProperty,
+    all_files: &'a CompactManifest,
     file_idx: usize,
     tmp_dir_idx: usize,
     chunk_entries: &mut Vec<Vec<FileEntry>>,
@@ -527,10 +526,12 @@ fn register_chunks_for_file<'a>(
     installer_idx: usize,
     pre_downloaded: &HashMap<String, u64>,
 ) {
-    let downloadable: Vec<(usize, &SophonManifestAssetChunk)> = file
-        .asset_chunks
-        .iter()
-        .enumerate()
+    let range = all_files.file_chunk_range(file_idx);
+    let downloadable: Vec<(usize, ChunkRef<'a>)> = (0..(range.end - range.start))
+        .map(|i| {
+            let chunk_idx = range.start as usize + i as usize;
+            (chunk_idx, all_files.chunk(chunk_idx))
+        })
         .filter(|(_, c)| c.chunk_old_offset < 0)
         .collect();
 
@@ -540,8 +541,8 @@ fn register_chunks_for_file<'a>(
     }
 
     let pending = Arc::new(AtomicUsize::new(chunk_count));
-    for (chunk_idx, chunk) in downloadable {
-        let name = chunk.chunk_name.as_str();
+    for (global_chunk_idx, chunk) in downloadable {
+        let name = chunk.chunk_name;
         let is_pre = pre_downloaded.contains_key(name);
 
         let item_idx = if let Some(&idx) = download_items_index.get(name) {
@@ -553,7 +554,7 @@ fn register_chunks_for_file<'a>(
             let idx = download_items.len();
             download_items.push(DownloadItem {
                 file_idx,
-                chunk_idx,
+                chunk_idx: global_chunk_idx - range.start as usize,
                 installer_idx,
                 is_pre_downloaded: is_pre,
             });
@@ -587,11 +588,7 @@ async fn build_download_state(
     Arc<ChunkNameLookup>,
     Arc<ChunkNameLookup>,
 )> {
-    let total_chunks: usize = ctx
-        .all_files
-        .iter()
-        .map(|f| f.asset_chunks.len())
-        .fold(0usize, |acc, x| acc.saturating_add(x));
+    let total_chunks: usize = ctx.all_files.num_chunks();
     let mut download_items: Vec<DownloadItem> = Vec::with_capacity(total_chunks);
     let mut download_items_index: HashMap<&str, usize> = HashMap::with_capacity(total_chunks);
     let mut chunk_entries: Vec<Vec<FileEntry>> = Vec::with_capacity(total_chunks);
@@ -616,8 +613,9 @@ async fn build_download_state(
                 continue;
             }
 
-            let file = &ctx.all_files[all_files_index];
-            let has_downloadable = file.asset_chunks.iter().any(|c| c.chunk_old_offset < 0);
+            let range = ctx.all_files.file_chunk_range(all_files_index);
+            let has_downloadable = (range.start..range.end)
+                .any(|i| ctx.all_files.chunk(i as usize).chunk_old_offset < 0);
 
             if !has_downloadable {
                 let _ = assemble_tx.send((all_files_index, tmp_dir_idx)).await;
@@ -626,7 +624,7 @@ async fn build_download_state(
             }
 
             register_chunks_for_file(
-                file,
+                &ctx.all_files,
                 all_files_index,
                 tmp_dir_idx,
                 &mut chunk_entries,
@@ -654,19 +652,22 @@ async fn build_download_state(
         flat_chunk_entries.extend(inner);
         chunk_entry_offsets.push(flat_chunk_entries.len());
     }
-    // chunk_entries is now empty, its allocation freed
 
     let total_name_bytes: usize = download_items
         .iter()
         .map(|item| {
-            ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx]
+            ctx.all_files
+                .file_chunk(item.file_idx, item.chunk_idx)
                 .chunk_name
                 .len()
         })
         .sum();
     let mut arena = ChunkNameArena::with_capacity(download_items.len(), total_name_bytes);
     for item in &download_items {
-        let name = &ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx].chunk_name;
+        let name = ctx
+            .all_files
+            .file_chunk(item.file_idx, item.chunk_idx)
+            .chunk_name;
         arena.push(name);
     }
     let chunk_names_lookup = Arc::new(ChunkNameLookup::from_arena(arena));
@@ -968,18 +969,17 @@ async fn process_download_item(
             .await?;
     }
 
-    let chunk = &ctx.all_files[item.file_idx].asset_chunks[item.chunk_idx];
+    let chunk = ctx.all_files.file_chunk(item.file_idx, item.chunk_idx);
 
-    if !validate_chunk_name(&chunk.chunk_name) {
-        return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+    if !validate_chunk_name(chunk.chunk_name) {
+        return Err(SophonError::PathTraversal(chunk.chunk_name.into()));
     }
     let dest = ctx
         .chunks_dir
-        .join(assembly::chunk_filename(&chunk.chunk_name));
+        .join(assembly::chunk_filename(chunk.chunk_name));
 
     let needs_download = if item.is_pre_downloaded {
-        let result =
-            check_needs_download(&dest, chunk.into(), &ctx.game_dir, &ctx.verify_cache).await?;
+        let result = check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
         _chunk_timer.record_phase(super::profiling::ChunkPhase::Verify);
         result
     } else {
@@ -993,7 +993,7 @@ async fn process_download_item(
     let mut was_actually_downloaded = false;
     if needs_download {
         download_chunk_with_retries(
-            chunk.into(),
+            chunk,
             &ctx.installer_clients[item.installer_idx],
             &ctx.installer_downloads[item.installer_idx],
             &dest,
@@ -1482,18 +1482,18 @@ pub async fn install(
         }
     }
 
-    let (mut installer_data, mut all_files) = build_installer_data(installers);
+    let (mut installer_data, mut all_files_vec) = build_installer_data(installers);
     if game_code == "nap" {
         super::game_filters::filter_nap_installers(game_dir, &mut installer_data);
     }
     {
         let file_installer_map: HashMap<String, usize> = {
-            let mut m = HashMap::with_capacity(all_files.len());
+            let mut m = HashMap::with_capacity(all_files_vec.len());
             let mut idx: usize = 0;
             for (inst_idx, d) in installer_data.iter().enumerate() {
                 for _ in 0..d.file_count {
-                    if idx < all_files.len() {
-                        m.insert(all_files[idx].asset_name.clone(), inst_idx);
+                    if idx < all_files_vec.len() {
+                        m.insert(all_files_vec[idx].asset_name.clone(), inst_idx);
                     }
                     idx += 1;
                 }
@@ -1501,22 +1501,22 @@ pub async fn install(
             m
         };
         if game_code == "hkrpg" {
-            super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files);
+            super::game_filters::filter_hkrpg_asset_list(game_dir, &mut all_files_vec);
         } else if game_code == "hk4e" {
-            super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files, vo_langs);
+            super::game_filters::filter_hk4e_asset_list(game_dir, &mut all_files_vec, vo_langs);
         } else if game_code == "nap" {
-            super::game_filters::filter_nap_asset_list(game_dir, &mut all_files);
+            super::game_filters::filter_nap_asset_list(game_dir, &mut all_files_vec);
         }
         for d in &mut installer_data {
             d.file_count = 0;
         }
-        for f in all_files.iter() {
+        for f in all_files_vec.iter() {
             if let Some(&inst_idx) = file_installer_map.get(&f.asset_name) {
                 installer_data[inst_idx].file_count += 1;
             }
         }
     }
-    let all_files: Arc<Vec<SophonManifestAssetProperty>> = Arc::new(all_files);
+    let all_files: Arc<CompactManifest> = Arc::new(CompactManifest::from(all_files_vec));
     let all_tmp_dirs: Arc<Vec<std::path::PathBuf>> = Arc::new(
         installer_data
             .iter()
@@ -1547,7 +1547,7 @@ pub async fn install(
     let mut pre_assembled: u64 = 0;
     let completed_chunk_names: Arc<DashSet<String>>;
     let completed_indices = if options.is_resume {
-        let total = all_files.len() as u64;
+        let total = all_files.num_files() as u64;
         (callbacks.updater)(SophonProgress::CalculatingDownloads {
             checked_files: 0,
             total_files: total,
@@ -1561,7 +1561,8 @@ pub async fn install(
         let indices_arc: Arc<DashSet<usize>> = Arc::new(DashSet::new());
         let files_to_delete: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let calc_futures = all_files.iter().enumerate().map(|(file_idx, file)| {
+        let calc_futures = (0..all_files.num_files()).map(|file_idx| {
+            let all_files = Arc::clone(&all_files);
             let permit = Arc::clone(&semaphore);
             let verify_cache = Arc::clone(&verify_cache);
             let game_dir = game_dir.to_path_buf();
@@ -1576,11 +1577,18 @@ pub async fn install(
             async move {
                 let _permit = permit.acquire().await.ok()?;
 
-                if file.asset_chunks.is_empty() {
+                let file_name = all_files.file_name(file_idx).to_string();
+                let file_size = all_files.file_size(file_idx);
+                let file_hash = all_files.file_hash_md5(file_idx).to_string();
+                let chunk_range = all_files.file_chunk_range(file_idx);
+                let is_dir = all_files.is_directory(file_idx);
+                let num_chunks = chunk_range.end - chunk_range.start;
+
+                if num_chunks == 0 || is_dir {
                     indices_arc.insert(file_idx);
                     pre_assembled_arc.fetch_add(1, Ordering::Relaxed);
                 } else {
-                    if validate_asset_name(&file.asset_name).is_err() {
+                    if validate_asset_name(&file_name).is_err() {
                         let checked = checked_files.fetch_add(1, Ordering::Relaxed) + 1;
                         if checked.is_multiple_of(500) {
                             updater(SophonProgress::CalculatingDownloads {
@@ -1591,15 +1599,14 @@ pub async fn install(
                         return None;
                     }
 
-                    let target_path = game_dir.join(&file.asset_name);
-                    let sz = file.asset_size;
+                    let target_path = game_dir.join(&file_name);
                     let valid = if manifest_changed {
                         let tp = target_path.clone();
-                        let md5 = file.asset_hash_md5.clone();
-                        let ck = file.asset_name.clone();
+                        let md5 = file_hash;
+                        let ck = file_name;
                         let vc = Arc::clone(&verify_cache);
                         tokio::task::spawn_blocking(move || {
-                            cache::check_file_md5_with_cache_key(&tp, sz, &md5, &ck, &vc)
+                            cache::check_file_md5_with_cache_key(&tp, file_size, &md5, &ck, &vc)
                                 .unwrap_or(false)
                         })
                         .await
@@ -1607,26 +1614,26 @@ pub async fn install(
                     } else {
                         tokio::fs::metadata(&target_path)
                             .await
-                            .map(|m| m.len() == sz)
+                            .map(|m| m.len() == file_size)
                             .unwrap_or(false)
                     };
 
                     if valid {
                         indices_arc.insert(file_idx);
-                        let file_chunk_size: u64 = file
-                            .asset_chunks
-                            .iter()
+                        let file_chunk_size: u64 = (chunk_range.start..chunk_range.end)
+                            .map(|i| all_files.chunk(i as usize))
                             .filter(|c| c.chunk_old_offset < 0)
                             .map(|c| c.chunk_size)
                             .fold(0u64, |acc, x| acc.saturating_add(x));
                         resume_bytes_offset_arc.fetch_add(file_chunk_size, Ordering::Relaxed);
-                        for c in &file.asset_chunks {
-                            completed_chunk_names_arc.insert(c.chunk_name.clone());
+                        for i in chunk_range.start..chunk_range.end {
+                            completed_chunk_names_arc
+                                .insert(all_files.chunk(i as usize).chunk_name.to_string());
                         }
                         pre_assembled_arc.fetch_add(1, Ordering::Relaxed);
                     } else {
-                        let needs_old_file =
-                            file.asset_chunks.iter().any(|c| c.chunk_old_offset >= 0);
+                        let needs_old_file = (chunk_range.start..chunk_range.end)
+                            .any(|i| all_files.chunk(i as usize).chunk_old_offset >= 0);
                         if !needs_old_file {
                             files_to_delete.lock().unwrap().push(target_path);
                         }
@@ -1769,56 +1776,11 @@ pub async fn install(
     .await?;
 
     log::info!(
-        "MEMORY: all_files={file_count} files, approx {mb:.1}MB ({name_bytes}B strings + {chunk_bytes}B chunks + {struct_bytes}B struct)",
-        file_count = ctx.all_files.len(),
-        mb = {
-            let total_name_bytes: usize = ctx
-                .all_files
-                .iter()
-                .map(|f| f.asset_name.len() + f.asset_hash_md5.len())
-                .sum();
-            let total_chunk_bytes: usize = ctx
-                .all_files
-                .iter()
-                .flat_map(|f| f.asset_chunks.iter())
-                .map(|c| {
-                    c.chunk_name.len()
-                        + c.chunk_decompressed_hash_md5.len()
-                        + c.chunk_compressed_hash_md5.len()
-                        + 48
-                })
-                .sum();
-            let total_struct = ctx.all_files.len()
-                * std::mem::size_of::<SophonManifestAssetProperty>()
-                + ctx
-                    .all_files
-                    .iter()
-                    .map(|f| f.asset_chunks.len())
-                    .sum::<usize>()
-                    * std::mem::size_of::<SophonManifestAssetChunk>();
-            (total_name_bytes + total_chunk_bytes + total_struct) as f64 / 1_048_576.0
-        },
-        name_bytes = ctx
-            .all_files
-            .iter()
-            .map(|f| f.asset_name.len() + f.asset_hash_md5.len())
-            .sum::<usize>(),
-        chunk_bytes = ctx
-            .all_files
-            .iter()
-            .flat_map(|f| f.asset_chunks.iter())
-            .map(|c| c.chunk_name.len()
-                + c.chunk_decompressed_hash_md5.len()
-                + c.chunk_compressed_hash_md5.len()
-                + 48)
-            .sum::<usize>(),
-        struct_bytes = ctx.all_files.len() * std::mem::size_of::<SophonManifestAssetProperty>()
-            + ctx
-                .all_files
-                .iter()
-                .map(|f| f.asset_chunks.len())
-                .sum::<usize>()
-                * std::mem::size_of::<SophonManifestAssetChunk>(),
+        "MEMORY: all_files={file_count} files, {mb:.1}MB (arena={arena}B + columns={cols}B)",
+        file_count = ctx.all_files.num_files(),
+        mb = (ctx.all_files.arena_bytes() + ctx.all_files.column_bytes()) as f64 / 1_048_576.0,
+        arena = ctx.all_files.arena_bytes(),
+        cols = ctx.all_files.column_bytes(),
     );
     log::info!(
         "MEMORY: download_items={di_len}x{di_sz}B chunk_entries={ce_len}x{ce_sz}B refcounts={rc_len}x{rc_sz}B downloaded_chunks={dc_len}x{dc_sz}B",
@@ -2119,19 +2081,20 @@ async fn redownload_asset(
     );
     let tmp_dir = game_dir.join(&tmp_dir_name);
     fs::create_dir_all(&tmp_dir)?;
-    let total_bytes: usize = asset.asset_chunks.iter().map(|c| c.chunk_name.len()).sum();
-    let mut chunk_arena = ChunkNameArena::with_capacity(asset.asset_chunks.len(), total_bytes);
-    for c in &asset.asset_chunks {
-        chunk_arena.push(&c.chunk_name);
+    let manifest = CompactManifest::from(vec![asset.clone()]);
+    let chunk_count = manifest.num_chunks();
+    let total_bytes: usize = (0..chunk_count)
+        .map(|i| manifest.chunk(i).chunk_name.len())
+        .sum();
+    let mut chunk_arena = ChunkNameArena::with_capacity(chunk_count, total_bytes);
+    for i in 0..chunk_count {
+        chunk_arena.push(manifest.chunk(i).chunk_name);
     }
     let chunk_lookup = ChunkNameLookup::from_arena(chunk_arena);
-    let chunk_refcounts: Vec<AtomicUsize> = asset
-        .asset_chunks
-        .iter()
-        .map(|_| AtomicUsize::new(1))
-        .collect();
+    let chunk_refcounts: Vec<AtomicUsize> = (0..chunk_count).map(|_| AtomicUsize::new(1)).collect();
     let result = assembly::assemble_file(
-        asset,
+        &manifest,
+        0,
         game_dir,
         chunks_dir,
         &tmp_dir,
@@ -2227,7 +2190,7 @@ mod tests {
             ),
             make_file("b.pak", "bb", vec![make_chunk("c3", 300)]),
         ];
-        let (bytes, files_count) = compute_totals(&files);
+        let (bytes, files_count) = compute_totals(&CompactManifest::from(files));
         assert_eq!(bytes, 600);
         assert_eq!(files_count, 2);
     }
@@ -2238,7 +2201,7 @@ mod tests {
             make_file("a.pak", "aa", vec![make_chunk("shared", 500)]),
             make_file("b.pak", "bb", vec![make_chunk("shared", 500)]),
         ];
-        let (bytes, files_count) = compute_totals(&files);
+        let (bytes, files_count) = compute_totals(&CompactManifest::from(files));
         assert_eq!(bytes, 500);
         assert_eq!(files_count, 2);
     }
@@ -2246,7 +2209,7 @@ mod tests {
     #[test]
     fn compute_totals_empty() {
         let files: Vec<SophonManifestAssetProperty> = vec![];
-        let (bytes, files_count) = compute_totals(&files);
+        let (bytes, files_count) = compute_totals(&CompactManifest::from(files));
         assert_eq!(bytes, 0);
         assert_eq!(files_count, 0);
     }
@@ -2257,7 +2220,7 @@ mod tests {
             make_file("a.pak", "aa", vec![make_chunk("shared", 500)]),
             make_file("b.pak", "bb", vec![make_chunk("shared", 600)]),
         ];
-        let (bytes, files_count) = compute_totals(&files);
+        let (bytes, files_count) = compute_totals(&CompactManifest::from(files));
         assert_eq!(bytes, 500);
         assert_eq!(files_count, 2);
     }
@@ -2559,7 +2522,7 @@ mod tests {
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             game_dir: dir.path().to_path_buf(),
             all_tmp_dirs: Arc::new(vec![]),
-            all_files: Arc::new(vec![]),
+            all_files: Arc::new(CompactManifest::from(vec![])),
             downloaded_bytes: Arc::new(AtomicU64::new(0)),
             assembled_files: Arc::new(AtomicU64::new(0)),
             total_bytes: 0,
@@ -2658,7 +2621,7 @@ mod tests {
             chunks_dir: Arc::new(dir.path().to_path_buf()),
             game_dir: dir.path().to_path_buf(),
             all_tmp_dirs: Arc::new(vec![]),
-            all_files: Arc::new(vec![]),
+            all_files: Arc::new(CompactManifest::from(vec![])),
             downloaded_bytes: Arc::new(AtomicU64::new(0)),
             assembled_files: Arc::new(AtomicU64::new(0)),
             total_bytes: 0,
@@ -2737,7 +2700,7 @@ mod tests {
             asset_hash_md5: String::new(),
             asset_size: 0,
         };
-        let (bytes, files_count) = compute_totals(&[file1]);
+        let (bytes, files_count) = compute_totals(&CompactManifest::from(vec![file1]));
         assert_eq!(bytes, 500, "old-reuse chunk should be excluded");
         assert_eq!(files_count, 1);
     }
@@ -2746,7 +2709,7 @@ mod tests {
     fn compute_totals_filters_directories() {
         let file1 = make_file("a.pak", "aa", vec![make_chunk("c1", 100)]);
         let dir1 = make_dir("GameData");
-        let (bytes, files_count) = compute_totals(&[dir1, file1]);
+        let (bytes, files_count) = compute_totals(&CompactManifest::from(vec![dir1, file1]));
         assert_eq!(bytes, 100);
         assert_eq!(files_count, 2);
     }

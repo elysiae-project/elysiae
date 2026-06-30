@@ -20,7 +20,7 @@ use super::error::{SophonError, SophonResult};
 use super::installer::ChunkNameLookup;
 use super::{FILE_WRITE_BUFFER_SIZE, PROGRESS_UPDATE_INTERVAL_MS};
 use crate::commands::sophon_downloader::SophonProgress;
-use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
+use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
 
 #[inline]
 pub fn chunk_filename(chunk_name: &str) -> String {
@@ -142,7 +142,8 @@ impl Drop for DecrementGuard<'_> {
 }
 
 pub fn assemble_file(
-    file: &SophonManifestAssetProperty,
+    all_files: &CompactManifest,
+    file_idx: usize,
     game_dir: &Path,
     chunks_dir: &Path,
     temp_dir: &Path,
@@ -150,23 +151,29 @@ pub fn assemble_file(
     chunk_refcounts: &[AtomicUsize],
     verify_cache: &DashMap<String, VerificationEntry>,
 ) -> SophonResult<()> {
-    validate_asset_name(&file.asset_name)?;
-    if file.is_directory() {
+    let file_name = all_files.file_name(file_idx);
+    let file_size = all_files.file_size(file_idx);
+    let file_hash_md5 = all_files.file_hash_md5(file_idx);
+    let is_dir = all_files.is_directory(file_idx);
+    let chunk_range = all_files.file_chunk_range(file_idx);
+
+    validate_asset_name(file_name)?;
+    if is_dir {
         return Ok(());
     }
-    let target_path = game_dir.join(&file.asset_name);
+    let target_path = game_dir.join(file_name);
     // Hash the asset name to avoid tmp filename collisions.
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
-    file.asset_name.hash(&mut hasher);
+    file_name.hash(&mut hasher);
     let tmp_path = temp_dir.join(format!("{:016x}.tmp", hasher.finish()));
 
     if target_path.exists() {
         let already_valid = super::cache::check_file_md5_cached(
             &target_path,
-            file.asset_size,
-            &file.asset_hash_md5,
+            file_size,
+            file_hash_md5,
             game_dir,
             verify_cache,
         )?;
@@ -174,13 +181,13 @@ pub fn assemble_file(
         if already_valid {
             log::debug!(
                 "assemble_file: skipping already-valid file '{name}' ({size} bytes, md5={md5})",
-                name = file.asset_name,
-                size = file.asset_size,
-                md5 = file.asset_hash_md5
+                name = file_name,
+                size = file_size,
+                md5 = file_hash_md5
             );
-            for chunk in &file.asset_chunks {
+            for ci in chunk_range.start..chunk_range.end {
                 decrement_chunk_refcount(
-                    &chunk.chunk_name,
+                    all_files.chunk(ci as usize).chunk_name,
                     chunk_lookup,
                     chunk_refcounts,
                     chunks_dir,
@@ -190,7 +197,7 @@ pub fn assemble_file(
         }
         log::warn!(
             "assemble_file: file '{name}' exists but MD5 mismatch, re-assembling",
-            name = file.asset_name
+            name = file_name
         );
     }
 
@@ -205,15 +212,15 @@ pub fn assemble_file(
         .truncate(true)
         .open(&tmp_path)?;
 
-    out_file.set_len(file.asset_size)?;
+    out_file.set_len(file_size)?;
 
     let mut buf_writer = BufWriter::with_capacity(FILE_WRITE_BUFFER_SIZE, out_file);
     let mut total_written: u64 = 0;
-    let mut file_hasher = if file.asset_hash_md5.is_empty() {
-        if !file.is_directory() {
+    let mut file_hasher = if file_hash_md5.is_empty() {
+        if !is_dir {
             log::warn!(
                 "File '{name}' has no asset_hash_md5; assembled without file-level verification",
-                name = file.asset_name
+                name = file_name
             );
         }
         None
@@ -238,11 +245,12 @@ pub fn assemble_file(
     };
 
     let mut cursor = 0u64;
-    for chunk in &file.asset_chunks {
+    for ci in chunk_range.start..chunk_range.end {
+        let chunk = all_files.chunk(ci as usize);
         if chunk.chunk_on_file_offset != cursor {
             return Err(SophonError::SizeMismatch {
-                item: file.asset_name.clone(),
-                expected: file.asset_size,
+                item: file_name.to_string(),
+                expected: file_size,
                 actual: chunk.chunk_on_file_offset,
             });
         }
@@ -250,22 +258,22 @@ pub fn assemble_file(
             .chunk_on_file_offset
             .checked_add(chunk.chunk_size_decompressed)
             .ok_or_else(|| SophonError::SizeMismatch {
-                item: file.asset_name.clone(),
-                expected: file.asset_size,
+                item: file_name.to_string(),
+                expected: file_size,
                 actual: cursor,
             })?;
     }
-    if cursor != file.asset_size {
+    if cursor != file_size {
         return Err(SophonError::SizeMismatch {
-            item: file.asset_name.clone(),
-            expected: file.asset_size,
+            item: file_name.to_string(),
+            expected: file_size,
             actual: cursor,
         });
     }
 
-    for chunk in &file.asset_chunks {
+    for ci in chunk_range.start..chunk_range.end {
+        let chunk = all_files.chunk(ci as usize);
         if chunk.chunk_old_offset >= 0 {
-            // Reuse chunk data from the existing file at the old offset.
             debug_assert!(
                 chunk.chunk_old_offset >= 0,
                 "chunk_old_offset must be non-negative"
@@ -278,7 +286,7 @@ pub fn assemble_file(
                 chunk.chunk_size_decompressed,
                 file_hasher.as_mut(),
                 &mut transfer_buffer,
-                &chunk.chunk_decompressed_hash_md5,
+                chunk.chunk_decompressed_hash_md5,
             )
             .inspect_err(|_| {
                 let _ = fs::remove_file(&tmp_path);
@@ -286,10 +294,10 @@ pub fn assemble_file(
             total_written += bytes_written;
         // Old-source chunks were never downloaded.
         } else {
-            if !validate_chunk_name(&chunk.chunk_name) {
-                return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+            if !validate_chunk_name(chunk.chunk_name) {
+                return Err(SophonError::PathTraversal(chunk.chunk_name.into()));
             }
-            let chunk_path = chunks_dir.join(chunk_filename(&chunk.chunk_name));
+            let chunk_path = chunks_dir.join(chunk_filename(chunk.chunk_name));
 
             let bytes_written = write_decompressed_chunk_at(
                 &chunk_path,
@@ -298,14 +306,14 @@ pub fn assemble_file(
                 chunk.chunk_size_decompressed,
                 file_hasher.as_mut(),
                 &mut transfer_buffer,
-                &chunk.chunk_decompressed_hash_md5,
+                chunk.chunk_decompressed_hash_md5,
             )
             .inspect_err(|_| {
                 let _ = fs::remove_file(&tmp_path);
             })?;
 
             total_written += bytes_written;
-            guard.chunks.push(&chunk.chunk_name);
+            guard.chunks.push(chunk.chunk_name);
         }
     }
 
@@ -319,22 +327,22 @@ pub fn assemble_file(
     })?;
     drop(out_file);
 
-    if total_written != file.asset_size {
+    if total_written != file_size {
         let _ = fs::remove_file(&tmp_path);
         return Err(SophonError::SizeMismatch {
-            item: file.asset_name.clone(),
-            expected: file.asset_size,
+            item: file_name.to_string(),
+            expected: file_size,
             actual: total_written,
         });
     }
 
     if let Some(hasher) = file_hasher {
         let actual = hex::encode(hasher.finalize());
-        if actual != file.asset_hash_md5 {
+        if actual != file_hash_md5 {
             let _ = fs::remove_file(&tmp_path);
             return Err(SophonError::Md5Mismatch {
-                item: file.asset_name.clone(),
-                expected: file.asset_hash_md5.clone(),
+                item: file_name.to_string(),
+                expected: file_hash_md5.to_string(),
                 actual,
             });
         }
@@ -564,7 +572,7 @@ impl<W: Write> Write for HashWriter<'_, W> {
 pub struct AssemblyTaskParams {
     pub file_idx: usize,
     pub tmp_dir_idx: usize,
-    pub all_files: Arc<Vec<SophonManifestAssetProperty>>,
+    pub all_files: Arc<CompactManifest>,
     pub all_tmp_dirs: Arc<Vec<std::path::PathBuf>>,
     pub game_dir: std::path::PathBuf,
     pub chunks_dir: Arc<std::path::PathBuf>,
@@ -599,7 +607,7 @@ pub fn run_assembly_task(
 
     let _assembly_timer = super::profiling::AssemblyTimer::new(&profiler);
 
-    if file_idx >= all_files.len() {
+    if file_idx >= all_files.num_files() {
         return Err(SophonError::IndexOutOfBounds {
             kind: "file",
             index: file_idx,
@@ -612,11 +620,12 @@ pub fn run_assembly_task(
         });
     }
 
-    let file = &all_files[file_idx];
     let tmp_dir = &all_tmp_dirs[tmp_dir_idx];
+    let file_name = all_files.file_name(file_idx).to_string();
 
     assemble_file(
-        file,
+        &all_files,
+        file_idx,
         &game_dir,
         &chunks_dir,
         tmp_dir,
@@ -625,7 +634,7 @@ pub fn run_assembly_task(
         &verify_cache,
     )
     .map_err(|err| SophonError::AssemblyFailed {
-        file: file.asset_name.clone(),
+        file: file_name,
         error: err.to_string(),
     })?;
 
@@ -670,10 +679,35 @@ mod tests {
     use super::super::installer::ChunkNameArena;
     use super::super::profiling::PipelineProfiler;
     use super::*;
-    use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
+    use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
+    use crate::commands::sophon_downloader::proto_parse::{
+        SophonManifestAssetChunk, SophonManifestAssetProperty,
+    };
 
     fn make_chunk_names(names: &[&str]) -> Arc<ChunkNameLookup> {
         Arc::new(ChunkNameLookup::from_arena(ChunkNameArena::from(names)))
+    }
+
+    fn assemble_test_file(
+        file: SophonManifestAssetProperty,
+        game_dir: &Path,
+        chunks_dir: &Path,
+        temp_dir: &Path,
+        chunk_lookup: &ChunkNameLookup,
+        chunk_refcounts: &[AtomicUsize],
+        verify_cache: &DashMap<String, VerificationEntry>,
+    ) -> SophonResult<()> {
+        let manifest = CompactManifest::from(vec![file]);
+        assemble_file(
+            &manifest,
+            0,
+            game_dir,
+            chunks_dir,
+            temp_dir,
+            chunk_lookup,
+            chunk_refcounts,
+            verify_cache,
+        )
     }
 
     #[test]
@@ -808,8 +842,8 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
-        assemble_file(
-            &file,
+        assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,
@@ -860,8 +894,8 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1), AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
-        assemble_file(
-            &file,
+        assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,
@@ -906,8 +940,8 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
-        assemble_file(
-            &file,
+        assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,
@@ -955,8 +989,8 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
-        assemble_file(
-            &file,
+        assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,
@@ -1045,7 +1079,7 @@ mod tests {
         let params = AssemblyTaskParams {
             file_idx: 5,
             tmp_dir_idx: 0,
-            all_files: Arc::new(vec![]),
+            all_files: Arc::new(CompactManifest::from(vec![])),
             all_tmp_dirs: Arc::new(vec![dir.path().to_path_buf()]),
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
@@ -1106,8 +1140,8 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
-        assemble_file(
-            &file,
+        assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,
@@ -1158,8 +1192,8 @@ mod tests {
         let chunk_refcounts: Vec<AtomicUsize> = vec![AtomicUsize::new(1)];
         let verify_cache = DashMap::new();
 
-        let result = assemble_file(
-            &file,
+        let result = assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,
@@ -1188,7 +1222,7 @@ mod tests {
         let params = AssemblyTaskParams {
             file_idx: 0,
             tmp_dir_idx: 99,
-            all_files: Arc::new(vec![file]),
+            all_files: Arc::new(CompactManifest::from(vec![file])),
             all_tmp_dirs: Arc::new(vec![]),
             game_dir: dir.path().to_path_buf(),
             chunks_dir: Arc::new(dir.path().to_path_buf()),
@@ -1543,8 +1577,8 @@ mod tests {
         let verify_cache = DashMap::new();
 
         // Should reuse from the existing file.
-        let result = assemble_file(
-            &file,
+        let result = assemble_test_file(
+            file,
             &game_dir,
             &chunks_dir,
             &temp_dir,

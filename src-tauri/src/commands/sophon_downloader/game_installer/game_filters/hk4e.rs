@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri_plugin_log::log;
 
 use super::write_lang_file;
+use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
 use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
 
 const ALL_AUDIO_LANGUAGES: &[&str] = &["Chinese", "English(US)", "Japanese", "Korean"];
@@ -113,7 +114,7 @@ struct PkgVersionEntry {
 
 pub fn write_pkg_version_from_manifest(
     game_dir: &Path,
-    assets: &Arc<Vec<SophonManifestAssetProperty>>,
+    assets: &Arc<CompactManifest>,
     vo_langs: &[String],
 ) -> std::io::Result<()> {
     write_single_pkg_version(game_dir, "pkg_version", assets)?;
@@ -122,12 +123,10 @@ pub fn write_pkg_version_from_manifest(
         if let Some(lang_name) = locale_code_to_audio_lang_name(lang) {
             let filename = format!("Audio_{lang_name}_pkg_version");
             let pattern = format!("/{lang_name}/").to_lowercase();
-            let filtered: Vec<SophonManifestAssetProperty> = assets
-                .iter()
-                .filter(|a| a.asset_name.to_lowercase().contains(&pattern))
-                .cloned()
+            let matching_indices: Vec<usize> = (0..assets.num_files())
+                .filter(|&i| assets.file_name(i).to_lowercase().contains(&pattern))
                 .collect();
-            write_single_pkg_version(game_dir, &filename, &filtered)?;
+            write_single_pkg_version_from_indices(game_dir, &filename, assets, &matching_indices)?;
         }
     }
 
@@ -165,19 +164,45 @@ fn read_installed_audio_langs(persistent_dir: &Path, vo_langs: &[String]) -> Vec
 fn write_single_pkg_version(
     game_dir: &Path,
     filename: &str,
-    assets: &[SophonManifestAssetProperty],
+    assets: &CompactManifest,
 ) -> std::io::Result<()> {
     let path = game_dir.join(filename);
     let mut file = File::create(&path)?;
 
-    for asset in assets {
-        if asset.is_directory() {
+    for i in 0..assets.num_files() {
+        if assets.is_directory(i) {
             continue;
         }
         let entry = PkgVersionEntry {
-            remoteName: asset.asset_name.clone(),
-            md5: asset.asset_hash_md5.clone(),
-            file_size: asset.asset_size,
+            remoteName: assets.file_name(i).to_string(),
+            md5: assets.file_hash_md5(i).to_string(),
+            file_size: assets.file_size(i),
+        };
+        let mut line = serde_json::to_string(&entry)?;
+        line.push('\n');
+        file.write_all(line.as_bytes())?;
+    }
+
+    Ok(())
+}
+
+fn write_single_pkg_version_from_indices(
+    game_dir: &Path,
+    filename: &str,
+    assets: &CompactManifest,
+    indices: &[usize],
+) -> std::io::Result<()> {
+    let path = game_dir.join(filename);
+    let mut file = File::create(&path)?;
+
+    for &i in indices {
+        if assets.is_directory(i) {
+            continue;
+        }
+        let entry = PkgVersionEntry {
+            remoteName: assets.file_name(i).to_string(),
+            md5: assets.file_hash_md5(i).to_string(),
+            file_size: assets.file_size(i),
         };
         let mut line = serde_json::to_string(&entry)?;
         line.push('\n');
@@ -431,9 +456,10 @@ mod tests {
     // write_pkg_version_from_manifest
     #[test]
     fn test_write_pkg_version_from_manifest_creates_files() {
+        use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
         let dir = tempfile::tempdir().unwrap();
 
-        let assets = Arc::new(vec![
+        let assets_vec = vec![
             SophonManifestAssetProperty {
                 asset_name: "data/asset_bundle/Chinese/file.pck".into(),
                 asset_chunks: vec![],
@@ -463,7 +489,8 @@ mod tests {
                 asset_size: 0,
                 asset_hash_md5: String::new(),
             },
-        ]);
+        ];
+        let assets = Arc::new(CompactManifest::from(assets_vec));
 
         let vo_langs = vec!["zh-cn".to_string(), "en-us".to_string()];
         write_pkg_version_from_manifest(dir.path(), &assets, &vo_langs).unwrap();
@@ -489,15 +516,17 @@ mod tests {
 
     #[test]
     fn test_write_pkg_version_from_manifest_no_audio_langs() {
+        use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
         let dir = tempfile::tempdir().unwrap();
 
-        let assets = Arc::new(vec![SophonManifestAssetProperty {
+        let assets_vec = vec![SophonManifestAssetProperty {
             asset_name: "data/common.bin".into(),
             asset_chunks: vec![],
             asset_type: 0,
             asset_size: 100,
             asset_hash_md5: "md5".into(),
-        }]);
+        }];
+        let assets = Arc::new(CompactManifest::from(assets_vec));
 
         write_pkg_version_from_manifest(dir.path(), &assets, &[]).unwrap();
 
@@ -556,8 +585,9 @@ mod tests {
     // write_single_pkg_version
     #[test]
     fn test_write_single_pkg_version_skips_directories() {
+        use crate::commands::sophon_downloader::game_installer::compact_manifest::CompactManifest;
         let dir = tempfile::tempdir().unwrap();
-        let assets = vec![
+        let assets_vec = vec![
             SophonManifestAssetProperty {
                 asset_name: "dir/".into(),
                 asset_chunks: vec![],
@@ -573,6 +603,7 @@ mod tests {
                 asset_hash_md5: "hash".into(),
             },
         ];
+        let assets = CompactManifest::from(assets_vec);
 
         write_single_pkg_version(dir.path(), "test_pkg_version", &assets).unwrap();
         let content = fs::read_to_string(dir.path().join("test_pkg_version")).unwrap();

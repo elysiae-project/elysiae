@@ -2149,26 +2149,23 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || {
             let tmp_dir = gd.join("tmp-patch-downloadover");
             fs::create_dir_all(&tmp_dir)?;
-            let total_bytes: usize = file_entry
-                .asset_chunks
-                .iter()
-                .map(|c| c.chunk_name.len())
+            let manifest = super::compact_manifest::CompactManifest::from(vec![file_entry]);
+            let chunk_count =
+                (manifest.file_chunk_range(0).end - manifest.file_chunk_range(0).start) as usize;
+            let total_bytes: usize = (0..chunk_count)
+                .map(|i| manifest.chunk(i).chunk_name.len())
                 .sum();
-            let mut chunk_arena = super::installer::ChunkNameArena::with_capacity(
-                file_entry.asset_chunks.len(),
-                total_bytes,
-            );
-            for c in &file_entry.asset_chunks {
-                chunk_arena.push(&c.chunk_name);
+            let mut chunk_arena =
+                super::installer::ChunkNameArena::with_capacity(chunk_count, total_bytes);
+            for ci in 0..chunk_count {
+                chunk_arena.push(manifest.chunk(ci).chunk_name);
             }
             let chunk_lookup = super::installer::ChunkNameLookup::from_arena(chunk_arena);
-            let chunk_refcounts: Vec<AtomicUsize> = file_entry
-                .asset_chunks
-                .iter()
-                .map(|_| AtomicUsize::new(1))
-                .collect();
+            let chunk_refcounts: Vec<AtomicUsize> =
+                (0..chunk_count).map(|_| AtomicUsize::new(1)).collect();
             let result = super::assembly::assemble_file(
-                &file_entry,
+                &manifest,
+                0,
                 &gd,
                 &cd,
                 &tmp_dir,
