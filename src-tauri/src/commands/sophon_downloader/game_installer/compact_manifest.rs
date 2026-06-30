@@ -5,7 +5,23 @@
 //! per-string and per-Vec heap allocation overhead and improves jemalloc
 //! fragmentation by co-locating fields in contiguous allocations.
 
-use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetProperty;
+use crate::commands::sophon_downloader::proto_parse::{
+    SophonManifestAssetChunk, SophonManifestAssetProperty,
+};
+
+impl<'a> From<&'a SophonManifestAssetChunk> for ChunkRef<'a> {
+    fn from(chunk: &'a SophonManifestAssetChunk) -> Self {
+        ChunkRef {
+            chunk_name: &chunk.chunk_name,
+            chunk_decompressed_hash_md5: &chunk.chunk_decompressed_hash_md5,
+            chunk_on_file_offset: chunk.chunk_on_file_offset,
+            chunk_size: chunk.chunk_size,
+            chunk_size_decompressed: chunk.chunk_size_decompressed,
+            chunk_compressed_hash_md5: &chunk.chunk_compressed_hash_md5,
+            chunk_old_offset: chunk.chunk_old_offset,
+        }
+    }
+}
 
 /// Shared string arena. All manifest strings are concatenated into a single
 /// `String` and referenced by `(offset, len)` spans.

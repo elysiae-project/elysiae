@@ -101,6 +101,7 @@ use super::assembly::{
     validate_chunk_name,
 };
 use super::cache::{self, VerificationEntry};
+use super::compact_manifest::ChunkRef;
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use super::*;
@@ -820,7 +821,7 @@ fn spawn_assembly_coordinator(
 
 async fn check_needs_download(
     dest: &Path,
-    chunk: &SophonManifestAssetChunk,
+    chunk: ChunkRef<'_>,
     game_dir: &Path,
     verify_cache: &Arc<DashMap<String, VerificationEntry>>,
 ) -> SophonResult<bool> {
@@ -829,7 +830,7 @@ async fn check_needs_download(
     }
 
     let chunk_size = chunk.chunk_size;
-    let expected_md5 = chunk.chunk_compressed_hash_md5.clone();
+    let expected_md5 = chunk.chunk_compressed_hash_md5.to_string();
     let cache = Arc::clone(verify_cache);
     let dest = dest.to_path_buf();
     let gd = game_dir.to_path_buf();
@@ -843,7 +844,7 @@ async fn check_needs_download(
 }
 
 async fn download_chunk_with_retries(
-    chunk: &SophonManifestAssetChunk,
+    chunk: ChunkRef<'_>,
     client: &Client,
     chunk_download: &DownloadInfo,
     dest: &Path,
@@ -858,15 +859,21 @@ async fn download_chunk_with_retries(
             return Err(SophonError::Cancelled);
         }
 
-        match super::download::download_chunk(client, chunk_download, chunk, dest, Some(handle))
-            .await
+        match super::download::download_chunk(
+            client,
+            chunk_download,
+            chunk.into(),
+            dest,
+            Some(handle),
+        )
+        .await
         {
             Ok(()) => return Ok(()),
             Err(SophonError::Md5Mismatch { .. }) => {
                 hash_failures += 1;
                 if hash_failures >= MAX_HASH_RETRIES {
                     return Err(SophonError::DownloadFailed {
-                        chunk: chunk.chunk_name.clone(),
+                        chunk: chunk.chunk_name.to_string(),
                         attempts: hash_failures,
                         error: format!("hash verification failed after {MAX_HASH_RETRIES} retries"),
                     });
@@ -909,7 +916,7 @@ async fn download_chunk_with_retries(
                     }
                 } else {
                     return Err(SophonError::DownloadFailed {
-                        chunk: chunk.chunk_name.clone(),
+                        chunk: chunk.chunk_name.to_string(),
                         attempts: MAX_RETRIES,
                         error: err.to_string(),
                     });
@@ -971,7 +978,8 @@ async fn process_download_item(
         .join(assembly::chunk_filename(&chunk.chunk_name));
 
     let needs_download = if item.is_pre_downloaded {
-        let result = check_needs_download(&dest, chunk, &ctx.game_dir, &ctx.verify_cache).await?;
+        let result =
+            check_needs_download(&dest, chunk.into(), &ctx.game_dir, &ctx.verify_cache).await?;
         _chunk_timer.record_phase(super::profiling::ChunkPhase::Verify);
         result
     } else {
@@ -985,7 +993,7 @@ async fn process_download_item(
     let mut was_actually_downloaded = false;
     if needs_download {
         download_chunk_with_retries(
-            chunk,
+            chunk.into(),
             &ctx.installer_clients[item.installer_idx],
             &ctx.installer_downloads[item.installer_idx],
             &dest,
@@ -2094,7 +2102,8 @@ async fn redownload_asset(
             emit(SophonProgress::Warning {
                 message: format!("Re-downloading chunk {chunk_name}"),
             });
-            download::download_chunk(client, chunk_download, chunk, &chunk_path, None).await?;
+            download::download_chunk(client, chunk_download, chunk.into(), &chunk_path, None)
+                .await?;
         }
     }
 
@@ -2437,7 +2446,7 @@ mod tests {
         let chunk = make_chunk("c1", 100);
         let cache = Arc::new(DashMap::new());
 
-        let needs = check_needs_download(&dest, &chunk, dir.path(), &cache)
+        let needs = check_needs_download(&dest, (&chunk).into(), dir.path(), &cache)
             .await
             .unwrap();
         assert!(needs);
@@ -2482,7 +2491,7 @@ mod tests {
         let mut chunk = make_chunk("c1", data.len() as u64);
         chunk.chunk_compressed_hash_md5 = md5_hex;
 
-        let needs = check_needs_download(&file_path, &chunk, dir.path(), &cache)
+        let needs = check_needs_download(&file_path, (&chunk).into(), dir.path(), &cache)
             .await
             .unwrap();
         assert!(!needs);
@@ -2576,9 +2585,15 @@ mod tests {
 
         let handle = DownloadHandle::new();
 
-        let result =
-            download_chunk_with_retries(&chunk, &client, &chunk_download, &dest, &ctx, &handle)
-                .await;
+        let result = download_chunk_with_retries(
+            (&chunk).into(),
+            &client,
+            &chunk_download,
+            &dest,
+            &ctx,
+            &handle,
+        )
+        .await;
         assert!(result.is_ok());
     }
 
@@ -2669,9 +2684,15 @@ mod tests {
 
         let handle = DownloadHandle::new();
 
-        let result =
-            download_chunk_with_retries(&chunk, &client, &chunk_download, &dest, &ctx, &handle)
-                .await;
+        let result = download_chunk_with_retries(
+            (&chunk).into(),
+            &client,
+            &chunk_download,
+            &dest,
+            &ctx,
+            &handle,
+        )
+        .await;
         // After MAX_HASH_RETRIES, the operation fails. Each retry starts from
         // size 0 because the partial file is discarded on mismatch.
         assert!(result.is_err());

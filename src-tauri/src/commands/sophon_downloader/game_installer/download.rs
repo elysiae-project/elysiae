@@ -9,10 +9,10 @@ use tauri_plugin_log::log;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
 use super::CHUNK_WRITE_BUFFER_SIZE;
+use super::compact_manifest::ChunkRef;
 use super::error::{SophonError, SophonResult};
 use super::handle::DownloadHandle;
 use crate::commands::sophon_downloader::api_scrape::DownloadInfo;
-use crate::commands::sophon_downloader::proto_parse::SophonManifestAssetChunk;
 
 /// Evict file pages from the OS page cache. Synchronous variant for use
 /// inside `spawn_blocking` contexts where the runtime is already off the
@@ -187,22 +187,22 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
 pub async fn download_chunk(
     client: &Client,
     chunk_download: &DownloadInfo,
-    chunk: &SophonManifestAssetChunk,
+    chunk: ChunkRef<'_>,
     dest: &Path,
     handle: Option<&super::handle::DownloadHandle>,
 ) -> SophonResult<()> {
-    if !super::assembly::validate_chunk_name(&chunk.chunk_name) {
-        return Err(SophonError::PathTraversal(chunk.chunk_name.clone().into()));
+    if !super::assembly::validate_chunk_name(chunk.chunk_name) {
+        return Err(SophonError::PathTraversal(chunk.chunk_name.into()));
     }
 
-    let url = chunk_download.url_for(&chunk.chunk_name);
+    let url = chunk_download.url_for(chunk.chunk_name);
     do_download_chunk(client, &url, chunk, dest, handle).await
 }
 
 async fn do_download_chunk(
     client: &Client,
     url: &str,
-    chunk: &SophonManifestAssetChunk,
+    chunk: ChunkRef<'_>,
     dest: &Path,
     handle: Option<&super::handle::DownloadHandle>,
 ) -> SophonResult<()> {
@@ -306,7 +306,7 @@ async fn do_download_chunk(
 /// Download a full file, streaming body chunks to disk with MD5/XXH64 hashing.
 async fn download_full_file_with_response(
     resp: reqwest::Response,
-    chunk: &SophonManifestAssetChunk,
+    chunk: ChunkRef<'_>,
     dest: &Path,
     handle: Option<&DownloadHandle>,
 ) -> SophonResult<()> {
@@ -363,7 +363,7 @@ async fn download_full_file_with_response(
                 if total_len > chunk.chunk_size {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::SizeMismatch {
-                        item: chunk.chunk_name.clone(),
+                        item: chunk.chunk_name.to_string(),
                         expected: chunk.chunk_size,
                         actual: total_len,
                     });
@@ -393,7 +393,7 @@ async fn download_full_file_with_response(
     if total_len != chunk.chunk_size {
         let _ = tokio::fs::remove_file(dest).await;
         return Err(SophonError::SizeMismatch {
-            item: chunk.chunk_name.clone(),
+            item: chunk.chunk_name.to_string(),
             expected: chunk.chunk_size,
             actual: total_len,
         });
@@ -407,8 +407,8 @@ async fn download_full_file_with_response(
                 if actual != expected.to_ascii_lowercase() {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Md5Mismatch {
-                        item: chunk.chunk_name.clone(),
-                        expected: expected.clone(),
+                        item: chunk.chunk_name.to_string(),
+                        expected: expected.to_string(),
                         actual,
                     });
                 }
@@ -421,14 +421,14 @@ async fn download_full_file_with_response(
                     if verify_existing_file_hash(dest, expected).await? {
                         String::new()
                     } else {
-                        expected.clone()
+                        expected.to_string()
                     }
                 };
                 if !actual.is_empty() && actual != expected.to_ascii_lowercase() {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Md5Mismatch {
-                        item: chunk.chunk_name.clone(),
-                        expected: expected.clone(),
+                        item: chunk.chunk_name.to_string(),
+                        expected: expected.to_string(),
                         actual,
                     });
                 }
@@ -455,7 +455,7 @@ async fn download_full_file_with_response(
 
 async fn download_with_resume(
     resp: reqwest::Response,
-    chunk: &SophonManifestAssetChunk,
+    chunk: ChunkRef<'_>,
     dest: &Path,
     existing_size: u64,
     handle: Option<&DownloadHandle>,
@@ -475,7 +475,7 @@ async fn download_with_resume(
     {
         let _ = tokio::fs::remove_file(dest).await;
         return Err(SophonError::SizeMismatch {
-            item: chunk.chunk_name.clone(),
+            item: chunk.chunk_name.to_string(),
             expected: remaining,
             actual: len,
         });
@@ -531,7 +531,7 @@ async fn download_with_resume(
                 if total_len > expected_total {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::SizeMismatch {
-                        item: chunk.chunk_name.clone(),
+                        item: chunk.chunk_name.to_string(),
                         expected: expected_total,
                         actual: total_len,
                     });
@@ -561,7 +561,7 @@ async fn download_with_resume(
     if total_len != expected_total {
         let _ = tokio::fs::remove_file(dest).await;
         return Err(SophonError::SizeMismatch {
-            item: chunk.chunk_name.clone(),
+            item: chunk.chunk_name.to_string(),
             expected: expected_total,
             actual: total_len,
         });
@@ -575,8 +575,8 @@ async fn download_with_resume(
                 if actual != expected.to_ascii_lowercase() {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Md5Mismatch {
-                        item: chunk.chunk_name.clone(),
-                        expected: expected.clone(),
+                        item: chunk.chunk_name.to_string(),
+                        expected: expected.to_string(),
                         actual,
                     });
                 }
@@ -589,14 +589,14 @@ async fn download_with_resume(
                     if verify_existing_file_hash(dest, expected).await? {
                         String::new()
                     } else {
-                        expected.clone()
+                        expected.to_string()
                     }
                 };
                 if !actual.is_empty() && actual != expected.to_ascii_lowercase() {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Md5Mismatch {
-                        item: chunk.chunk_name.clone(),
-                        expected: expected.clone(),
+                        item: chunk.chunk_name.to_string(),
+                        expected: expected.to_string(),
                         actual,
                     });
                 }
