@@ -47,7 +47,6 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
 use tokio::io::{AsyncWriteExt, BufWriter as TokioBufWriter};
-use tokio::time::{Duration, timeout};
 
 use super::api::{
     fetch_build, fetch_front_door, fetch_manifest, fetch_patch_build, fetch_patch_manifest,
@@ -557,7 +556,7 @@ async fn process_preinstall_chunk(
             &chunk_info.patch_name,
             &chunk_path,
             &chunk_info.patch_md5,
-            10,
+            super::MAX_RETRIES,
             &handle,
         )
         .await?;
@@ -689,7 +688,7 @@ pub async fn preinstall_download(
     }
 
     let chunk_infos: Vec<PatchChunkInfo> = plan.unique_chunks.clone();
-    const WORKER_COUNT: usize = 16;
+    const WORKER_COUNT: usize = super::DOWNLOAD_CONCURRENCY;
     let cancelled = Arc::new(AtomicU8::new(0));
     let first_error: Arc<Mutex<Option<SophonError>>> = Arc::new(Mutex::new(None));
     let queue: Arc<Mutex<VecDeque<PatchChunkInfo>>> =
@@ -840,7 +839,7 @@ async fn download_patch_chunk_with_retries(
         if handle.is_cancelled() {
             return Err(SophonError::Cancelled);
         }
-        match download_patch_chunk_inner(client, &url, dest, expected_md5).await {
+        match download_patch_chunk_inner(client, &url, dest, expected_md5, handle).await {
             Ok(()) => return Ok(()),
             Err(err) => {
                 last_err = err.to_string();
@@ -934,6 +933,7 @@ async fn download_patch_chunk_inner(
     url: &str,
     dest: &Path,
     expected_md5: &str,
+    handle: &DownloadHandle,
 ) -> SophonResult<()> {
     let resp = client.get(url).send().await?.error_for_status()?;
     let content_length: Option<u64> = resp
@@ -948,14 +948,18 @@ async fn download_patch_chunk_inner(
     let mut total_len = 0u64;
 
     loop {
-        match timeout(
-            Duration::from_millis(super::STREAM_POLL_INTERVAL_MS),
-            stream.next(),
-        )
-        .await
-        {
-            Ok(Some(chunk)) => {
-                let bytes = chunk?;
+        let next_chunk = stream.next();
+        let result = tokio::select! {
+            biased;
+            _ = handle.cancelled_future() => {
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(SophonError::Cancelled);
+            }
+            result = next_chunk => result,
+        };
+
+        match result {
+            Some(Ok(bytes)) => {
                 if bytes.is_empty() && content_length.is_none_or(|expected| total_len < expected) {
                     let _ = tokio::fs::remove_file(dest).await;
                     return Err(SophonError::Io(std::io::Error::new(
@@ -977,15 +981,11 @@ async fn download_patch_chunk_inner(
                 hasher.update(&bytes);
                 file.write_all(&bytes).await?;
             }
-            Ok(None) => break,
-            Err(_) => {
+            Some(Err(e)) => {
                 let _ = tokio::fs::remove_file(dest).await;
-                return Err(SophonError::DownloadFailed {
-                    chunk: dest.display().to_string(),
-                    attempts: 1,
-                    error: "Stream timed out while downloading chunk".to_string(),
-                });
+                return Err(e.into());
             }
+            None => break,
         }
     }
     file.flush().await?;
@@ -2128,13 +2128,16 @@ async fn apply_download_over(
         tokio::task::spawn_blocking(move || fs::create_dir_all(&cd)).await??;
     }
 
+    let download_semaphore = Arc::new(tokio::sync::Semaphore::new(super::DOWNLOAD_CONCURRENCY));
     let chunk_futures = file_entry.asset_chunks.iter().map(|chunk| {
         let chunk_path = chunks_dir.join(super::assembly::chunk_filename(&chunk.chunk_name));
         let client = client.clone();
         let chunk_download = chunk_download.clone();
         let chunk = chunk.clone();
         let handle = handle.clone();
+        let permit = Arc::clone(&download_semaphore);
         async move {
+            let _permit = permit.acquire().await.expect("semaphore not closed");
             download_chunk_with_retries(&client, &chunk_download, &chunk, &chunk_path, &handle)
                 .await
         }

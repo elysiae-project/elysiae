@@ -27,8 +27,8 @@ mod integration_tests;
 pub const MAX_RETRIES: u32 = 5;
 pub const MAX_HASH_RETRIES: u32 = 5;
 
-/// How often the download loop polls for cancellation/pause (ms).
-pub const STREAM_POLL_INTERVAL_MS: u64 = 250;
+/// Max concurrent chunk downloads. Matches the HTTP pool idle-per-host limit.
+pub const DOWNLOAD_CONCURRENCY: usize = 24;
 
 use std::time::Duration;
 
