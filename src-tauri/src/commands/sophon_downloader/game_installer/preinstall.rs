@@ -1106,6 +1106,9 @@ async fn download_patch_chunk_inner(
             });
         }
     }
+
+    super::download::evict_from_page_cache(dest).await;
+
     Ok(())
 }
 
