@@ -28,7 +28,7 @@ where
     COPY_BUFFER.with(|cell| f(&mut cell.borrow_mut()))
 }
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -699,6 +699,70 @@ pub async fn preinstall_download(
 
     let diff_downloads = plan.diff_downloads.clone();
 
+    // Background timer emits progress every second regardless of chunk completion
+    // rate.
+    let progress_done = Arc::new(AtomicBool::new(false));
+    {
+        let db_atomic = Arc::clone(&downloaded_bytes);
+        let timer_updater = Arc::clone(&updater);
+        let timer_handle = handle.clone();
+        let done_flag = Arc::clone(&progress_done);
+        let timer_last_bytes = Arc::new(AtomicU64::new(resume_offset));
+        let timer_last_time = Arc::new(AtomicU64::new(now_nanos()));
+        let timer_smooth_speed = Arc::new(AtomicU64::new(0));
+        let timer_eta_history = Arc::new(Mutex::new(VecDeque::new()));
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+                super::PROGRESS_UPDATE_INTERVAL_MS,
+            ));
+            loop {
+                interval.tick().await;
+                if done_flag.load(Ordering::Relaxed) || timer_handle.is_cancelled() {
+                    break;
+                }
+                let db = db_atomic.load(Ordering::Relaxed) + resume_offset;
+                let now = now_nanos();
+                let last_ns = timer_last_time.load(Ordering::Relaxed);
+                let elapsed = if last_ns == 0 {
+                    0.0
+                } else {
+                    now.saturating_sub(last_ns) as f64 / 1_000_000_000.0
+                };
+                let instant_speed = if elapsed >= 1.0 {
+                    let last_db = timer_last_bytes.load(Ordering::Relaxed);
+                    let window_bytes = db.saturating_sub(last_db);
+                    let speed = window_bytes as f64 / elapsed;
+                    timer_last_bytes.store(db, Ordering::Relaxed);
+                    timer_last_time.store(now, Ordering::Relaxed);
+                    speed
+                } else {
+                    0.0
+                };
+
+                let speed_alpha = 1.0
+                    / (super::SPEED_SMOOTH_WINDOW_SECS * 1000.0
+                        / super::PROGRESS_UPDATE_INTERVAL_MS as f64);
+                let speed_bps = super::ewma_update(&timer_smooth_speed, instant_speed, speed_alpha);
+                let eta_speed_bps = super::compute_eta_speed(&timer_eta_history, instant_speed);
+
+                let remaining = total_bytes.saturating_sub(db);
+                let eta = if eta_speed_bps > 0.0 {
+                    remaining as f64 / eta_speed_bps
+                } else {
+                    0.0
+                };
+
+                timer_updater(SophonProgress::Downloading {
+                    downloaded_bytes: db,
+                    total_bytes,
+                    speed_bps,
+                    eta_seconds: eta,
+                });
+            }
+        });
+    }
+
     for _ in 0..WORKER_COUNT {
         let queue = Arc::clone(&queue);
         let cancelled = Arc::clone(&cancelled);
@@ -780,6 +844,8 @@ pub async fn preinstall_download(
     }
 
     while workers.join_next().await.is_some() {}
+
+    progress_done.store(true, Ordering::Relaxed);
 
     if cancelled.load(Ordering::Relaxed) != 0 {
         return Err(SophonError::Cancelled);
@@ -1148,6 +1214,7 @@ pub async fn apply_preinstall(
     let chunks_dir = patching_chunk_dir(game_dir);
     let total_files = state.patch_assets.len() as u64;
     let applied_files = Arc::new(AtomicU64::new(0u64));
+    let last_apply_update = AtomicU64::new(0);
 
     let game_dir_owned = game_dir.to_path_buf();
     let filter_cache = tokio::task::spawn_blocking(move || FilterCache::new(&game_dir_owned))
@@ -1332,10 +1399,16 @@ pub async fn apply_preinstall(
         }
 
         let count = applied_files.fetch_add(1, Ordering::Relaxed) + 1;
-        updater(SophonProgress::ApplyingPreinstall {
-            applied_files: count,
-            total_files,
-        });
+        let now = now_nanos();
+        if now.saturating_sub(last_apply_update.load(Ordering::Relaxed))
+            >= super::PROGRESS_UPDATE_INTERVAL_MS * 1_000_000
+        {
+            updater(SophonProgress::ApplyingPreinstall {
+                applied_files: count,
+                total_files,
+            });
+            last_apply_update.store(now, Ordering::Relaxed);
+        }
     }
 
     {

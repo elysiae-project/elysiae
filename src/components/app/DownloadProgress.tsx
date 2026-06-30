@@ -25,6 +25,7 @@ export const DownloadProgress = () => {
 		isVerifying,
 		isFetchingManifest,
 		isCalculatingDownloads,
+		isApplyingPreinstall,
 		isError,
 		isFinished,
 		isSettingUpProton,
@@ -37,7 +38,8 @@ export const DownloadProgress = () => {
 		isFetchingManifest ||
 		isCalculatingDownloads ||
 		isPaused ||
-		isSettingUpProton;
+		isSettingUpProton ||
+		isApplyingPreinstall;
 	if (!isActive && !isError && !isFinished) return null;
 	if (isFinished) return null;
 
@@ -94,6 +96,10 @@ export const DownloadProgress = () => {
 			state.totalFiles > 0 ? (state.scannedFiles / state.totalFiles) * 100 : 0;
 		const calcPct =
 			state.totalFiles > 0 ? (state.checkedFiles / state.totalFiles) * 100 : 0;
+		const applyPct =
+			state.totalFiles > 0
+				? (state.assembledFiles / state.totalFiles) * 100
+				: 0;
 		return {
 			downloadPct,
 			assemblePct,
@@ -103,6 +109,7 @@ export const DownloadProgress = () => {
 			totalGB,
 			verifyPct,
 			calcPct,
+			applyPct,
 		};
 	}, [
 		state.downloadedBytes,
@@ -115,19 +122,21 @@ export const DownloadProgress = () => {
 		state.checkedFiles,
 	]);
 
-	const titleText = isPaused
-		? "Download Paused"
-		: isSettingUpProton
-			? "Setting Up Environment..."
-			: isVerifying
-				? "Verifying Files..."
-				: isCalculatingDownloads
-					? "Calculating File Downloads..."
-					: isFetchingManifest
-						? "Fetching Manifest..."
-						: state.downloadingGame !== null
-							? `Downloading ${variantToGameName[state.downloadingGame]}...`
-							: "Downloading...";
+	const titleText = isApplyingPreinstall
+		? "Applying Preinstall..."
+		: isPaused
+			? "Download Paused"
+			: isSettingUpProton
+				? "Setting Up Environment..."
+				: isVerifying
+					? "Verifying Files..."
+					: isCalculatingDownloads
+						? "Calculating File Downloads..."
+						: isFetchingManifest
+							? "Fetching Manifest..."
+							: state.downloadingGame !== null
+								? `Downloading ${variantToGameName[state.downloadingGame]}...`
+								: "Downloading...";
 
 	const canPause = isDownloading || isPaused;
 
@@ -209,6 +218,16 @@ export const DownloadProgress = () => {
 						{formatNumber(state.errorCount)} errors found
 					</h2>
 					<Progressbar progress={derived.verifyPct} game={game} />
+				</div>
+			)}
+			{isApplyingPreinstall && state.totalFiles > 0 && (
+				<div class="flex min-w-full flex-col gap-y-1 text-left">
+					<h2 class="ml-1 text-sm text-white">
+						Applied {formatNumber(state.assembledFiles)} of{" "}
+						{formatNumber(state.totalFiles)} files (
+						{derived.applyPct.toFixed(2)}%)
+					</h2>
+					<Progressbar progress={derived.applyPct} game={game} />
 				</div>
 			)}
 			{state.warningMessage && (

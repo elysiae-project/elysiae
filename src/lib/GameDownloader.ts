@@ -12,6 +12,38 @@ import {
 	variantToGameName,
 } from "./VariantConverter";
 
+export type PreinstallState = "download" | "apply" | "hidden";
+
+/**
+ * Determine the preinstall button state for a game.
+ * - "download": preinstall is available but not yet downloaded
+ * - "apply": update is released and preinstall was already downloaded
+ * - "hidden": no preinstall action available
+ */
+export const getPreinstallState = async (
+	game: Variants,
+): Promise<PreinstallState> => {
+	const gameData = await getGameData(game);
+	const installed = await isGameInstalled(game);
+	if (!installed) return "hidden";
+
+	const info = await invoke<{
+		update_available: boolean;
+		preinstall_available: boolean;
+		preinstall_downloaded: boolean;
+		preinstall_tag: string | null;
+	}>("sophon_check_update", {
+		gameId: gameData.gameCode,
+		voLang: gameData.requestedLanguage,
+		outputPath: gameData.gameDir,
+	});
+
+	if (info.update_available && info.preinstall_downloaded) return "apply";
+	if (info.preinstall_available && !info.preinstall_downloaded)
+		return "download";
+	return "hidden";
+};
+
 /**
  * Downloads a fresh install of any game to `games/gameCode`
  *

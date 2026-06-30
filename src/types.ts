@@ -218,31 +218,32 @@ export type ModuleData = {
 
 export type SophonProgress =
 	| { type: "fetchingManifest" }
-	| { type: "calculatingDownloads"; checked_files: number; total_files: number }
+	| { type: "calculatingDownloads"; checkedFiles: number; totalFiles: number }
 	| {
 			type: "downloading";
-			downloaded_bytes: number;
-			total_bytes: number;
-			speed_bps: number;
-			eta_seconds: number;
+			downloadedBytes: number;
+			totalBytes: number;
+			speedBps: number;
+			etaSeconds: number;
 	  }
-	| { type: "paused"; downloaded_bytes: number; total_bytes: number }
-	| { type: "assembling"; assembled_files: number; total_files: number }
+	| { type: "paused"; downloadedBytes: number; totalBytes: number }
+	| { type: "assembling"; assembledFiles: number; totalFiles: number }
 	| {
 			type: "verifying";
-			scanned_files: number;
-			total_files: number;
-			error_count: number;
+			scannedFiles: number;
+			totalFiles: number;
+			errorCount: number;
 	  }
 	| { type: "warning"; message: string }
 	| { type: "error"; message: string }
-	| { type: "installingPlugins"; current_plugin: string; total_plugins: number }
+	| { type: "installingPlugins"; currentPlugin: string; totalPlugins: number }
 	| {
 			type: "downloadingPlugin";
 			name: string;
-			downloaded_bytes: number;
-			total_bytes: number;
+			downloadedBytes: number;
+			totalBytes: number;
 	  }
+	| { type: "applyingPreinstall"; appliedFiles: number; totalFiles: number }
 	| { type: "finished" };
 
 export type ProtonSetupProgress =

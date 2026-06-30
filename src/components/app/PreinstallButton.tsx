@@ -1,40 +1,55 @@
-import { Save } from "lucide-preact";
+import { Play, Save } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { useDownload } from "../../hooks/useDownload";
 import { useGame } from "../../hooks/useGame";
 import {
+	applyUpdate,
 	downloadUpdate,
-	isGameInstalled,
-	isPreinstallAvailable,
+	getPreinstallState,
 } from "../../lib/GameDownloader";
+import type { PreinstallState } from "../../lib/GameDownloader";
 import Button from "../Button";
 
 export const PreinstallButton = () => {
-	const [preInstAvailable, setPreInstAvailable] = useState<boolean>(false);
+	const [preinstallState, setPreinstallState] =
+		useState<PreinstallState>("hidden");
 	const { game } = useGame();
-	const { state, setDownloadingGame } = useDownload();
+	const { state: dlState, setDownloadingGame } = useDownload();
 	const downloadActive =
-		state.isDownloading ||
-		state.isAssembling ||
-		state.isVerifying ||
-		state.isFetchingManifest ||
-		state.isPaused;
+		dlState.isDownloading ||
+		dlState.isAssembling ||
+		dlState.isVerifying ||
+		dlState.isFetchingManifest ||
+		dlState.isPaused;
 
 	useEffect(() => {
 		let cancelled = false;
-		isPreinstallAvailable(game).then((preinstallRes) => {
-			if (!cancelled) {
-				isGameInstalled(game).then((gameRes) => {
-					if (!cancelled) setPreInstAvailable(preinstallRes && gameRes);
-				});
-			}
+		getPreinstallState(game).then((result) => {
+			if (!cancelled) setPreinstallState(result);
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [game]);
+	}, [game, dlState.isFinished]);
 
-	if (!preInstAvailable) return null;
+	if (preinstallState === "hidden") return null;
+
+	if (preinstallState === "apply") {
+		return (
+			<Button
+				variant="secondary"
+				width={4}
+				height={4}
+				disabled={downloadActive}
+				onClick={async () => {
+					setDownloadingGame(game);
+					await applyUpdate(game);
+				}}
+			>
+				<Play className="-m-1 leading-0" />
+			</Button>
+		);
+	}
 
 	return (
 		<Button
