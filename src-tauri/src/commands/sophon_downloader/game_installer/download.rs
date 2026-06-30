@@ -83,73 +83,80 @@ thread_local! {
     static HASH_BUF: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0u8; HASH_BUF_SIZE]);
 }
 
-fn hash_file_pread(path: &Path, buf: &mut [u8]) -> SophonResult<Vec<u8>> {
-    let file = std::fs::File::open(path)?;
-    let len = file.metadata()?.len();
-    if len == 0 {
-        return Ok(Vec::new());
-    }
-    let mut data = Vec::with_capacity(len as usize);
-    let mut offset = 0u64;
-    loop {
-        let to_read = (len - offset).min(buf.len() as u64) as usize;
-        if to_read == 0 {
-            break;
-        }
-        let n = file.read_at(&mut buf[..to_read], offset)?;
-        if n == 0 {
-            break;
-        }
-        data.extend_from_slice(&buf[..n]);
-        offset += n as u64;
-    }
-    Ok(data)
-}
-
-/// Compute MD5 hash of a file using pread to avoid mmap page-table overhead.
-fn compute_file_md5(path: &Path) -> SophonResult<String> {
-    HASH_BUF.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        let data = hash_file_pread(path, &mut buf)?;
-        let mut hasher = Md5::new();
-        hasher.update(&data);
-        Ok(hex::encode(hasher.finalize()))
-    })
-}
-
-/// Compute XXH64 hash of a file using pread to avoid mmap page-table overhead.
-fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
-    use xxhash_rust::xxh64::Xxh64;
-    HASH_BUF.with(|cell| {
-        let mut buf = cell.borrow_mut();
-        let data = hash_file_pread(path, &mut buf)?;
-        let mut hasher = Xxh64::new(0);
-        hasher.update(&data);
-        Ok(format!("{:016x}", hasher.digest()))
-    })
-}
-
-fn seed_hasher_from_file(path: &Path, max_bytes: u64) -> SophonResult<Vec<u8>> {
+fn pread_hash_slice(path: &Path, max_bytes: u64, f: &mut dyn FnMut(&[u8])) -> SophonResult<()> {
     if max_bytes == 0 {
-        return Ok(Vec::new());
+        return Ok(());
     }
     let file = std::fs::File::open(path)?;
-    let mut data = Vec::with_capacity(max_bytes as usize);
     HASH_BUF.with(|cell| {
         let mut buf = cell.borrow_mut();
         let mut offset = 0u64;
         while offset < max_bytes {
-            let to_read = (max_bytes - offset).min(buf.len() as u64) as usize;
+            let to_read = (max_bytes - offset).min(HASH_BUF_SIZE as u64) as usize;
             let n = file.read_at(&mut buf[..to_read], offset)?;
             if n == 0 {
                 break;
             }
-            data.extend_from_slice(&buf[..n]);
+            f(&buf[..n]);
             offset += n as u64;
         }
-        SophonResult::Ok(())
-    })?;
-    Ok(data)
+        Ok(())
+    })
+}
+
+fn pread_hash_md5(path: &Path) -> SophonResult<String> {
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    let mut hasher = Md5::new();
+    if len == 0 {
+        hasher.update(b"");
+        return Ok(hex::encode(hasher.finalize()));
+    }
+    HASH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let mut offset = 0u64;
+        loop {
+            let to_read = (len - offset).min(HASH_BUF_SIZE as u64) as usize;
+            if to_read == 0 {
+                break;
+            }
+            let n = file.read_at(&mut buf[..to_read], offset)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            offset += n as u64;
+        }
+        Ok(hex::encode(hasher.finalize()))
+    })
+}
+
+fn pread_hash_xxh64(path: &Path) -> SophonResult<String> {
+    use xxhash_rust::xxh64::Xxh64;
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    let mut hasher = Xxh64::new(0);
+    if len == 0 {
+        hasher.update(b"");
+        return Ok(format!("{:016x}", hasher.digest()));
+    }
+    HASH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let mut offset = 0u64;
+        loop {
+            let to_read = (len - offset).min(HASH_BUF_SIZE as u64) as usize;
+            if to_read == 0 {
+                break;
+            }
+            let n = file.read_at(&mut buf[..to_read], offset)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            offset += n as u64;
+        }
+        Ok(format!("{:016x}", hasher.digest()))
+    })
 }
 
 async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonResult<bool> {
@@ -160,8 +167,8 @@ async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonRe
     let expected_hash = expected_hash.to_ascii_lowercase();
     tokio::task::spawn_blocking(move || {
         let actual = match expected_hash.len() {
-            32 => compute_file_md5(&path),
-            16 => compute_file_xxh64(&path),
+            32 => pread_hash_md5(&path),
+            16 => pread_hash_xxh64(&path),
             _ => {
                 log::warn!(
                     "Unknown hash format (length={len}) for verification",
@@ -481,16 +488,12 @@ async fn download_with_resume(
     let mut xxh64_hasher: Option<xxhash_rust::xxh64::Xxh64> =
         if chunk.chunk_compressed_hash_md5.len() == 16 {
             let mut h = xxhash_rust::xxh64::Xxh64::new(0);
-            let data = seed_hasher_from_file(dest, existing_size)?;
-            h.update(&data);
+            pread_hash_slice(dest, existing_size, &mut |chunk| h.update(chunk))?;
             Some(h)
         } else {
             None
         };
-    {
-        let data = seed_hasher_from_file(dest, existing_size)?;
-        hasher.update(&data);
-    }
+    pread_hash_slice(dest, existing_size, &mut |chunk| hasher.update(chunk))?;
 
     let file = tokio::fs::OpenOptions::new()
         .append(true)

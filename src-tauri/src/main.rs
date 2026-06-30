@@ -20,8 +20,9 @@ fn tune_jemalloc() {
     use tikv_jemalloc_ctl::epoch;
     let _ = epoch::advance();
     unsafe {
-        let _ = tikv_jemalloc_ctl::raw::write(b"opt.dirty_decay_ms\0", 1000u64);
+        let _ = tikv_jemalloc_ctl::raw::write(b"opt.dirty_decay_ms\0", 100u64);
         let _ = tikv_jemalloc_ctl::raw::write(b"opt.muzzy_decay_ms\0", 0u64);
+        let _ = tikv_jemalloc_ctl::raw::write(b"opt.background_thread\0", true);
     }
 }
 
