@@ -1,4 +1,5 @@
 use std::os::unix::fs::FileExt;
+use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
 use futures_util::StreamExt;
@@ -6,7 +7,7 @@ use libc;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use tauri_plugin_log::log;
-use tokio::io::{AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 
 use super::CHUNK_WRITE_BUFFER_SIZE;
 use super::compact_manifest::ChunkRef;
@@ -39,6 +40,87 @@ pub(crate) async fn evict_from_page_cache(path: &Path) {
     tokio::task::spawn_blocking(move || evict_from_page_cache_sync(&path))
         .await
         .ok();
+}
+
+/// Wrapper around `BufWriter<tokio::fs::File>` that evicts written ranges
+/// from the kernel page cache after each flush. This prevents the page cache
+/// from accumulating during large sequential writes.
+struct EvictingWriter {
+    inner: BufWriter<tokio::fs::File>,
+    /// Byte offset of the next write in the output file.
+    file_offset: u64,
+    /// Byte offset of the first byte not yet evicted from page cache.
+    evicted_up_to: u64,
+    /// Raw file descriptor for posix_fadvise calls.
+    fd: libc::c_int,
+    /// Bytes written since last flush_and_evict. When this exceeds
+    /// EVICT_INTERVAL_BYTES, we flush and evict.
+    bytes_since_evict: u64,
+}
+
+/// Evict from page cache every 2 MiB of written data.
+const EVICT_INTERVAL_BYTES: u64 = 2 * 1024 * 1024;
+
+impl EvictingWriter {
+    fn new(file: tokio::fs::File) -> Self {
+        let fd = file.as_raw_fd();
+        Self {
+            inner: BufWriter::with_capacity(CHUNK_WRITE_BUFFER_SIZE, file),
+            file_offset: 0,
+            evicted_up_to: 0,
+            fd,
+            bytes_since_evict: 0,
+        }
+    }
+
+    fn with_offset(file: tokio::fs::File, offset: u64) -> Self {
+        let mut s = Self::new(file);
+        s.file_offset = offset;
+        s.evicted_up_to = offset;
+        s
+    }
+
+    async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.inner.write_all(buf).await?;
+        self.file_offset += buf.len() as u64;
+        self.bytes_since_evict += buf.len() as u64;
+        if self.bytes_since_evict >= EVICT_INTERVAL_BYTES {
+            self.flush_and_evict().await?;
+        }
+        Ok(())
+    }
+
+    /// Flush the internal buffer and evict the flushed range from page cache.
+    async fn flush_and_evict(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await?;
+        self.evict_written();
+        Ok(())
+    }
+
+    /// Call posix_fadvise(DONTNEED) on the range [evicted_up_to, file_offset).
+    fn evict_written(&mut self) {
+        let evict_start = self.evicted_up_to as i64;
+        let evict_len = (self.file_offset - self.evicted_up_to) as i64;
+        if evict_len > 0 {
+            unsafe {
+                libc::posix_fadvise(self.fd, evict_start, evict_len, libc::POSIX_FADV_DONTNEED);
+            }
+            self.evicted_up_to = self.file_offset;
+        }
+        self.bytes_since_evict = 0;
+    }
+
+    /// Flush without evicting (for final hash verification that needs the file
+    /// on disk but may re-read small portions).
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush().await
+    }
+}
+
+impl Drop for EvictingWriter {
+    fn drop(&mut self) {
+        self.evict_written();
+    }
 }
 
 fn get_available_space(path: &Path) -> Option<u64> {
@@ -324,7 +406,7 @@ async fn download_full_file_with_response(
     check_available_space(dest, chunk.chunk_size)?;
 
     let file = tokio::fs::File::create(dest).await?;
-    let mut file = BufWriter::with_capacity(CHUNK_WRITE_BUFFER_SIZE, file);
+    let mut file = EvictingWriter::new(file);
     let mut stream = resp.bytes_stream();
     let mut hasher = Md5::new();
     let mut xxh64_hasher: Option<xxhash_rust::xxh64::Xxh64> =
@@ -417,7 +499,7 @@ async fn download_full_file_with_response(
                 let actual = if let Some(h) = xxh64_hasher {
                     format!("{:016x}", h.digest())
                 } else {
-                    drop(file);
+                    file.flush().await?;
                     if verify_existing_file_hash(dest, expected).await? {
                         String::new()
                     } else {
@@ -448,7 +530,7 @@ async fn download_full_file_with_response(
         );
     }
 
-    evict_from_page_cache(dest).await;
+    drop(file);
 
     Ok(())
 }
@@ -499,7 +581,7 @@ async fn download_with_resume(
         .append(true)
         .open(dest)
         .await?;
-    let mut file = BufWriter::with_capacity(CHUNK_WRITE_BUFFER_SIZE, file);
+    let mut file = EvictingWriter::with_offset(file, existing_size);
     let mut stream = resp.bytes_stream();
     let mut total_len = existing_size;
 
@@ -585,7 +667,7 @@ async fn download_with_resume(
                 let actual = if let Some(h) = xxh64_hasher {
                     format!("{:016x}", h.digest())
                 } else {
-                    drop(file);
+                    file.flush().await?;
                     if verify_existing_file_hash(dest, expected).await? {
                         String::new()
                     } else {
@@ -616,7 +698,7 @@ async fn download_with_resume(
         );
     }
 
-    evict_from_page_cache(dest).await;
+    drop(file);
 
     Ok(())
 }
