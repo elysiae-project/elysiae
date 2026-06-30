@@ -4,6 +4,7 @@ mod api;
 mod assembly;
 mod assembly_opt;
 mod cache;
+mod compact_manifest;
 mod download;
 mod error;
 mod game_filters;
