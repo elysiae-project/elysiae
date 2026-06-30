@@ -58,7 +58,7 @@ pub async fn check_update(
 
     let (
         preinstall_available,
-        preinstall_tag,
+        mut preinstall_tag,
         preinstall_compressed_size,
         preinstall_decompressed_size,
     ) = match pre_download_branch {
@@ -79,6 +79,14 @@ pub async fn check_update(
         let marker = game_dir.join(format!(".sophon_preinstall_{ptag}"));
         let state_file = game_dir.join(format!(".sophon_preinstall_{ptag}.json"));
         marker.exists() || state_file.exists()
+    } else if update_available {
+        let marker = game_dir.join(format!(".sophon_preinstall_{remote_tag}"));
+        let state_file = game_dir.join(format!(".sophon_preinstall_{remote_tag}.json"));
+        let downloaded = marker.exists() || state_file.exists();
+        if downloaded {
+            preinstall_tag = Some(remote_tag.clone());
+        }
+        downloaded
     } else {
         false
     };
