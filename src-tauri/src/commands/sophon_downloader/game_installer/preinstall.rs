@@ -46,7 +46,6 @@ use md5::{Digest as _, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_log::log;
-use tokio::io::{AsyncWriteExt, BufWriter as TokioBufWriter};
 
 use super::api::{
     fetch_build, fetch_front_door, fetch_manifest, fetch_patch_build, fetch_patch_manifest,
@@ -1037,7 +1036,7 @@ async fn download_patch_chunk_inner(
         .and_then(|s| s.parse::<u64>().ok());
     let mut stream = resp.bytes_stream();
     let file = tokio::fs::File::create(dest).await?;
-    let mut file = TokioBufWriter::with_capacity(super::FILE_WRITE_BUFFER_SIZE, file);
+    let mut file = super::download::EvictingWriter::new(file);
     let mut hasher = Md5::new();
     let mut total_len = 0u64;
 
@@ -1107,7 +1106,7 @@ async fn download_patch_chunk_inner(
         }
     }
 
-    super::download::evict_from_page_cache(dest).await;
+    drop(file);
 
     Ok(())
 }

@@ -33,19 +33,10 @@ pub(crate) fn evict_from_page_cache_sync(path: &Path) {
     }
 }
 
-/// Evict file pages from the OS page cache on a blocking thread, so the
-/// async runtime is not stalled by the three syscalls.
-pub(crate) async fn evict_from_page_cache(path: &Path) {
-    let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || evict_from_page_cache_sync(&path))
-        .await
-        .ok();
-}
-
 /// Wrapper around `BufWriter<tokio::fs::File>` that evicts written ranges
 /// from the kernel page cache after each flush. This prevents the page cache
 /// from accumulating during large sequential writes.
-struct EvictingWriter {
+pub(crate) struct EvictingWriter {
     inner: BufWriter<tokio::fs::File>,
     /// Byte offset of the next write in the output file.
     file_offset: u64,
@@ -62,7 +53,7 @@ struct EvictingWriter {
 const EVICT_INTERVAL_BYTES: u64 = 2 * 1024 * 1024;
 
 impl EvictingWriter {
-    fn new(file: tokio::fs::File) -> Self {
+    pub(crate) fn new(file: tokio::fs::File) -> Self {
         let fd = file.as_raw_fd();
         Self {
             inner: BufWriter::with_capacity(CHUNK_WRITE_BUFFER_SIZE, file),
@@ -73,14 +64,14 @@ impl EvictingWriter {
         }
     }
 
-    fn with_offset(file: tokio::fs::File, offset: u64) -> Self {
+    pub(crate) fn with_offset(file: tokio::fs::File, offset: u64) -> Self {
         let mut s = Self::new(file);
         s.file_offset = offset;
         s.evicted_up_to = offset;
         s
     }
 
-    async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+    pub(crate) async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         self.inner.write_all(buf).await?;
         self.file_offset += buf.len() as u64;
         self.bytes_since_evict += buf.len() as u64;
@@ -91,7 +82,7 @@ impl EvictingWriter {
     }
 
     /// Flush the internal buffer and evict the flushed range from page cache.
-    async fn flush_and_evict(&mut self) -> std::io::Result<()> {
+    pub(crate) async fn flush_and_evict(&mut self) -> std::io::Result<()> {
         self.inner.flush().await?;
         self.evict_written();
         Ok(())
@@ -112,7 +103,7 @@ impl EvictingWriter {
 
     /// Flush without evicting (for final hash verification that needs the file
     /// on disk but may re-read small portions).
-    async fn flush(&mut self) -> std::io::Result<()> {
+    pub(crate) async fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush().await
     }
 }
