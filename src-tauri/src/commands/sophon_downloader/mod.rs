@@ -806,29 +806,6 @@ pub async fn sophon_preinstall(
 
     match result {
         Ok(_) => {
-            // Back up the downloaded preinstall chunks before applying, so the
-            // chunk directory can be reused for debugging or re-apply without
-            // re-downloading.
-            if let Err(err) = backup_preinstall_chunks(&game_dir) {
-                log::warn!("Preinstall backup failed: {err}");
-            }
-
-            let apply_updater: Arc<dyn Fn(SophonProgress) + Send + Sync> = Arc::new({
-                let app = app_handle.clone();
-                move |p| emit(&app, p)
-            });
-            let apply_handle = DownloadHandle::new();
-            if let Err(err) = game_installer::apply_preinstall(
-                &client.0,
-                &game_dir,
-                &tag,
-                apply_updater,
-                &apply_handle,
-            )
-            .await
-            {
-                return install_result(Err(err), &app_handle);
-            }
             emit(&app_handle, SophonProgress::Finished);
             Ok(())
         }
@@ -1180,33 +1157,6 @@ fn install_result(result: Result<(), SophonError>, app: &AppHandle) -> Result<()
             Err(err.to_string())
         }
     }
-}
-
-/// Copy the staged preinstall chunk directory into `~/hk4e_67_preinstall` so
-/// the downloaded chunks survive past the apply step. Apply deletes the staging
-/// directory once finished; this backup preserves the raw chunks for debugging
-/// or re-apply without re-downloading.
-fn backup_preinstall_chunks(game_dir: &Path) -> std::io::Result<()> {
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
-    let backup_dir = home.join("hk4e_67_preinstall").join("chunk");
-    let chunks_src = game_dir.join("patching").join("chunk");
-
-    if !chunks_src.exists() {
-        return Ok(());
-    }
-
-    fs::create_dir_all(&backup_dir)?;
-    for entry in fs::read_dir(&chunks_src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = backup_dir.join(entry.file_name());
-        if from.is_file() {
-            fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 /// Map `SophonResult<T>` to `Result<T, String>` and emit a structured error
