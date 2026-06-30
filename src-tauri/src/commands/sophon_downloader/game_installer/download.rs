@@ -1,3 +1,4 @@
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 
 use futures_util::StreamExt;
@@ -76,35 +77,79 @@ fn parse_content_range_start(range_str: &str) -> Option<u64> {
     start_str.parse().ok()
 }
 
-/// Compute MD5 hash of a file using memory-mapped I/O for efficiency.
-fn compute_file_md5(path: &Path) -> SophonResult<String> {
-    let file = std::fs::File::open(path)?;
-    let len = file.metadata()?.len();
-    if len == 0 {
-        let mut hasher = Md5::new();
-        hasher.update(b"");
-        return Ok(hex::encode(hasher.finalize()));
-    }
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
-    let mut hasher = Md5::new();
-    hasher.update(&mmap[..]);
-    Ok(hex::encode(hasher.finalize()))
+const HASH_BUF_SIZE: usize = 256 * 1024;
+
+thread_local! {
+    static HASH_BUF: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0u8; HASH_BUF_SIZE]);
 }
 
-/// Compute XXH64 hash of a file using memory-mapped I/O.
-fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
-    use xxhash_rust::xxh64::Xxh64;
+fn hash_file_pread(path: &Path, buf: &mut [u8]) -> SophonResult<Vec<u8>> {
     let file = std::fs::File::open(path)?;
     let len = file.metadata()?.len();
     if len == 0 {
-        let mut hasher = Xxh64::new(0);
-        hasher.update(b"");
-        return Ok(format!("{:016x}", hasher.digest()));
+        return Ok(Vec::new());
     }
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
-    let mut hasher = Xxh64::new(0);
-    hasher.update(&mmap[..]);
-    Ok(format!("{:016x}", hasher.digest()))
+    let mut data = Vec::with_capacity(len as usize);
+    let mut offset = 0u64;
+    loop {
+        let to_read = (len - offset).min(buf.len() as u64) as usize;
+        if to_read == 0 {
+            break;
+        }
+        let n = file.read_at(&mut buf[..to_read], offset)?;
+        if n == 0 {
+            break;
+        }
+        data.extend_from_slice(&buf[..n]);
+        offset += n as u64;
+    }
+    Ok(data)
+}
+
+/// Compute MD5 hash of a file using pread to avoid mmap page-table overhead.
+fn compute_file_md5(path: &Path) -> SophonResult<String> {
+    HASH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let data = hash_file_pread(path, &mut buf)?;
+        let mut hasher = Md5::new();
+        hasher.update(&data);
+        Ok(hex::encode(hasher.finalize()))
+    })
+}
+
+/// Compute XXH64 hash of a file using pread to avoid mmap page-table overhead.
+fn compute_file_xxh64(path: &Path) -> SophonResult<String> {
+    use xxhash_rust::xxh64::Xxh64;
+    HASH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let data = hash_file_pread(path, &mut buf)?;
+        let mut hasher = Xxh64::new(0);
+        hasher.update(&data);
+        Ok(format!("{:016x}", hasher.digest()))
+    })
+}
+
+fn seed_hasher_from_file(path: &Path, max_bytes: u64) -> SophonResult<Vec<u8>> {
+    if max_bytes == 0 {
+        return Ok(Vec::new());
+    }
+    let file = std::fs::File::open(path)?;
+    let mut data = Vec::with_capacity(max_bytes as usize);
+    HASH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let mut offset = 0u64;
+        while offset < max_bytes {
+            let to_read = (max_bytes - offset).min(buf.len() as u64) as usize;
+            let n = file.read_at(&mut buf[..to_read], offset)?;
+            if n == 0 {
+                break;
+            }
+            data.extend_from_slice(&buf[..n]);
+            offset += n as u64;
+        }
+        SophonResult::Ok(())
+    })?;
+    Ok(data)
 }
 
 async fn verify_existing_file_hash(path: &Path, expected_hash: &str) -> SophonResult<bool> {
@@ -431,30 +476,20 @@ async fn download_with_resume(
 
     check_available_space(dest, remaining)?;
 
-    // Seed the hasher with existing file content using memory-mapped I/O
+    // Seed the hasher with existing file content using pread
     let mut hasher = Md5::new();
     let mut xxh64_hasher: Option<xxhash_rust::xxh64::Xxh64> =
         if chunk.chunk_compressed_hash_md5.len() == 16 {
             let mut h = xxhash_rust::xxh64::Xxh64::new(0);
-            {
-                let existing_file = std::fs::File::open(dest)?;
-                let file_len = existing_file.metadata()?.len();
-                if file_len > 0 {
-                    let mmap = unsafe { memmap2::Mmap::map(&existing_file)? };
-                    h.update(&mmap[..existing_size as usize]);
-                }
-            }
+            let data = seed_hasher_from_file(dest, existing_size)?;
+            h.update(&data);
             Some(h)
         } else {
             None
         };
     {
-        let existing_file = std::fs::File::open(dest)?;
-        let file_len = existing_file.metadata()?.len();
-        if file_len > 0 {
-            let mmap = unsafe { memmap2::Mmap::map(&existing_file)? };
-            hasher.update(&mmap[..existing_size as usize]);
-        }
+        let data = seed_hasher_from_file(dest, existing_size)?;
+        hasher.update(&data);
     }
 
     let file = tokio::fs::OpenOptions::new()

@@ -4,6 +4,8 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use std::os::unix::fs::FileExt;
+
 use dashmap::DashMap;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -183,7 +185,11 @@ pub fn check_file_md5_with_cache_key(
     Ok(matches)
 }
 
-const MMAP_THRESHOLD: u64 = 64 * 1024;
+const CACHE_HASH_BUF_SIZE: usize = 256 * 1024;
+
+thread_local! {
+    static CACHE_HASH_BUF: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0u8; CACHE_HASH_BUF_SIZE]);
+}
 
 pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
     let file = File::open(path)?;
@@ -194,14 +200,23 @@ pub(crate) fn file_md5_hex(path: &Path) -> io::Result<String> {
         return Ok(hex::encode(hasher.finalize()));
     }
     let mut hasher = Md5::new();
-    if len >= MMAP_THRESHOLD {
-        let mmap = unsafe { memmap2::Mmap::map(&file)? };
-        hasher.update(&mmap[..]);
-    } else {
-        let mut data = Vec::with_capacity(len as usize);
-        std::io::Read::read_to_end(&mut std::io::BufReader::new(file), &mut data)?;
-        hasher.update(&data);
-    }
+    CACHE_HASH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let mut offset = 0u64;
+        loop {
+            let to_read = (len - offset).min(buf.len() as u64) as usize;
+            if to_read == 0 {
+                break;
+            }
+            let n = file.read_at(&mut buf[..to_read], offset)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            offset += n as u64;
+        }
+        Ok::<_, io::Error>(())
+    })?;
     Ok(hex::encode(hasher.finalize()))
 }
 
