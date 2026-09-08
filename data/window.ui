@@ -10,7 +10,39 @@
       <object class="ElysiaeTitlebar"/>
     </property>
     <child>
-      <object class="ElysiaeBackground"/>
+      <object class="GtkOverlay">
+        <child>
+          <!--Background-->
+          <object class="ElysiaeBackground" id="background"/>
+        </child>
+        <child type="overlay">
+          <!--Download button and progress bar-->
+          <object class="GtkBox">
+            <property name="valign">end</property>
+            <property name="halign">end</property>
+            <property name="orientation">horizontal</property>
+            <property name="spacing">10</property>
+            <child>
+              <object class="GtkButton" id="settings_button">
+                <property name="icon-name">settings</property>
+                <style>
+                  <class name="button"></class>
+                  <class name="settings-button"></class>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="operation_button">
+                <property name="label">Download</property>
+                <style>
+                  <class name="button"></class>
+                  <class name="operation-button"></class>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
     </child>
   </template>
 </interface>

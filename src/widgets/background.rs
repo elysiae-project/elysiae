@@ -1,5 +1,7 @@
 use gtk::glib;
 
+use crate::core::game::Game;
+
 mod imp {
     use gtk::CompositeTemplate;
     use gtk::glib;
@@ -38,6 +40,10 @@ glib::wrapper! {
 impl Background {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    pub fn set_media(&self, game: Game) {
+        
     }
 }
 

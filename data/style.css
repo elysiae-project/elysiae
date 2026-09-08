@@ -8,11 +8,11 @@
   --btn-primary-hover: oklch(0.6529 0.183 271.11);
 }
 
-.progressbar {
-    
+svg {
+  color: white;
 }
 
-.button {
+.progressbar {
 }
 
 @media (prefers-color-scheme: dark) {
@@ -28,5 +28,42 @@
   font-size: 1.25rem;
 }
 
+.settings-button {
+  min-width: 3.5rem;
+  min-height: 3.5rem;
+
+  border-radius: 100%;
+}
+
+.operation-button {
+  margin-right: 5.5rem;
+  min-width: 12rem;
+  min-height: 3.5rem;
+  margin-bottom: 4rem;
+}
+
 .settings {
+  border-radius: 100%;
+}
+
+.button {
+  border-radius: 10px;
+  font-size: 1.5rem;
+  background: var(--btn-primary);
+  transition: background-color 200ms ease-in-out;
+}
+
+.button:focus {
+  outline: none;
+  outline-style: none;
+}
+
+.button:hover {
+  background: var(--btn-primary-hover);
+  transition: background-color 200ms ease-in-out;
+}
+
+.button:active {
+  background-color: var(--btn-primary);
+  transition: background-color 200ms ease-in-out;
 }

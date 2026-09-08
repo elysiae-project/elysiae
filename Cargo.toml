@@ -30,6 +30,11 @@ irmin = { git = "https://github.com/elysiae-project/irmin", rev = "678581c01b8bb
 libc = "0.2.189"
 memfd = "0.6.5"
 async-channel = "2.5.0"
+ashpd = { version = "0.13.13", default-features = false, features = [
+    "gtk4",
+    "async-io",
+    "account",
+] }
 
 [profile.release]
 opt-level = "s"

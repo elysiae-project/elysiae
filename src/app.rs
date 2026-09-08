@@ -1,7 +1,7 @@
 use gtk::{
     CssProvider,
     gio::prelude::ApplicationExt,
-    prelude::{GtkApplicationExt, GtkWindowExt},
+    prelude::{GtkApplicationExt, GtkWindowExt, ObjectExt},
     style_context_add_provider_for_display,
 };
 
@@ -24,11 +24,21 @@ pub fn build_app() -> gtk::Application {
 }
 
 fn load_css() {
+    let display = gtk::gdk::Display::default().expect("Could not connect to a display");
     let provider = CssProvider::new();
-    provider.load_from_resource("/app/elysiae/Elysiae/style.css");
 
+    gtk::Settings::for_display(&display)
+        .bind_property(
+            "gtk-interface-color-scheme",
+            &provider,
+            "prefers-color-scheme",
+        )
+        .sync_create()
+        .build();
+
+    provider.load_from_resource("/app/elysiae/Elysiae/style.css");
     style_context_add_provider_for_display(
-        &gtk::gdk::Display::default().expect("Could not connect to a display"),
+        &display,
         &provider,
         OVERRIDE_EVERY_OTHER_THEME_THAT_COULD_BE_DEFINED_BY_A_USER_PRIORITY,
     );

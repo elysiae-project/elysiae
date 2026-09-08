@@ -2,8 +2,29 @@
 <interface>
   <requires lib="gtk" version="4.0"/>
   <template class="ElysiaeBackground" parent="GtkBox">
-    <style>
-      <class name="background"/>
-    </style>
+    <object class="GtkOverlay">
+      <child>
+        <object class="GtkPicture" id="background">
+          <property name="content-fit">contain</property>
+        </object>
+      </child>
+      <child type="overlay">
+        <object class="GtkOverlay">
+          <child>
+            <object class="GtkPicture">
+              <property name="content-fit">contain</property>
+            </object>
+          </child>
+          <child type="overlay">
+            <object class="GtkBox">
+              <property name="orientation">horizontal</property>
+              <property name="spacing">5</property>
+              <property name="halign">center</property>
+              <property name="valign">start</property>
+            </object>
+          </child>
+        </object>
+      </child>
+    </object>
   </template>
 </interface>
