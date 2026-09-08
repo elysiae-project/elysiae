@@ -10,7 +10,10 @@ use tokio::io::AsyncWriteExt;
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::fs::{BaseDirectory, full_path};
+use crate::core::fs::{
+    BaseDirectory::{self, AppData},
+    MultiPathOptions, full_path, rename,
+};
 
 pub struct DownloadProgress {
     pub download_id: Uuid,
@@ -31,9 +34,9 @@ pub async fn download_file(
 
     let client = Client::builder().build()?;
     let uuid = Uuid::new_v4();
-    let fp = full_path(Some(dest), base_dir).context("Could not parse the destination path")?;
     let res = client.get(url).send().await?;
 
+    let download_path = PathBuf::from(format!("{uuid}"));
     let status = res.status();
     ensure!(
         status.is_success(),
@@ -42,7 +45,7 @@ pub async fn download_file(
     );
 
     let size = res.content_length().unwrap_or(0);
-    let mut file = tokio::fs::File::create(fp).await?;
+    let mut file = tokio::fs::File::create(full_path(Some(download_path.clone()), None)?).await?;
     let mut downloaded_bytes: u64 = 0;
     let mut stream = res.bytes_stream();
 
@@ -70,6 +73,13 @@ pub async fn download_file(
     }
 
     file.flush().await?;
+    rename(MultiPathOptions {
+        init_path: download_path,
+        init_path_base_dir: Some(AppData),
+        dest_path: dest,
+        dest_path_base_dir: base_dir,
+        overwrite: Some(true),
+    })?;
     Ok(())
 }
 

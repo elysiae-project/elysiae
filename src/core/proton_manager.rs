@@ -72,10 +72,7 @@ impl GameModule {
     fn should_update(&mut self, release_data: &ComponentRelease) -> Result<bool> {
         // None used as the fs functions fall back to the app data dir, which is where
         // this file is meant to be saved to
-        let p = full_path(
-            Some(PathBuf::from("components").join(&self.tracker_file_name)),
-            None,
-        )?;
+        let p = PathBuf::from("components").join(&self.tracker_file_name);
         let e = exists(p.clone(), None)?;
         let latest = &release_data.tag;
         if e {
@@ -191,10 +188,7 @@ impl GameModule {
             version: new_version,
         };
         let str = serde_json::to_string_pretty(&data)?;
-        let p = full_path(
-            Some(PathBuf::from("components").join(&self.tracker_file_name)),
-            None,
-        )?;
+        let p = PathBuf::from("components").join(&self.tracker_file_name);
         write_file(p, str.as_bytes(), None)?;
         Ok(())
     }

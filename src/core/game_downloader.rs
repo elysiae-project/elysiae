@@ -165,10 +165,8 @@ fn download_active() -> Result<bool> {
 fn generate_desktop_file(game: Game) -> Result<()> {
     let game_name = game.display_name();
     let deep_link_uri = format!("elysiae://open-game/{}", game.code());
-    let icon_data = get_cached_asset_paths(game, AssetType::Icon)?;
-    let icon_path = icon_data
-        .first()
-        .context("No Cached icon available")?;
+    let icon_data = get_cached_asset_paths(game, "en-us", AssetType::Icon)?;
+    let icon_path = icon_data.first().context("No Cached icon available")?;
 
     let contents = format!(
         "Name={game_name}\n
