@@ -12,7 +12,7 @@ To compile Elysiae, you should have the following present on your system:
 
 1. A x86_64 or aarch64 CPU
 2. Linux Kernel >= 6.14 (Recommended)
-3. Rustup or an installation of Rust >= 1.98.0
+3. Rustup or an installation of Rust >= 1.98.1
 4. FreeType >= 2.9.1
 5. GTK >= 4.22
 6. Any modern version of LLVM/Clang
