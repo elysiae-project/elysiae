@@ -1,60 +1,68 @@
-# Contributing To Elysiae
+# Contributing to the Elysiae Launcher
 
-Elysiae is an application developed by only two people. We are both new to developing desktop applications with Tauri and in general left a lot of room for improvement down the road. If you are a capable developer and are willing to contribute to Elysiae, we welcome your changes with open arms!
+The Elysiae Launcher is primarilly developed by two people new to the tools they are using, so if you identify issues with the source code, feel free to contribute! We will review your changes at our earliest convenience
 
 ## Setting up the development environment
 
-You **MUST** be running on a Linux system for Elysiae to successfully compile. If you are developing on Windows, use [WSL](https://aka.ms/wsl)
+Elyisae *must* run on a Linux system in order to successfully compile. If you are using Windows, consider using the [Windows Subsystem for Linux](https://aka.ms/wsl).
 
-Make sure you have all of the following build dependencies installed before attempting to build:
+### Minimum System Requirements
 
-- Rust >= 1.92.0 (Download via [rustup](https://rustup.rs))
-- NodeJS >= 24.0.0
-- Linux Kernel >= 6.14
-- Systemd (Any recent version)
-- A Desktop Environment running on Wayland
-- Any dependencies listed on the [Tauri prerequisites page](https://tauri.app/start/prerequisites/)
+To compile Elysiae, you should have the following present on your system:
 
-After installing the system dependencies, install the NodeJS dependencies in the project:
+1. A x86_64 or aarch64 CPU
+2. Linux Kernel >= 6.14 (Recommended)
+3. Rustup or an installation of Rust >= 1.98.1
+4. FreeType >= 2.9.1
+5. GTK >= 4.22
+6. Any modern version of LLVM/Clang
+7. A few gigabytes of free storage space for builds
 
-> [!IMPORTANT]  
-> Elysiae uses the yarn package manager for NodeJS package management. Please ensure that corepack is installed and enabled by running `npm i -g corepack@latest && corepack enable`. Doing so will download the appropriate version of `yarn` once you run the installation command below
+### Installing Dependencies
+
+#### Debian-Based
 
 ```sh
-yarn install
+sudo apt update
+sudo apt install libgtk-4-dev libfreetype-dev build-essential llvm clang -y
+
+# Rustup might exist in a repo if you use a derivative of debian, but it is likely outdated. use curl to install the latest version instead:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-### Flatpak Build Support
-
-Generating flatpak installers will require a bit of extra setup. You'll want to additionally install:
-
-- Flatpak
-- Flatpak Builder
-
-You also want to install the flatpak Platforms/SDKs/Extensions that Elysiae Uses:
+#### Arch-Based
 
 ```sh
-flatpak install org.gnome.{Platform,Sdk}//50 -y
-flatpak install org.freedesktop.Sdk.Extension.{node24,rust-stable}//25.08 -y
+sudo pacman -Syu rustup freetype2 gtk4 base-devel llvm clang --noconfirm
 ```
 
-## Build Instructions
+## Post-clone
 
-To run a developer build, run:
+Make sure to install the toolchain used by Elysiae before doing anything else with the project:
 
 ```sh
-yarn tauri dev
+# In the project dir
+rustup toolchain install
+```
+
+## Creating Elysiae Builds
+
+To create a developer build, run:
+
+```sh
+# Automatically runs the application
+cargo run
+
+# Alternatively, build and manually execute the developer build (binary will be created in ./target/debug)
+cargo build
 ```
 
 To create a release build, run:
 
 ```sh
-yarn tauri build
-```
+# The compiled binary will be created in ./target/release
+cargo build --release 
 
-### Building Flatpak
-
-```sh
-flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build app.elysiae.Elysiae.yml
-flatpak build-bundle repo app.elysiae.Elysiae.flatpak app.elysiae.Elysiae
+# Alternatively, you can run a release build directly from your terminal:
+cargo run --release
 ```

@@ -1,3 +1,6 @@
 {
-  "css.customData": [".vscode/customData/tailwind.json"]
+    "files.associations": {
+        "**.ui": "xml",
+        "rust-toolchain": "toml"
+    }
 }

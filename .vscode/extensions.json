@@ -1,16 +1,14 @@
 {
-  "recommendations": [
-    "biomejs.biome",
-    "wayou.vscode-todo-highlight",
-    "yzhang.markdown-all-in-one",
-    "formulahendry.auto-close-tag",
-    "formulahendry.auto-rename-tag",
-    "tamasfe.even-better-toml",
-    "rust-lang.rust-analyzer",
-    "bradlc.vscode-tailwindcss",
-    "tauri-apps.tauri-vscode",
-    "redhat.vscode-xml",
-    "redhat.vscode-yaml",
-    "swiftlydaniel.oklch-color-visualiser"
-  ]
+    "recommendations": [
+        "wayou.vscode-todo-highlight",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "donjayamanne.githistory",
+        "mesonbuild.mesonbuild",
+        "redhat.vscode-xml",
+        "redhat.vscode-yaml",
+        "github.vscode-pull-request-github",
+        "github.vscode-github-actions",
+        "vadimcn.vscode-lldb"
+    ]
 }

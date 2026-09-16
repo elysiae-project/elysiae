@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeWindow" parent="GtkApplicationWindow">
+    <property name="title">Elysiae</property>
+    <property name="default-width">1200</property>
+    <property name="default-height">700</property>
+    <property name="resizable">false</property>
+    <property name="titlebar">
+      <object class="ElysiaeTitlebar"/>
+    </property>
+    <child>
+      <object class="GtkOverlay">
+        <child>
+          <!--Background-->
+          <object class="ElysiaeBackground" id="background"/>
+        </child>
+        <child type="overlay">
+          <!--Download button and progress bar-->
+          <object class="GtkBox">
+            <property name="valign">end</property>
+            <property name="halign">end</property>
+            <property name="orientation">horizontal</property>
+            <property name="spacing">10</property>
+            <child>
+              <object class="GtkButton" id="settings_button">
+                <property name="icon-name">settings</property>
+                <style>
+                  <class name="button"></class>
+                  <class name="settings-button"></class>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="operation_button">
+                <property name="label">Download</property>
+                <style>
+                  <class name="button"></class>
+                  <class name="operation-button"></class>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

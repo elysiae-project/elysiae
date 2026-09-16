@@ -1,0 +1,36 @@
+name: Update flatpak crate sources
+
+on:
+    push:
+        paths:
+            - "Cargo.lock"
+            - "Cargo.toml"
+            - ".github/workflows/update-download-sources.yml"
+        branches:
+          - main
+    workflow_dispatch:
+
+jobs:
+    update:
+        permissions:
+            contents: write
+            pull-requests: write
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+            
+            - name: Install Uv
+              uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+
+            - name: Generate update sources
+              run: |
+                 curl -s https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py | uv run --with tomlkit - -o data/flatpak/download-sources/cargo.json ./Cargo.lock
+
+            - name: Commit and push changes
+              run: |
+                git config --global user.name 'github-actions[bot]'
+                git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+                git add ./download-sources/cargo.json
+                git diff-index --quiet HEAD || git commit -m "chore: update flatpak cargo sources"
+                git push origin HEAD:main

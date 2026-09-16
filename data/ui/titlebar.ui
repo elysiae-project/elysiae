@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeTitlebar" parent="GtkBox">
+    <child>
+      <object class="GtkHeaderBar">
+        <property name="hexpand">true</property>
+        <property name="show-title-buttons">false</property>
+        <property name="title-widget">
+          <object class="GtkLabel">
+            <property name="label">Elysiae</property>
+          </object>
+        </property>
+        <child type="end">
+          <object class="GtkButton">
+            <property name="icon-name">window-close-symbolic</property>
+            <property name="tooltip-text">Close</property>
+            <signal name="clicked" handler="on_close_clicked" swapped="true"/>
+          </object>
+        </child>
+      </object>
+    </child>
+    <style>
+      <class name="titlebar"/>
+    </style>
+  </template>
+</interface>

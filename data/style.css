@@ -1,0 +1,69 @@
+* {
+  font-family: "Pretendard Variable";
+}
+
+:root {
+  --bg-color-dark: oklch(0.1732 0.0295 273.73);
+  --btn-primary: oklch(0.5807 0.183 271.11);
+  --btn-primary-hover: oklch(0.6529 0.183 271.11);
+}
+
+svg {
+  color: white;
+}
+
+.progressbar {
+}
+
+@media (prefers-color-scheme: dark) {
+  .background {
+    background-color: var(--bg-color-dark);
+  }
+}
+.background {
+  background-color: var(--bg-color-dark);
+}
+
+.titlebar {
+  font-size: 1.25rem;
+}
+
+.settings-button {
+  min-width: 3.5rem;
+  min-height: 3.5rem;
+
+  border-radius: 100%;
+}
+
+.operation-button {
+  margin-right: 5.5rem;
+  min-width: 12rem;
+  min-height: 3.5rem;
+  margin-bottom: 4rem;
+}
+
+.settings {
+  border-radius: 100%;
+}
+
+.button {
+  border-radius: 10px;
+  font-size: 1.5rem;
+  background: var(--btn-primary);
+  transition: background-color 200ms ease-in-out;
+}
+
+.button:focus {
+  outline: none;
+  outline-style: none;
+}
+
+.button:hover {
+  background: var(--btn-primary-hover);
+  transition: background-color 200ms ease-in-out;
+}
+
+.button:active {
+  background-color: var(--btn-primary);
+  transition: background-color 200ms ease-in-out;
+}
