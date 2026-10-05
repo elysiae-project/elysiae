@@ -1,4 +1,4 @@
-use std::{fmt::format, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use log::info;
@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::fs::{
-        BaseDirectory::{self},
         MultiPathOptions, exists, extract_file, full_path, mkdir, read_file, remove,
         verify_sha256sum, write_file,
     },
@@ -199,9 +198,9 @@ pub async fn update_all_modules() -> Result<()> {
     // in the future. This code futureproofs this function for a scenario in which
     // this does happen
     let proton = GameModule::new(
-        String::from("Proton"),
-        PathBuf::from("proton"),
-        PathBuf::from("proton.tar.gz"),
+        String::from("phlogiston"),
+        PathBuf::from("phlogiston"),
+        PathBuf::from("phlogiston.tar.gz"),
         PathBuf::from("proton.json"),
         Some(Box::new(|| {
             let _ = mkdir(PathBuf::from("proton-data"), None);
