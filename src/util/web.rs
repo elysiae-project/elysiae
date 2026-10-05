@@ -36,7 +36,7 @@ pub async fn download_file(
     let uuid = Uuid::new_v4();
     let res = client.get(url).send().await?;
 
-    let download_path = PathBuf::from(format!("{uuid}"));
+    let download_path = PathBuf::from(format!(".download-{uuid}"));
     let status = res.status();
     ensure!(
         status.is_success(),
@@ -45,7 +45,8 @@ pub async fn download_file(
     );
 
     let size = res.content_length().unwrap_or(0);
-    let mut file = tokio::fs::File::create(full_path(Some(download_path.clone()), None)?).await?;
+    let temp_path = full_path(Some(download_path.clone()), Some(AppData))?;
+    let mut file = tokio::fs::File::create(&temp_path).await?;
     let mut downloaded_bytes: u64 = 0;
     let mut stream = res.bytes_stream();
 
@@ -73,8 +74,9 @@ pub async fn download_file(
     }
 
     file.flush().await?;
+    drop(file);
     rename(MultiPathOptions {
-        init_path: download_path,
+        init_path: download_path.clone(),
         init_path_base_dir: Some(AppData),
         dest_path: dest,
         dest_path_base_dir: base_dir,
