@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::info;
 use serde::{Deserialize, Serialize};
 
@@ -125,7 +125,7 @@ impl GameModule {
                             "{}/{} ({}%)",
                             progress.downloaded,
                             progress.total,
-                            (progress.downloaded / progress.total) * 100
+                            progress.downloaded.saturating_mul(100) / progress.total.max(1)
                         );
                     })),
                 )
@@ -223,10 +223,14 @@ pub fn components_installed() -> Result<bool> {
 
 pub fn exec_proton(app_path: PathBuf) -> Result<()> {
     let proton_path = full_path(Some(PathBuf::from("proton")), None)?;
-    let proton_path_str = proton_path.to_str().unwrap();
+    let proton_path_str = proton_path
+        .to_str()
+        .context("Proton path is not valid UTF-8")?;
 
     let fp = full_path(Some(app_path), None)?;
-    let str_path = fp.to_str().unwrap();
+    let str_path = fp
+        .to_str()
+        .context("Game path is not valid UTF-8")?;
     exec_shell(proton_path_str, &[str_path.to_owned()])?;
     Ok(())
 }
