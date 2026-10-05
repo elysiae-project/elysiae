@@ -2,7 +2,7 @@ use flate2::read::GzDecoder as Gz;
 use fs_extra::dir::get_size;
 use sha256::try_digest;
 use std::{
-    fs::{self, DirEntry, create_dir_all},
+    fs::{self, create_dir_all},
     path::{Component, PathBuf},
 };
 use tar::Archive as Tar;
@@ -10,7 +10,7 @@ use xz::read::XzDecoder as Xz;
 use zip::ZipArchive as Zip;
 use zstd::Decoder as Zstd;
 
-use anyhow::{Context, Error, Ok, Result, ensure};
+use anyhow::{Context, Error, Ok, Result, bail, ensure};
 use directories::BaseDirs;
 use log::warn;
 
