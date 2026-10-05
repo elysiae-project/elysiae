@@ -16,11 +16,10 @@ use crate::{
 };
 
 const COMPONENTS_URL_BASE: &str = "https://aedes.elysiae.app/getComponentInfo";
-const ARCH: &str = match std::env::consts::ARCH {
-    "x86_64" => "amd64",
-    "aarch64" => "aarch64",
-    arch => arch,
-};
+#[cfg(target_arch = "x86_64")]
+const ARCH: &str = "amd64";
+#[cfg(target_arch = "aarch64")]
+const ARCH: &str = "aarch64";
 const MAX_RETRIES: i32 = 5;
 
 pub struct GameModule {
@@ -45,7 +44,7 @@ struct ComponentRelease {
     download: ComponentDownload,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ComponentDownload {
     url: String,
     checksum: String,
