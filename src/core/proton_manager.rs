@@ -15,8 +15,12 @@ use crate::{
     },
 };
 
-const COMPONENTS_URL_BASE: &str = "https://aedes.elysiae.app/components/";
-const ARCH: &str = std::env::consts::ARCH;
+const COMPONENTS_URL_BASE: &str = "https://aedes.elysiae.app/getComponentInfo";
+const ARCH: &str = match std::env::consts::ARCH {
+    "x86_64" => "amd64",
+    "aarch64" => "aarch64",
+    arch => arch,
+};
 const MAX_RETRIES: i32 = 5;
 
 pub struct GameModule {
@@ -37,8 +41,14 @@ struct InstalledComponentsData {
 #[derive(Debug, Serialize, Deserialize)]
 struct ComponentRelease {
     tag: String,
-    download_url: String,
-    hash: String,
+    prerelease: bool,
+    download: ComponentDownload,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComponentDownload {
+    url: String,
+    checksum: String,
 }
 
 impl GameModule {
@@ -94,24 +104,16 @@ impl GameModule {
     async fn update_module(&mut self) -> Result<()> {
         info!("Updating {}", &self.component_name);
 
-        // TODO: Update Aedes to provide arch-based component
-        // manifest files for this code to function properly
-
         let url = format!(
-            "{}{}-{}.json",
-            COMPONENTS_URL_BASE, &self.component_name, ARCH
+            "{}?arch={}&component={}&latestOnly",
+            COMPONENTS_URL_BASE, ARCH, self.component_name
         );
-        let res = fetch_data::<Vec<ComponentRelease>>(&url).await?;
-        let latest_release = res
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("No Release Data Found"))?;
-
+        let latest_release = fetch_data::<ComponentRelease>(&url).await?;
         if self.should_update(&latest_release)? {
             // Get the latest release url and checksum, then download the file
             let mut remaining_attempts = MAX_RETRIES;
-            let latest_release_url = latest_release.download_url;
-            let checksum = latest_release.hash;
+            let latest_release_url = latest_release.download.url;
+            let checksum = latest_release.download.checksum;
 
             while remaining_attempts > 0 {
                 download_file(
