@@ -84,13 +84,15 @@ pub fn write_file(p: PathBuf, contents: &[u8], base_dir: Option<BaseDirectory>) 
     );
 
     // Create all directories on the path that don't exist
-    let parent_dir = fp.parent().unwrap();
+    let parent_dir = fp
+        .parent()
+        .context("The target path has no parent directory")?;
     if !parent_dir.try_exists()? {
-        let _ = create_dir_all(parent_dir);
+        create_dir_all(parent_dir).context("Failed to create parent directories")?;
     }
 
-    // Write the contents of the file to the final location
-    let _ = fs::write(fp, contents).context("Failed to write to the path")?;
+    // Write the contents of the file to the final location.
+    fs::write(fp, contents).context("Failed to write to the path")?;
 
     Ok(())
 }
@@ -230,21 +232,24 @@ pub fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> Result<
         dfp.to_string_lossy()
     );
 
-    let ifp_ext = ifp.extension().unwrap().to_str().unwrap().to_owned();
-    let file = fs::File::open(ifp).context("Could not open the initial path")?;
+    let ifp_ext = ifp
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .context("The archive has no valid UTF-8 extension")?;
+    let file = fs::File::open(&ifp).context("Could not open the initial path")?;
+    if !dfp.exists() {
+        fs::create_dir_all(&dfp).context("Could not create the extraction directory")?;
+    }
 
-    // Check for comman alternate file extensions of archive files handled by
-    // Elysiae Elysiae only deals with tarball archives, so there's no need to
-    // check if they are standalone archived files
-    if ifp_ext.eq("gz") || ifp_ext.eq("tgz") {
-        // Borrow dfp to allow the extracted dir flattening to properly execute later
-        Tar::new(Gz::new(file)).unpack(&dfp)?
-    } else if ifp_ext.eq("xz") || ifp_ext.eq("txz") {
-        Tar::new(Xz::new(file)).unpack(&dfp)?;
-    } else if ifp_ext.eq("zst") || ifp_ext.eq("zstd") {
-        Tar::new(Zstd::new(file)?).unpack(&dfp)?;
-    } else if ifp_ext.eq("zip") {
-        Zip::new(file)?.extract(&dfp)?;
+    // Archive formats handled by Elysiae are tarballs and zip files. Fail
+    // explicitly for unknown extensions instead of silently reporting success.
+    match ifp_ext.as_str() {
+        "gz" | "tgz" => Tar::new(Gz::new(file)).unpack(&dfp)?,
+        "xz" | "txz" => Tar::new(Xz::new(file)).unpack(&dfp)?,
+        "zst" | "zstd" => Tar::new(Zstd::new(file)?).unpack(&dfp)?,
+        "zip" => Zip::new(file)?.extract(&dfp)?,
+        extension => bail!("Unsupported archive extension: .{extension}"),
     }
 
     if should_flatten {
@@ -343,9 +348,10 @@ pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<
 
 fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
     ensure!(
-        relative
-            .components()
-            .all(|c| matches!(c, Component::Normal(_))),
+        !relative.is_absolute()
+            && relative
+                .components()
+                .all(|c| matches!(c, Component::Normal(_))),
         "path must be a relative path without '.' or '..': {}",
         relative.display()
     );
