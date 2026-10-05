@@ -9,7 +9,7 @@ use crate::fonts;
 
 const APP_ID: &'static str = "app.elysiae.Elysiae";
 const OVERRIDE_EVERY_OTHER_THEME_THAT_COULD_BE_DEFINED_BY_A_USER_PRIORITY: u32 = u32::MAX; // lol
-const APP_FONT: &[u8] = include_bytes!("../data/PretendardVariable.woff2");
+const APP_FONT: &[u8] = include_bytes!("../data/fonts/PretendardVariable.woff2");
 
 pub fn build_app() -> gtk::Application {
     let app = gtk::Application::builder().application_id(APP_ID).build();
