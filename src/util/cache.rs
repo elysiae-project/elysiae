@@ -46,10 +46,12 @@ pub async fn update_cache() -> Result<()> {
     for game in games {
         let mut downloaded: Vec<PathBuf> = vec![];
 
-        let files_present: Vec<PathBuf> = read_dir(
-            PathBuf::from(format!("cache/{}/{}", game.code(), locale)),
-            None,
-        )?;
+        let cache_dir = PathBuf::from(format!("cache/{}/{}", game.code(), locale));
+        let files_present: Vec<PathBuf> = if cache_dir.try_exists()? {
+            read_dir(cache_dir, None)?
+        } else {
+            Vec::new()
+        };
 
         let url = format!(
             "https://aedes.elysiae.app/v3/getAssets?game={}&locale={}",
@@ -66,7 +68,7 @@ pub async fn update_cache() -> Result<()> {
                 continue;
             }
             downloaded.push(full_path(Some(p.clone()), None)?);
-            let url = format!("https://aedes.elysiae.app{vs}"); // v_str contains the forwards slash omitted in the url here
+            let url = format!("https://aedes.elysiae.app{vs}");
 
             download_file(url, p, None, None).await?;
 
