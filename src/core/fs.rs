@@ -358,3 +358,71 @@ fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
 
     Ok(base.join(relative))
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::Rng;
+
+    use super::*;
+
+    fn get_username() -> Result<String> {
+        Ok(whoami::account_os()?.into_string().unwrap())
+    }
+
+    fn generate_random_data() -> Vec<u8> {
+        let mut file_data = vec![0u8; rand::random_range(100..1000) as usize];
+        rand::rng().fill_bytes(&mut file_data);
+        file_data
+    }
+
+    #[test]
+    fn test_full_path() {
+        let username = get_username().unwrap_or_default();
+        assert_ne!(username, String::default());
+        let dummy_dir = "dummy-dir";
+
+        // Home
+        let expected_home = PathBuf::from(format!("/home/{}/{}", username, dummy_dir));
+        let test_home_dir = full_path(Some(dummy_dir.into()), Some(BaseDirectory::Home)).unwrap();
+        assert_eq!(test_home_dir, expected_home);
+
+        // Desktop
+        let expected_desktop = PathBuf::from(format!("/home/{}/Desktop/{}", username, dummy_dir));
+        let test_desktop_dir =
+            full_path(Some(dummy_dir.into()), Some(BaseDirectory::Desktop)).unwrap();
+        assert_eq!(test_desktop_dir, expected_desktop);
+
+        // App Data
+        let expected_app_data = PathBuf::from(format!(
+            "/home/{}/.local/share/elysiae/{}",
+            username, dummy_dir
+        ));
+        let test_app_data_dir =
+            full_path(Some(dummy_dir.into()), Some(BaseDirectory::AppData)).unwrap();
+        assert_eq!(test_app_data_dir, expected_app_data);
+
+        // Compat
+        let expected_compat = PathBuf::from(format!(
+            "/home/{}/.local/share/elysiae/proton-data/{}",
+            username, dummy_dir
+        ));
+        let test_compat_dir =
+            full_path(Some(dummy_dir.into()), Some(BaseDirectory::Compat)).unwrap();
+        assert_eq!(test_compat_dir, expected_compat);
+    }
+
+    #[test]
+    fn test_write_file() {
+        // file written will be cleaned up by the read_file test below
+        
+    }
+
+    #[test]
+    fn test_read_file() {
+        let data = generate_random_data();
+
+    }
+
+    #[test]
+    fn file_write_test() {}
+}
