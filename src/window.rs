@@ -1,4 +1,10 @@
-use crate::core::game::Game;
+use std::path::PathBuf;
+
+use crate::core::{
+    game::Game,
+    game_downloader::download_game,
+    proton_manager::{components_installed, exec_proton, update_all_modules},
+};
 use anyhow::Result;
 use gtk::glib::{self};
 
@@ -59,7 +65,9 @@ mod imp {
             self.operation_button.connect_clicked(clone!(
                 #[weak]
                 obj,
-                move |_| println!("Operation button clicked")
+                move |_| {
+                    // Download Game
+                }
             ));
         }
     }
@@ -80,14 +88,31 @@ impl ElysiaeWindow {
         glib::Object::builder().property("application", app).build()
     }
 
-    pub fn change_game(&self, game: Game) {}
-
-    pub async fn download_components(&self) -> Result<()> {
+    fn get_current_game(&self) -> Game {
         todo!()
     }
 
-    pub async fn download_game(&self, game: Game) -> Result<()> {
+    pub fn change_game(&self, game: Game) {
         todo!()
+    }
+
+    pub async fn download_components(&self) -> Result<()> {
+        update_all_modules().await?;
+
+        Ok(())
+    }
+
+    pub async fn download_game(&self, game: Game) -> Result<()> {
+        if !components_installed()? {
+            self.download_components().await?;
+        }
+
+        todo!()
+    }
+
+    pub fn launch_game(&self, game: Game) -> Result<()> {
+        crate::core::game_downloader::launch_game(game)?;
+        Ok(())
     }
 }
 
