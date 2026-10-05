@@ -12,7 +12,7 @@ To compile Elysiae, you should have the following present on your system:
 
 1. A x86_64 or aarch64 CPU
 2. Linux Kernel >= 6.14 (Recommended)
-3. Rustup or an installation of Rust >= 1.98.1
+3. Rustup or an installation of Rust >= 1.92.0
 4. FreeType >= 2.9.1
 5. GTK >= 4.22
 6. Any modern version of LLVM/Clang
@@ -47,6 +47,9 @@ rustup toolchain install
 
 ## Creating Elysiae Builds
 
+> [!TIP]
+> You should only need to use Meson if you want to install Elysiae from source. developer/test release builds can be created using cargo
+
 To create a developer build, run:
 
 ```sh
@@ -60,9 +63,16 @@ cargo build
 To create a release build, run:
 
 ```sh
-# The compiled binary will be created in ./target/release
-cargo build --release 
+# Binary will be created in ./target/release
+cargo build --release
 
-# Alternatively, you can run a release build directly from your terminal:
+# Alternatively, you can compile and immediately run a release buid with:
 cargo run --release
+```
+
+To install Elysiae from source, run:
+
+```sh
+mkdir build && cd build
+meson setup .. -DProfile=release
 ```
