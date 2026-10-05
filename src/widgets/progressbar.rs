@@ -39,6 +39,10 @@ impl Progressbar {
     pub fn new() -> Self {
         glib::Object::builder().build()
     }
+
+    pub fn handle_download_event() {
+
+    }
 }
 
 impl Default for Progressbar {

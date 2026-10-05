@@ -1,3 +1,4 @@
+use anyhow::Result;
 use gtk::glib;
 
 mod imp {
@@ -38,6 +39,14 @@ glib::wrapper! {
 impl Settings {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    fn get_property_value(&self) -> Result<String> {
+        todo!()
+    }
+
+    fn set_property_value(&self, key: &str, value: &str) -> Result<()> {
+        todo!()
     }
 }
 

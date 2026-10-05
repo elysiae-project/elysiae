@@ -39,6 +39,10 @@ impl Sidebar {
     pub fn new() -> Self {
         glib::Object::builder().build()
     }
+
+    pub fn process_event() {
+        
+    }
 }
 
 impl Default for Sidebar {
