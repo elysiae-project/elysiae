@@ -54,9 +54,9 @@ pub async fn update_cache() -> Result<()> {
         };
 
         let url = format!(
-            "https://aedes.elysiae.app/v3/getAssets?game={}&locale={}",
-            game.code(),
-            locale
+            "https://aedes.elysiae.app/getAssets?lang={}&game={}",
+            locale,
+            game.code()
         );
         let response = fetch_data::<AedesResponse>(&url).await?;
         for vs in response.asset_paths() {
