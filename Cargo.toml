@@ -26,7 +26,7 @@ futures-util = "0.3.34"
 uuid = { version = "1.27.0", features = ["v4"] }
 sha256 = "1.6.0"
 
-irmin = { git = "https://github.com/elysiae-project/irmin", rev = "678581c01b8bb35406474d864f4a466a001d8f29" }
+irmin = { git = "https://github.com/elysiae-project/irmin", rev = "184b364e9ec41826d434cacfb8fe059fefe19fc7" }
 libc = "0.2.190"
 memfd = "0.6.6"
 async-channel = "2.5.0"
