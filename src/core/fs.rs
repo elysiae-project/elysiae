@@ -408,15 +408,45 @@ mod tests {
     }
 
     #[test]
-    fn test_write_file() {
-        // file written will be cleaned up by the read_file test below
+    fn file_write_exists_read_delete() {
+        // Write a new file
+        let path: PathBuf = "elysieTestData".into();
+        let mut contents: Vec<u8> = generate_random_data();
+        write_file(path.clone(), &contents, Some(BaseDirectory::Home)).unwrap();
+
+        // Check if the file exists
+        assert_eq!(exists(path.clone(), Some(BaseDirectory::Home)).unwrap(), true);
+
+        // Read file
+        let pass_one_contents = read_file(path.clone(), Some(BaseDirectory::Home)).unwrap();
+        assert_eq!(pass_one_contents, contents.to_owned());
+
+        // Overwrite file with new data
+        contents = generate_random_data();
+        write_file(path.clone(), &contents, Some(BaseDirectory::Home)).unwrap();
+
+        // Read file again
+        let pass_two_contents = read_file(path.clone(), Some(BaseDirectory::Home)).unwrap();
+        assert_ne!(pass_one_contents, pass_two_contents);
+        assert_eq!(pass_two_contents, contents);
+
+        // Delete file
+        remove(path.clone(), Some(BaseDirectory::Home), None).unwrap(); //
+        assert_eq!(exists(path, Some(BaseDirectory::Home)).unwrap(), false)
     }
 
     #[test]
-    fn test_read_file() {
-        let data = generate_random_data();
-    }
+    fn dir_write_exists_read_delete() {
+        // Create a new directory
 
-    #[test]
-    fn file_write_test() {}
+        // Check if dir exists
+
+        // Write a file inside of the directory
+
+        // Read items within the dir and check if file is contained in the returned data
+
+        // Use mkdir using the same path as before (shouldn't overwrite anything)
+
+        // 
+    }
 }
