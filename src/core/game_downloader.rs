@@ -4,7 +4,7 @@ use crate::{
     core::{
         fs::{BaseDirectory, exists, full_path, write_file},
         game::Game,
-        proton_manager::exec_proton,
+        proton_manager::{components_installed, exec_proton, update_all_modules},
     },
     util::{
         cache::{AssetType, get_cached_asset_paths},
@@ -43,7 +43,7 @@ pub async fn download_game(
         let inst_path = game.install_path();
         let s = Sophon::builder(game.code(), inst_path)
             .vo_lang(lang)
-            .verify_mode(irmin::VerifyMode::None)
+            .verify_mode(irmin::VerifyMode::Full)
             .build();
 
         s.download(&download_handle(), move |progress| {
@@ -170,11 +170,11 @@ fn generate_desktop_file(game: Game) -> Result<()> {
 
     let contents = format!(
         "Name={game_name}\n
-        Comment=Play {game_name} with Elysiae\n
-        Exec=xdg-open {deep_link_uri}\n
-        Type=Application\n
-        Categories=Game\n
-        Icon={}",
+            Comment=Play {game_name} with Elysiae\n
+            Exec=xdg-open {deep_link_uri}\n
+            Type=Application\n
+            Categories=Game\n
+            Icon={}",
         icon_path.to_string_lossy()
     );
 
@@ -184,6 +184,19 @@ fn generate_desktop_file(game: Game) -> Result<()> {
     Ok(())
 }
 
-pub fn launch_game(game: Game) -> Result<()> {
-    exec_proton(game.install_path().join(game.executable()))
+pub async fn launch_game(game: Game) -> Result<()> {
+    let install_path = game.install_path();
+    let exe = game.executable();
+    
+    if !components_installed()? {
+        log::info!("One or more components are not installed; running a full update");
+        update_all_modules().await?;
+    }
+    if !exists(install_path.clone(), Some(BaseDirectory::AppData))?
+        || !exists(install_path.clone().join(exe), Some(BaseDirectory::AppData))?
+    {
+        bail!("Could not find the game installation directory or the game executable!");
+    }
+    exec_proton(game.install_path().join(game.executable()))?;
+    Ok(())
 }
