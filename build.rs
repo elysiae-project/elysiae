@@ -54,3 +54,17 @@ fn version_at_least(release: &str, min: (u64, u64, u64)) -> bool {
 
     (major, minor, patch) >= min
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compares_kernel_versions() {
+        assert!(version_at_least("6.14.0", (6, 14, 0)));
+        assert!(version_at_least("6.15.2-arch1", (6, 14, 0)));
+        assert!(!version_at_least("6.13.9", (6, 14, 0)));
+        assert!(version_at_least("6.14-foo", (6, 14, 0)));
+        assert!(!version_at_least("invalid", (6, 14, 0)));
+    }
+}

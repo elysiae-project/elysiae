@@ -1,4 +1,4 @@
-use crate::core::fs::{BaseDirectory, full_path, mkdir, rename};
+use crate::core::fs::{BaseDirectory, full_path, rename};
 use anyhow::{Context, Result, ensure};
 use reqwest::Client;
 use serde::de::DeserializeOwned;

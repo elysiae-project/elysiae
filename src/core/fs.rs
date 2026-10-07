@@ -11,7 +11,7 @@ use xz::read::XzDecoder as Xz;
 use zip::ZipArchive as Zip;
 use zstd::Decoder as Zstd;
 
-use anyhow::{Context, Error, Ok, Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use directories::BaseDirs;
 use log::warn;
 
@@ -497,16 +497,30 @@ mod tests {
 
     #[test]
     fn dir_write_exists_read_delete() {
-        // Create a new directory
+        let directory = PathBuf::from(format!("elysiae-test-{}", uuid::Uuid::new_v4()));
+        let file = directory.join("nested.txt");
+        mkdir(directory.clone(), Some(BaseDirectory::Home)).unwrap();
+        mkdir(directory.clone(), Some(BaseDirectory::Home)).unwrap();
+        write_file(file.clone(), b"directory test", Some(BaseDirectory::Home)).unwrap();
+        assert!(
+            read_dir(directory.clone(), Some(BaseDirectory::Home))
+                .unwrap()
+                .contains(&full_path(Some(file), Some(BaseDirectory::Home)).unwrap())
+        );
+        remove(directory, Some(BaseDirectory::Home), Some(true)).unwrap();
+    }
 
-        // Check if dir exists
+    #[test]
+    fn path_validation_rejects_escape_attempts() {
+        assert!(full_path(Some(PathBuf::from("../outside")), None).is_err());
+        assert!(full_path(Some(PathBuf::from("/absolute")), None).is_err());
+        assert!(full_path(Some(PathBuf::from(".")), None).is_err());
+    }
 
-        // Write a file inside of the directory
-
-        // Read items within the dir and check if file is contained in the returned data
-
-        // Use mkdir using the same path as before (shouldn't overwrite anything)
-
-        //
+    #[test]
+    fn size_conversion_is_reversible() {
+        let value = 3.5;
+        let bytes = size_as(value, Sizes::Gigabytes, Sizes::Bytes);
+        assert!((size_as(bytes, Sizes::Bytes, Sizes::Gigabytes) - value).abs() < f64::EPSILON);
     }
 }

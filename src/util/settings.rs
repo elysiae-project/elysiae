@@ -61,3 +61,19 @@ pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn setting_value_conversions_are_type_safe() {
+        assert_eq!(bool::try_from(SettingValue::from(true)).unwrap(), true);
+        assert_eq!(
+            String::try_from(SettingValue::from("en-us")).unwrap(),
+            "en-us"
+        );
+        assert!(bool::try_from(SettingValue::from("not a bool")).is_err());
+        assert!(String::try_from(SettingValue::from(true)).is_err());
+    }
+}

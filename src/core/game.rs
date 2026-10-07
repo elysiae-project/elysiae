@@ -71,3 +71,43 @@ impl Game {
         PathBuf::from("games").join(self.code())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_codes_round_trip() {
+        let games = [
+            Game::Bh3,
+            Game::Hk4e,
+            Game::Hkrpg,
+            Game::Nap,
+            Game::Abc,
+            Game::Hyg,
+        ];
+        for game in games {
+            assert_eq!(Game::try_from(game.code()).unwrap(), game);
+            assert!(!game.display_name().is_empty());
+            assert_eq!(
+                game.install_path(),
+                PathBuf::from("games").join(game.code())
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_game_code_is_rejected() {
+        assert!(Game::try_from("unknown").is_err());
+    }
+
+    #[test]
+    fn executable_metadata_matches_supported_games() {
+        assert_eq!(Game::Bh3.executable().unwrap(), "BH3.exe");
+        assert_eq!(Game::Hk4e.executable().unwrap(), "GenshinImpact.exe");
+        assert_eq!(Game::Hkrpg.executable().unwrap(), "StarRail.exe");
+        assert_eq!(Game::Nap.executable().unwrap(), "ZenlessZoneZero.exe");
+        assert!(Game::Abc.executable().is_err());
+        assert!(Game::Hyg.executable().is_err());
+    }
+}

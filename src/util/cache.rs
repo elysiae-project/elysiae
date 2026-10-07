@@ -171,3 +171,51 @@ pub fn get_cached_asset_paths(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_paths_preserve_order_and_skip_optional_assets() {
+        let response = AedesResponse {
+            backgrounds: vec![AedesBackgroundAssets {
+                image: "/images/a.png".into(),
+                video: Some("/videos/a.mp4".into()),
+                overlay: None,
+            }],
+            icon: "/icons/a.png".into(),
+            icon_cn: "/icons/a-cn.png".into(),
+            shortcut: "/shortcuts/a.png".into(),
+            shortcut_cn: "/shortcuts/a-cn.png".into(),
+        };
+        let paths: Vec<_> = response.asset_paths().flatten().collect();
+        assert_eq!(
+            paths,
+            vec![
+                "/images/a.png",
+                "/videos/a.mp4",
+                "/icons/a.png",
+                "/shortcuts/a.png"
+            ]
+        );
+    }
+
+    #[test]
+    fn cache_paths_require_safe_absolute_server_paths() {
+        assert_eq!(
+            cache_path(&PathBuf::from("/assets/a.png")).unwrap(),
+            PathBuf::from("cache/assets/a.png")
+        );
+        assert!(cache_path(&PathBuf::from("assets/a.png")).is_err());
+        assert!(cache_path(&PathBuf::from("/../secret")).is_err());
+    }
+
+    #[test]
+    fn metadata_paths_use_game_and_locale() {
+        assert_eq!(
+            metadata_path(Game::Bh3, "en-us"),
+            PathBuf::from("cache/bh3/en-us/assets.json")
+        );
+    }
+}
