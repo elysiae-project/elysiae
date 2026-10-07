@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, ensure};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -37,10 +38,18 @@ struct AedesBackgroundAssets {
 }
 
 pub async fn update_cache() -> Result<()> {
-    let games = [Game::Bh3, Game::Hk4e, Game::Hkrpg, Game::Nap];
-    let locale = "en-us";
+    let games = [
+        Game::Bh3,
+        Game::Hk4e,
+        Game::Hkrpg,
+        Game::Nap,
+        Game::Abc,
+        Game::Hyg,
+    ];
+    let locale = "en-us"; // TODO: Replace with proper locale calls later
 
-    for game in games {
+    let mut g = futures_util::stream::iter(games);
+    while let Some(game) = g.next().await {
         let url = format!(
             "https://aedes.elysiae.app/getAssets?lang={locale}&game={}",
             game.code()
@@ -84,7 +93,6 @@ pub async fn update_cache() -> Result<()> {
             }
         }
     }
-
     Ok(())
 }
 
