@@ -262,3 +262,47 @@ pub fn exec_proton(app_path: PathBuf) -> Result<std::process::Child> {
     let str_path = fp.to_str().context("Game path is not valid UTF-8")?;
     exec_shell(proton_path_str, &[str_path.to_owned()])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn component_installation_requires_executable() {
+        let path = full_path(Some(PathBuf::from("proton")), None).unwrap();
+        let _ = fs::remove_file(&path);
+        let parent = path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        fs::write(&path, b"not executable").unwrap();
+        assert!(!components_installed().unwrap());
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).unwrap();
+        assert!(components_installed().unwrap());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn malformed_tracker_is_reported() {
+        let tracker = PathBuf::from("components/test-proton.json");
+        write_file(tracker.clone(), b"not json", None).unwrap();
+        let mut module = GameModule::new(
+            "test".into(),
+            PathBuf::from("test"),
+            PathBuf::from("test.tar.gz"),
+            PathBuf::from("test-proton.json"),
+            None,
+        );
+        let release = ComponentRelease {
+            tag: "v1".into(),
+            prerelease: false,
+            download: ComponentDownload {
+                url: "https://example.com/test.tar.gz".into(),
+                checksum: "0".repeat(64),
+            },
+        };
+        assert!(module.should_update(&release).is_err());
+        let _ = remove(tracker, None, None);
+    }
+}
