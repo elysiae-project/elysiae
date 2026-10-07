@@ -2,5 +2,7 @@
     "files.associations": {
         "**.ui": "xml",
         "rust-toolchain": "toml"
-    }
+    },
+    "C_Cpp.default.compileCommands": "/home/shob3r/Projects/elysiae/build/compile_commands.json",
+    "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
 }
