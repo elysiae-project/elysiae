@@ -1,5 +1,6 @@
 use std::{
     path::PathBuf,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -14,6 +15,20 @@ use crate::core::fs::{
     BaseDirectory::{self, AppData},
     MultiPathOptions, full_path, rename,
 };
+
+static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+fn http_client() -> Client {
+    HTTP_CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .connect_timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(60))
+                .pool_idle_timeout(Duration::from_secs(30))
+                .build()
+                .unwrap()
+        })
+        .clone()
+}
 
 pub struct DownloadProgress {
     pub download_id: Uuid,
@@ -32,7 +47,7 @@ pub async fn download_file(
 ) -> Result<()> {
     ensure!(is_url(&url), "The string {} is not a valid URL!", &url);
 
-    let client = Client::builder().build()?;
+    let client = http_client();
     let uuid = Uuid::new_v4();
     let res = client.get(url).send().await?;
 
@@ -91,7 +106,8 @@ where
     T: DeserializeOwned,
 {
     ensure!(is_url(&url), "The string {} is not a valid URL", url);
-    let res = reqwest::get(url).await?;
+    let client = http_client();
+    let res = client.get(url).send().await?;
 
     ensure!(
         res.status().is_success(),
