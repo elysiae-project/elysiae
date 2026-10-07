@@ -48,6 +48,7 @@ mod imp {
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
+
     }
 
     impl ObjectImpl for ElysiaeWindow {
@@ -111,7 +112,7 @@ impl ElysiaeWindow {
     }
 
     pub fn launch_game(&self, game: Game) -> Result<()> {
-        crate::core::game_downloader::launch_game(game)?;
+        // crate::core::game_downloader::launch_game(game)?;
         Ok(())
     }
 }
