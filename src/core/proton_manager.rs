@@ -132,7 +132,7 @@ impl GameModule {
                 )
                 .await?;
 
-                if verify_sha256sum(self.save_to.clone(), None, checksum.clone())? {
+                if verify_sha256sum(self.save_to.clone(), None, checksum.clone()).await? {
                     break;
                 } else {
                     remaining_attempts -= 1;
@@ -160,7 +160,7 @@ impl GameModule {
                     overwrite: Some(true), // Replace existing files with updated ones
                 },
                 Some(true),
-            )?;
+            ).await?;
 
             remove(self.save_to.clone(), None, None)?;
 
