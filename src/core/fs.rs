@@ -51,10 +51,15 @@ impl Sizes {
     }
 }
 
-const BASE_DIRS: OnceLock<BaseDirs> = OnceLock::new();
+static BASE_DIRS: OnceLock<BaseDirs> = OnceLock::new();
 
-fn base_dirs() -> BaseDirs {
-    BASE_DIRS.get_or_init(|| BaseDirs::new().unwrap()).clone()
+fn base_dirs() -> Result<BaseDirs> {
+    if let Some(dirs) = BASE_DIRS.get() {
+        return Ok(dirs.clone());
+    }
+    let dirs = BaseDirs::new().context("home directory unavailable")?;
+    let _ = BASE_DIRS.set(dirs.clone());
+    Ok(dirs)
 }
 
 /// Used for getting paths and base directories for filesystem operations that
@@ -114,8 +119,15 @@ pub fn write_file(p: PathBuf, contents: &[u8], base_dir: Option<BaseDirectory>) 
         create_dir_all(parent_dir).context("Failed to create parent directories")?;
     }
 
-    // Write the contents of the file to the final location.
-    fs::write(fp, contents).context("Failed to write to the path")?;
+    let temp_path = parent_dir.join(format!(
+        ".{}-tmp-{}",
+        fp.file_name()
+            .context("The target path has no filename")?
+            .to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+    fs::write(&temp_path, contents).context("Failed to write temporary file")?;
+    fs::rename(temp_path, fp).context("Failed to atomically replace the path")?;
 
     Ok(())
 }
@@ -132,6 +144,7 @@ pub fn mkdir(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<()> {
     let fp = full_path(Some(p), base_dir).context("File path could not be resolved")?;
 
     if fp.try_exists()? {
+        ensure!(fp.is_dir(), "The existing path is not a directory");
         warn!(
             "The path \"{}\" already exists. No action taken",
             fp.to_string_lossy()
@@ -170,12 +183,16 @@ pub fn rename(options: MultiPathOptions) -> Result<()> {
         dfp.to_string_lossy()
     );
 
-    ensure!(
-        (ifp.is_dir() && dfp.is_dir()) || (ifp.is_file() && dfp.is_file()),
-        "{} and {} are two different item types",
-        ifp.to_string_lossy(),
-        dfp.to_string_lossy()
-    );
+    if dfp.try_exists()? {
+        ensure!(
+            (ifp.is_dir() && dfp.is_dir()) || (ifp.is_file() && dfp.is_file()),
+            "{} and {} are two different item types",
+            ifp.to_string_lossy(),
+            dfp.to_string_lossy()
+        );
+    } else if let Some(parent) = dfp.parent() {
+        create_dir_all(parent).context("Failed to create destination parent")?;
+    }
 
     fs::rename(ifp, dfp)?;
     Ok(())
@@ -195,32 +212,20 @@ pub fn rename(options: MultiPathOptions) -> Result<()> {
 /// directory (~/.local/share/elysiae)
 pub fn remove(p: PathBuf, base_dir: Option<BaseDirectory>, recursive: Option<bool>) -> Result<()> {
     let fp = full_path(Some(p), base_dir)?;
-    if fp.try_exists()? {
-        if fp.is_file() {
-            fs::remove_file(fp).context("Could not remove this file")?;
-        } else if fp.is_dir() {
-            match recursive {
-                Some(x) => {
-                    if x {
-                        fs::remove_dir_all(fp)
-                            .context("Could not recursively delete this directory")?;
-                    } else {
-                        fs::remove_dir(fp).context("Could not remove this directory")?;
-                    }
-                }
-                None => {
-                    fs::remove_dir_all(fp)
-                        .context("Could not recursively delete this directory")?;
-                }
-            };
-        }
-        Ok(())
-    } else {
-        Err(Error::msg(format!(
-            "The Path \"{}\" could not be found on disk",
-            fp.to_string_lossy()
-        )))
+    if !fp.try_exists()? {
+        return Ok(());
     }
+    if fp.is_file() {
+        fs::remove_file(fp).context("Could not remove this file")?;
+    } else if fp.is_dir() {
+        match recursive {
+            Some(true) | None => {
+                fs::remove_dir_all(fp).context("Could not recursively delete this directory")?
+            }
+            Some(false) => fs::remove_dir(fp).context("Could not remove this directory")?,
+        };
+    }
+    Ok(())
 }
 
 /// Extracts a .tar.gz, .tar.xz, .tar.zstd, or .zip file to a specified
@@ -368,7 +373,7 @@ pub fn read_dir(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<Vec<PathB
 /// If no base directory is provided, the function will default to the app data
 /// directory (~/.local/share/elysiae)
 pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
-    let d = base_dirs();
+    let d = base_dirs()?;
 
     let dir_path = match base_dir {
         Some(x) => match x {

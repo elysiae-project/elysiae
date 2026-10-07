@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::OnceLock};
 
 use crate::{
     core::{
-        fs::{BaseDirectory, exists, full_path, write_file},
+        fs::{BaseDirectory, exists, write_file},
         game::Game,
         proton_manager::{components_installed, exec_proton, update_all_modules},
     },
@@ -12,11 +12,8 @@ use crate::{
         settings::get_option,
     },
 };
-use anyhow::{Context, Error, Ok, Result, bail};
-use irmin::{
-    ControlState, DownloadHandle, Sophon,
-    SophonProgress::{self, CalculatingDownloads, FetchingManifest},
-};
+use anyhow::{Context, Ok, Result, bail};
+use irmin::{ControlState, DownloadHandle, Sophon, SophonProgress};
 
 static DOWNLOAD_HANDLE: OnceLock<DownloadHandle> = OnceLock::new();
 
@@ -39,24 +36,28 @@ pub async fn download_game(
     lang: &str,
     sender: async_channel::Sender<SophonProgress>,
 ) -> Result<()> {
-    if !download_active()? {
+    if download_active()? {
+        bail!("A download is already active");
+    }
+    {
         let inst_path = game.install_path();
         let s = Sophon::builder(game.code(), inst_path)
             .vo_lang(lang)
             .verify_mode(irmin::VerifyMode::Full)
             .build();
 
+        let download_sender = sender.clone();
         s.download(&download_handle(), move |progress| {
-            let _ = sender.clone().try_send(progress);
+            let _ = download_sender.try_send(progress);
         })
         .await?;
 
-        s.verify_integrity(move |p| {
-            // figure this out later
+        s.verify_integrity(move |progress| {
+            let _ = sender.try_send(progress);
         })
         .await?;
     }
-    if get_option("generate-desktop-shortcut").try_into().unwrap() {
+    if get_option("generate-desktop-shortcut")?.try_into()? {
         generate_desktop_file(game)?;
     }
 
@@ -71,13 +72,16 @@ pub async fn download_update(
     lang: &str,
     sender: async_channel::Sender<SophonProgress>,
 ) -> Result<()> {
-    if !download_active()? {
-        let update = update_status(game).await?;
+    if download_active()? {
+        bail!("A download is already active");
+    }
+    {
+        let update = update_status(game, lang).await?;
         let handle = download_handle();
         let inst_path = game.install_path();
         let s = Sophon::builder(game.code(), inst_path)
             .vo_lang(lang)
-            .verify_mode(irmin::VerifyMode::None)
+            .verify_mode(irmin::VerifyMode::Full)
             .build();
 
         match update {
@@ -104,13 +108,16 @@ pub async fn download_update(
 }
 
 /// Gets the status of the game supplied as a parameter
-async fn update_status(game: Game) -> Result<UpdateAvailability> {
+async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability> {
     if !exists(game.install_path(), None)? {
         return Ok(UpdateAvailability::NotInstalled);
     }
 
     let inst_path = game.install_path();
-    let s = Sophon::builder(game.code(), inst_path).build();
+    let s = Sophon::builder(game.code(), inst_path)
+        .vo_lang(lang)
+        .verify_mode(irmin::VerifyMode::Full)
+        .build();
     let res = s.check_update().await?;
 
     Ok(if res.preinstall_available && !res.preinstall_downloaded {
@@ -169,16 +176,11 @@ fn generate_desktop_file(game: Game) -> Result<()> {
     let icon_path = icon_data.first().context("No Cached icon available")?;
 
     let contents = format!(
-        "Name={game_name}\n
-            Comment=Play {game_name} with Elysiae\n
-            Exec=xdg-open {deep_link_uri}\n
-            Type=Application\n
-            Categories=Game\n
-            Icon={}",
+        "[Desktop Entry]\nName={game_name}\nComment=Play {game_name} with Elysiae\nExec=xdg-open {deep_link_uri}\nType=Application\nCategories=Game;\nIcon={}\n",
         icon_path.to_string_lossy()
     );
 
-    let path = PathBuf::from(format!("{}.desktop", game_name));
+    let path = PathBuf::from(format!("{}.desktop", game.code()));
     let _ = write_file(path, contents.as_bytes(), Some(BaseDirectory::Desktop))?;
 
     Ok(())
@@ -186,8 +188,8 @@ fn generate_desktop_file(game: Game) -> Result<()> {
 
 pub async fn launch_game(game: Game) -> Result<()> {
     let install_path = game.install_path();
-    let exe = game.executable();
-    
+    let exe = game.executable()?;
+
     if !components_installed()? {
         log::info!("One or more components are not installed; running a full update");
         update_all_modules().await?;
@@ -197,6 +199,6 @@ pub async fn launch_game(game: Game) -> Result<()> {
     {
         bail!("Could not find the game installation directory or the game executable!");
     }
-    exec_proton(game.install_path().join(game.executable()))?;
+    let _child = exec_proton(game.install_path().join(exe))?;
     Ok(())
 }

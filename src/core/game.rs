@@ -50,17 +50,20 @@ impl Game {
         }
     }
 
-    pub fn executable(self) -> &'static str {
+    pub fn executable(self) -> anyhow::Result<&'static str> {
         match self {
-            Self::Bh3 => "\x42\x48\x33\x2e\x65\x78\x65",
-            Self::Hk4e => "\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x2e\x65\x78\x65",
-            Self::Hkrpg => "\x53\x74\x61\x72\x52\x61\x69\x6c\x2e\x65\x78\x65",
+            Self::Bh3 => Ok("\x42\x48\x33\x2e\x65\x78\x65"),
+            Self::Hk4e => {
+                Ok("\x47\x65\x6e\x73\x68\x69\x6e\x49\x6d\x70\x61\x63\x74\x2e\x65\x78\x65")
+            }
+            Self::Hkrpg => Ok("\x53\x74\x61\x72\x52\x61\x69\x6c\x2e\x65\x78\x65"),
             Self::Nap => {
-                "\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x2e\x65\x78\x65"
+                Ok("\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x2e\x65\x78\x65")
             }
             // FIXME: I won't know the executable names of these two until the sophon endpoints for the games release. add executable names after the fact
-            Self::Abc => "",
-            Self::Hyg => "",
+            Self::Abc | Self::Hyg => {
+                bail!("Executable metadata is not available for {}", self.code())
+            }
         }
     }
 

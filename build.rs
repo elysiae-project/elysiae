@@ -21,6 +21,8 @@ fn main() {
 /// Compiles the gresource bundle into OUT_DIR (picked up by
 /// `gio::resources_register_include!`) following the gtk4-rs book pattern.
 fn compile_resources() {
+    println!("cargo:rerun-if-changed=data/resources.gresource.xml");
+    println!("cargo:rerun-if-changed=data");
     glib_build_tools::compile_resources(
         &["data"],
         "data/resources.gresource.xml",
@@ -42,10 +44,10 @@ fn kernel_version_at_least_6_14_0() -> bool {
 
 fn version_at_least(release: &str, min: (u64, u64, u64)) -> bool {
     let mut parts = release
+        .trim()
         .split(|c: char| !c.is_ascii_digit())
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse::<u64>().ok());
-
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u64>().ok());
     let major = parts.next().unwrap_or(0);
     let minor = parts.next().unwrap_or(0);
     let patch = parts.next().unwrap_or(0);

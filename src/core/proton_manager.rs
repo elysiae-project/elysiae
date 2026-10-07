@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use log::info;
@@ -27,7 +27,7 @@ pub struct GameModule {
     extract_to: PathBuf,
     save_to: PathBuf,
     tracker_file_name: PathBuf,
-    post_install: Option<Box<dyn Fn()>>,
+    post_install: Option<Box<dyn Fn() -> Result<()>>>,
 }
 
 // Quick and dirty representation of the file structure that tracks installed
@@ -57,7 +57,7 @@ impl GameModule {
         extract_to: PathBuf,
         save_to: PathBuf,
         tracker_file_name: PathBuf,
-        post_install: Option<Box<dyn Fn()>>,
+        post_install: Option<Box<dyn Fn() -> Result<()>>>,
     ) -> Self {
         GameModule {
             component_name,
@@ -103,48 +103,65 @@ impl GameModule {
     async fn update_module(&mut self) -> Result<()> {
         info!("Updating {}", &self.component_name);
 
-        let url = format!(
-            "{}?arch={}&component={}&latestOnly",
-            COMPONENTS_URL_BASE, ARCH, self.component_name
-        );
-        let latest_release = fetch_data::<ComponentRelease>(&url).await?;
+        let mut url = reqwest::Url::parse(COMPONENTS_URL_BASE)?;
+        url.query_pairs_mut()
+            .append_pair("arch", ARCH)
+            .append_pair("component", &self.component_name)
+            .append_pair("latestOnly", "true");
+        let latest_release = fetch_data::<ComponentRelease>(url.as_str()).await?;
+        if latest_release.prerelease {
+            anyhow::bail!("Refusing prerelease component {}", self.component_name);
+        }
         if self.should_update(&latest_release)? {
+            let checksum = latest_release.download.checksum.trim().to_ascii_lowercase();
+            anyhow::ensure!(
+                checksum.len() == 64 && checksum.chars().all(|c| c.is_ascii_hexdigit()),
+                "Invalid component checksum"
+            );
             // Get the latest release url and checksum, then download the file
             let mut remaining_attempts = MAX_RETRIES;
             let latest_release_url = latest_release.download.url;
-            let checksum = latest_release.download.checksum;
 
             while remaining_attempts > 0 {
-                download_file(
-                    latest_release_url.clone(),
-                    self.save_to.clone(),
-                    None,
-                    Some(Box::new(|progress| {
-                        // TODO: make some sort of proper event handler in the UI once it gets
-                        // created
-                        info!(
-                            "{}/{} ({}%)",
-                            progress.downloaded,
-                            progress.total,
-                            progress.downloaded.saturating_mul(100) / progress.total.max(1)
-                        );
-                    })),
-                )
-                .await?;
+                let attempt = async {
+                    download_file(
+                        latest_release_url.clone(),
+                        self.save_to.clone(),
+                        None,
+                        Some(Box::new(|progress| {
+                            info!(
+                                "{}/{} ({}%)",
+                                progress.downloaded,
+                                progress.total,
+                                progress.downloaded.saturating_mul(100) / progress.total.max(1)
+                            );
+                        })),
+                    )
+                    .await?;
+                    anyhow::ensure!(
+                        verify_sha256sum(self.save_to.clone(), None, checksum.clone()).await?,
+                        "Downloaded component checksum did not match"
+                    );
+                    Ok::<_, anyhow::Error>(())
+                }
+                .await;
 
-                if verify_sha256sum(self.save_to.clone(), None, checksum.clone()).await? {
+                if attempt.is_ok() {
                     break;
-                } else {
-                    remaining_attempts -= 1;
-
-                    // Remove the corrupted file
-                    remove(self.save_to.clone(), None, None)?;
+                }
+                remaining_attempts -= 1;
+                let _ = remove(self.save_to.clone(), None, None);
+                if remaining_attempts > 0 {
+                    tokio::time::sleep(Duration::from_millis(
+                        250 * (MAX_RETRIES - remaining_attempts) as u64,
+                    ))
+                    .await;
                 }
             }
 
             if remaining_attempts == 0 {
                 return Err(anyhow::anyhow!(
-                    "Failed to verify {} after {} attempts",
+                    "Failed to download and verify {} after {} attempts",
                     self.component_name,
                     MAX_RETRIES
                 ));
@@ -160,13 +177,14 @@ impl GameModule {
                     overwrite: Some(true), // Replace existing files with updated ones
                 },
                 Some(true),
-            ).await?;
+            )
+            .await?;
 
             remove(self.save_to.clone(), None, None)?;
 
             // Perform post-install actions, if any
             if let Some(post_install) = &self.post_install {
-                post_install();
+                post_install()?;
             }
 
             // Update the component tracker
@@ -203,9 +221,7 @@ pub async fn update_all_modules() -> Result<()> {
         PathBuf::from("phlogiston"),
         PathBuf::from("phlogiston.tar.gz"),
         PathBuf::from("proton.json"),
-        Some(Box::new(|| {
-            let _ = mkdir(PathBuf::from("proton-data"), None);
-        })),
+        Some(Box::new(|| mkdir(PathBuf::from("proton-data"), None))),
     );
 
     // This looks silly with only one module
@@ -218,20 +234,31 @@ pub async fn update_all_modules() -> Result<()> {
 
 /// Checks if all components have been installed
 pub fn components_installed() -> Result<bool> {
-    // For now, only proton is installed, so this is an easy check to see if proton itself has been extracted to the proper directory. In the future however, if new components do get added, a more robust way to detect component installs could be useful (perhaps via an exclusive components folder and making sure it contains all components or something similar)
-    Ok(exists(PathBuf::from("proton"), None)?)
+    let proton = full_path(Some(PathBuf::from("proton")), None)?;
+    if proton.is_file() {
+        return Ok(!proton.is_symlink()
+            && std::fs::metadata(&proton)
+                .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false));
+    }
+    if proton.is_dir() && !proton.is_symlink() {
+        let executable = proton.join("proton");
+        return Ok(executable.is_file()
+            && !executable.is_symlink()
+            && std::fs::metadata(executable)
+                .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false));
+    }
+    Ok(false)
 }
 
-pub fn exec_proton(app_path: PathBuf) -> Result<()> {
+pub fn exec_proton(app_path: PathBuf) -> Result<std::process::Child> {
     let proton_path = full_path(Some(PathBuf::from("proton")), None)?;
     let proton_path_str = proton_path
         .to_str()
         .context("Proton path is not valid UTF-8")?;
 
     let fp = full_path(Some(app_path), None)?;
-    let str_path = fp
-        .to_str()
-        .context("Game path is not valid UTF-8")?;
-    exec_shell(proton_path_str, &[str_path.to_owned()])?;
-    Ok(())
+    let str_path = fp.to_str().context("Game path is not valid UTF-8")?;
+    exec_shell(proton_path_str, &[str_path.to_owned()])
 }

@@ -1,129 +1,131 @@
+use crate::core::fs::{BaseDirectory, full_path, mkdir, rename};
+use anyhow::{Context, Result, ensure};
+use reqwest::Client;
+use serde::de::DeserializeOwned;
 use std::{
     path::PathBuf,
     sync::OnceLock,
     time::{Duration, Instant},
 };
-
-use anyhow::{Context, Result, ensure};
-use reqwest::Client;
-use serde::de::DeserializeOwned;
 use tokio::io::AsyncWriteExt;
 use url::Url;
 use uuid::Uuid;
-
-use crate::core::fs::{
-    BaseDirectory::{self, AppData},
-    MultiPathOptions, full_path, rename,
-};
-
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
-fn http_client() -> Client {
-    HTTP_CLIENT
+fn http_client() -> Result<Client> {
+    Ok(HTTP_CLIENT
         .get_or_init(|| {
             Client::builder()
                 .connect_timeout(Duration::from_secs(15))
                 .timeout(Duration::from_secs(60))
                 .pool_idle_timeout(Duration::from_secs(30))
                 .build()
-                .unwrap()
+                .expect("Could not create HTTP client")
         })
-        .clone()
+        .clone())
 }
-
 pub struct DownloadProgress {
     pub download_id: Uuid,
     pub downloaded: u64,
     pub total: u64,
 }
-
-/// Downloads and saves a file from a url to a path relative to a base
-/// directory. Provides a callback that provides download progress and total
-/// file download size
+struct FileDownload {
+    path: PathBuf,
+}
+impl Drop for FileDownload {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+const MAX_DOWNLOAD_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 pub async fn download_file(
     url: String,
     dest: PathBuf,
     base_dir: Option<BaseDirectory>,
     on_progress: Option<Box<dyn Fn(DownloadProgress) + Send + 'static>>,
 ) -> Result<()> {
-    ensure!(is_url(&url), "The string {} is not a valid URL!", &url);
-
-    let client = http_client();
-    let uuid = Uuid::new_v4();
-    let res = client.get(url).send().await?;
-
-    let download_path = PathBuf::from(format!(".download-{uuid}"));
-    let status = res.status();
+    let parsed = Url::parse(&url)?;
     ensure!(
-        status.is_success(),
-        "The http request was not successful (Status code {})",
-        status
+        parsed.scheme() == "https" && parsed.host_str().is_some(),
+        "Only HTTPS URLs with a host are allowed"
     );
-
+    let res = http_client()?.get(parsed).send().await?;
+    ensure!(
+        res.status().is_success(),
+        "HTTP request failed: {}",
+        res.status()
+    );
     let size = res.content_length().unwrap_or(0);
-    let temp_path = full_path(Some(download_path.clone()), Some(AppData))?;
-    let mut file = tokio::fs::File::create(&temp_path).await?;
-    let mut downloaded_bytes: u64 = 0;
+    ensure!(size <= MAX_DOWNLOAD_SIZE, "Download exceeds size limit");
+    let id = Uuid::new_v4();
+    let destination = full_path(Some(dest.clone()), base_dir)?;
+    let destination_parent = destination
+        .parent()
+        .context("Download destination has no parent")?;
+    tokio::fs::create_dir_all(destination_parent).await?;
+    let tmp = PathBuf::from(format!(
+        ".{}.download-{id}",
+        destination
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+    ));
+    let path = destination_parent.join(&tmp);
+    let _guard = FileDownload { path: path.clone() };
+    let mut file = tokio::fs::File::create(&path).await?;
+    let mut downloaded: u64 = 0;
+    let mut last = Instant::now() - Duration::from_millis(250);
     let mut stream = res.bytes_stream();
-
-    let mut last_update = Instant::now() - Duration::from_millis(250);
-    let throttle = Duration::from_millis(250);
-
     use futures_util::StreamExt;
     while let Some(chunk) = stream.next().await {
         let c = chunk?;
+        downloaded = downloaded
+            .checked_add(c.len() as u64)
+            .context("Download size overflow")?;
+        ensure!(
+            downloaded <= MAX_DOWNLOAD_SIZE,
+            "Download exceeds size limit"
+        );
         file.write_all(&c).await?;
-        downloaded_bytes += c.len() as u64;
-
-        // Send the callback data only if one was defined by the function that
-        // called it and only after the update timeout is over
-        if last_update.elapsed() >= throttle
-            && let Some(ref cb) = on_progress
-        {
-            last_update = Instant::now();
-            cb(DownloadProgress {
-                download_id: uuid,
-                downloaded: downloaded_bytes,
-                total: size,
-            });
+        if last.elapsed() >= Duration::from_millis(250) {
+            last = Instant::now();
+            if let Some(cb) = &on_progress {
+                cb(DownloadProgress {
+                    download_id: id,
+                    downloaded,
+                    total: size,
+                });
+            }
         }
     }
-
     file.flush().await?;
+    if let Some(cb) = &on_progress {
+        cb(DownloadProgress {
+            download_id: id,
+            downloaded,
+            total: size,
+        });
+    }
     drop(file);
-    rename(MultiPathOptions {
-        init_path: download_path.clone(),
-        init_path_base_dir: Some(AppData),
-        dest_path: dest,
-        dest_path_base_dir: base_dir,
+    rename(crate::core::fs::MultiPathOptions {
+        init_path: tmp,
+        init_path_base_dir: Some(BaseDirectory::Home),
+        dest_path: destination,
+        dest_path_base_dir: Some(BaseDirectory::Home),
         overwrite: Some(true),
     })?;
     Ok(())
 }
-
-/// Makes a request to an api endpoint and parses it to a desired struct
-pub async fn fetch_data<T>(url: &str) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    ensure!(is_url(&url), "The string {} is not a valid URL", url);
-    let client = http_client();
-    let res = client.get(url).send().await?;
-
+pub async fn fetch_data<T: DeserializeOwned>(url: &str) -> Result<T> {
+    let parsed = Url::parse(url)?;
+    ensure!(
+        parsed.scheme() == "https" && parsed.host_str().is_some(),
+        "Only HTTPS URLs with a host are allowed"
+    );
+    let res = http_client()?.get(parsed).send().await?;
     ensure!(
         res.status().is_success(),
-        "The http request was not successful (Status code {})",
+        "HTTP request failed: {}",
         res.status()
     );
-
-    let data = res.json::<T>().await?;
-    Ok(data)
-}
-
-/// Checks if a provided string is in the format of a url. It does not check
-/// if the destination is a real location
-fn is_url(url: &str) -> bool {
-    match Url::parse(url) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    Ok(res.json().await?)
 }

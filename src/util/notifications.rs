@@ -3,7 +3,10 @@ use gtk::gio::{Notification, prelude::ApplicationExt};
 use crate::util::settings::get_option;
 
 pub fn broadcast_notification(body: &str) {
-    if get_option("allow-notifications").try_into().unwrap()
+    if get_option("allow-notifications")
+        .ok()
+        .and_then(|v| bool::try_from(v).ok())
+        .unwrap_or(false)
         && let Some(app) = gtk::gio::Application::default()
     {
         let n = Notification::new("Elysiae");

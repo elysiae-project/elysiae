@@ -50,16 +50,11 @@ pub async fn update_cache() -> Result<()> {
 
     let mut g = futures_util::stream::iter(games);
     while let Some(game) = g.next().await {
-        let url = format!(
-            "https://aedes.elysiae.app/getAssets?lang={locale}&game={}",
-            game.code()
-        );
-        let response = fetch_data::<AedesResponse>(&url).await?;
-        write_file(
-            metadata_path(game, locale),
-            &serde_json::to_vec_pretty(&response)?,
-            None,
-        )?;
+        let mut url = url::Url::parse("https://aedes.elysiae.app/getAssets")?;
+        url.query_pairs_mut()
+            .append_pair("lang", locale)
+            .append_pair("game", game.code());
+        let response = fetch_data::<AedesResponse>(url.as_str()).await?;
 
         let desired_paths = response
             .asset_paths()
@@ -92,6 +87,12 @@ pub async fn update_cache() -> Result<()> {
                 remove(file, None, Some(true))?;
             }
         }
+
+        write_file(
+            metadata_path(game, locale),
+            &serde_json::to_vec_pretty(&response)?,
+            None,
+        )?;
     }
     Ok(())
 }
@@ -119,6 +120,11 @@ fn cache_path(path: &PathBuf) -> Result<PathBuf> {
     let path = path
         .strip_prefix("/")
         .context("Asset path must be absolute on the Aedes server")?;
+    ensure!(
+        path.components()
+            .all(|component| matches!(component, std::path::Component::Normal(_))),
+        "Asset path contains unsafe components"
+    );
     Ok(PathBuf::from("cache").join(path))
 }
 
@@ -153,6 +159,15 @@ pub fn get_cached_asset_paths(
     paths
         .into_iter()
         .flatten()
-        .map(|path| cache_path(&PathBuf::from(path)).and_then(|path| full_path(Some(path), None)))
+        .map(|path| {
+            let cached = cache_path(&PathBuf::from(path))?;
+            let full = full_path(Some(cached), None)?;
+            ensure!(
+                full.is_file(),
+                "Cached asset is missing: {}",
+                full.display()
+            );
+            Ok(full)
+        })
         .collect()
 }
