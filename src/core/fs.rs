@@ -4,6 +4,7 @@ use sha256::try_digest;
 use std::{
     fs::{self, create_dir_all},
     path::{Component, PathBuf},
+    sync::OnceLock,
 };
 use tar::Archive as Tar;
 use xz::read::XzDecoder as Xz;
@@ -27,11 +28,33 @@ use log::warn;
 /// Home: ~
 ///
 /// Compat: ~/.local/share/elysiae/proton-data
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum BaseDirectory {
     AppData,
     Desktop,
     Home,
     Compat,
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Sizes {
+    Bytes,
+    Kilobytes,
+    Megabytes,
+    Gigabytes,
+    Terabytes,
+}
+
+impl Sizes {
+    fn power(self) -> i32 {
+        self as i32
+    }
+}
+
+const BASE_DIRS: OnceLock<BaseDirs> = OnceLock::new();
+
+fn base_dirs() -> BaseDirs {
+    BASE_DIRS.get_or_init(|| BaseDirs::new().unwrap()).clone()
 }
 
 /// Used for getting paths and base directories for filesystem operations that
@@ -210,7 +233,7 @@ pub fn remove(p: PathBuf, base_dir: Option<BaseDirectory>, recursive: Option<boo
 /// Both the archive path and destination folder are paths relative to a base
 /// directory. Paths that don't provide a base directory parameter default to
 /// the app data directory (~/.local/share/elysiae)
-pub fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> Result<()> {
+pub async fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> Result<()> {
     let ifp = full_path(Some(options.init_path), options.init_path_base_dir)
         .context("Could not resolve initial path")?;
     let dfp = full_path(Some(options.dest_path), options.dest_path_base_dir)
@@ -237,45 +260,50 @@ pub fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> Result<
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .context("The archive has no valid UTF-8 extension")?;
-    let file = fs::File::open(&ifp).context("Could not open the initial path")?;
-    if !dfp.exists() {
-        fs::create_dir_all(&dfp).context("Could not create the extraction directory")?;
-    }
 
-    // Archive formats handled by Elysiae are tarballs and zip files. Fail
-    // explicitly for unknown extensions instead of silently reporting success.
-    match ifp_ext.as_str() {
-        "gz" | "tgz" => Tar::new(Gz::new(file)).unpack(&dfp)?,
-        "xz" | "txz" => Tar::new(Xz::new(file)).unpack(&dfp)?,
-        "zst" | "zstd" => Tar::new(Zstd::new(file)?).unpack(&dfp)?,
-        "zip" => Zip::new(file)?.extract(&dfp)?,
-        extension => bail!("Unsupported archive extension: .{extension}"),
-    }
-
-    if should_flatten {
-        let entries: Vec<_> = std::fs::read_dir(&dfp)?.collect::<Result<_, _>>()?;
-
-        if entries.len() == 1 && entries[0].path().is_dir() {
-            let inner_dir = entries[0].path();
-
-            for archive_entry in fs::read_dir(&inner_dir)? {
-                let entry = archive_entry?;
-
-                let target = dfp.join(entry.file_name());
-                fs::rename(entry.path(), target)?;
-            }
-
-            fs::remove_dir(inner_dir)?;
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let file = fs::File::open(&ifp).context("Could not open the initial path")?;
+        if !dfp.exists() {
+            fs::create_dir_all(&dfp).context("Could not create the extraction directory")?;
         }
-    }
 
-    Ok(())
+        // Archive formats handled by Elysiae are tarballs and zip files. Fail
+        // explicitly for unknown extensions instead of silently reporting success.
+        match ifp_ext.as_str() {
+            "gz" | "tgz" => Tar::new(Gz::new(file)).unpack(&dfp)?,
+            "xz" | "txz" => Tar::new(Xz::new(file)).unpack(&dfp)?,
+            "zst" | "zstd" => Tar::new(Zstd::new(file)?).unpack(&dfp)?,
+            "zip" => Zip::new(file)?.extract(&dfp)?,
+            extension => bail!("Unsupported archive extension: .{extension}"),
+        }
+
+        if should_flatten {
+            let entries: Vec<_> = std::fs::read_dir(&dfp)?.collect::<Result<_, _>>()?;
+
+            if entries.len() == 1 && entries[0].path().is_dir() {
+                let inner_dir = entries[0].path();
+
+                for archive_entry in fs::read_dir(&inner_dir)? {
+                    let entry = archive_entry?;
+
+                    let target = dfp.join(entry.file_name());
+                    fs::rename(entry.path(), target)?;
+                }
+
+                fs::remove_dir(inner_dir)?;
+            }
+        }
+
+        Ok(())
+    })
+    .await
+    .context("Extraction task panicked or was cancelled")?
 }
 
 /// Validates the integrity of a file relative to a base bath against the
 /// expected sha256sum of the file. If no base directory is provided, the base
 /// directory will default to the App Data Directory (~/.local/share/elysiae)
-pub fn verify_sha256sum(
+pub async fn verify_sha256sum(
     file: PathBuf,
     base_dir: Option<BaseDirectory>,
     expected_sum: String,
@@ -285,21 +313,37 @@ pub fn verify_sha256sum(
     // Get the file hash. If getting the hash from the file fails,
     // default to an empty string, which can indicate to the function
     // that the file hashes do not match
-    let fh = try_digest(fp).unwrap_or("".to_string());
+    tokio::task::spawn_blocking(move || -> Result<bool> {
+        let fh = try_digest(fp).unwrap_or("".to_string());
 
-    Ok(fh.eq(&expected_sum))
+        Ok(fh.eq(&expected_sum))
+    })
+    .await
+    .context("Failed to verify integrity of file")?
 }
 
 /// Gets the size of a directory, relative to a Base directory. Size is returned
-/// in bytes
+/// in a specified unit (default: Bytes)
 ///
 /// If no base directory is provided, the function will default to the app data
 /// directory (~/.local/share/elysiae)
-pub fn get_dir_size(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<u64> {
+pub async fn get_dir_size(
+    p: PathBuf,
+    base_dir: Option<BaseDirectory>,
+    target_unit: Option<Sizes>,
+) -> Result<f64> {
     let fp = full_path(Some(p), base_dir).context("The path could not be resolved")?;
-    let size = get_size(fp).context("Could not get size of directory")?;
+    tokio::task::spawn_blocking(move || -> Result<f64> {
+        let raw_size = get_size(fp).context("Could not get size of directory")? as f64;
 
-    Ok(size)
+        Ok(size_as(
+            raw_size,
+            Sizes::Bytes,
+            target_unit.unwrap_or(Sizes::Bytes),
+        ))
+    })
+    .await
+    .context("Failed to get size of directory")?
 }
 
 /// Wrapper function for std::fs::read_dir, relative to a user-specified "base directory"
@@ -324,7 +368,7 @@ pub fn read_dir(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<Vec<PathB
 /// If no base directory is provided, the function will default to the app data
 /// directory (~/.local/share/elysiae)
 pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
-    let d = BaseDirs::new().context("Could not find base directories!")?;
+    let d = base_dirs();
 
     let dir_path = match base_dir {
         Some(x) => match x {
@@ -346,6 +390,19 @@ pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<
     }
 }
 
+/// Converts the size of something in the filesystem between units, primarilly
+/// intended for use in the frontend where displaying everything as bytes isn't
+/// as fashionable as it is in the backend
+///
+/// This function can convert between all values between bytes and terabytes.
+/// Support for larger units isn't needed because no games are even remotely close to the
+/// petabyte and beyond range as of writing
+pub fn size_as(initial_size: f64, initial_unit: Sizes, new_unit: Sizes) -> f64 {
+    (initial_size * (1024.0 as f64).powi(initial_unit.power() - new_unit.power()))
+}
+
+/// Joins a path beneath a directory, preventing special path keywords like ./ and ../
+/// If a special path keyword is detected, the function fails
 fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
     ensure!(
         !relative.is_absolute()
@@ -361,13 +418,8 @@ fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
-
     use super::*;
-
-    fn get_username() -> Result<String> {
-        Ok(whoami::account_os()?.into_string().unwrap())
-    }
+    use rand::Rng;
 
     fn generate_random_data() -> Vec<u8> {
         let mut file_data = vec![0u8; rand::random_range(100..1000) as usize];
@@ -410,12 +462,15 @@ mod tests {
     #[test]
     fn file_write_exists_read_delete() {
         // Write a new file
-        let path: PathBuf = "elysieTestData".into();
+        let path: PathBuf = uuid::Uuid::new_v4().to_string().into();
         let mut contents: Vec<u8> = generate_random_data();
         write_file(path.clone(), &contents, Some(BaseDirectory::Home)).unwrap();
 
         // Check if the file exists
-        assert_eq!(exists(path.clone(), Some(BaseDirectory::Home)).unwrap(), true);
+        assert_eq!(
+            exists(path.clone(), Some(BaseDirectory::Home)).unwrap(),
+            true
+        );
 
         // Read file
         let pass_one_contents = read_file(path.clone(), Some(BaseDirectory::Home)).unwrap();
@@ -447,6 +502,6 @@ mod tests {
 
         // Use mkdir using the same path as before (shouldn't overwrite anything)
 
-        // 
+        //
     }
 }
