@@ -9,6 +9,7 @@
         "redhat.vscode-yaml",
         "github.vscode-pull-request-github",
         "github.vscode-github-actions",
-        "vadimcn.vscode-lldb"
+        "vadimcn.vscode-lldb",
+        "mikeburgh.xml-format"
     ]
 }
