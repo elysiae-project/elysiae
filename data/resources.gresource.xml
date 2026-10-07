@@ -3,11 +3,11 @@
     <gresource prefix="/app/elysiae/Elysiae">
         <!--Widgets + CSS file-->
         <file alias="window.ui" compressed="true" preprocess="xml-stripblanks">resources/window.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">resources/ui/progressbar.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">resources/ui/background.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">resources/ui/titlebar.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">resources/ui/settings.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">resources/ui/sidebar.ui</file>
+        <file alias="ui/progressbar.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/progressbar.ui</file>
+        <file alias="ui/background.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/background.ui</file>
+        <file alias="ui/titlebar.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/titlebar.ui</file>
+        <file alias="ui/settings.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/settings.ui</file>
+        <file alias="ui/sidebar.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/sidebar.ui</file>
         <file alias="style.css" compressed="true">resources/styles.css</file>
         <!--Icons-->
         <file preprocess="xml-stripblanks">icons/scalable/close.svg</file>
