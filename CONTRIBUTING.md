@@ -47,35 +47,31 @@ rustup toolchain install
 
 ## Creating Elysiae Builds
 
+> [!IMPORTANT]  
+> You must have an internet connection present to build Elysiae or have the appropriate rust version + cargo crates pre-downloaded before building
+
 > [!TIP]
 > You should only need to use Meson if you want to install Elysiae from source. developer/test release builds can be created using cargo
 
 To create a developer build, run:
 
 ```sh
-# Automatically runs the application
-cargo run
-
-# Alternatively, build and manually execute the developer build (binary will be created in ./target/debug)
-cargo build
+mkdir build && cd build
+meson setup .. --buildtype=debug
+ninja -j$(nproc) # Build with all threads
 ```
 
 To create a release build, run:
 
 ```sh
-# Binary will be created in ./target/release
-cargo build --release
-
-# Alternatively, you can compile and immediately run a release buid with:
-cargo run --release
-```
-
-To install Elysiae from source, run:
-
-```sh
 mkdir build && cd build
-meson setup .. -DProfile=release
+meson setup .. --buildtype=release
+ninja -j$(nproc)
+
+# If you want to install:
+ninja install -j$(nproc)
 ```
+
 ## Contribution Guidelines
 
 On top of following the [Code of Conduct](https://github.com/elysiae-project/elysiae/CODE_OF_CONDUCT.md) , there are a few other general rules we'd like to have developers follow to ensure the Elysiae launcher is the best it can be:
