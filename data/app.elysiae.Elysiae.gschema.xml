@@ -1,5 +1,5 @@
 <schemalist xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <schema id="app.elysiae.Elysiae">
+    <schema id="app.elysiae.Elysiae" path="/app/elysiae/Elysiae/">
         <key name="is-first-launch" type="b">
             <default>true</default>
             <summary>First time this system has launched Elysiae</summary>
@@ -19,6 +19,10 @@
         <key name="allow-notifications" type="b">
             <default>true</default>
             <summary>Send desktop notifications for status updates in Elysiae (i.e. Game downloads/updates completing)</summary>
+        </key>
+        <key name="use-video-background" type="b">
+            <default>false</default>
+            <summary>Use video backgrounds when available</summary>
         </key>
         <key name="display-language" type="s">
             <default>'en-us'</default>

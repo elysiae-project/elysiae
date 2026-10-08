@@ -19,6 +19,19 @@ datadir = get_option('prefix') / get_option('datadir')
 pkgdatadir = datadir / meson.project_name()
 
 subdir('data')
+
+gsettings = custom_target(
+    'compiled-gsettings',
+    input: files('data/app.elysiae.Elysiae.gschema.xml'),
+    output: 'gschemas.compiled',
+    command: [
+        find_program('glib-compile-schemas'),
+        '--targetdir', meson.current_build_dir(),
+        meson.current_source_dir() / 'data',
+    ],
+    build_by_default: true,
+)
+
 subdir('src')
 
 gnome.post_install(

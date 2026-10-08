@@ -20,9 +20,10 @@ custom_target(
     console: true,
     install: true,
     install_dir: bindir,
-    depends: resources,
+    depends: [resources, gsettings],
     env: {
         'CARGO_HOME': meson.project_build_root() / 'cargo-home',
+        'GSETTINGS_SCHEMA_DIR': meson.project_build_root(),
         'APP_ID': application_id,
         'RESOURCES_FILE': pkgdatadir / 'resources.gresource',
     },

@@ -97,6 +97,28 @@ pub async fn update_cache() -> Result<()> {
     Ok(())
 }
 
+pub fn cache_available(locale: &str) -> Result<bool> {
+    for game in [Game::Bh3, Game::Hk4e, Game::Hkrpg, Game::Nap, Game::Abc, Game::Hyg] {
+        let metadata = full_path(Some(metadata_path(game, locale)), None)?;
+        if !metadata.is_file() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+pub fn media_paths(game: Game, locale: &str, use_video: bool) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    let primary_type = if use_video { AssetType::Video } else { AssetType::Image };
+    let primary = get_cached_asset_paths(game, locale, primary_type)?.into_iter().next();
+    let fallback = if primary.is_none() {
+        get_cached_asset_paths(game, locale, AssetType::Image)?.into_iter().next()
+    } else {
+        None
+    };
+    let overlay = get_cached_asset_paths(game, locale, AssetType::Overlay)?.into_iter().next();
+    Ok((primary.or(fallback), overlay))
+}
+
 impl AedesResponse {
     fn asset_paths(&self) -> impl Iterator<Item = Option<&str>> {
         self.backgrounds

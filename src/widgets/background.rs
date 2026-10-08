@@ -1,6 +1,10 @@
 use gtk::glib;
+use gtk::subclass::prelude::ObjectSubclassIsExt;
 
-use crate::core::game::Game;
+use crate::{
+    core::game::Game,
+    util::{cache::media_paths, settings::{SettingValue, get_option}},
+};
 
 mod imp {
     use gtk::CompositeTemplate;
@@ -9,7 +13,10 @@ mod imp {
 
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/app/elysiae/Elysiae/ui/background.ui")]
-    pub struct Background;
+    pub struct Background {
+        #[template_child]
+        pub background: TemplateChild<gtk::Picture>,
+    }
 
     #[glib::object_subclass]
     impl ObjectSubclass for Background {
@@ -43,7 +50,12 @@ impl Background {
     }
 
     pub fn set_media(&self, game: Game) {
-        
+        let use_video = matches!(get_option("use-video-background"), Ok(SettingValue::Bool(true)));
+        if let Ok((path, _overlay)) = media_paths(game, "en-us", use_video) {
+            self.imp().background.set_filename(path.as_deref());
+        } else {
+            self.imp().background.set_filename(None::<&std::path::Path>);
+        }
     }
 }
 
