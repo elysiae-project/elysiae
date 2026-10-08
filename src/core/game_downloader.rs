@@ -17,7 +17,7 @@ use irmin::{ControlState, DownloadHandle, Sophon, SophonProgress};
 
 static DOWNLOAD_HANDLE: OnceLock<DownloadHandle> = OnceLock::new();
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAvailability {
     Updated,
     Preinstall,
@@ -93,12 +93,24 @@ pub async fn download_update(
                 broadcast_notification("Preinstall Download Complete");
             }
             UpdateAvailability::Outdated => {
-                // TODO: Check if a preinstall is download before downloading an update
-                s.update(&handle, move |p| {
-                    let _ = sender.clone().try_send(p);
-                })
-                .await?;
-                broadcast_notification("Update Complete");
+                let info = s.check_update().await?;
+                if info.preinstall_downloaded {
+                    if let Some(preinstall_tag) = info.preinstall_tag.as_deref() {
+                        s.apply_preinstall(preinstall_tag, &handle, move |p| {
+                            let _ = sender.clone().try_send(p);
+                        })
+                        .await?;
+                        broadcast_notification("Preinstall Applied");
+                    } else {
+                        bail!("Preinstall was reported as downloaded without a tag");
+                    }
+                } else {
+                    s.update(&handle, move |p| {
+                        let _ = sender.clone().try_send(p);
+                    })
+                    .await?;
+                    broadcast_notification("Update Complete");
+                }
             }
             UpdateAvailability::NotInstalled | UpdateAvailability::Updated => {}
         }
@@ -108,7 +120,7 @@ pub async fn download_update(
 }
 
 /// Gets the status of the game supplied as a parameter
-async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability> {
+pub async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability> {
     if !exists(game.install_path(), None)? {
         return Ok(UpdateAvailability::NotInstalled);
     }

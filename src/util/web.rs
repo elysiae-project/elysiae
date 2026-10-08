@@ -23,6 +23,7 @@ fn http_client() -> Result<Client> {
         })
         .clone())
 }
+#[derive(Debug, Clone)]
 pub struct DownloadProgress {
     pub download_id: Uuid,
     pub downloaded: u64,

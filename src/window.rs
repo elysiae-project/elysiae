@@ -1,8 +1,11 @@
 use crate::core::{
     game::Game,
+    game_downloader::{download_game as install_game, download_update, launch_game as run_game},
     proton_manager::{components_installed, update_all_modules},
 };
 use anyhow::Result;
+use async_channel::Sender;
+use irmin::SophonProgress;
 use gtk::glib;
 use gtk::subclass::prelude::ObjectSubclassIsExt;
 
@@ -108,17 +111,34 @@ impl ElysiaeWindow {
         Ok(())
     }
 
-    pub async fn download_game(&self, game: Game) -> Result<()> {
+    pub async fn download_game(
+        &self,
+        game: Game,
+        lang: &str,
+        sender: Sender<SophonProgress>,
+    ) -> Result<()> {
         if !components_installed()? {
             self.download_components().await?;
         }
 
-        todo!()
+        install_game(game, lang, sender).await
     }
 
-    pub fn launch_game(&self, game: Game) -> Result<()> {
-        // crate::core::game_downloader::launch_game(game)?;
-        Ok(())
+    pub async fn update_game(
+        &self,
+        game: Game,
+        lang: &str,
+        sender: Sender<SophonProgress>,
+    ) -> Result<()> {
+        if !components_installed()? {
+            self.download_components().await?;
+        }
+
+        download_update(game, lang, sender).await
+    }
+
+    pub async fn launch_game(&self, game: Game) -> Result<()> {
+        run_game(game).await
     }
 }
 

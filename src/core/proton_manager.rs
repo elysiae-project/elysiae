@@ -1,4 +1,4 @@
-use std::{os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
+use std::{os::unix::fs::PermissionsExt, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use log::info;
@@ -27,7 +27,7 @@ pub struct GameModule {
     extract_to: PathBuf,
     save_to: PathBuf,
     tracker_file_name: PathBuf,
-    post_install: Option<Box<dyn Fn() -> Result<()>>>,
+    post_install: Option<Arc<dyn Fn() -> Result<()> + Send + Sync>>,
 }
 
 // Quick and dirty representation of the file structure that tracks installed
@@ -57,7 +57,7 @@ impl GameModule {
         extract_to: PathBuf,
         save_to: PathBuf,
         tracker_file_name: PathBuf,
-        post_install: Option<Box<dyn Fn() -> Result<()>>>,
+        post_install: Option<Arc<dyn Fn() -> Result<()> + Send + Sync>>,
     ) -> Self {
         GameModule {
             component_name,
@@ -221,7 +221,7 @@ pub async fn update_all_modules() -> Result<()> {
         PathBuf::from("phlogiston"),
         PathBuf::from("phlogiston.tar.gz"),
         PathBuf::from("proton.json"),
-        Some(Box::new(|| mkdir(PathBuf::from("proton-data"), None))),
+        Some(Arc::new(|| mkdir(PathBuf::from("proton-data"), None))),
     );
 
     // This looks silly with only one module

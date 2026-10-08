@@ -1,5 +1,7 @@
 use std::sync::OnceLock;
 
+use std::future::Future;
+
 use tokio::runtime::{Builder, Runtime};
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -12,6 +14,14 @@ pub fn runtime() -> &'static Runtime {
             .build()
             .expect("Failed to initialise the Tokio runtime")
     })
+}
+
+pub fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    runtime().spawn(future)
 }
 
 #[cfg(test)]
