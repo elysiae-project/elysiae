@@ -1,0 +1,59 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build Elysiae (Debug)",
+			"type": "shell",
+			"command": "meson setup build --buildtype=debug --reconfigure && meson compile -C build",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": "build",
+			"problemMatcher": "$gcc"
+		},
+		{
+			"label": "Build & Run Elysiae (Debug)",
+			"type": "shell",
+			"command": "meson setup build --buildtype=debug --reconfigure && meson compile -C build && meson devenv -C build ./src/Elysiae",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"dependsOn": "Build Elysiae (Debug)",
+			"problemMatcher": "$gcc",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "Build Elysiae (Release)",
+			"type": "shell",
+			"command": "meson setup build-release --buildtype=release && meson compile -C build-release",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": "build",
+			"problemMatcher": "$gcc"
+		},
+		{
+			"label": "Build & Run Elysiae (Release)",
+			"type": "shell",
+			"command": "meson setup build-release --buildtype=release && meson compile -C build-release && meson devenv -C build-release ./src/Elysiae",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"dependsOn": "Build Elysiae (Release)",
+			"problemMatcher": "$gcc"
+		},
+		{
+			"label": "Build & Run Tests (Debug)",
+			"type": "shell",
+			"command": "meson setup build --buildtype=debug --reconfigure && meson compile -C build && meson test -C build --print-errorlogs",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"dependsOn": "Build Elysiae (Debug)",
+			"problemMatcher": "$gcc"
+		}
+	]
+}

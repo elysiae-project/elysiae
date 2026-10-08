@@ -1,45 +1,19 @@
-<h1 align="center">Elysiae</h1>
+# Elysiae
 
-<p align="center">
-    <img src="https://raw.githubusercontent.com/elysiae-project/Elysiae/refs/heads/main/app-icon.png" alt="Elysiae App Icon" width="256">
-</p>
+Universal "Chinese Anime Game" launcher for Linux
 
-<h2 align="center">Universal "Anime Game" Launcher for Linux</h2>
+## Why does this project exist?
 
-> [!IMPORTANT]
-> This project will only be available as source code until a 1.0 release is complete. Afterwards, it will be submitted to Flathub for distribution there.
+The Elysiae launcher was created in response to dissatisfaction in the state of the separated launchers and the departure of the initial goal of the unified "anime games" launcher created by [an-anime-team](https://github.com/an-anime-team). This project aims to deliver a minimal launcher build with many quality-of-life features, while trimming the fat where possible.
 
-## Why This Project Exists
+## Features
 
-Elysiae aims to create a unified launcher for all "anime games", intending to serve as a replacement to the launchers that were developed by [an-anime-team](https://github.com/an-anime-team).
+- Unified Proton install: If you play multiple "Anime Games", this will save you ~350-450MB per extra game you play (compared to the individual launchers from an-anime-team)
+- Low-profile: Elysiae has been built to behave as a thin wrapper around the games it launches. Install size is low (< 1mb binary size) and memory usage has been reduced as much as possible (during game downloads, Elysiae will only use ~400MB of system memory)
+- Fast installs: Our game downloader library, irmin, has been optimized to download games faster than any other "Anime Game" launcher available. On gigabit networks, game downloads on elysiae are about 6x-10x faster than on projects created by an-anime-team
 
-The launchers created by an-anime-team have many issues, namely:
+## Downloading Elysiae
 
-1. Each launcher supports only one game, so players who enjoy multiple "anime games" must install multiple launchers. It should be noted that each launcher are almost identical in terms of code and differ only in which game's data they fetch. Furthermore, each launcher installs its own wine environment, which creates unnecessary bloat when multiple launchers are installed.
-
-2. Work on a unified launcher by an-anime-team has started, but has largely stalled and has drifted away from its initial goal by heavily focusing on extensibility. The unified launcher was released _without_ support for any of the games they were meant to support as of March 31st, 2026.
-
-The Elysiae Project aims to provide an alternative to the launchers maintained by an-anime-team, offering Linux players a unified way to launch and manage their "anime games".
-
-## Software Requirements
-
-To use Elysiae, Your system must meet the following requirements:
-
-- An x64 (x86-64) or arm64 (aarch64) CPU
-- At least 1024MB of memory
-- Linux Kernel >= 6.14
-- Systemd
-- DE running with Wayland
-- ~450MB of storage
-
-## Building From Source / Contributing to Elysiae
-
-Please see [`CONTRIBUTING.md`](https://github.com/elysiae-project/elysiae/blob/main/CONTRIBUTING.md)
-
-## For the lawyers of the "anime game" company
-
-Elysiae does **NOT** use any cheats/game plug-ins in order to get your games running. The Elyisae Project does **NOT** host any game content and is fetching it directly from your servers, just like your own services, and do not modify any files downloaded in this manner. Finally, The Elysiae Project also does not condone any user action that would result in a violation of your Terms of Service. The Elysiae Project only provides a method for Linux users to play your games.
-
-## Disclaimer
-
-Elysiae should be completely safe to use. However, please note that we are not responsible for any consequences that may come from using the launcher. Use Elysiae at your own risk.
+> [!IMPORTANT]  
+> Elysiae is not yet complete. Binaries will not be uploaded to package repositories until a stable 1.0 release is completed
+> If you want to create a build yourself, you can follow the steps in [CONTRIBUTING](https://github.com/elysiae-project/elysiae/CONTRIBUTING.md)

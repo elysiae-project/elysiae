@@ -1,0 +1,57 @@
+[package]
+name = "Elysiae"
+version = "1.0.0"
+authors = ["The Elysiae Project"]
+rust-version = "1.95.0"
+edition = "2024"
+
+[dependencies]
+gtk = { version = "0.11.5", package = "gtk4", features = ["v4_22", "gnome_50"] }
+
+zstd = "0.14.0"
+xz = "0.1.0"
+flate2 = "1.1.10"
+zip = "8.6.0"
+tar = "0.4.46"
+directories = "6.0.0"
+anyhow = "1.0.104"
+log = "0.4.34"
+fs_extra = "1.3.0"
+url = "2.5.8"
+reqwest = { version = "0.13.5", features = ["json", "stream"] }
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "fs", "io-util", "rt"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+futures-util = "0.3.34"
+uuid = { version = "1.27.0", features = ["v4"] }
+sha256 = "1.6.0"
+sysinfo = "0.39.6"
+regex = "1.13.1"
+
+irmin = { git = "https://github.com/elysiae-project/irmin", rev = "184b364e9ec41826d434cacfb8fe059fefe19fc7" }
+libc = "0.2.190"
+memfd = "0.6.6"
+async-channel = "2.5.0"
+ashpd = { version = "0.13.13", default-features = false, features = [
+    "gtk4",
+    "async-io",
+    "account",
+] }
+
+[dev-dependencies]
+whoami = "2.1.3"
+rand = "0.10.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+incremental = true
+panic = "abort"
+
+[build-dependencies]
+glib-build-tools = "0.22.8"

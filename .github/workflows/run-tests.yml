@@ -1,0 +1,35 @@
+name: Run Rust Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+  pull_request:
+    paths:
+      - "src/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu-latest
+          - arch: x86_64
+            distro: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S base-devel llvm clang gtk4 freetype2 rustup --noconfirm
+
+      - name: Run tests
+        run: |
+          rustup install
+          cargo test --workspace -- --include-ignored
