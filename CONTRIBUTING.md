@@ -50,9 +50,6 @@ rustup toolchain install
 > [!IMPORTANT]  
 > You must have an internet connection present to build Elysiae or have the appropriate rust version + cargo crates pre-downloaded before building
 
-> [!TIP]
-> You should only need to use Meson if you want to install Elysiae from source. developer/test release builds can be created using cargo
-
 To create a developer build, run:
 
 ```sh
