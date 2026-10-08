@@ -1,12 +1,10 @@
-use std::path::PathBuf;
-
 use crate::core::{
     game::Game,
-    game_downloader::download_game,
-    proton_manager::{components_installed, exec_proton, update_all_modules},
+    proton_manager::{components_installed, update_all_modules},
 };
 use anyhow::Result;
-use gtk::glib::{self};
+use gtk::glib;
+use gtk::subclass::prelude::ObjectSubclassIsExt;
 
 mod imp {
     use gtk::CompositeTemplate;
@@ -14,10 +12,12 @@ mod imp {
     use gtk::glib::clone;
     use gtk::glib::types::StaticType;
     use gtk::prelude::ButtonExt;
+    use std::cell::Cell;
+
+    use crate::core::game::Game;
     use gtk::subclass::prelude::*;
 
     use crate::widgets;
-    use crate::widgets::background;
     use crate::widgets::{background::Background, titlebar::Titlebar};
 
     #[derive(CompositeTemplate, Default)]
@@ -31,6 +31,8 @@ mod imp {
 
         #[template_child]
         pub background: TemplateChild<widgets::background::Background>,
+
+        pub current_game: std::cell::Cell<Game>,
     }
 
     #[glib::object_subclass]
@@ -86,15 +88,18 @@ glib::wrapper! {
 
 impl ElysiaeWindow {
     pub fn new(app: &gtk::Application) -> Self {
-        glib::Object::builder().property("application", app).build()
+        let window: Self = glib::Object::builder().property("application", app).build();
+        window.change_game(Game::Bh3);
+        window
     }
 
-    fn get_current_game(&self) -> Game {
-        todo!()
+    pub fn get_current_game(&self) -> Game {
+        self.imp().current_game.get()
     }
 
     pub fn change_game(&self, game: Game) {
-        todo!()
+        self.imp().current_game.set(game);
+        self.imp().background.set_media(game);
     }
 
     pub async fn download_components(&self) -> Result<()> {

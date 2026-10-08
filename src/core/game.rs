@@ -11,6 +11,12 @@ pub enum Game {
     Hyg,
 }
 
+impl Default for Game {
+    fn default() -> Self {
+        Self::Bh3
+    }
+}
+
 impl TryFrom<&str> for Game {
     type Error = anyhow::Error;
 
