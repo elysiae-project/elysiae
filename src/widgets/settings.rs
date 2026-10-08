@@ -1,6 +1,8 @@
 use anyhow::Result;
 use gtk::glib;
 
+use crate::util::settings::{SettingValue, get_option, set_option};
+
 mod imp {
     use gtk::CompositeTemplate;
     use gtk::glib;
@@ -41,12 +43,20 @@ impl Settings {
         glib::Object::builder().build()
     }
 
-    fn get_property_value(&self) -> Result<String> {
-        todo!()
+    pub fn get_property_value(&self, key: &str) -> Result<String> {
+        match get_option(key)? {
+            SettingValue::Bool(value) => Ok(value.to_string()),
+            SettingValue::Str(value) => Ok(value),
+        }
     }
 
-    fn set_property_value(&self, key: &str, value: &str) -> Result<()> {
-        todo!()
+    pub fn set_property_value(&self, key: &str, value: &str) -> Result<()> {
+        let current = get_option(key)?;
+        let setting = match current {
+            SettingValue::Bool(_) => SettingValue::Bool(value.parse()? ),
+            SettingValue::Str(_) => SettingValue::Str(value.to_owned()),
+        };
+        set_option(key, setting)
     }
 }
 

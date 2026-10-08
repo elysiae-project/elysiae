@@ -1,5 +1,7 @@
 use gtk::glib;
 
+use crate::core::game::Game;
+
 mod imp {
     use gtk::CompositeTemplate;
     use gtk::glib;
@@ -40,8 +42,11 @@ impl Sidebar {
         glib::Object::builder().build()
     }
 
-    pub fn process_event() {
-        
+    pub fn process_event<F>(game: Game, on_game_changed: F)
+    where
+        F: FnOnce(Game),
+    {
+        on_game_changed(game);
     }
 }
 

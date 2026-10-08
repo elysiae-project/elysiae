@@ -15,9 +15,10 @@ mod imp {
     use gtk::glib::clone;
     use gtk::glib::types::StaticType;
     use gtk::prelude::ButtonExt;
-    use std::cell::Cell;
-
     use crate::core::game::Game;
+    use crate::util::{runtime, settings::{SettingValue, get_option}};
+    use crate::widgets::progressbar::{DownloadEvent, Progressbar};
+    use crate::core::{game_downloader::download_game as install_game, proton_manager::{components_installed, update_all_modules}};
     use gtk::subclass::prelude::*;
 
     use crate::widgets;
@@ -72,7 +73,28 @@ mod imp {
                 #[weak]
                 obj,
                 move |_| {
-                    // Download Game
+                    let game = obj.get_current_game();
+                    let lang = match get_option("vo-lang") {
+                        Ok(SettingValue::Str(value)) => value,
+                        _ => "en-us".to_owned(),
+                    };
+                    let (sender, receiver) = async_channel::unbounded();
+                    glib::MainContext::default().spawn_local(async move {
+                        while let Ok(progress) = receiver.recv().await {
+                            let _ = Progressbar::handle_download_event(DownloadEvent::Sophon(progress));
+                        }
+                    });
+                    runtime::spawn(async move {
+                        if !components_installed().unwrap_or(false) {
+                            if let Err(error) = update_all_modules().await {
+                                log::error!("Component installation failed: {error:#}");
+                                return;
+                            }
+                        }
+                        if let Err(error) = install_game(game, &lang, sender).await {
+                            log::error!("Game download failed: {error:#}");
+                        }
+                    });
                 }
             ));
         }
@@ -107,7 +129,6 @@ impl ElysiaeWindow {
 
     pub async fn download_components(&self) -> Result<()> {
         update_all_modules().await?;
-
         Ok(())
     }
 
