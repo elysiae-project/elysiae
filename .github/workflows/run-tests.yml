@@ -1,0 +1,57 @@
+name: Backend and packaging checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    # Multi-architecture image with GTK >= 4.22; each job executes natively.
+    container: fedora:rawhide
+    steps:
+      - name: Install system dependencies
+        run: |
+          dnf install -y git gcc gcc-c++ clang llvm pkgconf-pkg-config gtk4-devel freetype-devel openssl-devel curl python3 meson ninja-build gettext desktop-file-utils appstream
+      - uses: actions/checkout@v6
+      - name: Install pinned Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup show
+          rustup component add clippy rustfmt
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          rustc -vV
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Run offline fixture tests
+        run: cargo test --workspace --offline --locked
+      - name: Build and lint
+        run: |
+          cargo build --offline --locked
+          cargo clippy --workspace --all-targets --offline --locked
+      - name: Validate packaging
+        env:
+          CARGO_NET_OFFLINE: 'true'
+        run: |
+          export CARGO_TARGET_DIR="$PWD/target"
+          meson setup build -Dprofile=dev --prefix=/usr
+          meson compile -C build
+          glib-compile-schemas --strict --dry-run data
+          desktop-file-validate build/data/app.elysiae.Elysiae.desktop
+          appstreamcli validate --no-net build/data/app.elysiae.Elysiae.metainfo.xml
+          DESTDIR="$PWD/stage" meson install -C build --no-rebuild
+          test -x stage/usr/bin/Elysiae
+          test -f stage/usr/share/glib-2.0/schemas/app.elysiae.Elysiae.gschema.xml
+          test -f stage/usr/share/icons/hicolor/scalable/apps/app.elysiae.Elysiae.svg

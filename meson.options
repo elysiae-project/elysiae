@@ -1,0 +1,7 @@
+option(
+    'profile',
+    type: 'combo',
+    choices: ['release', 'dev'],
+    value: 'release',
+    description: 'The build profile for Elysiae. One of "release" or "dev".',
+)

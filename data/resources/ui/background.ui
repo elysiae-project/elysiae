@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeBackground" parent="GtkBox">
+    <child>
+      <object class="GtkOverlay">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        <child>
+          <object class="GtkPicture" id="background">
+            <property name="content-fit">cover</property>
+            <property name="can-shrink">true</property>
+            <property name="halign">fill</property>
+            <property name="valign">fill</property>
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkVideo" id="video">
+            <property name="autoplay">true</property>
+            <property name="loop">true</property>
+            <property name="halign">fill</property>
+            <property name="valign">fill</property>
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+          </object>
+        </child>
+        <child type="overlay">
+          <object class="GtkPicture" id="overlay">
+            <property name="content-fit">cover</property>
+            <property name="can-shrink">true</property>
+            <property name="halign">fill</property>
+            <property name="valign">fill</property>
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
