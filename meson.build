@@ -5,13 +5,10 @@ gnome = import('gnome')
 base_id = 'app.elysiae.Elysiae'
 
 is_devel = get_option('profile') == 'dev'
-if is_devel
-    profile = 'Devel'
-    application_id = '@0@.@1@'.format(base_id, profile)
-else
-    profile = ''
-    application_id = base_id
-endif
+# Build profiles change optimization, not the running application's identity.
+# Rust, GSettings, icons and URI activation all use this same stable ID.
+profile = ''
+application_id = base_id
 
 bindir = get_option('prefix') / get_option('bindir')
 localedir = get_option('prefix') / get_option('localedir')

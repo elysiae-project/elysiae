@@ -1,4 +1,6 @@
+#[cfg(not(test))]
 fn main() {
+    println!("cargo:rerun-if-env-changed=ELYSIAE_SKIP_KERNEL_CHECK");
     compile_resources();
     let status = std::process::Command::new("glib-compile-schemas")
         .args(["--strict", "--targetdir"])
@@ -18,15 +20,16 @@ fn main() {
         "Elysiae is only supported on x64 (x86_64) and ARM (aarch64) computers. Please target one of these two architectures when building Elysiae.\nWARNING: If you remove this warning, the app will build successfully, but will fail to install the required additional files, as the endpoint used to download the additional files only provides arm/x86 binaries".
     );
 
-    if !kernel_version_at_least_6_14_0() {
+    if !supported_kernel() {
         println!(
-            "WARNING: Elysiae is designed to run on Linux kernel version 6.14 or later. Please update the kernel if you encounter performance issues while playing games"
+            "cargo:warning=Elysiae is designed to run on Linux kernel version 6.14 or later. Please update the kernel if you encounter performance issues while playing games"
         );
     }
 }
 
 /// Compiles the gresource bundle into OUT_DIR (picked up by
 /// `gio::resources_register_include!`) following the gtk4-rs book pattern.
+#[cfg(not(test))]
 fn compile_resources() {
     println!("cargo:rerun-if-changed=data/resources.gresource.xml");
     println!("cargo:rerun-if-changed=data");
@@ -37,35 +40,31 @@ fn compile_resources() {
     );
 }
 
-fn kernel_version_at_least_6_14_0() -> bool {
-    if std::env::var("ELYSIAE_SKIP_KERNEL_CHECK").is_ok() {
+#[cfg(not(test))]
+fn supported_kernel() -> bool {
+    if std::env::var_os("ELYSIAE_SKIP_KERNEL_CHECK").is_some() {
         return true;
     }
-    let release = match std::fs::read_to_string("/proc/sys/kernel/osrelease") {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-
-    version_at_least(&release, (6, 14, 0))
+    std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .is_ok_and(|release| version_at_least(&release, (6, 14, 0)))
 }
 
-fn version_at_least(release: &str, min: (u64, u64, u64)) -> bool {
+fn version_at_least(release: &str, minimum: (u64, u64, u64)) -> bool {
     let mut parts = release
         .trim()
         .split(|c: char| !c.is_ascii_digit())
         .filter(|part| !part.is_empty())
         .filter_map(|part| part.parse::<u64>().ok());
-    let major = parts.next().unwrap_or(0);
-    let minor = parts.next().unwrap_or(0);
-    let patch = parts.next().unwrap_or(0);
-
-    (major, minor, patch) >= min
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    ) >= minimum
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn compares_kernel_versions() {
         assert!(version_at_least("6.14.0", (6, 14, 0)));

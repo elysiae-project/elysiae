@@ -1,16 +1,11 @@
-
 cargo = find_program('cargo')
-
-cargo_options = ['--manifest-path', meson.project_source_root() / 'Cargo.toml']
-cargo_options += ['--target-dir', meson.project_build_root() / 'target']
-
-if not is_devel 
-    cargo_options += ['--release']
-    rust_target = 'release'
-else
-    rust_target = 'debug'
+shell = find_program('sh')
+rust_target = is_devel ? 'debug' : 'release'
+cargo_command = 'target="${CARGO_TARGET_DIR:-$3}"; "$1" build --locked --manifest-path "$2/Cargo.toml" --target-dir "$target"'
+if not is_devel
+    cargo_command += ' --release'
 endif
-
+cargo_command += '; cp -- "$target/$4/Elysiae" "$5"'
 
 custom_target(
     'cargo-build',
@@ -21,19 +16,12 @@ custom_target(
     install: true,
     install_dir: bindir,
     depends: [resources, gsettings],
-    env: {
-        'CARGO_HOME': meson.project_build_root() / 'cargo-home',
-        'GSETTINGS_SCHEMA_DIR': meson.project_build_root(),
-        'APP_ID': application_id,
-        'RESOURCES_FILE': pkgdatadir / 'resources.gresource',
-    },
     command: [
-        cargo,
-        'build',
-        cargo_options,
-        '&&',
-        'cp',
-        meson.project_build_root() / 'target' / rust_target / meson.project_name(),
+        shell, '-eu', '-c', cargo_command, 'cargo-build',
+        cargo.full_path(),
+        meson.project_source_root(),
+        meson.project_build_root() / 'target',
+        rust_target,
         '@OUTPUT@',
     ],
 )
