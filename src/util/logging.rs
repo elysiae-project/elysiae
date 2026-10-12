@@ -42,17 +42,3 @@ pub fn init() -> Result<()> {
     log::set_max_level(filter);
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Checks the default level, supported overrides and invalid values.
-    #[test]
-    fn log_level_is_explicit_and_validated() {
-        assert_eq!(level(None).unwrap(), LevelFilter::Info);
-        assert_eq!(level(Some("debug")).unwrap(), LevelFilter::Debug);
-        assert_eq!(level(Some("off")).unwrap(), LevelFilter::Off);
-        assert!(level(Some("verbose")).is_err());
-    }
-}

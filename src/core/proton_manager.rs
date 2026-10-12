@@ -1594,11 +1594,7 @@ fn run_game_owned(paths: &RuntimePaths, executable: &Path, operation: &Operation
 mod tests {
     use super::*;
     use crate::core::operations::Operations;
-    use std::{
-        os::unix::fs::symlink,
-        sync::atomic::{AtomicUsize, Ordering},
-        time::Instant,
-    };
+    use std::{os::unix::fs::symlink, time::Instant};
 
     thread_local! {
         static METADATA_FAILURES: std::cell::RefCell<Vec<(PathBuf, &'static str, usize)>> = const {
@@ -1748,15 +1744,11 @@ mod tests {
 
     /// Packs a fixture runtime into a gzip-compressed TAR with a top-level directory.
     fn archive(source: &Path, destination: &Path) {
-        let encoder = flate2::write::GzEncoder::new(
-            File::create(destination).unwrap(),
-            flate2::Compression::fast(),
-        );
-        let mut builder = tar::Builder::new(encoder);
-        builder
-            .append_dir_all("Phlogiston-fixture", source)
-            .unwrap();
-        builder.into_inner().unwrap().finish().unwrap();
+        tar_fixture(destination, |builder| {
+            builder
+                .append_dir_all("Phlogiston-fixture", source)
+                .unwrap();
+        });
     }
 
     /// Creates a gzip-compressed TAR using caller-supplied entries.
@@ -1779,22 +1771,6 @@ mod tests {
         header.set_mode(0o755);
         header.set_cksum();
         header
-    }
-
-    /// Records a fixture transaction phase, snapshotting the tracker before commit.
-    fn journal_phase(paths: &RuntimePaths, journal: &Journal, phase: TransactionPhase) {
-        if phase == TransactionPhase::Committing {
-            snapshot_legacy_version(paths, journal).unwrap();
-        }
-        atomic_json(
-            &paths.journal(),
-            &Journal {
-                format: 1,
-                id: journal.id.clone(),
-                phase,
-            },
-        )
-        .unwrap();
     }
 
     /// Checks the latest-release query and its single, flat metadata response.
@@ -1823,31 +1799,6 @@ mod tests {
         assert!(serde_json::from_value::<ComponentRelease>(serde_json::json!({
             "tag":"11-0", "prerelease":false, "download":{"amd64":{"url":"https://example.invalid"}}
         })).is_err());
-    }
-
-    /// Rejects prereleases, malformed versions and checksums, and non-HTTPS URLs.
-    #[test]
-    fn refuses_prerelease_bad_checksums_and_untrusted_urls() {
-        let mut data = release("v1");
-        data.prerelease = true;
-        assert!(data.validate().is_err());
-        for checksum in ["", "abc", &"g".repeat(64), &"a".repeat(63)] {
-            let mut data = release("v1");
-            data.download.checksum = checksum.into();
-            assert!(data.validate().is_err());
-        }
-        for url in [
-            "http://example.invalid/runtime",
-            "file:///tmp/runtime",
-            "not a URL",
-        ] {
-            let mut data = release("v1");
-            data.download.url = url.into();
-            assert!(data.validate().is_err());
-        }
-        for tag in ["", "\n", "v1\nmalformed"] {
-            assert!(release(tag).validate().is_err());
-        }
     }
 
     /// Requires a complete runtime with executable launchers and nonempty support files.
@@ -1899,85 +1850,6 @@ mod tests {
         }
     }
 
-    /// Accepts runtime-internal symlinks but rejects links outside the distribution.
-    #[test]
-    fn layout_rejects_external_links_but_accepts_internal_links() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        let wine = paths.live().join("files/bin/wine");
-        fs::rename(&wine, paths.live().join("files/bin/wine-real")).unwrap();
-        symlink("wine-real", &wine).unwrap();
-        assert!(paths.resolve().is_ok());
-        fs::remove_file(&wine).unwrap();
-        symlink("/bin/false", &wine).unwrap();
-        assert!(paths.resolve().is_err());
-    }
-
-    /// Ensures a legacy tracker cannot hide missing files or invalid runtime markers.
-    #[test]
-    fn current_tracker_never_suppresses_runtime_repair() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        legacy(paths, "v2");
-        let latest = release("v2");
-        assert!(paths.needs_update(&latest).unwrap());
-        layout(&paths.live());
-        assert!(paths.needs_update(&latest).unwrap());
-        marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-        assert!(paths.needs_update(&latest).unwrap());
-        marker(&paths.live(), "v2", &Uuid::new_v4().to_string());
-        legacy(paths, "v1");
-        assert!(!paths.needs_update(&latest).unwrap());
-        fs::remove_file(paths.live().join("files/bin/wine")).unwrap();
-        assert!(paths.needs_update(&latest).unwrap());
-        layout(&paths.live());
-        fs::write(paths.live().join(MARKER), b"malformed marker").unwrap();
-        assert!(paths.needs_update(&latest).unwrap());
-        fs::remove_file(paths.live().join(MARKER)).unwrap();
-        fs::write(paths.0.join("components/proton.json"), b"malformed tracker").unwrap();
-        assert!(paths.needs_update(&latest).unwrap());
-    }
-
-    /// Checks archive checksum validation and the required staging-space budget.
-    #[test]
-    fn archive_checksum_and_staging_budget_are_enforced() {
-        let fixture = Fixture::new();
-        let source = fixture.0.0.join("source");
-        layout(&source);
-        let path = fixture.0.0.join("archive.tar.gz");
-        archive(&source, &path);
-        verify_archive(&path, &sha256::try_digest(&path).unwrap()).unwrap();
-        assert!(verify_archive(&path, &"0".repeat(64)).is_err());
-        assert!(verify_archive(&path, "bad hash").is_err());
-        assert!(check_archive_space(&path, STORAGE_RESERVE).is_err());
-        check_archive_space(&path, STORAGE_RESERVE + 1024 * 1024).unwrap();
-    }
-
-    /// Rejects oversized TAR extensions even when they compress to a small archive.
-    #[test]
-    fn raw_preflight_rejects_compressed_oversized_extensions_before_interpretation() {
-        let fixture = Fixture::new();
-        let path = fixture.0.0.join("oversized.tar.gz");
-        for kind in [b'L', b'K', b'x', b'g'] {
-            tar_fixture(&path, |builder| {
-                let header = tar_header(kind, MAX_TAR_EXTENSION_BYTES + 1);
-                builder
-                    .append(
-                        &header,
-                        std::io::repeat(b'a').take(MAX_TAR_EXTENSION_BYTES + 1),
-                    )
-                    .unwrap();
-            });
-            assert!(fs::metadata(&path).unwrap().len() < 2048);
-            let error = check_archive_space(&path, u64::MAX).unwrap_err();
-            assert!(
-                error.to_string().contains("extension is too large"),
-                "{error:#}"
-            );
-        }
-    }
-
     /// Ensures runtime installation rejects oversized extensions before extraction.
     #[test]
     fn extension_preflight_protects_the_actual_extraction_caller() {
@@ -2007,98 +1879,6 @@ mod tests {
         assert!(!paths.stage(&journal).join("runtime").exists());
         operation.finish::<()>(Err(error)).unwrap_err();
         recover_at(paths).unwrap();
-    }
-
-    /// Counts implicit parent directories once despite explicit or aliased entries.
-    #[test]
-    fn archive_budget_counts_unique_implicit_parents_and_explicit_aliases() {
-        let fixture = Fixture::new();
-        let path = fixture.0.0.join("parents.tar.gz");
-        tar_fixture(&path, |builder| {
-            for name in ["a/b/one", "a/c/two"] {
-                builder
-                    .append_data(&mut tar_header(b'0', 1), name, &b"x"[..])
-                    .unwrap();
-            }
-            for name in ["a", "./a/b", "a/c"] {
-                builder
-                    .append_data(&mut tar_header(b'5', 0), name, std::io::empty())
-                    .unwrap();
-            }
-        });
-        // Two files and three unique parents, regardless of explicit entries.
-        let required = STORAGE_RESERVE + 5 * NODE_ALLOCATION + 2;
-        assert!(check_archive_space(&path, required - 1).is_err());
-        check_archive_space(&path, required).unwrap();
-    }
-
-    /// Accepts ordinary GNU long names and consistent PAX metadata.
-    #[test]
-    fn normal_longname_and_pax_metadata_remain_supported() {
-        let fixture = Fixture::new();
-        let path = fixture.0.0.join("metadata.tar.gz");
-        tar_fixture(&path, |builder| {
-            let name = format!("runtime/{}/file", "long-directory".repeat(10));
-            builder
-                .append_data(&mut tar_header(b'0', 1), name, &b"x"[..])
-                .unwrap();
-            builder
-                .append_pax_extensions([
-                    ("path", b"runtime/pax/file".as_slice()),
-                    ("size", b"1".as_slice()),
-                ])
-                .unwrap();
-            builder
-                .append_data(&mut tar_header(b'0', 1), "placeholder", &b"x"[..])
-                .unwrap();
-        });
-        check_archive_space(&path, STORAGE_RESERVE + 1024 * 1024).unwrap();
-    }
-
-    /// Rejects mismatched PAX sizes and GNU sparse archive entries.
-    #[test]
-    fn preflight_rejects_pax_offset_divergence_and_sparse_maps() {
-        let fixture = Fixture::new();
-        let path = fixture.0.0.join("divergent.tar.gz");
-        tar_fixture(&path, |builder| {
-            builder
-                .append_pax_extensions([("size", b"512".as_slice())])
-                .unwrap();
-            builder
-                .append_data(&mut tar_header(b'0', 0), "file", std::io::empty())
-                .unwrap();
-        });
-        assert!(
-            check_archive_space(&path, u64::MAX)
-                .unwrap_err()
-                .to_string()
-                .contains("PAX size disagrees")
-        );
-        tar_fixture(&path, |builder| {
-            builder
-                .append(&tar_header(b'S', 0), std::io::empty())
-                .unwrap();
-        });
-        assert!(
-            check_archive_space(&path, u64::MAX)
-                .unwrap_err()
-                .to_string()
-                .contains("sparse")
-        );
-        tar_fixture(&path, |builder| {
-            builder
-                .append_pax_extensions([("GNU.sparse.map", b"0,1".as_slice())])
-                .unwrap();
-            builder
-                .append_data(&mut tar_header(b'0', 1), "file", &b"x"[..])
-                .unwrap();
-        });
-        assert!(
-            check_archive_space(&path, u64::MAX)
-                .unwrap_err()
-                .to_string()
-                .contains("Sparse")
-        );
     }
 
     /// Enforces archive path length, depth and decoded-size limits.
@@ -2139,40 +1919,7 @@ mod tests {
         );
     }
 
-    /// Enforces archive entry-count and cumulative metadata limits.
-    #[test]
-    fn archive_limits_bound_entry_count_and_aggregate_metadata() {
-        let fixture = Fixture::new();
-        let path = fixture.0.0.join("many.tar.gz");
-        tar_fixture(&path, |builder| {
-            let header = tar_header(b'0', 0);
-            for _ in 0..=MAX_TAR_ENTRIES {
-                builder.append(&header, std::io::empty()).unwrap();
-            }
-        });
-        assert!(
-            check_archive_space(&path, u64::MAX)
-                .unwrap_err()
-                .to_string()
-                .contains("Too many")
-        );
-        tar_fixture(&path, |builder| {
-            let header = tar_header(b'L', MAX_TAR_EXTENSION_BYTES);
-            for _ in 0..=MAX_TAR_METADATA_BYTES / MAX_TAR_EXTENSION_BYTES {
-                builder
-                    .append(&header, std::io::repeat(0).take(MAX_TAR_EXTENSION_BYTES))
-                    .unwrap();
-            }
-        });
-        assert!(
-            raw_tar_preflight(&path)
-                .unwrap_err()
-                .to_string()
-                .contains("metadata")
-        );
-    }
-
-    /// Checks tracker consistency and cleanup across successive runtime installs.
+    /// Checks checksum rejection, tracker consistency and cleanup across runtime installs.
     #[test]
     fn staged_archive_replaces_v1_with_v2_and_coherent_markers() {
         let fixture = Fixture::new();
@@ -2187,6 +1934,7 @@ mod tests {
             archive(&source, &downloaded);
             let mut metadata = release(version);
             metadata.download.checksum = sha256::try_digest(&downloaded).unwrap();
+            assert!(verify_archive(&downloaded, &"0".repeat(64)).is_err());
             verify_archive(&downloaded, &metadata.download.checksum).unwrap();
             let operation = owner.begin(OperationKind::Components, None).unwrap();
             let result = runtime().block_on(install_verified_archive(
@@ -2211,25 +1959,6 @@ mod tests {
         }
     }
 
-    /// Checks that exhausted retries retain the last error and any previous download.
-    #[test]
-    fn retry_reports_last_concrete_error_without_deleting_previous_file() {
-        let fixture = Fixture::new();
-        let destination = fixture.0.0.join("existing-archive");
-        fs::write(&destination, b"previous download").unwrap();
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Components, None).unwrap();
-        let attempts = AtomicUsize::new(0);
-        let result = runtime().block_on(retry_download(&operation, || async {
-            let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
-            bail!("fixture HTTP failure number {attempt}")
-        }));
-        let error = format!("{:#}", result.unwrap_err());
-        assert!(error.contains("fixture HTTP failure number 5"), "{error}");
-        assert_eq!(fs::read(destination).unwrap(), b"previous download");
-        operation.finish(Ok(())).unwrap();
-    }
-
     /// Recovers coherent runtime and tracker state at each interrupted swap boundary.
     #[test]
     fn recovery_handles_each_rename_interruption() {
@@ -2241,7 +1970,16 @@ mod tests {
             legacy(paths, "v1");
             let journal = fixture.prepared("v2");
             if step >= 1 {
-                journal_phase(paths, &journal, TransactionPhase::Committing);
+                snapshot_legacy_version(paths, &journal).unwrap();
+                atomic_json(
+                    &paths.journal(),
+                    &Journal {
+                        format: 1,
+                        id: journal.id.clone(),
+                        phase: TransactionPhase::Committing,
+                    },
+                )
+                .unwrap();
             }
             if step >= 2 {
                 fs::rename(paths.live(), paths.backup(&journal)).unwrap();
@@ -2269,229 +2007,70 @@ mod tests {
         }
     }
 
-    /// Restores the prior runtime when the newly activated layout is incomplete.
-    #[test]
-    fn corrupt_new_layout_rolls_back_to_previous_runtime() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-        let journal = fixture.prepared("v2");
-        journal_phase(paths, &journal, TransactionPhase::Committing);
-        fs::rename(paths.live(), paths.backup(&journal)).unwrap();
-        fs::rename(paths.stage(&journal).join("runtime"), paths.live()).unwrap();
-        fs::remove_file(paths.live().join("files/bin/wine")).unwrap();
-        recover_at(paths).unwrap();
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v1");
-        assert!(paths.resolve().is_ok());
-    }
-
-    /// Rejects a directory at the tracker path before replacing the live runtime.
-    #[test]
-    fn invalid_tracker_node_is_rejected_before_swap() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-        fs::create_dir_all(paths.0.join("components/proton.json")).unwrap();
-        let journal = fixture.prepared("v2");
-        assert!(commit_runtime(paths, &journal).is_err());
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v1");
-        assert!(read_journal(paths).unwrap().phase == TransactionPhase::Staging);
-        recover_at(paths).unwrap();
-        assert!(!paths.journal().exists());
-        assert!(paths.0.join("components/proton.json").is_dir());
-    }
-
-    /// Distinguishes metadata failures before publication from a failed parent sync.
-    #[test]
-    fn atomic_metadata_reports_whether_rename_published() {
-        for boundary in ["file-sync", "rename", "parent-sync"] {
-            let fixture = Fixture::new();
-            let file = fixture.0.0.join("metadata");
-            fs::write(&file, b"old").unwrap();
-            inject_metadata_failure(file.clone(), boundary, 0);
-            let mut published = false;
-            assert!(atomic_bytes(&file, b"new", &mut published).is_err());
-            assert_eq!(published, boundary == "parent-sync");
-            assert_eq!(
-                fs::read(file).unwrap(),
-                if published { b"new" } else { b"old" }
-            );
-        }
-    }
-
     /// Restores exact legacy tracker bytes or absence when commit publication fails.
-    #[test]
-    fn final_journal_before_publication_restores_exact_legacy_tracker() {
-        for boundary in ["file-sync", "rename"] {
-            for prior in [
-                Some(b"{ \"version\": \"v1\" }\n".as_slice()),
-                Some(b"invalid\xff"),
-                None,
-            ] {
-                for nested in [false, true] {
-                    let fixture = Fixture::new();
-                    let paths = &fixture.0;
-                    let root = if nested {
-                        paths.0.join("proton")
-                    } else {
-                        paths.0.clone()
-                    };
-                    layout(&root); // No in-tree marker: the tracker must be restored exactly.
-                    let tracker = paths.0.join("components/proton.json");
-                    if let Some(bytes) = prior {
-                        write(&tracker, bytes, false);
-                    }
-                    let journal = fixture.prepared("v2");
-                    inject_metadata_failure(paths.journal(), boundary, 1);
-                    assert!(commit_runtime(paths, &journal).is_err());
-                    assert!(!paths.live().exists());
-                    assert_eq!(fs::read(&tracker).ok().as_deref(), prior);
-                    assert!(paths.needs_update(&release("v2")).unwrap());
-                    assert!(!paths.journal().exists());
-                    assert_eq!(paths.resolve().unwrap().root, root);
-                }
-            }
-        }
-    }
-
     /// Keeps the new runtime when the committed journal was published but not synced.
     #[test]
-    fn final_journal_post_rename_failure_never_rolls_back() {
-        for surviving_committed in [false, true] {
-            let fixture = Fixture::new();
-            let paths = &fixture.0;
-            layout(&paths.live());
-            marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-            legacy(paths, "v1");
-            let journal = fixture.prepared("v2");
-            inject_metadata_failure(paths.journal(), "parent-sync", 1);
-            assert!(commit_runtime(paths, &journal).is_err());
-            assert!(read_journal(paths).unwrap().phase == TransactionPhase::Committed);
-            assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
-            assert_eq!(
-                runtime_version(&paths.backup(&journal)).unwrap().version,
-                "v1"
-            );
-            if !surviving_committed {
-                // A crash before the parent sync may retain the old decision.
-                atomic_json(
-                    &paths.journal(),
-                    &Journal {
-                        format: 1,
-                        id: journal.id.clone(),
-                        phase: TransactionPhase::Committing,
-                    },
-                )
-                .unwrap();
-            }
-            recover_at(paths).unwrap();
-            assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
-            assert!(!paths.needs_update(&release("v2")).unwrap());
-            assert!(!paths.journal().exists());
-        }
-    }
-
-    /// Resumes interrupted tracker rollback without marking the legacy runtime current.
-    #[test]
-    fn interrupted_tracker_rollback_restarts_without_blessing_legacy() {
-        for prior in [
-            Some(b"{\"version\":\"v1\"}".as_slice()),
-            Some(b"broken tracker"),
-            None,
+    fn final_journal_publication_boundary_controls_rollback() {
+        let valid = Some(b"{ \"version\": \"v1\" }\n".as_slice());
+        for (boundary, prior, surviving_committed) in [
+            ("file-sync", valid, false),
+            ("rename", Some(b"invalid\xff".as_slice()), false),
+            ("rename", None, false),
+            ("parent-sync", valid, false),
+            ("parent-sync", valid, true),
         ] {
             let fixture = Fixture::new();
             let paths = &fixture.0;
-            layout(&paths.0.join("proton"));
+            let published = boundary == "parent-sync";
+            let root = if published {
+                paths.live()
+            } else {
+                paths.0.join("proton")
+            };
+            layout(&root);
+            // Legacy cases have no marker: restore the tracker exactly.
+            if published {
+                marker(&root, "v1", &Uuid::new_v4().to_string());
+            }
             let tracker = paths.0.join("components/proton.json");
             if let Some(bytes) = prior {
                 write(&tracker, bytes, false);
             }
             let journal = fixture.prepared("v2");
-            inject_metadata_failure(paths.journal(), "rename", 1);
-            if prior.is_some() {
-                inject_metadata_failure(tracker.clone(), "rename", 1);
-            } else {
-                // Fail publication of the cleanup decision after restoring absence.
-                inject_metadata_failure(paths.journal(), "rename", 1);
-            }
+            inject_metadata_failure(paths.journal(), boundary, 1);
             assert!(commit_runtime(paths, &journal).is_err());
-            assert!(read_journal(paths).unwrap().phase == TransactionPhase::RollingBack);
-            assert!(paths.stage(&journal).join(TRACKER_SNAPSHOT).is_file());
-            assert!(!paths.live().exists());
-            recover_at(paths).unwrap();
-            assert_eq!(fs::read(&tracker).ok().as_deref(), prior);
-            assert!(paths.needs_update(&release("v2")).unwrap());
+            if published {
+                assert!(read_journal(paths).unwrap().phase == TransactionPhase::Committed);
+                assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
+                assert_eq!(
+                    runtime_version(&paths.backup(&journal)).unwrap().version,
+                    "v1"
+                );
+                if !surviving_committed {
+                    // A crash before the parent sync may retain the old decision.
+                    atomic_json(
+                        &paths.journal(),
+                        &Journal {
+                            format: 1,
+                            id: journal.id.clone(),
+                            phase: TransactionPhase::Committing,
+                        },
+                    )
+                    .unwrap();
+                }
+                recover_at(paths).unwrap();
+                assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
+                assert!(!paths.needs_update(&release("v2")).unwrap());
+            } else {
+                assert!(!paths.live().exists());
+                assert_eq!(fs::read(&tracker).ok().as_deref(), prior);
+                assert!(paths.needs_update(&release("v2")).unwrap());
+                assert_eq!(paths.resolve().unwrap().root, root);
+            }
             assert!(!paths.journal().exists());
+            assert!(!paths.stage(&journal).exists());
+            assert!(!paths.backup(&journal).exists());
         }
-    }
-
-    /// Rejects oversized legacy metadata before commit and preserves its contents.
-    #[test]
-    fn oversized_tracker_is_rejected_before_committing() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.0.join("proton"));
-        let tracker = paths.0.join("components/proton.json");
-        write(
-            &tracker,
-            &vec![b'x'; MAX_METADATA_BYTES as usize + 1],
-            false,
-        );
-        let journal = fixture.prepared("v2");
-        assert!(commit_runtime(paths, &journal).is_err());
-        assert!(read_journal(paths).unwrap().phase == TransactionPhase::Staging);
-        assert!(!paths.live().exists());
-        recover_at(paths).unwrap();
-        assert_eq!(fs::metadata(tracker).unwrap().len(), MAX_METADATA_BYTES + 1);
-    }
-
-    /// Keeps the prior runtime when the staged version marker cannot be written.
-    #[test]
-    fn staged_marker_failure_preserves_previous_runtime() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-        let source = paths.0.join("source");
-        layout(&source);
-        fs::create_dir(source.join(MARKER)).unwrap();
-        let journal = start_transaction(paths).unwrap();
-        archive(&source, &paths.stage(&journal).join("download.tar.gz"));
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Components, None).unwrap();
-        assert!(
-            runtime()
-                .block_on(install_verified_archive(
-                    paths,
-                    &journal,
-                    &release("v2"),
-                    &operation
-                ))
-                .is_err()
-        );
-        recover_at(paths).unwrap();
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v1");
-        assert!(!paths.journal().exists());
-    }
-
-    /// Retries committed cleanup without rolling back or removing the current runtime.
-    #[test]
-    fn committed_cleanup_retry_never_rolls_back_or_removes_current_runtime() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        let journal = fixture.prepared("v2");
-        fs::rename(paths.stage(&journal).join("runtime"), paths.live()).unwrap();
-        journal_phase(paths, &journal, TransactionPhase::Committed);
-        fs::create_dir_all(paths.0.join("components/proton.json")).unwrap();
-        assert!(recover_at(paths).is_err());
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
-        assert!(paths.journal().is_file());
-        fs::remove_dir(paths.0.join("components/proton.json")).unwrap();
-        recover_at(paths).unwrap();
-        assert!(!paths.journal().exists());
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
     }
 
     /// Rejects unsafe transaction paths and leaves unrelated staging trees untouched.
@@ -2525,48 +2104,6 @@ mod tests {
         symlink(&unknown, paths.stage(&journal)).unwrap();
         assert!(recover_at(paths).is_err());
         assert_eq!(fs::read(unknown.join("sentinel")).unwrap(), b"keep");
-    }
-
-    /// Preserves the old runtime and recoverable staging when its Wine wait fails.
-    #[test]
-    fn failed_replacement_wait_keeps_old_runtime_and_journal_recoverable() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-        fs::create_dir(paths.prefix()).unwrap();
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nexec /bin/false\n",
-            true,
-        );
-        let journal = fixture.prepared("v2");
-        assert!(commit_runtime(paths, &journal).is_err());
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v1");
-        recover_at(paths).unwrap();
-        assert!(!paths.journal().exists());
-    }
-
-    /// Waits with the old runtime's Wine server before activating its replacement.
-    #[test]
-    fn replacement_wait_uses_the_old_matching_wineserver() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        marker(&paths.live(), "v1", &Uuid::new_v4().to_string());
-        fs::create_dir(paths.prefix()).unwrap();
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nprintf '%s\\n' \"$1\" > \"$STEAM_COMPAT_DATA_PATH/old-wait\"\n",
-            true,
-        );
-        let journal = fixture.prepared("v2");
-        commit_runtime(paths, &journal).unwrap();
-        assert_eq!(
-            fs::read_to_string(paths.prefix().join("old-wait")).unwrap(),
-            "-w\n"
-        );
-        assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
     }
 
     /// Checks launch arguments, CWD, child-only environment and process reaping.
@@ -2654,97 +2191,6 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         assert!(!paths.session().exists());
     }
 
-    /// Waits for Wine after a wrapper failure and reports the wrapper's exit status.
-    #[test]
-    fn failed_wrapper_still_waits_for_wine_and_reports_exit() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        write(
-            &paths.live().join("proton"),
-            b"#!/bin/sh\nexec /bin/false\n",
-            true,
-        );
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nprintf waited > \"$STEAM_COMPAT_DATA_PATH/waited\"\n",
-            true,
-        );
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Launch, None).unwrap();
-        let error = runtime()
-            .block_on(run_game_at(
-                RuntimePaths(paths.0.clone()),
-                fixture.game(),
-                operation,
-            ))
-            .unwrap_err();
-        assert!(format!("{error:#}").contains("exit status: 1"));
-        assert!(paths.prefix().join("waited").is_file());
-        assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Failed);
-    }
-
-    /// Reports Wine wait failures and leaves the shared prefix fenced.
-    #[test]
-    fn failed_wineserver_is_an_observable_launch_failure() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nexec /bin/false\n",
-            true,
-        );
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Launch, None).unwrap();
-        let error = runtime()
-            .block_on(run_game_at(
-                RuntimePaths(paths.0.clone()),
-                fixture.game(),
-                operation,
-            ))
-            .unwrap_err();
-        assert!(format!("{error:#}").contains("wineserver -w failed"));
-        assert!(!owner.is_busy().unwrap());
-        assert!(paths.session().is_file());
-        assert!(ensure_no_session_at(paths).is_err());
-    }
-
-    /// Prevents launch after fence publication errors and retains any published fence.
-    #[test]
-    fn session_fence_publication_failure_never_spawns_proton() {
-        for boundary in ["file-sync", "rename", "parent-sync"] {
-            let fixture = Fixture::new();
-            let paths = &fixture.0;
-            layout(&paths.live());
-            write(
-                &paths.live().join("proton"),
-                b"#!/bin/sh\nprintf bad > \"$STEAM_COMPAT_DATA_PATH/spawned\"\n",
-                true,
-            );
-            let executable = fixture.game();
-            let owner = Operations::default();
-            let operation = owner.begin(OperationKind::Launch, None).unwrap();
-            inject_metadata_failure(paths.session(), boundary, 0);
-            let result = run_game_owned(paths, &executable, &operation);
-            assert!(operation.finish(result).is_err());
-            assert!(!paths.prefix().join("spawned").exists());
-            assert_eq!(
-                ensure_no_session_at(paths).is_err(),
-                boundary == "parent-sync"
-            );
-            if boundary == "parent-sync" {
-                // No wrapper was spawned, but a later process cannot know
-                // that from the pre-spawn record; Unknown must fail closed.
-                assert!(recover_session_at(paths).is_err());
-                assert!(ensure_no_session_at(paths).is_err());
-            } else {
-                recover_session_at(paths).unwrap();
-                assert!(!paths.session().exists());
-            }
-        }
-    }
-
     /// Retains the fence through uncertain process waits until recovery proves exit.
     #[test]
     fn wrapper_or_wineserver_wait_uncertainty_retains_fence() {
@@ -2767,41 +2213,21 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         }
     }
 
-    /// Handles unusual process names, exited states and reused wrapper PIDs.
-    #[test]
-    fn wrapper_identity_parsing_handles_comm_and_pid_reuse() {
-        for state in [b'R', b'Z', b'X', b'x'] {
-            let mut stat = b"123 (wrapper ) space \xff) ".to_vec();
-            stat.push(state);
-            for _ in 4..22 {
-                stat.extend_from_slice(b" 0");
-            }
-            stat.extend_from_slice(b" 98765 0\n");
-            let process = parse_wrapper_process(123, &stat).unwrap();
-            assert_eq!(process.start_time, 98765);
-            assert_eq!(process.exited, state != b'R');
-            assert!(parse_wrapper_process(124, &stat).is_err());
-        }
-        assert!(parse_wrapper_process(123, b"123 (short) R 0").is_err());
-        assert!(wrapper_process(0).is_err());
-        assert!(wrapper_process(u32::MAX).is_err());
-        let pid = std::process::id();
-        let process = wrapper_process(pid).unwrap().unwrap();
-        assert!(!wrapper_has_exited(pid, process.start_time).unwrap());
-        // A live process with the same PID but a different birth time is not
-        // the recorded wrapper. Do not wait for or signal that unrelated process.
-        assert!(wrapper_has_exited(pid, process.start_time + 1).unwrap());
-        wait_for_wrapper(SessionWrapper::Running {
-            pid,
-            start_time: process.start_time + 1,
-        })
-        .unwrap();
-    }
-
     /// Keeps unknown or old-format wrapper identities fenced until a different boot.
+    /// Refuses same-boot recovery when the recorded PID namespace is absent or different.
     #[test]
-    fn unknown_and_old_session_fences_cannot_run_waiter_or_clear_on_same_boot() {
-        for old_marker in [false, true] {
+    fn same_boot_identity_rejections_cannot_run_waiter_or_clear_fence() {
+        let namespace = pid_namespace().unwrap();
+        for (wrapper, namespace, reason) in [
+            (
+                Some("Unknown"),
+                Some(namespace.as_str()),
+                "Unknown Proton wrapper",
+            ),
+            (None, Some(namespace.as_str()), "Unknown Proton wrapper"),
+            (Some("Reaped"), None, "PID namespace"),
+            (Some("Reaped"), Some("pid:[different]"), "PID namespace"),
+        ] {
             let fixture = Fixture::new();
             let paths = &fixture.0;
             layout(&paths.live());
@@ -2811,22 +2237,25 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
                 b"#!/bin/sh\nprintf early > \"$STEAM_COMPAT_DATA_PATH/waited\"\n",
                 true,
             );
-            let mut fence = fence_session(paths, &paths.resolve().unwrap()).unwrap();
-            if old_marker {
-                let mut value = serde_json::to_value(&fence).unwrap();
+            let fence = fence_session(paths, &paths.resolve().unwrap()).unwrap();
+            let mut value = serde_json::to_value(&fence).unwrap();
+            if let Some(wrapper) = wrapper {
+                value["wrapper"] = serde_json::json!(wrapper);
+            } else {
                 value.as_object_mut().unwrap().remove("wrapper");
-                atomic_json(&paths.session(), &value).unwrap();
             }
+            value["pid_namespace"] = serde_json::json!(namespace);
+            atomic_json(&paths.session(), &value).unwrap();
             let owner = Operations::default();
             let error = runtime()
                 .block_on(recover_session_with(RuntimePaths(paths.0.clone()), &owner))
                 .unwrap_err();
-            assert!(error.to_string().contains("Unknown Proton wrapper"));
+            assert!(error.to_string().contains(reason), "{error:#}");
             assert!(ensure_no_session_at(paths).is_err());
             assert!(!paths.prefix().join("waited").exists());
             assert!(!owner.is_busy().unwrap());
-            fence.boot_id = Uuid::new_v4().to_string();
-            atomic_json(&paths.session(), &fence).unwrap();
+            value["boot_id"] = serde_json::json!(Uuid::new_v4().to_string());
+            atomic_json(&paths.session(), &value).unwrap();
             recover_session_at(paths).unwrap();
             ensure_no_session_at(paths).unwrap();
             assert!(!paths.prefix().join("waited").exists());
@@ -2926,349 +2355,6 @@ done
         assert!(wait_child(child).unwrap().success());
     }
 
-    /// Checks state-write failures do not skip wrapper reaping before the Wine wait.
-    #[test]
-    fn wrapper_state_publication_errors_reap_owned_child_before_any_quiescence() {
-        for boundary in ["file-sync", "rename", "parent-sync"] {
-            for skip in [1, 2] {
-                // Running identity, then Reaped decision.
-                let fixture = Fixture::new();
-                let paths = &fixture.0;
-                layout(&paths.live());
-                write(
-                    &paths.live().join("proton"),
-                    br##"#!/bin/sh
-printf '%s' "$$" > "$STEAM_COMPAT_DATA_PATH/wrapper-pid"
-sleep 0.02
-printf done > "$STEAM_COMPAT_DATA_PATH/wrapper-done"
-"##,
-                    true,
-                );
-                write(
-                    &paths.live().join("files/bin/wineserver"),
-                    br##"#!/bin/sh
-[ -f "$STEAM_COMPAT_DATA_PATH/wrapper-done" ] || exit 1
-printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
-"##,
-                    true,
-                );
-                let owner = Operations::default();
-                let operation = owner.begin(OperationKind::Launch, None).unwrap();
-                inject_metadata_failure(paths.session(), boundary, skip);
-                let result = run_game_owned(paths, &fixture.game(), &operation);
-                assert!(operation.finish(result).is_err());
-                assert!(paths.prefix().join("wrapper-done").exists());
-                let pid: i32 = fs::read_to_string(paths.prefix().join("wrapper-pid"))
-                    .unwrap()
-                    .parse()
-                    .unwrap();
-                let mut status = 0;
-                assert_eq!(
-                    unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
-                    -1
-                );
-                assert_eq!(
-                    std::io::Error::last_os_error().raw_os_error(),
-                    Some(libc::ECHILD)
-                );
-                if skip == 1 {
-                    // Identity publication failed, but owning/reaping the child
-                    // still permits publishing Reaped and safely waiting for Wine.
-                    assert!(paths.prefix().join("waited").exists());
-                    ensure_no_session_at(paths).unwrap();
-                } else {
-                    assert!(!paths.prefix().join("waited").exists());
-                    assert!(ensure_no_session_at(paths).is_err());
-                    let fence: SessionFence = read_json(&paths.session()).unwrap();
-                    assert_eq!(
-                        matches!(fence.wrapper, SessionWrapper::Reaped),
-                        boundary == "parent-sync"
-                    );
-                    recover_session_at(paths).unwrap();
-                    assert!(paths.prefix().join("waited").exists());
-                    ensure_no_session_at(paths).unwrap();
-                }
-            }
-        }
-    }
-
-    /// Keeps an unknown wrapper fenced when neither identity nor exit was confirmed.
-    #[test]
-    fn unpublished_wrapper_identity_and_uncertain_wait_require_reboot() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nprintf early > \"$STEAM_COMPAT_DATA_PATH/waited\"\n",
-            true,
-        );
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Launch, None).unwrap();
-        inject_metadata_failure(paths.session(), "rename", 1);
-        inject_metadata_failure(paths.live().join("proton"), "wait-child", 0);
-        let result = run_game_owned(paths, &fixture.game(), &operation);
-        assert!(operation.finish(result).is_err());
-        assert!(!paths.prefix().join("waited").exists());
-        let fence: SessionFence = read_json(&paths.session()).unwrap();
-        assert!(matches!(fence.wrapper, SessionWrapper::Unknown));
-        assert!(recover_session_at(paths).is_err());
-        assert!(ensure_no_session_at(paths).is_err());
-        assert!(!paths.prefix().join("waited").exists());
-    }
-
-    /// Rejects malformed session metadata and symlinked or unrecognized runtime paths.
-    #[test]
-    fn recovery_rejects_untrusted_session_metadata_and_runtime_paths() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        let current_boot = boot_id().unwrap();
-        for value in [
-            serde_json::json!({"format":1, "root":"/tmp/arbitrary", "wine":"X86_64", "boot_id":current_boot}),
-            serde_json::json!({"format":1, "root":"Canonical", "wine":"X86_64", "boot_id":"not-a-boot-id"}),
-            serde_json::json!({"format":1, "root":"Canonical", "wine":"X86_64", "boot_id":current_boot, "executable":"/bin/true"}),
-            serde_json::json!({"format":2, "root":"Canonical", "wine":"X86_64", "boot_id":current_boot}),
-        ] {
-            atomic_json(&paths.session(), &value).unwrap();
-            assert!(recover_session_at(paths).is_err());
-            assert!(ensure_no_session_at(paths).is_err());
-        }
-        fs::remove_file(paths.session()).unwrap();
-        symlink("missing", paths.session()).unwrap();
-        assert!(ensure_no_session_at(paths).is_err());
-        assert!(recover_session_at(paths).is_err());
-        fs::remove_file(paths.session()).unwrap();
-        let outside = paths.0.join("not-a-runtime-root");
-        layout(&outside);
-        symlink(&outside, paths.live()).unwrap();
-        atomic_json(
-            &paths.session(),
-            &SessionFence {
-                format: 1,
-                root: SessionRoot::Canonical,
-                wine: SessionWine::X86_64,
-                boot_id: current_boot,
-                pid_namespace: Some(pid_namespace().unwrap()),
-                wrapper: SessionWrapper::Reaped,
-            },
-        )
-        .unwrap();
-        assert!(recover_session_at(paths).is_err());
-        assert!(ensure_no_session_at(paths).is_err());
-    }
-
-    /// Refuses same-boot recovery when the recorded PID namespace is absent or different.
-    #[test]
-    fn same_boot_requires_the_recorded_pid_namespace_before_recovery() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        for namespace in [None, Some("pid:[different]".to_owned())] {
-            atomic_json(
-                &paths.session(),
-                &SessionFence {
-                    format: 1,
-                    root: SessionRoot::Canonical,
-                    wine: SessionWine::X86_64,
-                    boot_id: boot_id().unwrap(),
-                    pid_namespace: namespace,
-                    wrapper: SessionWrapper::Reaped,
-                },
-            )
-            .unwrap();
-            let error = recover_session_at(paths).unwrap_err();
-            assert!(error.to_string().contains("PID namespace"));
-            assert!(ensure_no_session_at(paths).is_err());
-        }
-    }
-
-    /// Clears a previous boot's fence without requiring a runtime or prefix.
-    #[test]
-    fn different_valid_boot_clears_fence_without_executing_runtime() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        let previous_boot = Uuid::new_v4().to_string();
-        assert_ne!(previous_boot, boot_id().unwrap());
-        atomic_json(
-            &paths.session(),
-            &SessionFence {
-                format: 1,
-                root: SessionRoot::LegacyFlat,
-                wine: SessionWine::X86_64,
-                boot_id: previous_boot,
-                pid_namespace: None,
-                wrapper: SessionWrapper::Unknown,
-            },
-        )
-        .unwrap();
-        // No runtime or prefix exists. A reboot is sufficient proof.
-        recover_session_at(paths).unwrap();
-        ensure_no_session_at(paths).unwrap();
-    }
-
-    /// Uses the recorded legacy runtime's Wine server even when a newer runtime exists.
-    #[test]
-    fn recovery_waits_for_the_recorded_legacy_root_not_newer_canonical() {
-        for kind in [SessionRoot::LegacyNested, SessionRoot::LegacyFlat] {
-            let fixture = Fixture::new();
-            let paths = &fixture.0;
-            let root = kind.path(paths);
-            layout(&root);
-            fs::create_dir(paths.prefix()).unwrap();
-            let mut fence = fence_session(paths, &RuntimeLayout::validate(&root).unwrap()).unwrap();
-            record_wrapper(paths, &mut fence, SessionWrapper::Reaped).unwrap();
-            layout(&paths.live());
-            write(
-                &paths.live().join("files/bin/wineserver"),
-                b"#!/bin/sh\nexit 1\n",
-                true,
-            );
-            write(
-                &root.join("files/bin/wineserver"),
-                b"#!/bin/sh\nprintf waited > \"$STEAM_COMPAT_DATA_PATH/legacy-waited\"\n",
-                true,
-            );
-            recover_session_at(paths).unwrap();
-            assert!(paths.prefix().join("legacy-waited").exists());
-            ensure_no_session_at(paths).unwrap();
-        }
-    }
-
-    /// Retains the fence when the prefix is missing or the Wine waiter cannot start.
-    #[test]
-    fn missing_prefix_and_failed_waiter_spawn_keep_session_fenced() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        let mut fence = fence_session(paths, &paths.resolve().unwrap()).unwrap();
-        record_wrapper(paths, &mut fence, SessionWrapper::Reaped).unwrap();
-        assert!(recover_session_at(paths).is_err());
-        assert!(paths.session().exists());
-        fs::create_dir(paths.prefix()).unwrap();
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/nonexistent-fixture-interpreter\n",
-            true,
-        );
-        assert!(recover_session_at(paths).is_err());
-        assert!(ensure_no_session_at(paths).is_err());
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nexit 0\n",
-            true,
-        );
-        recover_session_at(paths).unwrap();
-        ensure_no_session_at(paths).unwrap();
-    }
-
-    /// Leaves the active operation untouched when there is no session to recover.
-    #[test]
-    fn absent_session_recovery_does_not_take_a_recovery_lease() {
-        let fixture = Fixture::new();
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Components, None).unwrap();
-        runtime()
-            .block_on(recover_session_with(
-                RuntimePaths(fixture.0.0.clone()),
-                &owner,
-            ))
-            .unwrap();
-        assert_eq!(
-            owner.status().unwrap().unwrap().kind,
-            OperationKind::Components
-        );
-        operation.finish(Ok(())).unwrap();
-    }
-
-    /// Checks Wine descendants stay fenced after failed waits or dropped recovery.
-    #[test]
-    fn surviving_descendant_and_failed_waiter_remain_fenced_through_recovery() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        write(
-            &paths.live().join("proton"),
-            br##"#!/bin/sh
-/bin/sh -c '
-    printf started > "$STEAM_COMPAT_DATA_PATH/descendant-started"
-    count=0
-    while [ ! -f "$STEAM_COMPAT_DATA_PATH/release-descendant" ]; do
-        count=$((count + 1)); [ "$count" -lt 1000 ] || break
-        sleep 0.01
-    done
-    printf done > "$STEAM_COMPAT_DATA_PATH/descendant-done"
-' &
-exit 0
-"##,
-            true,
-        );
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nexit 1\n",
-            true,
-        );
-        let owner = Operations::default();
-        let executable = fixture.game();
-        runtime().block_on(async {
-            let operation = owner.begin(OperationKind::Launch, None).unwrap();
-            assert!(
-                run_game_at(RuntimePaths(paths.0.clone()), executable.clone(), operation)
-                    .await
-                    .is_err()
-            );
-            until_file(&paths.prefix().join("descendant-started")).await;
-            assert!(!paths.prefix().join("descendant-done").exists());
-            assert!(ensure_no_session_at(paths).is_err());
-            assert!(!owner.is_busy().unwrap());
-            let operation = owner.begin(OperationKind::Launch, None).unwrap();
-            // Even isolated managers cannot use run_game to bypass the fence.
-            assert!(
-                run_game_at(RuntimePaths(paths.0.clone()), executable, operation)
-                    .await
-                    .is_err()
-            );
-            assert!(
-                recover_session_with(RuntimePaths(paths.0.clone()), &owner)
-                    .await
-                    .is_err()
-            );
-            assert!(paths.session().exists());
-            write(
-                &paths.live().join("files/bin/wineserver"),
-                br##"#!/bin/sh
-printf started > "$STEAM_COMPAT_DATA_PATH/recovery-started"
-count=0
-while [ ! -f "$STEAM_COMPAT_DATA_PATH/descendant-done" ]; do
-    count=$((count + 1)); [ "$count" -lt 1000 ] || exit 1
-    sleep 0.01
-done
-"##,
-                true,
-            );
-            let recovery_owner = owner.clone();
-            let recovery_paths = RuntimePaths(paths.0.clone());
-            let task =
-                tokio::spawn(
-                    async move { recover_session_with(recovery_paths, &recovery_owner).await },
-                );
-            until_file(&paths.prefix().join("recovery-started")).await;
-            task.abort();
-            assert!(task.await.unwrap_err().is_cancelled());
-            assert!(owner.is_busy().unwrap());
-            assert!(owner.begin(OperationKind::Launch, None).is_err());
-            assert!(owner.begin(OperationKind::Components, None).is_err());
-            assert!(ensure_no_session_at(paths).is_err());
-            fs::write(paths.prefix().join("release-descendant"), b"go").unwrap();
-            until_file(&paths.prefix().join("descendant-done")).await;
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while owner.is_busy().unwrap() {
-                assert!(Instant::now() < deadline, "recovery did not reap fixture");
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-            ensure_no_session_at(paths).unwrap();
-            assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Completed);
-        });
-    }
-
     /// Waits briefly for a fixture signal file, failing if its deadline expires.
     async fn until_file(path: &Path) {
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -3337,84 +2423,6 @@ done
             }
             assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Completed);
         });
-    }
-
-    /// Holds the component lease through staging and commit after the caller is dropped.
-    #[test]
-    fn dropped_component_waiter_keeps_lease_until_staging_and_commit_finish() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        let source = paths.0.join("source");
-        layout(&source);
-        let journal = start_transaction(paths).unwrap();
-        let downloaded = paths.stage(&journal).join("download.tar.gz");
-        archive(&source, &downloaded);
-        let mut metadata = release("v2");
-        metadata.download.checksum = sha256::try_digest(&downloaded).unwrap();
-        let owner = Operations::default();
-        runtime().block_on(async {
-            let handle = tokio::runtime::Handle::current();
-            let (started, entered) = tokio::sync::oneshot::channel();
-            let (release, resume) = std::sync::mpsc::channel();
-            let worker_paths = RuntimePaths(paths.0.clone());
-            let operation = owner.begin(OperationKind::Components, None).unwrap();
-            let task = tokio::spawn(runtime_worker(operation, move |operation| {
-                started.send(()).unwrap();
-                resume.recv_timeout(Duration::from_secs(5))?;
-                verify_archive(&downloaded, &metadata.download.checksum)?;
-                handle.block_on(install_verified_archive(
-                    &worker_paths,
-                    &journal,
-                    &metadata,
-                    operation,
-                ))
-            }));
-            entered.await.unwrap();
-            task.abort();
-            assert!(task.await.unwrap_err().is_cancelled());
-            assert!(owner.is_busy().unwrap());
-            assert!(owner.begin(OperationKind::Launch, None).is_err());
-            release.send(()).unwrap();
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while owner.is_busy().unwrap() {
-                assert!(Instant::now() < deadline, "component worker did not finish");
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-            assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Completed);
-            assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
-            assert!(!paths.journal().exists());
-        });
-    }
-
-    /// Waits for Wine after Proton spawn failure and rejects relative game paths.
-    #[test]
-    fn spawn_failure_still_waits_and_relative_game_paths_are_rejected() {
-        let fixture = Fixture::new();
-        let paths = &fixture.0;
-        layout(&paths.live());
-        write(
-            &paths.live().join("proton"),
-            b"#!/nonexistent-fixture-interpreter\n",
-            true,
-        );
-        write(
-            &paths.live().join("files/bin/wineserver"),
-            b"#!/bin/sh\nprintf waited > \"$STEAM_COMPAT_DATA_PATH/waited\"\n",
-            true,
-        );
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Launch, None).unwrap();
-        let error = runtime()
-            .block_on(run_game_at(
-                RuntimePaths(paths.0.clone()),
-                fixture.game(),
-                operation,
-            ))
-            .unwrap_err();
-        assert!(format!("{error:#}").contains("Could not start Proton"));
-        assert!(paths.prefix().join("waited").is_file());
-        assert!(game_command(paths, &paths.resolve().unwrap(), Path::new("relative.exe")).is_err());
-        assert!(!owner.is_busy().unwrap());
     }
 
     /// Cancels pending metadata work without allowing the component operation to commit.

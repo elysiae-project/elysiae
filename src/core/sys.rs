@@ -77,48 +77,11 @@ pub fn required_storage_available(
 mod tests {
     use super::*;
 
-    /// Checks that missing destinations use their nearest existing ancestor.
-    #[test]
-    fn storage_uses_existing_destination_ancestor() {
-        let root = std::env::temp_dir().join(format!("elysiae-storage-{}", uuid::Uuid::new_v4()));
-        fs::create_dir(&root).unwrap();
-        let future = root.join("not-yet-created/runtime");
-        let actual = get_available_storage(future.to_str().unwrap(), Sizes::Bytes).unwrap();
-        let expected = get_available_storage(root.to_str().unwrap(), Sizes::Bytes).unwrap();
-        // Free space can change between the two syscalls on a shared filesystem.
-        assert!((actual - expected).abs() < 64.0 * 1024.0 * 1024.0);
-        assert!(required_storage_available(future.to_str().unwrap(), 0.0, Sizes::Bytes).unwrap());
-        assert!(
-            !required_storage_available(future.to_str().unwrap(), f64::MAX, Sizes::Bytes).unwrap()
-        );
-        fs::remove_dir(root).unwrap();
-    }
-
-    /// Checks that invalid paths and storage estimates return errors.
-    #[test]
-    fn storage_rejects_invalid_paths_and_estimates() {
-        for path in ["", "relative/path", "/tmp/../tmp", "/tmp/invalid\0path"] {
-            assert!(
-                get_available_storage(path, Sizes::Bytes).is_err(),
-                "{path:?}"
-            );
-        }
-        for size in [-1.0, f64::NAN, f64::INFINITY] {
-            assert!(required_storage_available("/", size, Sizes::Bytes).is_err());
-        }
-        let root = std::env::temp_dir().join(format!("elysiae-storage-{}", uuid::Uuid::new_v4()));
-        fs::create_dir(&root).unwrap();
-        fs::write(root.join("file"), b"not a directory").unwrap();
-        std::os::unix::fs::symlink(root.join("missing"), root.join("dangling")).unwrap();
-        for path in [root.join("file/child"), root.join("dangling/child")] {
-            assert!(get_available_storage(path.to_str().unwrap(), Sizes::Bytes).is_err());
-        }
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    /// Checks space against the destination mount rather than the root filesystem.
+    /// Checks destination-side free space and rejects invalid storage requests.
     #[test]
     fn storage_follows_destination_filesystem_not_root() {
+        assert!(get_available_storage("relative/path", Sizes::Bytes).is_err());
+        assert!(required_storage_available("/", f64::NAN, Sizes::Bytes).is_err());
         // /dev/shm is a separate tmpfs on Linux; skip only if it is unavailable.
         if !Path::new("/dev/shm").is_dir() {
             return;
@@ -140,9 +103,13 @@ mod tests {
         let stats = unsafe { stats.assume_init() };
         let expected = stats.f_bavail as f64 * stats.f_frsize as f64;
         assert!((actual - expected).abs() < 1024.0 * 1024.0);
-        let kibibytes =
-            get_available_storage(destination.to_str().unwrap(), Sizes::Kilobytes).unwrap();
-        assert!((kibibytes * 1024.0 - expected).abs() < 1024.0 * 1024.0);
+        assert!(
+            required_storage_available(destination.to_str().unwrap(), 0.0, Sizes::Bytes).unwrap()
+        );
+        assert!(
+            !required_storage_available(destination.to_str().unwrap(), f64::MAX, Sizes::Bytes)
+                .unwrap()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

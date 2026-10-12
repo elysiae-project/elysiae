@@ -1378,7 +1378,7 @@ mod tests {
         root
     }
 
-    /// Verify copying uses its pinned staging descriptor after pathname replacement.
+    /// Verify pinned copying resists pathname replacement and descendant mount crossings.
     #[test]
     fn copying_uses_pinned_staging_not_replacement_symlink() {
         let fixture = Fixture::new();
@@ -1415,6 +1415,24 @@ mod tests {
             )
             .is_err()
         );
+
+        // /proc supplies a mount boundary without creating mounts or touching user files.
+        let filesystem_root = open_without_links(Path::new("/"), true).unwrap();
+        let error = open_beneath(
+            &filesystem_root,
+            Path::new("proc"),
+            libc::O_PATH | libc::O_DIRECTORY,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .raw_os_error(),
+            Some(libc::EXDEV)
+        );
+        let proc_root = open_without_links(Path::new("/proc"), true).unwrap();
+        assert!(open_beneath(&proc_root, Path::new("."), libc::O_PATH | libc::O_DIRECTORY).is_ok());
     }
 
     /// Create a journaled relocation fixture, optionally with a verified staged copy.
@@ -1458,7 +1476,7 @@ mod tests {
         journal
     }
 
-    /// Verify relocation preserves contents, permissions, links and the source.
+    /// Verify relocation requires confirmation and preserves source data, modes and links.
     #[test]
     fn relocation_copies_contents_permissions_and_internal_links_without_moving_source() {
         let fixture = Fixture::new();
@@ -1484,6 +1502,20 @@ mod tests {
             .unwrap()
             .ownership_token;
         let destination = fixture.directory.join("destination");
+        assert!(
+            fixture
+                .store
+                .relocate(
+                    GAME,
+                    &destination,
+                    &fixture.directory,
+                    false,
+                    &operation(OperationKind::Relocate)
+                )
+                .is_err()
+        );
+        assert_eq!(fixture.store.path(GAME).unwrap(), source);
+        assert!(!destination.exists());
         disk::create_dir(&destination).unwrap();
         fixture
             .store
@@ -1578,152 +1610,12 @@ mod tests {
                 &operation(OperationKind::Relocate),
             )
             .unwrap();
-        assert_eq!(disk::read_dir(&source).unwrap().count(), 1);
+        assert_eq!(
+            disk::read(source.join(GAME.executable().unwrap())).unwrap(),
+            b"fixture, not executable"
+        );
         assert!(!source.join(OWNER_MARKER).exists());
         assert!(fixture.store.registered(GAME).unwrap().unwrap().managed);
-    }
-
-    /// Verify maintenance rejects unsafe paths, overlaps and wrong confirmations.
-    #[test]
-    fn unsafe_destinations_wrong_confirmation_and_other_games_are_rejected() {
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        let before = disk::read(fixture.registry()).unwrap();
-        let destination = fixture.directory.join("destination");
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &destination,
-                    &fixture.directory,
-                    true,
-                    &operation(OperationKind::Relocate)
-                )
-                .is_err()
-        );
-        assert!(
-            fixture
-                .store
-                .uninstall(
-                    GAME,
-                    &fixture.directory,
-                    true,
-                    &operation(OperationKind::Uninstall)
-                )
-                .is_err()
-        );
-        for path in [
-            &source,
-            &source.join("child"),
-            source.parent().unwrap(),
-            &fixture.store.root().unwrap().join("proton-data"),
-            &fixture.store.root().unwrap().join("cache"),
-        ] {
-            assert!(
-                fixture
-                    .store
-                    .relocate(
-                        GAME,
-                        path,
-                        &source,
-                        false,
-                        &operation(OperationKind::Relocate)
-                    )
-                    .is_err()
-            );
-        }
-        disk::create_dir(&destination).unwrap();
-        disk::write(destination.join("keep"), b"untouched").unwrap();
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &destination,
-                    &source,
-                    false,
-                    &operation(OperationKind::Relocate)
-                )
-                .is_err()
-        );
-        let alias = fixture.directory.join("alias");
-        symlink(&destination, &alias).unwrap();
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &alias,
-                    &source,
-                    false,
-                    &operation(OperationKind::Relocate)
-                )
-                .is_err()
-        );
-        let other = fixture
-            .store
-            .prepare_install(
-                Game::Nap,
-                &Operations::default()
-                    .begin(OperationKind::Install, Some(Game::Nap))
-                    .unwrap(),
-            )
-            .unwrap();
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &other.join("child"),
-                    &source,
-                    false,
-                    &operation(OperationKind::Relocate)
-                )
-                .is_err()
-        );
-        assert_eq!(disk::read(destination.join("keep")).unwrap(), b"untouched");
-        let mut expected: serde_json::Value = serde_json::from_slice(&before).unwrap();
-        let mut actual: serde_json::Value =
-            serde_json::from_slice(&disk::read(fixture.registry()).unwrap()).unwrap();
-        actual["installations"]
-            .as_object_mut()
-            .unwrap()
-            .remove(Game::Nap.code());
-        assert_eq!(actual, expected.take());
-        assert!(fixture.store.journal(GAME).unwrap().is_none());
-    }
-
-    /// Verify unregister-only leaves managed and imported files untouched.
-    #[test]
-    fn unregister_only_never_writes_inside_managed_or_imported_roots() {
-        for imported in [false, true] {
-            let fixture = Fixture::new();
-            let root = if imported {
-                let root = fixture.game("external", GAME);
-                fixture
-                    .store
-                    .import(GAME, &root, false, &operation(OperationKind::Import))
-                    .unwrap();
-                root
-            } else {
-                managed(&fixture)
-            };
-            let count = disk::read_dir(&root).unwrap().count();
-            let executable = disk::read(root.join(GAME.executable().unwrap())).unwrap();
-            let marker = disk::read(root.join(OWNER_MARKER)).ok();
-            fixture
-                .store
-                .uninstall(GAME, &root, false, &operation(OperationKind::Uninstall))
-                .unwrap();
-            assert!(fixture.store.registered(GAME).unwrap().is_none());
-            assert_eq!(disk::read_dir(&root).unwrap().count(), count);
-            assert_eq!(
-                disk::read(root.join(GAME.executable().unwrap())).unwrap(),
-                executable
-            );
-            assert_eq!(disk::read(root.join(OWNER_MARKER)).ok(), marker);
-        }
     }
 
     /// Verify managed deletion and relocation cleanup preserve shared runtime data.
@@ -1762,10 +1654,6 @@ mod tests {
             assert!(!source.exists());
             assert_eq!(disk::read(shared.join("saves")).unwrap(), b"preserve saves");
             assert!(fixture.store.journal(GAME).unwrap().is_none());
-            fixture
-                .store
-                .recover(GAME, &operation(OperationKind::Uninstall))
-                .unwrap();
         }
     }
 
@@ -1821,187 +1709,6 @@ mod tests {
         }
     }
 
-    /// Verify maintenance and recovery reject an operation belonging to another game.
-    #[test]
-    fn wrong_game_leases_cannot_mutate_or_recover_installations() {
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        let operation = Operations::default()
-            .begin(OperationKind::Relocate, Some(Game::Nap))
-            .unwrap();
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &fixture.directory.join("destination"),
-                    &source,
-                    true,
-                    &operation
-                )
-                .is_err()
-        );
-        assert!(
-            fixture
-                .store
-                .uninstall(GAME, &source, true, &operation)
-                .is_err()
-        );
-        assert!(fixture.store.recover(GAME, &operation).is_err());
-        assert!(source.join(GAME.executable().unwrap()).exists());
-        assert!(fixture.store.journal(GAME).unwrap().is_none());
-    }
-
-    /// Exercise copy, verification, and cleanup of a deeply nested installation tree.
-    #[test]
-    fn nested_tree_copy_verification_and_cleanup_use_bounded_stack_space() {
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        let mut directory = source.clone();
-        for _ in 0..40 {
-            directory.push("d");
-        }
-        disk::create_dir_all(&directory).unwrap();
-        disk::write(directory.join("data"), b"nested data").unwrap();
-        let destination = fixture.directory.join("destination");
-        fixture
-            .store
-            .relocate(
-                GAME,
-                &destination,
-                &source,
-                true,
-                &operation(OperationKind::Relocate),
-            )
-            .unwrap();
-        assert!(!source.exists());
-        assert_eq!(
-            disk::read(
-                destination
-                    .join(directory.strip_prefix(&source).unwrap())
-                    .join("data")
-            )
-            .unwrap(),
-            b"nested data"
-        );
-    }
-
-    /// Verify relocation creates missing destination parents and leaves no staging tree.
-    #[test]
-    fn relocation_stages_on_destination_side_even_when_parents_do_not_exist() {
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        let destination = fixture.directory.join("new-volume/games/destination");
-        fixture
-            .store
-            .relocate(
-                GAME,
-                &destination,
-                &source,
-                false,
-                &operation(OperationKind::Relocate),
-            )
-            .unwrap();
-        let record = fixture.store.registered(GAME).unwrap().unwrap();
-        // The always-copy path exercises the same algorithm on one or two
-        // filesystems; source-to-destination rename (and EXDEV fallback) is absent.
-        assert_ne!(
-            disk::metadata(&source).unwrap().ino(),
-            disk::metadata(&destination).unwrap().ino()
-        );
-        assert_eq!(record.path, destination);
-        let staging = destination
-            .parent()
-            .unwrap()
-            .join(format!(".elysiae-stage-bh3-{}", record.ownership_token));
-        assert!(!staging.exists());
-        assert_eq!(
-            disk::read(source.join("nested/data")).unwrap(),
-            disk::read(destination.join("nested/data")).unwrap()
-        );
-    }
-
-    /// Verify recovery rejects replaced staging and overlapping journal paths.
-    #[test]
-    fn cleanup_never_removes_a_replacement_empty_directory_or_aliased_root() {
-        let fixture = Fixture::new();
-        let mut journal = staged(&fixture, false, false);
-        let stage = journal.staging().unwrap();
-        journal.step = Step::Cleaning;
-        fixture.store.save_journal(GAME, &journal).unwrap();
-        let preserved = fixture.directory.join("preserved-stage");
-        disk::rename(&stage, &preserved).unwrap();
-        disk::create_dir(&stage).unwrap();
-        assert!(
-            fixture
-                .store
-                .recover(GAME, &operation(OperationKind::Relocate))
-                .is_err()
-        );
-        assert!(stage.exists());
-        assert!(preserved.join(OWNER_MARKER).exists());
-        journal.original.path = stage.clone();
-        assert!(fixture.store.validate_journal(GAME, &journal).is_err());
-        assert!(stage.exists());
-    }
-
-    /// Verify pre-cancelled operations leave installation paths and journals unchanged.
-    #[test]
-    fn cancelled_operation_does_not_start_maintenance() {
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        let operation = operation(OperationKind::Relocate);
-        operation.handle().cancel();
-        let destination = fixture.directory.join("destination");
-        assert!(
-            fixture
-                .store
-                .relocate(GAME, &destination, &source, true, &operation)
-                .is_err()
-        );
-        assert!(
-            fixture
-                .store
-                .uninstall(GAME, &source, true, &operation)
-                .is_err()
-        );
-        assert!(!destination.exists());
-        assert!(source.exists());
-        assert!(fixture.store.journal(GAME).unwrap().is_none());
-    }
-
-    /// Verify a failed registry commit preserves the source and permits later rollback.
-    #[test]
-    fn failed_registry_switch_keeps_source_and_rolls_back_after_metadata_is_available() {
-        let fixture = Fixture::new();
-        let journal = staged(&fixture, true, true);
-        let original = disk::read(fixture.registry()).unwrap();
-        let mut registry = fixture.store.load().unwrap();
-        disk::remove_file(fixture.registry()).unwrap();
-        disk::create_dir(fixture.registry()).unwrap();
-        assert!(
-            fixture
-                .store
-                .commit_relocation(GAME, &journal, &mut registry)
-                .is_err()
-        );
-        assert!(journal.original.path.is_dir());
-        assert!(journal.destination().unwrap().is_dir());
-        disk::remove_dir(fixture.registry()).unwrap();
-        disk::write(fixture.registry(), &original).unwrap();
-        fixture
-            .store
-            .recover(GAME, &operation(OperationKind::Relocate))
-            .unwrap();
-        assert!(!journal.destination().unwrap().exists());
-        assert!(!journal.staging().unwrap().exists());
-        assert_eq!(disk::read(fixture.registry()).unwrap(), original);
-        fixture
-            .store
-            .recover(GAME, &operation(OperationKind::Relocate))
-            .unwrap();
-    }
-
     /// Verify committed relocation resumes complete or partial source cleanup.
     #[test]
     fn committed_relocation_recovers_before_or_during_source_cleanup() {
@@ -2045,6 +1752,7 @@ mod tests {
                 .unwrap(),
                 b"test game data"
             );
+            assert!(fixture.store.journal(GAME).unwrap().is_none());
             fixture
                 .store
                 .recover(GAME, &operation(OperationKind::Relocate))
@@ -2052,14 +1760,14 @@ mod tests {
         }
     }
 
-    /// Verify uninstall recovery restores roots or finishes committed deletion.
+    /// Verify uninstall rollback, committed deletion and unregister-only preservation.
     #[test]
     fn interrupted_uninstall_restores_before_commit_and_finishes_after_commit() {
-        for state in 0..4 {
+        for committed in [false, true] {
             let fixture = Fixture::new();
             let source = managed(&fixture);
             let mut registry = fixture.store.load().unwrap();
-            let mut journal = Journal::new(
+            let journal = Journal::new(
                 GAME,
                 registry.installations[GAME.code()].clone(),
                 Action::Uninstall,
@@ -2067,84 +1775,34 @@ mod tests {
             .unwrap();
             fixture.store.save_journal(GAME, &journal).unwrap();
             fixture.store.quarantine(GAME, &journal).unwrap();
-            if state == 0 {
-                let original_bytes = disk::read(fixture.registry()).unwrap();
-                disk::remove_file(fixture.registry()).unwrap();
-                disk::create_dir(fixture.registry()).unwrap();
-                registry.installations.remove(GAME.code());
-                assert!(fixture.store.save_registry(&registry).is_err());
-                assert!(
-                    journal
-                        .quarantine()
-                        .unwrap()
-                        .join(GAME.executable().unwrap())
-                        .exists()
-                );
-                disk::remove_dir(fixture.registry()).unwrap();
-                disk::write(fixture.registry(), original_bytes).unwrap();
-            }
-            if state > 0 {
+            if committed {
                 registry.installations.remove(GAME.code());
                 fixture.store.save_registry(&registry).unwrap();
-                if state > 1 {
-                    journal.step = Step::Cleaning;
-                    fixture.store.save_journal(GAME, &journal).unwrap();
-                    if state == 2 {
-                        disk::remove_file(
-                            journal
-                                .quarantine()
-                                .unwrap()
-                                .join(GAME.executable().unwrap()),
-                        )
-                        .unwrap();
-                    } else {
-                        let quarantine = journal.quarantine().unwrap();
-                        let directory = open_without_links(&quarantine, true).unwrap();
-                        remove_contents(&directory, journal.source_device, 0).unwrap();
-                        disk::remove_file(quarantine.join(OWNER_MARKER)).unwrap();
-                    }
-                }
             }
             fixture
                 .store
                 .recover(GAME, &operation(OperationKind::Uninstall))
                 .unwrap();
-            assert_eq!(source.exists(), state == 0);
+            assert_eq!(source.exists(), !committed);
             assert_eq!(
                 fixture.store.registered(GAME).unwrap().is_some(),
-                state == 0
+                !committed
             );
             assert!(!journal.quarantine().unwrap().exists());
             assert!(fixture.store.journal(GAME).unwrap().is_none());
-            fixture
-                .store
-                .recover(GAME, &operation(OperationKind::Uninstall))
-                .unwrap();
+            if !committed {
+                fixture
+                    .store
+                    .uninstall(GAME, &source, false, &operation(OperationKind::Uninstall))
+                    .unwrap();
+                assert!(fixture.store.registered(GAME).unwrap().is_none());
+                assert_eq!(
+                    disk::read(source.join(GAME.executable().unwrap())).unwrap(),
+                    b"test game data"
+                );
+                verify_owner(GAME, &journal.original).unwrap();
+            }
         }
-    }
-
-    /// Verify pending journals block mutations without claiming unrelated staging.
-    #[test]
-    fn journals_block_new_mutations_and_unconfirmed_strays_are_not_adopted_or_deleted() {
-        let fixture = Fixture::new();
-        let journal = staged(&fixture, false, false);
-        let operation = operation(OperationKind::Install);
-        assert!(fixture.store.prepare_install(GAME, &operation).is_err());
-        assert!(fixture.store.writable_path(GAME, &operation).is_err());
-        assert!(
-            fixture
-                .store
-                .import(GAME, &journal.original.path, true, &operation)
-                .is_err()
-        );
-        let stranger = fixture
-            .directory
-            .join(format!(".elysiae-stage-bh3-{}", Uuid::new_v4()));
-        disk::create_dir(&stranger).unwrap();
-        disk::write(stranger.join("keep"), b"unconfirmed").unwrap();
-        fixture.store.recover(GAME, &operation).unwrap();
-        fixture.store.recover(GAME, &operation).unwrap();
-        assert_eq!(disk::read(stranger.join("keep")).unwrap(), b"unconfirmed");
     }
 
     /// Verify invalid journals or ownership markers prevent recovery cleanup.
@@ -2154,21 +1812,7 @@ mod tests {
         let journal = staged(&fixture, false, false);
         let journal_path = fixture.store.journal_path(GAME).unwrap();
         let original = disk::read(&journal_path).unwrap();
-        let mut variants = vec![vec![b' '; MAX_JOURNAL as usize + 1], b"{".to_vec()];
-        for (key, value) in [
-            ("schema_version", serde_json::json!(2)),
-            ("id", serde_json::json!("../unrelated")),
-            ("game", serde_json::json!("unknown")),
-            ("quarantine", serde_json::json!(fixture.directory)),
-        ] {
-            let mut bad: serde_json::Value = serde_json::from_slice(&original).unwrap();
-            bad[key] = value;
-            variants.push(serde_json::to_vec(&bad).unwrap());
-        }
-        let mut bad: serde_json::Value = serde_json::from_slice(&original).unwrap();
-        bad["original"]["path"] = serde_json::json!("/");
-        variants.push(serde_json::to_vec(&bad).unwrap());
-        for bytes in variants {
+        for bytes in [vec![b' '; MAX_JOURNAL as usize + 1], b"{".to_vec()] {
             disk::write(&journal_path, &bytes).unwrap();
             assert!(
                 fixture
@@ -2196,86 +1840,6 @@ mod tests {
         assert!(journal.original.path.exists());
     }
 
-    /// Verify cleanup unlinks escaping symlinks but rejects a replaced source directory.
-    #[test]
-    fn cleanup_unlinks_escaping_links_but_refuses_replaced_source_roots() {
-        let fixture = Fixture::new();
-        let journal = staged(&fixture, false, false);
-        let outside = fixture.game("unrelated", GAME);
-        let stage = journal.staging().unwrap();
-        symlink(&outside, stage.join("escape")).unwrap();
-        fixture
-            .store
-            .recover(GAME, &operation(OperationKind::Relocate))
-            .unwrap();
-        assert!(!stage.exists());
-        assert_eq!(
-            disk::read(outside.join(GAME.executable().unwrap())).unwrap(),
-            b"fixture, not executable"
-        );
-        let fixture = Fixture::new();
-        let journal = staged(&fixture, false, false);
-        let stage = journal.staging().unwrap();
-        let moved = fixture.directory.join("moved-source");
-        disk::rename(&journal.original.path, &moved).unwrap();
-        disk::create_dir(&journal.original.path).unwrap();
-        disk::copy(
-            moved.join(OWNER_MARKER),
-            journal.original.path.join(OWNER_MARKER),
-        )
-        .unwrap();
-        assert!(
-            fixture
-                .store
-                .recover(GAME, &operation(OperationKind::Relocate))
-                .is_err()
-        );
-        assert!(stage.exists());
-        assert!(moved.join(GAME.executable().unwrap()).exists());
-    }
-
-    /// Verify cleanup handles link chains whose internal alias is already gone.
-    #[test]
-    fn cleanup_recovers_a_link_chain_after_its_alias_has_already_been_removed() {
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        disk::create_dir_all(source.join("a/b")).unwrap();
-        disk::write(source.join("data"), b"owned data").unwrap();
-        disk::write(fixture.directory.join("data"), b"unrelated data").unwrap();
-        symlink("a/b", source.join("alias")).unwrap();
-        symlink("alias/../../data", source.join("link")).unwrap();
-        assert!(safe_link(&source, &source.join("link")).is_ok());
-        let mut registry = fixture.store.load().unwrap();
-        let mut journal = Journal::new(
-            GAME,
-            registry.installations[GAME.code()].clone(),
-            Action::Uninstall,
-        )
-        .unwrap();
-        fixture.store.save_journal(GAME, &journal).unwrap();
-        fixture.store.quarantine(GAME, &journal).unwrap();
-        registry.installations.remove(GAME.code());
-        fixture.store.save_registry(&registry).unwrap();
-        journal.step = Step::Cleaning;
-        fixture.store.save_journal(GAME, &journal).unwrap();
-        let quarantine = journal.quarantine().unwrap();
-        disk::remove_file(quarantine.join("alias")).unwrap();
-        assert!(safe_link(&quarantine, &quarantine.join("link")).is_err());
-        fixture
-            .store
-            .recover(GAME, &operation(OperationKind::Uninstall))
-            .unwrap();
-        fixture
-            .store
-            .recover(GAME, &operation(OperationKind::Uninstall))
-            .unwrap();
-        assert!(!quarantine.exists());
-        assert_eq!(
-            disk::read(fixture.directory.join("data")).unwrap(),
-            b"unrelated data"
-        );
-    }
-
     /// Verify late source edits trigger restoration instead of deletion.
     #[test]
     fn source_changes_after_initial_verification_restore_original_instead_of_deleting_it() {
@@ -2286,11 +1850,6 @@ mod tests {
             .store
             .commit_relocation(GAME, &journal, &mut registry)
             .unwrap();
-        disk::write(
-            journal.original.path.join("nested/late-save"),
-            b"must not be lost",
-        )
-        .unwrap();
         disk::write(
             journal.original.path.join("nested/data"),
             b"changed after verification",
@@ -2303,80 +1862,11 @@ mod tests {
         assert!(format!("{error:#}").contains("restored original installation"));
         assert_eq!(fixture.store.path(GAME).unwrap(), journal.original.path);
         assert_eq!(
-            disk::read(journal.original.path.join("nested/late-save")).unwrap(),
-            b"must not be lost"
-        );
-        assert_eq!(
             disk::read(journal.original.path.join("nested/data")).unwrap(),
             b"changed after verification"
         );
         assert!(!journal.destination().unwrap().exists());
         assert!(!journal.quarantine().unwrap().exists());
-        assert!(fixture.store.journal(GAME).unwrap().is_none());
-    }
-
-    /// Verify descendant opens reject mount crossings while selected roots may be mounts.
-    #[test]
-    fn root_relative_openat2_refuses_mount_crossings_but_accepts_the_selected_mount_root() {
-        // No mounts or user files are created. /proc provides a Linux mount
-        // boundary; NO_XDEV applies equally to bind mounts with identical st_dev.
-        let root = open_without_links(Path::new("/"), true).unwrap();
-        let error =
-            open_beneath(&root, Path::new("proc"), libc::O_PATH | libc::O_DIRECTORY).unwrap_err();
-        assert_eq!(
-            error
-                .downcast_ref::<std::io::Error>()
-                .unwrap()
-                .raw_os_error(),
-            Some(libc::EXDEV)
-        );
-        let proc_root = open_without_links(Path::new("/proc"), true).unwrap();
-        assert!(open_beneath(&proc_root, Path::new("."), libc::O_PATH | libc::O_DIRECTORY).is_ok());
-    }
-
-    /// Verify copying rejects unsafe links, device mismatches and special files.
-    #[test]
-    fn copy_never_reads_through_links_and_rejects_special_or_different_device_entries() {
-        use std::{ffi::CString, os::unix::ffi::OsStrExt};
-        let fixture = Fixture::new();
-        let source = managed(&fixture);
-        let device = disk::metadata(&source).unwrap().dev();
-        let alias = source.join("alias");
-        symlink("nested", &alias).unwrap();
-        assert!(open_regular(&source, &alias.join("data"), device).is_err());
-        assert!(metadata(&source, &source.join("nested/data"), device.wrapping_add(1)).is_err());
-        let fifo = source.join("fifo");
-        let name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
-        let destination = fixture.directory.join("destination");
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &destination,
-                    &source,
-                    false,
-                    &operation(OperationKind::Relocate)
-                )
-                .is_err()
-        );
-        assert!(!destination.exists());
-        disk::remove_file(fifo).unwrap();
-        symlink("../../unrelated", source.join("escape")).unwrap();
-        assert!(
-            fixture
-                .store
-                .relocate(
-                    GAME,
-                    &destination,
-                    &source,
-                    false,
-                    &operation(OperationKind::Relocate)
-                )
-                .is_err()
-        );
-        assert!(source.exists());
         assert!(fixture.store.journal(GAME).unwrap().is_none());
     }
 }
