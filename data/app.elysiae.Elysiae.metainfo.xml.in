@@ -1,26 +1,24 @@
-<?xml version="1.1" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-    <id>app.elysiae.Elysiae</id>
+    <id>@APP_ID@</id>
     <name>Elysiae</name>
-    <summary>Unifiied "Anime Game" Launcher</summary>
+    <summary>Unified anime game launcher</summary>
     <developer id="app.elysiae">
-        <name>Shob3r</name>
         <name>The Elysiae Project</name>
     </developer>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>BSD-3-Clause</project_license>
     <description>
         <p>Elysiae is a unified and performant game launcher for "Anime Games" from a certain Chinese video game company</p>
-        <p></p>
     </description>
-    <launchable type="desktop-id">app.elysiae.Elysiae.desktop</launchable>
+    <launchable type="desktop-id">@APP_ID@.desktop</launchable>
     <categories>
         <category>Utility</category>
         <category>Game</category>
     </categories>
     <requires>
         <kernel version="6.14" compare="ge">Linux</kernel>
-        <internet>always</internet>
+        <internet>first-run</internet>
     </requires>
     <recommends>
         <control>keyboard</control>
@@ -33,9 +31,7 @@
     </supports>
     <url type="homepage">https://elysiae.app</url>
     <url type="bugtracker">https://github.com/elysiae-project/elysiae/issues</url>
-    <branding>
-        <!--TODO: Fill out with new branding colours once it's done-->
-    </branding>
+    <!--TODO: Add branding colours once they are finalized-->
     <!--TODO: Get app screenshots before release-->
     <releases>
         <!--TODO: fill with initial release information once 1.0 releases-->

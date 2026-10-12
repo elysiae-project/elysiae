@@ -5,3 +5,8 @@ pub mod runtime;
 pub mod settings;
 pub mod shell;
 pub mod web;
+
+// Test the exact parser used by build.rs; build-script tests are not run by Cargo.
+#[cfg(test)]
+#[path = "../../build.rs"]
+mod build_checks;
