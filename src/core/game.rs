@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Ok, bail};
+/// Game identifiers shared by launcher metadata, storage and backend operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Game {
     Bh3,
@@ -12,6 +13,7 @@ pub enum Game {
 }
 
 impl Default for Game {
+    /// Uses Bh3 as the launcher's initial game selection.
     fn default() -> Self {
         Self::Bh3
     }
@@ -20,6 +22,7 @@ impl Default for Game {
 impl TryFrom<&str> for Game {
     type Error = anyhow::Error;
 
+    /// Parses a known game code, returning an error for unsupported values.
     fn try_from(code: &str) -> Result<Self, Self::Error> {
         match code {
             "\x62\x68\x33" => Ok(Self::Bh3),
@@ -34,6 +37,7 @@ impl TryFrom<&str> for Game {
 }
 
 impl Game {
+    /// Lists every game identifier recognized by the launcher.
     pub fn all() -> [Self; 6] {
         [
             Self::Bh3,
@@ -45,6 +49,7 @@ impl Game {
         ]
     }
 
+    /// Returns the stable game code used by services and local storage.
     pub fn code(self) -> &'static str {
         match self {
             Self::Bh3 => "\x62\x68\x33",
@@ -56,6 +61,7 @@ impl Game {
         }
     }
 
+    /// Returns the game's human-readable name for the interface.
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Bh3 => "\x48\x6f\x6e\x6b\x61\x69\x20\x49\x6d\x70\x61\x63\x74\x20\x33\x72\x64",
@@ -67,6 +73,7 @@ impl Game {
         }
     }
 
+    /// Returns the Windows executable name, or an error if metadata is unavailable.
     pub fn executable(self) -> anyhow::Result<&'static str> {
         match self {
             Self::Bh3 => Ok("\x42\x48\x33\x2e\x65\x78\x65"),
@@ -84,6 +91,7 @@ impl Game {
         }
     }
 
+    /// Returns the default relative installation path for this game.
     pub fn install_path(self) -> PathBuf {
         PathBuf::from("games").join(self.code())
     }
@@ -93,6 +101,7 @@ impl Game {
 mod tests {
     use super::*;
 
+    /// Checks that game codes round-trip and provide names and default paths.
     #[test]
     fn game_codes_round_trip() {
         let games = [
@@ -113,11 +122,13 @@ mod tests {
         }
     }
 
+    /// Checks that an unknown game code is rejected.
     #[test]
     fn unsupported_game_code_is_rejected() {
         assert!(Game::try_from("unknown").is_err());
     }
 
+    /// Checks known executable names and rejects games with missing metadata.
     #[test]
     fn executable_metadata_matches_supported_games() {
         assert_eq!(Game::Bh3.executable().unwrap(), "BH3.exe");

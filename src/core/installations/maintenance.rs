@@ -33,6 +33,7 @@ const GAMES: [Game; 6] = [
     Game::Hyg,
 ];
 
+/// Recorded maintenance intent and directory identities used to guide recovery.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Journal {
@@ -48,6 +49,7 @@ pub(super) struct Journal {
     step: Step,
 }
 
+/// Relocation or managed-deletion intent, distinct from unregister-only operations.
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 enum Action {
@@ -59,6 +61,7 @@ enum Action {
     Uninstall,
 }
 
+/// Copy and cleanup progress; registry contents determine whether commit occurred.
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 enum Step {
     Copying,
@@ -67,6 +70,7 @@ enum Step {
 }
 
 impl Journal {
+    /// Capture source identity and transaction intent before staging or quarantine.
     fn new(game: Game, original: Installation, action: Action) -> Result<Self> {
         let metadata = disk::symlink_metadata(&original.path)?;
         Ok(Self {
@@ -83,6 +87,7 @@ impl Journal {
         })
     }
 
+    /// Return the relocation destination, rejecting uninstall transactions.
     fn destination(&self) -> Result<&Path> {
         match &self.action {
             Action::Relocate { destination, .. } => Ok(destination),
@@ -90,10 +95,12 @@ impl Journal {
         }
     }
 
+    /// Derive a transaction path from its parent, role, game, and transaction ID.
     fn generated(&self, parent: &Path, kind: &str) -> PathBuf {
         parent.join(format!(".elysiae-{kind}-{}-{}", self.game, self.id))
     }
 
+    /// Derive the staging directory beside the relocation destination.
     fn staging(&self) -> Result<PathBuf> {
         Ok(self.generated(
             self.destination()?
@@ -103,6 +110,7 @@ impl Journal {
         ))
     }
 
+    /// Derive the quarantine directory beside the original installation.
     fn quarantine(&self) -> Result<PathBuf> {
         Ok(self.generated(
             self.original
@@ -113,6 +121,7 @@ impl Journal {
         ))
     }
 
+    /// Describe a managed relocation root using the transaction ID as its token.
     fn target(&self, path: PathBuf) -> Installation {
         Installation {
             path,
@@ -122,6 +131,7 @@ impl Journal {
         }
     }
 
+    /// Check the path's recorded staging identity and transaction ownership marker.
     fn check_staging(&self, game: Game, path: &Path) -> Result<()> {
         let metadata = disk::symlink_metadata(path)?;
         ensure!(
@@ -133,6 +143,7 @@ impl Journal {
         verify_owner(game, &self.target(path.to_owned()))
     }
 
+    /// Check a source path's recorded identity and, when managed, ownership marker.
     fn check_source(&self, game: Game, path: &Path) -> Result<()> {
         let metadata = disk::symlink_metadata(path)?;
         ensure!(
@@ -151,10 +162,12 @@ impl Journal {
 }
 
 impl Store {
+    /// Resolve the game's maintenance journal within this store.
     fn journal_path(&self, game: Game) -> Result<PathBuf> {
         self.resolve(&PathBuf::from(JOURNALS).join(format!("{}.json", game.code())))
     }
 
+    /// Read a size-bounded journal and validate its schema and recorded intent.
     pub(super) fn journal(&self, game: Game) -> Result<Option<Journal>> {
         let path = self.journal_path(game)?;
         match disk::symlink_metadata(&path) {
@@ -186,6 +199,7 @@ impl Store {
         Ok(Some(journal))
     }
 
+    /// Check journal intent and derived paths without granting cleanup authority.
     fn validate_journal(&self, game: Game, journal: &Journal) -> Result<()> {
         ensure!(
             journal.schema_version == 1 && journal.game == game.code(),
@@ -241,6 +255,7 @@ impl Store {
         Ok(())
     }
 
+    /// Validate and persist bounded maintenance intent with its directory entries.
     fn save_journal(&self, game: Game, journal: &Journal) -> Result<()> {
         self.validate_journal(game, journal)?;
         ensure!(
@@ -262,12 +277,14 @@ impl Store {
         sync_directory(&self.root()?)
     }
 
+    /// Remove a completed journal and persist its parent directory entry change.
     fn clear_journal(&self, game: Game) -> Result<()> {
         let path = self.journal_path(game)?;
         disk::remove_file(&path)?;
         sync_directory(path.parent().context("Journal has no parent")?)
     }
 
+    /// Require all game maintenance journals to be cleared before new mutations.
     pub(super) fn ensure_no_pending(&self) -> Result<()> {
         for game in GAMES {
             ensure!(
@@ -279,11 +296,14 @@ impl Store {
         Ok(())
     }
 
+    /// Save the transaction's registry state and sync the file and its parent.
     fn save_registry(&self, registry: &super::Registry) -> Result<()> {
         self.save(registry)?;
         sync_file_and_parent(&self.resolve(Path::new(super::REGISTRY))?)
     }
 
+    /// Copy and verify into destination-side staging before committing registration.
+    /// Delete the confirmed source only when managed and explicitly requested.
     pub(super) fn relocate(
         &self,
         game: Game,
@@ -399,6 +419,7 @@ impl Store {
         self.recover_on_error(game, operation, result)
     }
 
+    /// Promote verified staging to the destination, then commit its registration.
     fn commit_relocation(
         &self,
         game: Game,
@@ -427,6 +448,7 @@ impl Store {
         self.save_registry(registry)
     }
 
+    /// Unregister only, or journal quarantine and deletion of a confirmed managed root.
     pub(super) fn uninstall(
         &self,
         game: Game,
@@ -478,6 +500,7 @@ impl Store {
         self.recover_on_error(game, operation, result)
     }
 
+    /// Attempt rollback or cleanup after failure while retaining the original error.
     fn recover_on_error(
         &self,
         game: Game,
@@ -509,6 +532,7 @@ impl Store {
         Ok(())
     }
 
+    /// Recover any pending journal under the game's matching operation.
     pub(super) fn recover(&self, game: Game, operation: &Operation) -> Result<()> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
@@ -520,6 +544,7 @@ impl Store {
         self.recover_transaction(game, &mut journal)
     }
 
+    /// Use registration as commit evidence to roll back or finish journaled maintenance.
     fn recover_transaction(&self, game: Game, journal: &mut Journal) -> Result<()> {
         self.validate_journal(game, journal)?;
         let mut registry = self.load()?;
@@ -678,6 +703,7 @@ impl Store {
         self.clear_journal(game)
     }
 
+    /// Move the checked source to quarantine without replacing existing entries.
     fn quarantine(&self, game: Game, journal: &Journal) -> Result<()> {
         self.validate_root(&journal.original.path)?;
         journal.check_source(game, &journal.original.path)?;
@@ -691,6 +717,8 @@ impl Store {
         sync_directory(quarantine.parent().context("Quarantine has no parent")?)
     }
 
+    /// Clean an owned staging or quarantine tree, or finish an empty journaled cleanup.
+    /// Content deletion uses pinned descriptors; final root removal uses its path.
     fn cleanup(&self, game: Game, journal: &mut Journal, path: &Path, token: &str) -> Result<()> {
         ensure!(
             path == journal.quarantine()?
@@ -755,10 +783,12 @@ impl Store {
     }
 }
 
+/// Check whether either path contains the other, including equality.
 fn overlap(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
+/// Create missing canonical destination parents and persist their directory entries.
 fn create_destination_parents(path: &Path) -> Result<()> {
     let mut missing = Vec::new();
     let mut ancestor = path;
@@ -793,6 +823,7 @@ fn create_destination_parents(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Require an absent or empty canonical directory, returning whether it exists.
 fn empty_destination(path: &Path) -> Result<bool> {
     match disk::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -811,14 +842,17 @@ fn empty_destination(path: &Path) -> Result<bool> {
     }
 }
 
+/// Open a directory by path and sync its metadata to disk.
 fn sync_directory(path: &Path) -> Result<()> {
     Ok(File::open(path)?.sync_all()?)
 }
+/// Sync a file opened by path and the directory containing its entry.
 fn sync_file_and_parent(path: &Path) -> Result<()> {
     File::open(path)?.sync_all()?;
     sync_directory(path.parent().context("Metadata has no parent directory")?)
 }
 
+/// Rename between pinned parent descriptors using the supplied rename flags.
 fn rename_directory(source: &Path, destination: &Path, flags: libc::c_uint) -> Result<()> {
     use std::os::fd::AsRawFd;
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
@@ -856,6 +890,7 @@ fn rename_directory(source: &Path, destination: &Path, flags: libc::c_uint) -> R
     Ok(())
 }
 
+/// Check cancellation when an operation accompanies the traversal.
 fn cancelled(operation: Option<&Operation>) -> Result<()> {
     if let Some(operation) = operation {
         operation.check_cancelled()?;
@@ -863,6 +898,7 @@ fn cancelled(operation: Option<&Operation>) -> Result<()> {
     Ok(())
 }
 
+/// Inspect a root-relative entry, rejecting mount crossings and special files.
 fn metadata(root: &Path, path: &Path, device: u64) -> Result<disk::Metadata> {
     let metadata = open_tree_path(root, path, libc::O_PATH | libc::O_NOFOLLOW)?.metadata()?;
     ensure!(
@@ -884,6 +920,7 @@ fn metadata(root: &Path, path: &Path, device: u64) -> Result<disk::Metadata> {
     Ok(metadata)
 }
 
+/// Measure a bounded tree excluding its owner marker, optionally checking link targets.
 fn tree_size(
     root: &Path,
     path: &Path,
@@ -933,6 +970,7 @@ fn tree_size(
     Ok(size)
 }
 
+/// Read a relative symlink target and check that its chain stays within the root.
 fn safe_link(root: &Path, path: &Path) -> Result<PathBuf> {
     let target = disk::read_link(path)?;
     ensure!(
@@ -951,6 +989,7 @@ fn safe_link(root: &Path, path: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// Resolve a bounded symlink chain within a root, allowing missing internal targets.
 fn resolve_link(root: &Path, relative: &Path, remaining: &mut usize) -> Result<PathBuf> {
     let mut path = root.to_owned();
     for component in relative.components() {
@@ -991,6 +1030,7 @@ fn resolve_link(root: &Path, relative: &Path, remaining: &mut usize) -> Result<P
     Ok(path)
 }
 
+/// Open a root-relative regular file and confirm its previously observed identity.
 fn open_regular(root: &Path, path: &Path, device: u64) -> Result<File> {
     let expected = metadata(root, path, device)?;
     ensure!(expected.is_file(), "Expected a regular installation file");
@@ -1003,6 +1043,7 @@ fn open_regular(root: &Path, path: &Path, device: u64) -> Result<File> {
     Ok(file)
 }
 
+/// Copy buffered bytes while checking cancellation between reads and writes.
 fn copy_stream(
     reader: &mut impl Read,
     writer: &mut impl Write,
@@ -1020,6 +1061,7 @@ fn copy_stream(
     }
 }
 
+/// Open and pin a destination path before copying the source tree into it.
 fn copy_tree(
     root: &Path,
     source: &Path,
@@ -1036,6 +1078,7 @@ fn copy_tree(
     copy_tree_into(root, source, &destination, device, depth, operation)
 }
 
+/// Copy into a pinned destination directory, preserving permissions and internal links.
 fn copy_tree_into(
     root: &Path,
     source: &Path,
@@ -1088,6 +1131,7 @@ fn copy_tree_into(
     Ok(destination.sync_all()?)
 }
 
+/// Compare tree contents, permissions, and links while excluding root ownership markers.
 fn verify_tree(
     roots: (&Path, &Path),
     source: &Path,
@@ -1185,6 +1229,7 @@ fn verify_tree(
 // Trusted canonical roots may themselves live on a different mount. Descendant
 // access must instead use open_beneath: NO_XDEV on an absolute path would reject
 // legitimate installations mounted below /, not just unexpected child mounts.
+/// Open a selected path without symlink traversal, allowing mount boundaries.
 fn open_without_links(path: &Path, directory: bool) -> Result<File> {
     open_at(
         libc::AT_FDCWD,
@@ -1194,11 +1239,13 @@ fn open_without_links(path: &Path, directory: bool) -> Result<File> {
     ) // RESOLVE_NO_SYMLINKS
 }
 
+/// Open beneath a pinned directory without crossing mounts or following symlinks.
 fn open_beneath(directory: &File, path: &Path, flags: libc::c_int) -> Result<File> {
     use std::os::fd::AsRawFd;
     open_at(directory.as_raw_fd(), path, flags, 0x01 | 0x04 | 0x08) // RESOLVE_NO_XDEV | NO_SYMLINKS | BENEATH
 }
 
+/// Pin a selected root and open a path relative to it with descendant restrictions.
 fn open_tree_path(root: &Path, path: &Path, flags: libc::c_int) -> Result<File> {
     let directory = open_without_links(root, true)?;
     let relative = path.strip_prefix(root)?;
@@ -1215,6 +1262,7 @@ fn open_tree_path(root: &Path, path: &Path, flags: libc::c_int) -> Result<File> 
 
 // openat2 is available on the supported Linux kernels. Fail closed if absent;
 // st_dev comparisons alone do not detect same-filesystem bind mounts.
+/// Apply Linux openat2 flags and resolution restrictions, returning an owned descriptor.
 fn open_at(
     directory: std::os::fd::RawFd,
     path: &Path,
@@ -1225,6 +1273,7 @@ fn open_at(
         ffi::CString,
         os::{fd::FromRawFd, unix::ffi::OsStrExt},
     };
+    /// Linux openat2 options in the kernel's expected C layout.
     #[repr(C)]
     struct OpenHow {
         flags: u64,
@@ -1254,11 +1303,13 @@ fn open_at(
     Ok(unsafe { File::from_raw_fd(fd as std::os::fd::RawFd) })
 }
 
+/// Build a procfs path referring to a live directory descriptor.
 fn fd_path(directory: &File) -> PathBuf {
     use std::os::fd::AsRawFd;
     PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()))
 }
 
+/// Delete entries relative to pinned directories, retaining the root ownership marker.
 fn remove_contents(directory: &File, device: u64, depth: usize) -> Result<()> {
     ensure!(depth <= MAX_DEPTH, "Cleanup directory nesting is too deep");
     let permissions = directory.metadata()?;
@@ -1310,10 +1361,12 @@ mod tests {
 
     const GAME: Game = Game::Bh3;
 
+    /// Create an independent operation of the requested kind for the test game.
     fn operation(kind: OperationKind) -> Operation {
         Operations::default().begin(kind, Some(GAME)).unwrap()
     }
 
+    /// Create a managed test installation with inert executable and nested data files.
     fn managed(fixture: &Fixture) -> PathBuf {
         let root = fixture
             .store
@@ -1325,6 +1378,7 @@ mod tests {
         root
     }
 
+    /// Verify copying uses its pinned staging descriptor after pathname replacement.
     #[test]
     fn copying_uses_pinned_staging_not_replacement_symlink() {
         let fixture = Fixture::new();
@@ -1363,6 +1417,7 @@ mod tests {
         );
     }
 
+    /// Create a journaled relocation fixture, optionally with a verified staged copy.
     fn staged(fixture: &Fixture, ready: bool, remove_source: bool) -> Journal {
         let root = managed(fixture);
         let original = fixture.store.registered(GAME).unwrap().unwrap();
@@ -1403,6 +1458,7 @@ mod tests {
         journal
     }
 
+    /// Verify relocation preserves contents, permissions, links and the source.
     #[test]
     fn relocation_copies_contents_permissions_and_internal_links_without_moving_source() {
         let fixture = Fixture::new();
@@ -1484,6 +1540,7 @@ mod tests {
         assert!(fixture.store.journal(GAME).unwrap().is_none());
     }
 
+    /// Verify imported roots may be copied into managed destinations but not deleted.
     #[test]
     fn imported_relocation_retains_original_and_never_grants_source_deletion() {
         let fixture = Fixture::new();
@@ -1526,6 +1583,7 @@ mod tests {
         assert!(fixture.store.registered(GAME).unwrap().unwrap().managed);
     }
 
+    /// Verify maintenance rejects unsafe paths, overlaps and wrong confirmations.
     #[test]
     fn unsafe_destinations_wrong_confirmation_and_other_games_are_rejected() {
         let fixture = Fixture::new();
@@ -1636,6 +1694,7 @@ mod tests {
         assert!(fixture.store.journal(GAME).unwrap().is_none());
     }
 
+    /// Verify unregister-only leaves managed and imported files untouched.
     #[test]
     fn unregister_only_never_writes_inside_managed_or_imported_roots() {
         for imported in [false, true] {
@@ -1667,6 +1726,7 @@ mod tests {
         }
     }
 
+    /// Verify managed deletion and relocation cleanup preserve shared runtime data.
     #[test]
     fn managed_uninstall_and_relocation_cleanup_leave_shared_data_untouched() {
         for relocate in [false, true] {
@@ -1709,6 +1769,7 @@ mod tests {
         }
     }
 
+    /// Verify failed copies remove owned staging but retain the source.
     #[test]
     fn copy_cancellation_and_verification_failure_retain_original_and_clean_owned_stage() {
         for cancel in [false, true] {
@@ -1717,8 +1778,10 @@ mod tests {
             let staging = journal.staging().unwrap();
             let operation = operation(OperationKind::Relocate);
             let failure = if cancel {
+                /// A reader that cancels the operation during a copy read.
                 struct CancelReader(irmin::DownloadHandle);
                 impl Read for CancelReader {
+                    /// Emit one byte and cancel before the copier can write it.
                     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
                         output[0] = 1;
                         self.0.cancel();
@@ -1758,6 +1821,7 @@ mod tests {
         }
     }
 
+    /// Verify maintenance and recovery reject an operation belonging to another game.
     #[test]
     fn wrong_game_leases_cannot_mutate_or_recover_installations() {
         let fixture = Fixture::new();
@@ -1788,6 +1852,7 @@ mod tests {
         assert!(fixture.store.journal(GAME).unwrap().is_none());
     }
 
+    /// Exercise copy, verification, and cleanup of a deeply nested installation tree.
     #[test]
     fn nested_tree_copy_verification_and_cleanup_use_bounded_stack_space() {
         let fixture = Fixture::new();
@@ -1821,6 +1886,7 @@ mod tests {
         );
     }
 
+    /// Verify relocation creates missing destination parents and leaves no staging tree.
     #[test]
     fn relocation_stages_on_destination_side_even_when_parents_do_not_exist() {
         let fixture = Fixture::new();
@@ -1855,6 +1921,7 @@ mod tests {
         );
     }
 
+    /// Verify recovery rejects replaced staging and overlapping journal paths.
     #[test]
     fn cleanup_never_removes_a_replacement_empty_directory_or_aliased_root() {
         let fixture = Fixture::new();
@@ -1878,6 +1945,7 @@ mod tests {
         assert!(stage.exists());
     }
 
+    /// Verify pre-cancelled operations leave installation paths and journals unchanged.
     #[test]
     fn cancelled_operation_does_not_start_maintenance() {
         let fixture = Fixture::new();
@@ -1902,6 +1970,7 @@ mod tests {
         assert!(fixture.store.journal(GAME).unwrap().is_none());
     }
 
+    /// Verify a failed registry commit preserves the source and permits later rollback.
     #[test]
     fn failed_registry_switch_keeps_source_and_rolls_back_after_metadata_is_available() {
         let fixture = Fixture::new();
@@ -1933,6 +2002,7 @@ mod tests {
             .unwrap();
     }
 
+    /// Verify committed relocation resumes complete or partial source cleanup.
     #[test]
     fn committed_relocation_recovers_before_or_during_source_cleanup() {
         for partial_cleanup in [false, true] {
@@ -1982,6 +2052,7 @@ mod tests {
         }
     }
 
+    /// Verify uninstall recovery restores roots or finishes committed deletion.
     #[test]
     fn interrupted_uninstall_restores_before_commit_and_finishes_after_commit() {
         for state in 0..4 {
@@ -2052,6 +2123,7 @@ mod tests {
         }
     }
 
+    /// Verify pending journals block mutations without claiming unrelated staging.
     #[test]
     fn journals_block_new_mutations_and_unconfirmed_strays_are_not_adopted_or_deleted() {
         let fixture = Fixture::new();
@@ -2075,6 +2147,7 @@ mod tests {
         assert_eq!(disk::read(stranger.join("keep")).unwrap(), b"unconfirmed");
     }
 
+    /// Verify invalid journals or ownership markers prevent recovery cleanup.
     #[test]
     fn corrupted_or_oversized_journals_never_authorize_cleanup() {
         let fixture = Fixture::new();
@@ -2123,6 +2196,7 @@ mod tests {
         assert!(journal.original.path.exists());
     }
 
+    /// Verify cleanup unlinks escaping symlinks but rejects a replaced source directory.
     #[test]
     fn cleanup_unlinks_escaping_links_but_refuses_replaced_source_roots() {
         let fixture = Fixture::new();
@@ -2160,6 +2234,7 @@ mod tests {
         assert!(moved.join(GAME.executable().unwrap()).exists());
     }
 
+    /// Verify cleanup handles link chains whose internal alias is already gone.
     #[test]
     fn cleanup_recovers_a_link_chain_after_its_alias_has_already_been_removed() {
         let fixture = Fixture::new();
@@ -2201,6 +2276,7 @@ mod tests {
         );
     }
 
+    /// Verify late source edits trigger restoration instead of deletion.
     #[test]
     fn source_changes_after_initial_verification_restore_original_instead_of_deleting_it() {
         let fixture = Fixture::new();
@@ -2239,6 +2315,7 @@ mod tests {
         assert!(fixture.store.journal(GAME).unwrap().is_none());
     }
 
+    /// Verify descendant opens reject mount crossings while selected roots may be mounts.
     #[test]
     fn root_relative_openat2_refuses_mount_crossings_but_accepts_the_selected_mount_root() {
         // No mounts or user files are created. /proc provides a Linux mount
@@ -2257,6 +2334,7 @@ mod tests {
         assert!(open_beneath(&proc_root, Path::new("."), libc::O_PATH | libc::O_DIRECTORY).is_ok());
     }
 
+    /// Verify copying rejects unsafe links, device mismatches and special files.
     #[test]
     fn copy_never_reads_through_links_and_rejects_special_or_different_device_entries() {
         use std::{ffi::CString, os::unix::ffi::OsStrExt};

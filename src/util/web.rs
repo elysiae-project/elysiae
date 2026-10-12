@@ -18,6 +18,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
 static HTTP_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
 
+/// Configure an HTTPS-only client with bounded requests and safe redirects.
 fn client_builder(read_timeout: Duration) -> ClientBuilder {
     Client::builder()
         .https_only(true)
@@ -34,6 +35,7 @@ fn client_builder(read_timeout: Duration) -> ClientBuilder {
         .pool_idle_timeout(Duration::from_secs(30))
 }
 
+/// Initialize and return the shared HTTP client.
 pub(crate) fn http_client() -> Result<&'static Client> {
     HTTP_CLIENT
         .get_or_init(|| client_builder(READ_TIMEOUT).build())
@@ -41,6 +43,7 @@ pub(crate) fn http_client() -> Result<&'static Client> {
         .context("Could not create HTTP client")
 }
 
+/// Parse a request URL, requiring HTTPS and a host.
 fn https_url(url: &str) -> Result<Url> {
     let parsed = Url::parse(url).context("Invalid request URL")?;
     ensure!(
@@ -50,6 +53,7 @@ fn https_url(url: &str) -> Result<Url> {
     Ok(parsed)
 }
 
+/// Send a request and reject unsuccessful status codes or oversized declared bodies.
 async fn checked_response(request: RequestBuilder, max_size: u64, kind: &str) -> Result<Response> {
     let response = request
         .send()
@@ -70,6 +74,7 @@ async fn checked_response(request: RequestBuilder, max_size: u64, kind: &str) ->
     Ok(response)
 }
 
+/// Download byte counts and identifier; a zero total means the size is unknown.
 #[derive(Debug, Clone)]
 pub struct DownloadProgress {
     pub download_id: Uuid,
@@ -77,16 +82,19 @@ pub struct DownloadProgress {
     pub total: u64,
 }
 
+/// Removes a download's staging file when the transfer ends or is cancelled.
 struct FileDownload {
     path: PathBuf,
 }
 
 impl Drop for FileDownload {
+    /// Remove any unfinished download at the guarded path.
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
     }
 }
 
+/// Download an HTTPS file within the global size limit, reporting optional progress.
 pub async fn download_file(
     url: String,
     dest: PathBuf,
@@ -120,6 +128,7 @@ pub async fn download_file_limited(
     .await
 }
 
+/// Stream a bounded response into a staging file and atomically replace the destination.
 async fn download_to(
     request: RequestBuilder,
     destination: PathBuf,
@@ -193,6 +202,7 @@ async fn download_to(
     Ok(())
 }
 
+/// Fetch HTTPS JSON metadata within the shared size and time limits.
 pub async fn fetch_data<T: DeserializeOwned>(url: &str) -> Result<T> {
     let parsed = https_url(url)?;
     fetch_json(
@@ -203,6 +213,7 @@ pub async fn fetch_data<T: DeserializeOwned>(url: &str) -> Result<T> {
     .await
 }
 
+/// Read and deserialize JSON while enforcing response size and request deadlines.
 async fn fetch_json<T: DeserializeOwned>(
     request: RequestBuilder,
     max_size: usize,
@@ -243,6 +254,7 @@ mod tests {
     };
     use tokio::{io::AsyncReadExt, net::TcpListener, task::JoinHandle};
 
+    /// Run an async HTTP fixture test with a five-second deadline.
     fn run(test: impl Future<Output = ()>) {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -255,6 +267,7 @@ mod tests {
             });
     }
 
+    /// Build a local fixture client with no proxy and production redirect checks.
     fn test_client(read_timeout: Duration) -> Client {
         client_builder(read_timeout)
             .https_only(false)
@@ -263,9 +276,11 @@ mod tests {
             .unwrap()
     }
 
+    /// Isolated download directory removed when the fixture is dropped.
     struct TestDirectory(PathBuf);
 
     impl TestDirectory {
+        /// Create an isolated directory for download fixtures.
         fn new() -> Self {
             let path = full_path(
                 Some(PathBuf::from(format!("web-tests-{}", Uuid::new_v4()))),
@@ -276,10 +291,12 @@ mod tests {
             Self(path)
         }
 
+        /// Return the fixture's download destination.
         fn destination(&self) -> PathBuf {
             self.0.join("payload.bin")
         }
 
+        /// Check the final payload and confirm no staging files remain.
         fn assert_contents(&self, expected: &[u8]) {
             assert_eq!(std::fs::read(self.destination()).unwrap(), expected);
             assert_eq!(
@@ -291,17 +308,20 @@ mod tests {
     }
 
     impl Drop for TestDirectory {
+        /// Remove the fixture directory and its contents.
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
+    /// Single-request local HTTP server with an abortable fixture task.
     struct Server {
         url: Url,
         task: JoinHandle<()>,
     }
 
     impl Server {
+        /// Serve a fixed response, optionally keeping it open to simulate a stall.
         async fn new(response: impl AsRef<[u8]>, hold_open: bool) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = Url::parse(&format!(
@@ -327,11 +347,13 @@ mod tests {
     }
 
     impl Drop for Server {
+        /// Stop the server task when the fixture is dropped.
         fn drop(&mut self) {
             self.task.abort();
         }
     }
 
+    /// Verify the destination is replaced before reporting final progress.
     #[test]
     fn finalized_payload_replaces_destination() {
         run(async {
@@ -372,6 +394,7 @@ mod tests {
         });
     }
 
+    /// Verify chunked downloads create parent directories and report an unknown total.
     #[test]
     fn chunked_download_has_unknown_total_and_creates_parents() {
         run(async {
@@ -406,6 +429,7 @@ mod tests {
         });
     }
 
+    /// Verify interrupted streams retain the destination and remove staging files.
     #[test]
     fn interrupted_streams_preserve_destination_and_clean_temp() {
         run(async {
@@ -434,6 +458,7 @@ mod tests {
         });
     }
 
+    /// Verify declared and streamed size overruns leave the destination unchanged.
     #[test]
     fn oversized_downloads_preserve_destination_and_clean_temp() {
         run(async {
@@ -460,6 +485,7 @@ mod tests {
         });
     }
 
+    /// Verify failed renames preserve existing contents and remove staging files.
     #[test]
     fn failed_finalization_preserves_destination_and_cleans_temp() {
         run(async {
@@ -489,6 +515,7 @@ mod tests {
         });
     }
 
+    /// Verify cancellation preserves the destination and cleans partial files.
     #[test]
     fn cancelled_download_preserves_destination_and_cleans_temp() {
         run(async {
@@ -515,6 +542,7 @@ mod tests {
         });
     }
 
+    /// Verify header and body stalls time out without replacing the destination.
     #[test]
     fn stalled_headers_and_body_timeout_without_replacing_destination() {
         run(async {
@@ -540,6 +568,7 @@ mod tests {
         });
     }
 
+    /// Verify the total request deadline stops downloads even while bytes keep arriving.
     #[test]
     fn request_deadline_bounds_downloads_even_without_read_inactivity() {
         run(async {
@@ -581,6 +610,7 @@ mod tests {
         });
     }
 
+    /// Verify invalid or non-HTTPS URLs cannot affect the destination.
     #[test]
     fn public_apis_reject_unsupported_urls_without_writing() {
         run(async {
@@ -607,6 +637,7 @@ mod tests {
         });
     }
 
+    /// Verify caller-supplied download budgets cannot exceed the global limit.
     #[test]
     fn caller_cannot_raise_the_global_download_limit() {
         run(async {
@@ -626,6 +657,7 @@ mod tests {
         });
     }
 
+    /// Verify the shared production client rejects plain HTTP requests.
     #[test]
     fn production_client_rejects_plain_http() {
         run(async {
@@ -639,6 +671,7 @@ mod tests {
         });
     }
 
+    /// Verify redirects to non-HTTPS targets fail without contacting the target.
     #[test]
     fn redirect_policy_rejects_http_and_unsupported_schemes() {
         run(async {
@@ -658,6 +691,7 @@ mod tests {
         });
     }
 
+    /// Verify fixed-length and chunked metadata can reach the allowed size limit.
     #[test]
     fn metadata_accepts_json_at_limit_with_or_without_content_length() {
         run(async {
@@ -676,6 +710,7 @@ mod tests {
         });
     }
 
+    /// Verify oversized metadata is rejected before JSON parsing for each body framing.
     #[test]
     fn metadata_rejects_oversize_before_json_parse() {
         run(async {
@@ -698,6 +733,7 @@ mod tests {
         });
     }
 
+    /// Verify the metadata request deadline includes reading the response body.
     #[test]
     fn metadata_has_a_total_deadline_including_body() {
         run(async {
@@ -717,6 +753,7 @@ mod tests {
         });
     }
 
+    /// Verify HTTP status failures and invalid JSON produce useful errors.
     #[test]
     fn status_and_invalid_json_errors_are_informative() {
         run(async {

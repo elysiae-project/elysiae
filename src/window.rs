@@ -22,6 +22,7 @@ mod imp {
     use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
     use std::cell::{Cell, OnceCell};
 
+    /// Template controls and request state for the main launcher window.
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/app/elysiae/Elysiae/window.ui")]
     pub struct ElysiaeWindow {
@@ -43,16 +44,19 @@ mod imp {
         const NAME: &'static str = "ElysiaeWindow";
         type Type = super::ElysiaeWindow;
         type ParentType = gtk::ApplicationWindow;
+        /// Registers child widget types and binds the window template.
         fn class_init(klass: &mut Self::Class) {
             Titlebar::static_type();
             Background::static_type();
             klass.bind_template();
         }
+        /// Instantiates the template children for this window.
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
     }
     impl ObjectImpl for ElysiaeWindow {
+        /// Connects the window controls to backend actions and operation state.
         fn constructed(&self) {
             self.parent_constructed();
             let weak = self.obj().downgrade();
@@ -85,6 +89,7 @@ mod imp {
                 glib::ControlFlow::Continue
             });
         }
+        /// Detaches the actions popover when the window is disposed.
         fn dispose(&self) {
             if let Some(popover) = self.popover.get() {
                 popover.unparent();
@@ -97,6 +102,7 @@ mod imp {
 }
 
 glib::wrapper! {
+    /// Main window for game selection, installation status and backend actions.
     pub struct ElysiaeWindow(ObjectSubclass<imp::ElysiaeWindow>)
         @extends gtk::ApplicationWindow, gtk::Window, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Native, gtk::Root,
@@ -104,24 +110,29 @@ glib::wrapper! {
 }
 
 impl ElysiaeWindow {
+    /// Creates an application window with the initial game selected.
     pub fn new(app: &gtk::Application) -> Self {
         let window: Self = glib::Object::builder().property("application", app).build();
         window.change_game(Game::Bh3);
         window
     }
+    /// Returns the game currently selected in this window.
     pub fn get_current_game(&self) -> Game {
         self.imp().current_game.get()
     }
+    /// Selects a game and refreshes its background and installation status.
     pub fn change_game(&self, game: Game) {
         log::info!("Selected game: {}", game.code());
         self.imp().current_game.set(game);
         self.refresh_media();
         self.refresh_status();
     }
+    /// Reloads the selected game's background using current preferences.
     pub fn refresh_media(&self) {
         self.imp().background.set_media(self.get_current_game());
     }
 
+    /// Updates the primary button while respecting active backend operations.
     fn refresh_controls(&self) {
         let busy = self.imp().busy.get() || operations().is_busy().unwrap_or(true);
         self.imp()
@@ -132,6 +143,8 @@ impl ElysiaeWindow {
         }
     }
 
+    /// Refreshes local status and optionally checks for online updates.
+    /// Responses from superseded requests are ignored.
     pub fn refresh_status(&self) {
         let game = self.get_current_game();
         let request = self.imp().request.get().wrapping_add(1);
@@ -208,6 +221,8 @@ impl ElysiaeWindow {
         });
     }
 
+    /// Starts the selected game's current action and forwards its progress.
+    /// Keeps the application alive until the backend operation finishes.
     fn start_operation(&self) {
         if self.imp().busy.get() || operations().is_busy().unwrap_or(true) {
             return;
@@ -280,9 +295,11 @@ impl ElysiaeWindow {
         });
     }
 
+    /// Runs the shared runtime update through the supervised backend.
     pub async fn download_components(&self) -> Result<()> {
         proton_manager::update_all_modules().await
     }
+    /// Installs the game with the requested voice language and progress channel.
     pub async fn download_game(
         &self,
         game: Game,
@@ -291,6 +308,7 @@ impl ElysiaeWindow {
     ) -> Result<()> {
         game_downloader::download_game(game, lang, sender).await
     }
+    /// Applies the game's available update or downloads its preinstall data.
     pub async fn update_game(
         &self,
         game: Game,
@@ -299,11 +317,13 @@ impl ElysiaeWindow {
     ) -> Result<()> {
         game_downloader::download_update(game, lang, sender).await
     }
+    /// Launches the game and waits for the supervised session to finish.
     pub async fn launch_game(&self, game: Game) -> Result<()> {
         game_downloader::launch_game(game).await
     }
 }
 
+/// Chooses the primary button label for the current installation state.
 fn action_label(status: UpdateAvailability) -> &'static str {
     match status {
         UpdateAvailability::Updated | UpdateAvailability::Untracked => "Launch",
@@ -314,6 +334,7 @@ fn action_label(status: UpdateAvailability) -> &'static str {
     }
 }
 
+/// Creates the main launcher window for an application instance.
 pub fn build_window(app: &gtk::Application) -> ElysiaeWindow {
     ElysiaeWindow::new(app)
 }
@@ -321,6 +342,7 @@ pub fn build_window(app: &gtk::Application) -> ElysiaeWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Checks that installation states expose the appropriate primary action.
     #[test]
     fn primary_action_follows_installation_state() {
         assert_eq!(

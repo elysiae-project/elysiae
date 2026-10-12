@@ -43,6 +43,7 @@ const MAX_TAR_METADATA_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_TAR_DECODED_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const NODE_ALLOCATION: u64 = 8192;
 
+/// Latest Phlogiston release metadata returned by the component service.
 #[derive(Debug, Deserialize)]
 struct ComponentRelease {
     tag: String,
@@ -50,6 +51,7 @@ struct ComponentRelease {
     download: ComponentDownload,
 }
 
+/// Archive location and expected SHA-256 checksum for a component release.
 #[derive(Debug, Deserialize)]
 struct ComponentDownload {
     url: String,
@@ -57,6 +59,7 @@ struct ComponentDownload {
 }
 
 impl ComponentRelease {
+    /// Validates release metadata and normalizes its checksum.
     fn validate(&mut self) -> Result<()> {
         ensure!(!self.prerelease, "Refusing prerelease Phlogiston runtime");
         ensure!(valid_version(&self.tag), "Invalid component version");
@@ -74,14 +77,17 @@ impl ComponentRelease {
     }
 }
 
+/// Checks that a version is nonempty, bounded and free of control characters.
 fn valid_version(version: &str) -> bool {
     !version.trim().is_empty() && version.len() <= 256 && !version.chars().any(char::is_control)
 }
 
+/// Checks for a 64-digit hexadecimal SHA-256 checksum.
 fn valid_checksum(checksum: &str) -> bool {
     checksum.len() == 64 && checksum.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// Builds the latest Phlogiston release URL for this architecture.
 fn component_url() -> Result<reqwest::Url> {
     let mut url = reqwest::Url::parse(COMPONENTS_URL_BASE)?;
     // latestOnly returns an array; latest returns the single flat release.
@@ -92,17 +98,20 @@ fn component_url() -> Result<reqwest::Url> {
     Ok(url)
 }
 
+/// Fetches and validates the latest stable Phlogiston release.
 async fn latest_release() -> Result<ComponentRelease> {
     let mut release: ComponentRelease = fetch_data(component_url()?.as_str()).await?;
     release.validate()?;
     Ok(release)
 }
 
+/// Version stored in the legacy component tracker.
 #[derive(Serialize, Deserialize)]
 struct LegacyVersion {
     version: String,
 }
 
+/// In-tree runtime identity and the transaction that installed it.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RuntimeVersion {
@@ -112,6 +121,7 @@ struct RuntimeVersion {
     transaction: String,
 }
 
+/// Reads and validates a runtime's in-tree version marker.
 fn runtime_version(root: &Path) -> Result<RuntimeVersion> {
     let marker: RuntimeVersion = read_json(&root.join(MARKER))?;
     ensure!(
@@ -123,37 +133,46 @@ fn runtime_version(root: &Path) -> Result<RuntimeVersion> {
 }
 
 // Explicit roots keep tests independent of both the user's profile and each other.
+/// Runtime, prefix and transaction paths under an application data root.
 struct RuntimePaths(PathBuf);
 
 impl RuntimePaths {
+    /// Uses the application's data directory as the runtime root.
     fn appdata() -> Result<Self> {
         Ok(Self(full_path(None, None)?))
     }
 
+    /// Returns the canonical Phlogiston installation path.
     fn live(&self) -> PathBuf {
         self.0.join("phlogiston")
     }
 
+    /// Returns the shared Proton data directory.
     fn prefix(&self) -> PathBuf {
         self.0.join("proton-data")
     }
 
+    /// Returns the runtime transaction journal path.
     fn journal(&self) -> PathBuf {
         self.0.join(JOURNAL)
     }
 
+    /// Returns the durable Wine session fence path.
     fn session(&self) -> PathBuf {
         self.0.join(SESSION_FENCE)
     }
 
+    /// Returns the staging directory owned by this transaction.
     fn stage(&self, journal: &Journal) -> PathBuf {
         self.0.join(format!(".phlogiston-stage-{}", journal.id))
     }
 
+    /// Returns the previous-runtime backup path for this transaction.
     fn backup(&self, journal: &Journal) -> PathBuf {
         self.0.join(format!(".phlogiston-backup-{}", journal.id))
     }
 
+    /// Finds a complete runtime, preferring the canonical layout over legacy ones.
     fn resolve(&self) -> Result<RuntimeLayout> {
         // Legacy layouts are read in place, never silently moved into phlogiston.
         for root in [self.live(), self.0.join("proton"), self.0.clone()] {
@@ -167,6 +186,7 @@ impl RuntimePaths {
         )
     }
 
+    /// Checks whether the installed runtime needs repair or differs from a release.
     fn needs_update(&self, release: &ComponentRelease) -> Result<bool> {
         // A legacy tracker must never bless a missing/corrupt canonical tree.
         if node_exists(&self.live())? {
@@ -187,6 +207,7 @@ impl RuntimePaths {
         Ok(tracker.map_or(true, |marker| marker.version != release.tag))
     }
 
+    /// Updates the legacy tracker from an authoritative runtime marker.
     fn sync_legacy_version(&self, marker: &RuntimeVersion) -> Result<()> {
         real_directory(&self.0.join("components"), true)?;
         atomic_json(
@@ -198,6 +219,7 @@ impl RuntimePaths {
     }
 }
 
+/// Validated distribution paths for Proton and its matching Wine server.
 struct RuntimeLayout {
     root: PathBuf,
     executable: PathBuf,
@@ -205,11 +227,13 @@ struct RuntimeLayout {
 }
 
 impl RuntimeLayout {
+    /// Validates a runtime using the selected Wine architecture.
     fn validate(root: &Path) -> Result<Self> {
         let (bin, architecture) = wine_architecture(root);
         Self::validate_architecture(root, bin, architecture)
     }
 
+    /// Checks the required runtime files for a specific Wine architecture.
     fn validate_architecture(root: &Path, bin: &str, architecture: &str) -> Result<Self> {
         real_directory(root, false)?;
         let root = root.canonicalize()?;
@@ -254,6 +278,7 @@ impl RuntimeLayout {
     }
 }
 
+/// Selects native ARM Wine when enabled and available, otherwise x86-64 Wine.
 fn wine_architecture(_root: &Path) -> (&'static str, &'static str) {
     #[cfg(target_arch = "aarch64")]
     if std::env::var("PROTON_USE_ARM64").unwrap_or_else(|_| "1".into()) == "1"
@@ -264,6 +289,7 @@ fn wine_architecture(_root: &Path) -> (&'static str, &'static str) {
     ("files/bin", "x86_64")
 }
 
+/// Validates a required runtime file without allowing links outside the distribution.
 fn checked_file(root: &Path, relative: &str, executable: bool) -> Result<PathBuf> {
     let path = root.join(relative);
     let resolved = path
@@ -291,6 +317,7 @@ pub fn runtime_executable() -> Result<PathBuf> {
     Ok(RuntimePaths::appdata()?.resolve()?.executable)
 }
 
+/// Checks whether a complete supported Proton runtime is installed.
 pub fn components_installed() -> Result<bool> {
     Ok(RuntimePaths::appdata()?.resolve().is_ok())
 }
@@ -316,6 +343,7 @@ async fn runtime_worker(
     .context("Runtime worker failed")?
 }
 
+/// Recovers interrupted work and updates Phlogiston under an operation lease.
 pub async fn update_all_modules() -> Result<()> {
     recover_session().await?;
     let operation = operations().begin(OperationKind::Components, None)?;
@@ -344,6 +372,7 @@ pub async fn recover_runtime() -> Result<()> {
     .await
 }
 
+/// Runs a future until it completes or the operation is cancelled.
 async fn cancellable<T>(
     operation: &Operation,
     future: impl Future<Output = Result<T>>,
@@ -355,6 +384,7 @@ async fn cancellable<T>(
     }
 }
 
+/// Downloads and installs a needed runtime update, cleaning failed staging.
 async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<()> {
     let release = cancellable(operation, latest_release()).await?;
     operation.check_cancelled()?;
@@ -415,6 +445,7 @@ async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<(
     result
 }
 
+/// Extracts, validates and durably commits a checksum-verified runtime archive.
 async fn install_verified_archive(
     paths: &RuntimePaths,
     journal: &Journal,
@@ -450,6 +481,7 @@ async fn install_verified_archive(
     commit_runtime(paths, journal)
 }
 
+/// Retries failed downloads with bounded attempts and cancellable backoff.
 async fn retry_download<F, Fut>(operation: &Operation, mut attempt: F) -> Result<()>
 where
     F: FnMut() -> Fut,
@@ -478,6 +510,7 @@ where
     unreachable!("MAX_RETRIES is positive")
 }
 
+/// Verifies an archive against its expected SHA-256 checksum.
 fn verify_archive(archive: &Path, checksum: &str) -> Result<()> {
     ensure!(valid_checksum(checksum), "Invalid component checksum");
     let actual = sha256::try_digest(archive).context("Could not hash runtime archive")?;
@@ -488,6 +521,7 @@ fn verify_archive(archive: &Path, checksum: &str) -> Result<()> {
     Ok(())
 }
 
+/// Returns the free storage available at the runtime destination.
 fn available_bytes(destination: &Path) -> Result<u64> {
     Ok(get_available_storage(
         destination.to_str().context("Runtime path is not UTF-8")?,
@@ -495,6 +529,7 @@ fn available_bytes(destination: &Path) -> Result<u64> {
     )? as u64)
 }
 
+/// Charges an archive resource budget, rejecting overflow or excess usage.
 fn charge(total: &mut u64, bytes: u64, limit: u64, resource: &str) -> Result<()> {
     *total = total
         .checked_add(bytes)
@@ -506,6 +541,7 @@ fn charge(total: &mut u64, bytes: u64, limit: u64, resource: &str) -> Result<()>
     Ok(())
 }
 
+/// Bounds raw TAR resources and rejects unsafe extensions before interpretation.
 fn raw_tar_preflight(path: &Path) -> Result<()> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(File::open(path)?));
     let mut decoded = 0;
@@ -580,6 +616,7 @@ fn raw_tar_preflight(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Normalizes a relative archive path while enforcing length and depth limits.
 fn bounded_archive_path(path: &Path) -> Result<PathBuf> {
     ensure!(
         path.as_os_str().len() <= MAX_TAR_PATH_BYTES,
@@ -601,6 +638,7 @@ fn bounded_archive_path(path: &Path) -> Result<PathBuf> {
     Ok(normalized)
 }
 
+/// Checks archive resource limits and budgets staging space, including directories.
 fn check_archive_space(path: &Path, available: u64) -> Result<()> {
     // This caller-owned budget also protects the later generic extract_file.
     raw_tar_preflight(path)?;
@@ -671,6 +709,7 @@ fn check_archive_space(path: &Path, available: u64) -> Result<()> {
     Ok(())
 }
 
+/// Durable stages of a runtime replacement and its recovery.
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 enum TransactionPhase {
     Staging,
@@ -679,6 +718,7 @@ enum TransactionPhase {
     RollingBack,
 }
 
+/// Records a runtime transaction's ownership and recovery phase.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Journal {
@@ -687,6 +727,7 @@ struct Journal {
     phase: TransactionPhase,
 }
 
+/// Requires a canonical UUID before deriving transaction paths.
 fn transaction_id(id: &str) -> Result<()> {
     let parsed = Uuid::parse_str(id).context("Invalid runtime transaction id")?;
     ensure!(
@@ -696,6 +737,7 @@ fn transaction_id(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reads a valid transaction journal and rejects symlink staging or backup paths.
 fn read_journal(paths: &RuntimePaths) -> Result<Journal> {
     let journal: Journal = read_json(&paths.journal())?;
     ensure!(
@@ -715,6 +757,7 @@ fn read_journal(paths: &RuntimePaths) -> Result<Journal> {
     Ok(journal)
 }
 
+/// Records a new transaction before creating its owned staging directory.
 fn start_transaction(paths: &RuntimePaths) -> Result<Journal> {
     fs::create_dir_all(&paths.0)?;
     ensure!(
@@ -737,6 +780,7 @@ fn start_transaction(paths: &RuntimePaths) -> Result<Journal> {
     Ok(journal)
 }
 
+/// Replaces the runtime and tracker, rolling back failures before commit publication.
 fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let staged = paths.stage(journal).join("runtime");
     RuntimeLayout::validate(&staged)?;
@@ -797,12 +841,14 @@ fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         .context("Runtime installed; transaction cleanup needs retry")
 }
 
+/// Preserves the legacy tracker's exact bytes or absence for rollback.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TrackerSnapshot {
     bytes: Option<Vec<u8>>,
 }
 
+/// Saves the legacy tracker's current state in transaction-owned staging.
 fn snapshot_legacy_version(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let components = paths.0.join("components");
     if node_exists(&components)? {
@@ -822,6 +868,7 @@ fn snapshot_legacy_version(paths: &RuntimePaths, journal: &Journal) -> Result<()
     )
 }
 
+/// Durably restores the prior runtime and tracker from an uncommitted transaction.
 fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let recorded = read_journal(paths)?;
     ensure!(
@@ -905,6 +952,7 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     discard_transaction(paths, journal)
 }
 
+/// Completes or rolls back an interrupted runtime transaction at the given root.
 fn recover_at(paths: &RuntimePaths) -> Result<()> {
     if !node_exists(&paths.journal())? {
         // Unjournaled directories may belong to someone else; no glob cleanup.
@@ -955,6 +1003,7 @@ fn recover_at(paths: &RuntimePaths) -> Result<()> {
     rollback_runtime(paths, &journal)
 }
 
+/// Removes a matching transaction's staging and backup before deleting its journal.
 fn discard_transaction(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let recorded = read_journal(paths)?;
     ensure!(
@@ -980,6 +1029,7 @@ fn discard_transaction(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     sync_directory(&paths.0)
 }
 
+/// Checks for any filesystem node, including dangling symlinks.
 fn node_exists(path: &Path) -> Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -988,6 +1038,7 @@ fn node_exists(path: &Path) -> Result<bool> {
     }
 }
 
+/// Requires a non-symlink directory, optionally creating it when absent.
 fn real_directory(path: &Path, create: bool) -> Result<()> {
     if create && !node_exists(path)? {
         fs::create_dir(path)?;
@@ -1000,6 +1051,7 @@ fn real_directory(path: &Path, create: bool) -> Result<()> {
     Ok(())
 }
 
+/// Reads bounded metadata from a regular, non-symlink file.
 fn read_metadata(path: &Path, limit: u64) -> Result<Vec<u8>> {
     ensure!(
         fs::symlink_metadata(path)?.is_file(),
@@ -1012,19 +1064,23 @@ fn read_metadata(path: &Path, limit: u64) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Deserializes bounded runtime metadata with path-specific errors.
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     serde_json::from_slice(&read_metadata(path, MAX_METADATA_BYTES)?)
         .with_context(|| format!("Invalid runtime metadata {}", path.display()))
 }
 
+/// Atomically replaces a JSON metadata file and syncs it to disk.
 fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
     atomic_json_published(path, value, &mut false)
 }
 
+/// Writes JSON atomically and reports whether the replacement was published.
 fn atomic_json_published(path: &Path, value: &impl Serialize, published: &mut bool) -> Result<()> {
     atomic_bytes(path, &serde_json::to_vec(value)?, published)
 }
 
+/// Durably replaces metadata bytes, tracking publication even if the final sync fails.
 fn atomic_bytes(path: &Path, bytes: &[u8], published: &mut bool) -> Result<()> {
     *published = false;
     let parent = path.parent().context("Metadata path has no parent")?;
@@ -1052,12 +1108,14 @@ fn atomic_bytes(path: &Path, bytes: &[u8], published: &mut bool) -> Result<()> {
     result
 }
 
+/// Syncs a directory's entries to disk.
 fn sync_directory(path: &Path) -> Result<()> {
     File::open(path)?
         .sync_all()
         .with_context(|| format!("Could not sync {}", path.display()))
 }
 
+/// Syncs regular files and directories in a runtime tree without following symlinks.
 fn sync_tree(root: &Path) -> Result<()> {
     let mut directories = vec![root.to_path_buf()];
     let mut index = 0;
@@ -1079,6 +1137,7 @@ fn sync_tree(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Supported runtime locations that a session fence can reference.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 enum SessionRoot {
     Canonical,
@@ -1087,6 +1146,7 @@ enum SessionRoot {
 }
 
 impl SessionRoot {
+    /// Resolves a recorded runtime location under the application data root.
     fn path(self, paths: &RuntimePaths) -> PathBuf {
         match self {
             Self::Canonical => paths.live(),
@@ -1096,6 +1156,7 @@ impl SessionRoot {
     }
 }
 
+/// Wine architecture pinned when a session starts.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 enum SessionWine {
     X86_64,
@@ -1103,6 +1164,7 @@ enum SessionWine {
 }
 
 impl SessionWine {
+    /// Returns the binary directory and architecture for the recorded Wine variant.
     fn layout(self) -> (&'static str, &'static str) {
         match self {
             Self::X86_64 => ("files/bin", "x86_64"),
@@ -1111,6 +1173,7 @@ impl SessionWine {
     }
 }
 
+/// Recorded Proton wrapper identity or evidence that it has exited.
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum SessionWrapper {
@@ -1123,6 +1186,7 @@ enum SessionWrapper {
     Reaped,
 }
 
+/// Durable session identity that protects the shared prefix until Wine exits.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SessionFence {
@@ -1138,6 +1202,7 @@ struct SessionFence {
     wrapper: SessionWrapper,
 }
 
+/// Requires a canonical version-4 UUID for a Linux boot identity.
 fn validate_boot_id(id: &str) -> Result<()> {
     let uuid = Uuid::parse_str(id).context("Invalid session boot id")?;
     ensure!(
@@ -1149,6 +1214,7 @@ fn validate_boot_id(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reads and validates the current Linux boot identity.
 fn boot_id() -> Result<String> {
     let bytes = read_metadata(Path::new("/proc/sys/kernel/random/boot_id"), 128)?;
     let id = std::str::from_utf8(&bytes)?.trim().to_owned();
@@ -1156,6 +1222,7 @@ fn boot_id() -> Result<String> {
     Ok(id)
 }
 
+/// Returns the current process's PID namespace identity.
 fn pid_namespace() -> Result<String> {
     Ok(fs::read_link("/proc/self/ns/pid")?
         .to_str()
@@ -1163,6 +1230,7 @@ fn pid_namespace() -> Result<String> {
         .to_owned())
 }
 
+/// Rejects mutations whenever a session fence node exists at this root.
 fn ensure_no_session_at(paths: &RuntimePaths) -> Result<()> {
     // Any node (including malformed metadata and symlinks) fences mutations.
     ensure!(
@@ -1177,6 +1245,7 @@ pub(crate) fn ensure_no_session() -> Result<()> {
     ensure_no_session_at(&RuntimePaths::appdata()?)
 }
 
+/// Persists a session fence for a known runtime before spawning Proton.
 fn fence_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<SessionFence> {
     ensure_no_session_at(paths)?;
     let root = [
@@ -1214,6 +1283,7 @@ fn fence_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<Sessio
     Ok(session)
 }
 
+/// Persists the wrapper's current identity or exit state in its session fence.
 fn record_wrapper(
     paths: &RuntimePaths,
     session: &mut SessionFence,
@@ -1223,11 +1293,13 @@ fn record_wrapper(
     atomic_json(&paths.session(), session)
 }
 
+/// Process start time and exit state used to recognize a Proton wrapper.
 struct WrapperProcess {
     start_time: u64,
     exited: bool,
 }
 
+/// Extracts wrapper identity and exit state from Linux process statistics.
 fn parse_wrapper_process(pid: u32, stat: &[u8]) -> Result<WrapperProcess> {
     // comm (field 2) may contain spaces, parentheses, or non-UTF8 bytes. Only
     // the final ')' separates it from the ASCII state and numeric fields.
@@ -1253,6 +1325,7 @@ fn parse_wrapper_process(pid: u32, stat: &[u8]) -> Result<WrapperProcess> {
     })
 }
 
+/// Inspects a wrapper PID, returning none only when its process entry is absent.
 fn wrapper_process(pid: u32) -> Result<Option<WrapperProcess>> {
     ensure!(pid > 0 && pid <= i32::MAX as u32, "Invalid wrapper PID");
     let path = PathBuf::from(format!("/proc/{pid}/stat"));
@@ -1271,11 +1344,13 @@ fn wrapper_process(pid: u32) -> Result<Option<WrapperProcess>> {
     }
 }
 
+/// Checks whether the recorded wrapper exited, accounting for reused PIDs.
 fn wrapper_has_exited(pid: u32, start_time: u64) -> Result<bool> {
     Ok(wrapper_process(pid)?
         .is_none_or(|process| process.start_time != start_time || process.exited))
 }
 
+/// Waits for a known wrapper to exit without signalling unrelated processes.
 fn wait_for_wrapper(wrapper: SessionWrapper) -> Result<()> {
     match wrapper {
         SessionWrapper::Unknown => {
@@ -1293,11 +1368,13 @@ fn wait_for_wrapper(wrapper: SessionWrapper) -> Result<()> {
     }
 }
 
+/// Removes a session fence and syncs its parent directory.
 fn clear_session(paths: &RuntimePaths) -> Result<()> {
     fs::remove_file(paths.session())?;
     sync_directory(&paths.0)
 }
 
+/// Waits for Wine in the recorded prefix before clearing the session fence.
 fn quiesce_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()> {
     // Unlike an update of a never-used runtime, a recorded session must have a
     // real prefix. A missing/replaced prefix cannot establish quiescence.
@@ -1309,6 +1386,7 @@ fn quiesce_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()> 
     clear_session(paths)
 }
 
+/// Recovers a fenced session after a reboot or confirmed wrapper and Wine exit.
 fn recover_session_at(paths: &RuntimePaths) -> Result<()> {
     if !node_exists(&paths.session())? {
         return Ok(());
@@ -1338,6 +1416,7 @@ pub async fn recover_session() -> Result<()> {
     recover_session_with(RuntimePaths::appdata()?, operations()).await
 }
 
+/// Recovers an existing session while the supplied operation manager holds its lease.
 async fn recover_session_with(paths: RuntimePaths, owner: &Operations) -> Result<()> {
     if !node_exists(&paths.session())? {
         return Ok(());
@@ -1346,6 +1425,7 @@ async fn recover_session_with(paths: RuntimePaths, owner: &Operations) -> Result
     runtime_worker(operation, move |_| recover_session_at(&paths)).await
 }
 
+/// Configures a child's shared-prefix environment without changing the host process.
 fn prefix_environment(command: &mut Command, paths: &RuntimePaths) {
     command
         .env("STEAM_COMPAT_DATA_PATH", paths.prefix())
@@ -1353,6 +1433,7 @@ fn prefix_environment(command: &mut Command, paths: &RuntimePaths) {
         .env("WINEPREFIX", paths.prefix().join("pfx"));
 }
 
+/// Builds a Proton launch command for an absolute game path and the shared prefix.
 fn game_command(
     paths: &RuntimePaths,
     runtime: &RuntimeLayout,
@@ -1379,6 +1460,7 @@ fn game_command(
     Ok(command)
 }
 
+/// Reaps an owned child, attempting termination if waiting fails.
 fn wait_child(mut child: Child) -> Result<ExitStatus> {
     match child.wait() {
         Ok(status) => Ok(status),
@@ -1391,6 +1473,7 @@ fn wait_child(mut child: Child) -> Result<ExitStatus> {
     }
 }
 
+/// Waits for Wine to exit using the runtime's matching server and libraries.
 fn wait_for_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()> {
     if !node_exists(&paths.prefix())? {
         return Ok(());
@@ -1426,10 +1509,12 @@ fn wait_for_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()>
     Ok(())
 }
 
+/// Launches and supervises a game through Proton under the supplied operation lease.
 pub async fn run_game(executable: PathBuf, operation: Operation) -> Result<()> {
     run_game_at(RuntimePaths::appdata()?, executable, operation).await
 }
 
+/// Runs game supervision at an explicit root in a lease-owning worker.
 async fn run_game_at(paths: RuntimePaths, executable: PathBuf, operation: Operation) -> Result<()> {
     runtime_worker(operation, move |operation| {
         run_game_owned(&paths, &executable, operation)
@@ -1437,6 +1522,7 @@ async fn run_game_at(paths: RuntimePaths, executable: PathBuf, operation: Operat
     .await
 }
 
+/// Fences and supervises Proton and Wine, retaining the fence if exit is uncertain.
 fn run_game_owned(paths: &RuntimePaths, executable: &Path, operation: &Operation) -> Result<()> {
     operation.check_cancelled()?;
     ensure_no_session_at(paths)?;
@@ -1520,10 +1606,12 @@ mod tests {
         };
     }
 
+    /// Schedules a one-shot failure after the requested matching boundary visits.
     fn inject_metadata_failure(path: PathBuf, boundary: &'static str, skip: usize) {
         METADATA_FAILURES.with(|failures| failures.borrow_mut().push((path, boundary, skip)));
     }
 
+    /// Triggers a scheduled failure at a matching metadata or process boundary.
     pub(super) fn fail_metadata_at(path: &Path, boundary: &str) -> Result<()> {
         METADATA_FAILURES.with(|failures| {
             let mut failures = failures.borrow_mut();
@@ -1541,9 +1629,11 @@ mod tests {
         })
     }
 
+    /// Isolated runtime test root that is removed when the fixture is dropped.
     struct Fixture(RuntimePaths);
 
     impl Fixture {
+        /// Creates a unique runtime test directory under application data.
         fn new() -> Self {
             let root = full_path(
                 Some(PathBuf::from(format!("runtime-test-{}", Uuid::new_v4()))),
@@ -1554,6 +1644,7 @@ mod tests {
             Self(RuntimePaths(root))
         }
 
+        /// Creates a harmless game file with spaces in its path.
         fn game(&self) -> PathBuf {
             let root = self.0.0.join("game with spaces");
             fs::create_dir(&root).unwrap();
@@ -1562,6 +1653,7 @@ mod tests {
             exe
         }
 
+        /// Stages a complete fake runtime with a transaction-owned version marker.
         fn prepared(&self, version: &str) -> Journal {
             let journal = start_transaction(&self.0).unwrap();
             let staged = self.0.stage(&journal).join("runtime");
@@ -1572,11 +1664,13 @@ mod tests {
     }
 
     impl Drop for Fixture {
+        /// Removes this fixture's isolated runtime tree.
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0.0);
         }
     }
 
+    /// Writes a fixture file with parent directories and explicit permissions.
     fn write(path: &Path, contents: &[u8], executable: bool) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, contents).unwrap();
@@ -1587,6 +1681,7 @@ mod tests {
         .unwrap();
     }
 
+    /// Creates a complete runtime layout with harmless executable stubs.
     fn layout(root: &Path) {
         for file in [
             "version",
@@ -1604,6 +1699,7 @@ mod tests {
         }
     }
 
+    /// Writes a valid runtime marker for a fixture version and transaction.
     fn marker(root: &Path, version: &str, transaction: &str) {
         atomic_json(
             &root.join(MARKER),
@@ -1617,6 +1713,7 @@ mod tests {
         .unwrap();
     }
 
+    /// Builds valid release metadata using a nonresolving fixture URL.
     fn release(version: &str) -> ComponentRelease {
         ComponentRelease {
             tag: version.into(),
@@ -1628,6 +1725,7 @@ mod tests {
         }
     }
 
+    /// Writes a legacy version tracker for the fixture.
     fn legacy(paths: &RuntimePaths, version: &str) {
         fs::create_dir_all(paths.0.join("components")).unwrap();
         atomic_json(
@@ -1639,6 +1737,7 @@ mod tests {
         .unwrap();
     }
 
+    /// Creates a small Tokio runtime for asynchronous fixture work.
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -1647,6 +1746,7 @@ mod tests {
             .unwrap()
     }
 
+    /// Packs a fixture runtime into a gzip-compressed TAR with a top-level directory.
     fn archive(source: &Path, destination: &Path) {
         let encoder = flate2::write::GzEncoder::new(
             File::create(destination).unwrap(),
@@ -1659,6 +1759,7 @@ mod tests {
         builder.into_inner().unwrap().finish().unwrap();
     }
 
+    /// Creates a gzip-compressed TAR using caller-supplied entries.
     fn tar_fixture(
         path: &Path,
         fill: impl FnOnce(&mut tar::Builder<flate2::write::GzEncoder<File>>),
@@ -1670,6 +1771,7 @@ mod tests {
         builder.into_inner().unwrap().finish().unwrap();
     }
 
+    /// Builds a checksummed GNU TAR header with the requested entry type and size.
     fn tar_header(kind: u8, size: u64) -> tar::Header {
         let mut header = tar::Header::new_gnu();
         header.set_entry_type(tar::EntryType::new(kind));
@@ -1679,6 +1781,7 @@ mod tests {
         header
     }
 
+    /// Records a fixture transaction phase, snapshotting the tracker before commit.
     fn journal_phase(paths: &RuntimePaths, journal: &Journal, phase: TransactionPhase) {
         if phase == TransactionPhase::Committing {
             snapshot_legacy_version(paths, journal).unwrap();
@@ -1694,6 +1797,7 @@ mod tests {
         .unwrap();
     }
 
+    /// Checks the latest-release query and its single, flat metadata response.
     #[test]
     fn deployed_latest_contract_is_single_flat_release() {
         let url = component_url().unwrap();
@@ -1721,6 +1825,7 @@ mod tests {
         })).is_err());
     }
 
+    /// Rejects prereleases, malformed versions and checksums, and non-HTTPS URLs.
     #[test]
     fn refuses_prerelease_bad_checksums_and_untrusted_urls() {
         let mut data = release("v1");
@@ -1745,6 +1850,7 @@ mod tests {
         }
     }
 
+    /// Requires a complete runtime with executable launchers and nonempty support files.
     #[test]
     fn runtime_requires_complete_executable_and_wine_layout() {
         let fixture = Fixture::new();
@@ -1771,6 +1877,7 @@ mod tests {
         assert!(paths.resolve().is_err());
     }
 
+    /// Resolves both legacy layouts without moving files or creating runtime markers.
     #[test]
     fn legacy_runtime_paths_are_supported_without_relocation() {
         for nested in [false, true] {
@@ -1792,6 +1899,7 @@ mod tests {
         }
     }
 
+    /// Accepts runtime-internal symlinks but rejects links outside the distribution.
     #[test]
     fn layout_rejects_external_links_but_accepts_internal_links() {
         let fixture = Fixture::new();
@@ -1806,6 +1914,7 @@ mod tests {
         assert!(paths.resolve().is_err());
     }
 
+    /// Ensures a legacy tracker cannot hide missing files or invalid runtime markers.
     #[test]
     fn current_tracker_never_suppresses_runtime_repair() {
         let fixture = Fixture::new();
@@ -1830,6 +1939,7 @@ mod tests {
         assert!(paths.needs_update(&latest).unwrap());
     }
 
+    /// Checks archive checksum validation and the required staging-space budget.
     #[test]
     fn archive_checksum_and_staging_budget_are_enforced() {
         let fixture = Fixture::new();
@@ -1844,6 +1954,7 @@ mod tests {
         check_archive_space(&path, STORAGE_RESERVE + 1024 * 1024).unwrap();
     }
 
+    /// Rejects oversized TAR extensions even when they compress to a small archive.
     #[test]
     fn raw_preflight_rejects_compressed_oversized_extensions_before_interpretation() {
         let fixture = Fixture::new();
@@ -1867,6 +1978,7 @@ mod tests {
         }
     }
 
+    /// Ensures runtime installation rejects oversized extensions before extraction.
     #[test]
     fn extension_preflight_protects_the_actual_extraction_caller() {
         let fixture = Fixture::new();
@@ -1897,6 +2009,7 @@ mod tests {
         recover_at(paths).unwrap();
     }
 
+    /// Counts implicit parent directories once despite explicit or aliased entries.
     #[test]
     fn archive_budget_counts_unique_implicit_parents_and_explicit_aliases() {
         let fixture = Fixture::new();
@@ -1919,6 +2032,7 @@ mod tests {
         check_archive_space(&path, required).unwrap();
     }
 
+    /// Accepts ordinary GNU long names and consistent PAX metadata.
     #[test]
     fn normal_longname_and_pax_metadata_remain_supported() {
         let fixture = Fixture::new();
@@ -1941,6 +2055,7 @@ mod tests {
         check_archive_space(&path, STORAGE_RESERVE + 1024 * 1024).unwrap();
     }
 
+    /// Rejects mismatched PAX sizes and GNU sparse archive entries.
     #[test]
     fn preflight_rejects_pax_offset_divergence_and_sparse_maps() {
         let fixture = Fixture::new();
@@ -1986,6 +2101,7 @@ mod tests {
         );
     }
 
+    /// Enforces archive path length, depth and decoded-size limits.
     #[test]
     fn archive_limits_bound_depth_path_length_and_decoded_bytes() {
         let fixture = Fixture::new();
@@ -2023,6 +2139,7 @@ mod tests {
         );
     }
 
+    /// Enforces archive entry-count and cumulative metadata limits.
     #[test]
     fn archive_limits_bound_entry_count_and_aggregate_metadata() {
         let fixture = Fixture::new();
@@ -2055,6 +2172,7 @@ mod tests {
         );
     }
 
+    /// Checks tracker consistency and cleanup across successive runtime installs.
     #[test]
     fn staged_archive_replaces_v1_with_v2_and_coherent_markers() {
         let fixture = Fixture::new();
@@ -2093,6 +2211,7 @@ mod tests {
         }
     }
 
+    /// Checks that exhausted retries retain the last error and any previous download.
     #[test]
     fn retry_reports_last_concrete_error_without_deleting_previous_file() {
         let fixture = Fixture::new();
@@ -2111,6 +2230,7 @@ mod tests {
         operation.finish(Ok(())).unwrap();
     }
 
+    /// Recovers coherent runtime and tracker state at each interrupted swap boundary.
     #[test]
     fn recovery_handles_each_rename_interruption() {
         for step in 0..=3 {
@@ -2149,6 +2269,7 @@ mod tests {
         }
     }
 
+    /// Restores the prior runtime when the newly activated layout is incomplete.
     #[test]
     fn corrupt_new_layout_rolls_back_to_previous_runtime() {
         let fixture = Fixture::new();
@@ -2165,6 +2286,7 @@ mod tests {
         assert!(paths.resolve().is_ok());
     }
 
+    /// Rejects a directory at the tracker path before replacing the live runtime.
     #[test]
     fn invalid_tracker_node_is_rejected_before_swap() {
         let fixture = Fixture::new();
@@ -2181,6 +2303,7 @@ mod tests {
         assert!(paths.0.join("components/proton.json").is_dir());
     }
 
+    /// Distinguishes metadata failures before publication from a failed parent sync.
     #[test]
     fn atomic_metadata_reports_whether_rename_published() {
         for boundary in ["file-sync", "rename", "parent-sync"] {
@@ -2198,6 +2321,7 @@ mod tests {
         }
     }
 
+    /// Restores exact legacy tracker bytes or absence when commit publication fails.
     #[test]
     fn final_journal_before_publication_restores_exact_legacy_tracker() {
         for boundary in ["file-sync", "rename"] {
@@ -2232,6 +2356,7 @@ mod tests {
         }
     }
 
+    /// Keeps the new runtime when the committed journal was published but not synced.
     #[test]
     fn final_journal_post_rename_failure_never_rolls_back() {
         for surviving_committed in [false, true] {
@@ -2268,6 +2393,7 @@ mod tests {
         }
     }
 
+    /// Resumes interrupted tracker rollback without marking the legacy runtime current.
     #[test]
     fn interrupted_tracker_rollback_restarts_without_blessing_legacy() {
         for prior in [
@@ -2301,6 +2427,7 @@ mod tests {
         }
     }
 
+    /// Rejects oversized legacy metadata before commit and preserves its contents.
     #[test]
     fn oversized_tracker_is_rejected_before_committing() {
         let fixture = Fixture::new();
@@ -2320,6 +2447,7 @@ mod tests {
         assert_eq!(fs::metadata(tracker).unwrap().len(), MAX_METADATA_BYTES + 1);
     }
 
+    /// Keeps the prior runtime when the staged version marker cannot be written.
     #[test]
     fn staged_marker_failure_preserves_previous_runtime() {
         let fixture = Fixture::new();
@@ -2348,6 +2476,7 @@ mod tests {
         assert!(!paths.journal().exists());
     }
 
+    /// Retries committed cleanup without rolling back or removing the current runtime.
     #[test]
     fn committed_cleanup_retry_never_rolls_back_or_removes_current_runtime() {
         let fixture = Fixture::new();
@@ -2365,6 +2494,7 @@ mod tests {
         assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
     }
 
+    /// Rejects unsafe transaction paths and leaves unrelated staging trees untouched.
     #[test]
     fn recovery_rejects_unowned_paths_and_never_glob_deletes() {
         let fixture = Fixture::new();
@@ -2397,6 +2527,7 @@ mod tests {
         assert_eq!(fs::read(unknown.join("sentinel")).unwrap(), b"keep");
     }
 
+    /// Preserves the old runtime and recoverable staging when its Wine wait fails.
     #[test]
     fn failed_replacement_wait_keeps_old_runtime_and_journal_recoverable() {
         let fixture = Fixture::new();
@@ -2416,6 +2547,7 @@ mod tests {
         assert!(!paths.journal().exists());
     }
 
+    /// Waits with the old runtime's Wine server before activating its replacement.
     #[test]
     fn replacement_wait_uses_the_old_matching_wineserver() {
         let fixture = Fixture::new();
@@ -2437,6 +2569,7 @@ mod tests {
         assert_eq!(runtime_version(&paths.live()).unwrap().version, "v2");
     }
 
+    /// Checks launch arguments, CWD, child-only environment and process reaping.
     #[test]
     fn launch_records_arguments_cwd_child_environment_and_reaps() {
         let fixture = Fixture::new();
@@ -2521,6 +2654,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         assert!(!paths.session().exists());
     }
 
+    /// Waits for Wine after a wrapper failure and reports the wrapper's exit status.
     #[test]
     fn failed_wrapper_still_waits_for_wine_and_reports_exit() {
         let fixture = Fixture::new();
@@ -2550,6 +2684,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Failed);
     }
 
+    /// Reports Wine wait failures and leaves the shared prefix fenced.
     #[test]
     fn failed_wineserver_is_an_observable_launch_failure() {
         let fixture = Fixture::new();
@@ -2575,6 +2710,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         assert!(ensure_no_session_at(paths).is_err());
     }
 
+    /// Prevents launch after fence publication errors and retains any published fence.
     #[test]
     fn session_fence_publication_failure_never_spawns_proton() {
         for boundary in ["file-sync", "rename", "parent-sync"] {
@@ -2609,6 +2745,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         }
     }
 
+    /// Retains the fence through uncertain process waits until recovery proves exit.
     #[test]
     fn wrapper_or_wineserver_wait_uncertainty_retains_fence() {
         for executable in ["proton", "files/bin/wineserver"] {
@@ -2630,6 +2767,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         }
     }
 
+    /// Handles unusual process names, exited states and reused wrapper PIDs.
     #[test]
     fn wrapper_identity_parsing_handles_comm_and_pid_reuse() {
         for state in [b'R', b'Z', b'X', b'x'] {
@@ -2660,6 +2798,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         .unwrap();
     }
 
+    /// Keeps unknown or old-format wrapper identities fenced until a different boot.
     #[test]
     fn unknown_and_old_session_fences_cannot_run_waiter_or_clear_on_same_boot() {
         for old_marker in [false, true] {
@@ -2694,6 +2833,7 @@ printf '%s\n' "$$" > "$STEAM_COMPAT_DATA_PATH/server-pid"
         }
     }
 
+    /// Keeps recovery leased through wrapper and Wine exit after the caller drops.
     #[test]
     fn recovery_waits_for_initializing_wrapper_then_wine_even_when_caller_drops() {
         let fixture = Fixture::new();
@@ -2786,6 +2926,7 @@ done
         assert!(wait_child(child).unwrap().success());
     }
 
+    /// Checks state-write failures do not skip wrapper reaping before the Wine wait.
     #[test]
     fn wrapper_state_publication_errors_reap_owned_child_before_any_quiescence() {
         for boundary in ["file-sync", "rename", "parent-sync"] {
@@ -2851,6 +2992,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         }
     }
 
+    /// Keeps an unknown wrapper fenced when neither identity nor exit was confirmed.
     #[test]
     fn unpublished_wrapper_identity_and_uncertain_wait_require_reboot() {
         let fixture = Fixture::new();
@@ -2875,6 +3017,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         assert!(!paths.prefix().join("waited").exists());
     }
 
+    /// Rejects malformed session metadata and symlinked or unrecognized runtime paths.
     #[test]
     fn recovery_rejects_untrusted_session_metadata_and_runtime_paths() {
         let fixture = Fixture::new();
@@ -2914,6 +3057,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         assert!(ensure_no_session_at(paths).is_err());
     }
 
+    /// Refuses same-boot recovery when the recorded PID namespace is absent or different.
     #[test]
     fn same_boot_requires_the_recorded_pid_namespace_before_recovery() {
         let fixture = Fixture::new();
@@ -2937,6 +3081,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         }
     }
 
+    /// Clears a previous boot's fence without requiring a runtime or prefix.
     #[test]
     fn different_valid_boot_clears_fence_without_executing_runtime() {
         let fixture = Fixture::new();
@@ -2960,6 +3105,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         ensure_no_session_at(paths).unwrap();
     }
 
+    /// Uses the recorded legacy runtime's Wine server even when a newer runtime exists.
     #[test]
     fn recovery_waits_for_the_recorded_legacy_root_not_newer_canonical() {
         for kind in [SessionRoot::LegacyNested, SessionRoot::LegacyFlat] {
@@ -2987,6 +3133,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         }
     }
 
+    /// Retains the fence when the prefix is missing or the Wine waiter cannot start.
     #[test]
     fn missing_prefix_and_failed_waiter_spawn_keep_session_fenced() {
         let fixture = Fixture::new();
@@ -3013,6 +3160,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         ensure_no_session_at(paths).unwrap();
     }
 
+    /// Leaves the active operation untouched when there is no session to recover.
     #[test]
     fn absent_session_recovery_does_not_take_a_recovery_lease() {
         let fixture = Fixture::new();
@@ -3031,6 +3179,7 @@ printf waited > "$STEAM_COMPAT_DATA_PATH/waited"
         operation.finish(Ok(())).unwrap();
     }
 
+    /// Checks Wine descendants stay fenced after failed waits or dropped recovery.
     #[test]
     fn surviving_descendant_and_failed_waiter_remain_fenced_through_recovery() {
         let fixture = Fixture::new();
@@ -3120,6 +3269,7 @@ done
         });
     }
 
+    /// Waits briefly for a fixture signal file, failing if its deadline expires.
     async fn until_file(path: &Path) {
         let deadline = Instant::now() + Duration::from_secs(5);
         while !path.exists() {
@@ -3132,6 +3282,7 @@ done
         }
     }
 
+    /// Holds the launch lease through wrapper and Wine exit after the caller is dropped.
     #[test]
     fn dropped_launch_waiter_keeps_lease_through_wrapper_and_wine_lifetime() {
         let fixture = Fixture::new();
@@ -3188,6 +3339,7 @@ done
         });
     }
 
+    /// Holds the component lease through staging and commit after the caller is dropped.
     #[test]
     fn dropped_component_waiter_keeps_lease_until_staging_and_commit_finish() {
         let fixture = Fixture::new();
@@ -3234,6 +3386,7 @@ done
         });
     }
 
+    /// Waits for Wine after Proton spawn failure and rejects relative game paths.
     #[test]
     fn spawn_failure_still_waits_and_relative_game_paths_are_rejected() {
         let fixture = Fixture::new();
@@ -3264,6 +3417,7 @@ done
         assert!(!owner.is_busy().unwrap());
     }
 
+    /// Cancels pending metadata work without allowing the component operation to commit.
     #[test]
     fn component_cancellation_interrupts_metadata_wait_and_prevents_commit() {
         let owner = Operations::default();

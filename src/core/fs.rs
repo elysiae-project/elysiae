@@ -37,6 +37,7 @@ pub enum BaseDirectory {
     Compat,
 }
 
+/// Size units used for filesystem measurements and conversions.
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Sizes {
     Bytes,
@@ -47,6 +48,7 @@ pub enum Sizes {
 }
 
 impl Sizes {
+    /// Returns the unit's exponent for base-1024 conversions.
     fn power(self) -> i32 {
         self as i32
     }
@@ -55,6 +57,7 @@ impl Sizes {
 #[cfg(not(test))]
 static BASE_DIRS: OnceLock<BaseDirs> = OnceLock::new();
 
+/// Returns cached user directories, resolving them on first use.
 #[cfg(not(test))]
 fn base_dirs() -> Result<BaseDirs> {
     if let Some(dirs) = BASE_DIRS.get() {
@@ -313,6 +316,7 @@ pub async fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> R
     .context("Extraction task panicked or was cancelled")?
 }
 
+/// Rejects empty, absolute, or parent-traversing archive entry paths.
 fn archive_path(path: &Path) -> Result<()> {
     ensure!(
         !path.as_os_str().is_empty()
@@ -325,6 +329,7 @@ fn archive_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Extracts TAR entries while keeping paths and link targets inside staging.
 fn extract_tar(reader: impl Read, root: &Path) -> Result<()> {
     let mut archive = Tar::new(reader);
     archive.set_overwrite(false);
@@ -398,6 +403,7 @@ fn extract_tar(reader: impl Read, root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Extracts ZIP entries after checking their paths, types, and link targets.
 fn extract_zip(file: fs::File, root: &Path) -> Result<()> {
     let mut archive = Zip::new(file)?;
     // ZipArchive::extract guards writes through existing links but can create
@@ -467,6 +473,7 @@ fn resolve_archive_path(root: &Path, path: &Path, links_left: &mut usize) -> Res
     Ok(resolved)
 }
 
+/// Checks that every extracted symlink resolves within the extraction root.
 fn validate_archive_links(root: &Path) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
@@ -558,6 +565,7 @@ pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<
     }
 }
 
+/// Resolves a configured base directory, defaulting to application data.
 #[cfg(not(test))]
 fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
     let d = base_dirs()?;
@@ -583,6 +591,7 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
 // Test builds never resolve default paths into a real user profile, including
 // when a test forgets to configure its own fixture. Do not mutate HOME in tests:
 // Tokio workers and parallel tests share the process environment.
+/// Resolves base directories beneath a temporary profile for tests.
 #[cfg(test)]
 fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
@@ -641,6 +650,7 @@ fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
     Ok(base.join(relative))
 }
 
+/// Canonicalizes existing ancestors while preserving any missing path suffix.
 fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
     let mut ancestor = path;
     let mut missing = Vec::new();
@@ -675,12 +685,14 @@ mod tests {
         os::unix::fs::{MetadataExt, PermissionsExt},
     };
 
+    /// Temporary archive workspace with an external sentinel for containment tests.
     struct ArchiveFixture {
         relative: PathBuf,
         root: PathBuf,
     }
 
     impl ArchiveFixture {
+        /// Creates an isolated workspace and a sentinel outside extraction staging.
         fn new() -> Self {
             let relative = PathBuf::from(uuid::Uuid::new_v4().to_string());
             let root = full_path(Some(relative.clone()), None).unwrap();
@@ -689,6 +701,7 @@ mod tests {
             Self { relative, root }
         }
 
+        /// Writes a test archive with the requested format and entry types.
         fn archive(&self, format: &str, entries: &[(&str, u8, &[u8])]) {
             let bytes = if format == "zip" {
                 let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -751,6 +764,7 @@ mod tests {
             fs::write(self.root.join(format!("input.{format}")), bytes).unwrap();
         }
 
+        /// Extracts the fixture archive with the requested destination and options.
         fn extract(
             &self,
             format: &str,
@@ -772,6 +786,7 @@ mod tests {
                 ))
         }
 
+        /// Checks that extraction left the external sentinel directory unchanged.
         fn assert_sentinel(&self) {
             assert_eq!(
                 fs::read(self.root.join("outside/sentinel")).unwrap(),
@@ -782,17 +797,20 @@ mod tests {
     }
 
     impl Drop for ArchiveFixture {
+        /// Removes the temporary archive workspace.
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
 
+    /// Generates a small random payload for file read and write tests.
     fn generate_random_data() -> Vec<u8> {
         let mut file_data = vec![0u8; rand::random_range(100..1000) as usize];
         rand::rng().fill_bytes(&mut file_data);
         file_data
     }
 
+    /// Checks relative path resolution for each isolated test base directory.
     #[test]
     fn test_full_path() {
         let home = base_path(Some(BaseDirectory::Home)).unwrap();
@@ -826,6 +844,7 @@ mod tests {
         assert_eq!(test_compat_dir, expected_compat);
     }
 
+    /// Checks file creation, replacement, reading, and deletion through wrappers.
     #[test]
     fn file_write_exists_read_delete() {
         // Write a new file
@@ -854,6 +873,7 @@ mod tests {
         assert!(!exists(path, Some(BaseDirectory::Home)).unwrap())
     }
 
+    /// Checks directory creation, listing, and recursive deletion through wrappers.
     #[test]
     fn dir_write_exists_read_delete() {
         let directory = PathBuf::from(format!("elysiae-test-{}", uuid::Uuid::new_v4()));
@@ -869,6 +889,7 @@ mod tests {
         remove(directory, Some(BaseDirectory::Home), Some(true)).unwrap();
     }
 
+    /// Checks that invalid relative paths cannot escape or select the base itself.
     #[test]
     fn path_validation_rejects_escape_attempts() {
         assert!(full_path(Some(PathBuf::from("../outside")), None).is_err());
@@ -877,6 +898,7 @@ mod tests {
         assert!(full_path(Some(PathBuf::new()), None).is_err());
     }
 
+    /// Checks that removing an empty relative path leaves base contents untouched.
     #[test]
     fn empty_remove_cannot_delete_base() {
         let sentinel = PathBuf::from(format!("sentinel-{}", uuid::Uuid::new_v4()));
@@ -886,6 +908,7 @@ mod tests {
         remove(sentinel, None, None).unwrap();
     }
 
+    /// Checks that linked ancestors cannot redirect relative paths outside the base.
     #[test]
     fn path_validation_rejects_escaping_symlink_ancestors() {
         let root = base_path(None)
@@ -912,6 +935,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// Checks that trusted symlink bases and missing descendant directories work.
     #[test]
     fn path_validation_allows_configured_symlink_bases_and_future_directories() {
         let root = base_path(None)
@@ -928,6 +952,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// Checks that a lone escaping archive symlink is rejected without following it.
     #[test]
     fn extraction_rejects_single_external_symlink_without_flattening_it() {
         for format in ["gz", "xz", "zst", "zip"] {
@@ -944,6 +969,7 @@ mod tests {
         }
     }
 
+    /// Checks that absolute and parent-traversing archive entries are rejected.
     #[test]
     fn extraction_rejects_traversal_paths() {
         for format in ["gz", "xz", "zst", "zip"] {
@@ -964,6 +990,7 @@ mod tests {
         }
     }
 
+    /// Checks that flattening preserves runtime files, permissions, and safe links.
     #[test]
     fn extraction_preserves_wrapped_runtime_and_safe_relative_links() {
         for format in ["gz", "xz", "zst", "zip"] {
@@ -1015,6 +1042,7 @@ mod tests {
         }
     }
 
+    /// Checks that linked paths cannot redirect extraction outside staging.
     #[test]
     fn extraction_rejects_link_chains_and_link_parent_traversal() {
         for format in ["gz", "zip"] {
@@ -1046,6 +1074,7 @@ mod tests {
         }
     }
 
+    /// Checks that flattening rejects links made unsafe by removing their wrapper.
     #[test]
     fn flatten_rejects_links_that_escape_after_wrapper_removal() {
         for format in ["gz", "zip"] {
@@ -1058,6 +1087,7 @@ mod tests {
         }
     }
 
+    /// Checks that flattening leaves a lone directory symlink intact.
     #[test]
     fn flatten_never_follows_a_single_directory_symlink() {
         for format in ["gz", "zip"] {
@@ -1072,6 +1102,7 @@ mod tests {
         }
     }
 
+    /// Checks that extraction refuses populated destinations and preserves outside files.
     #[test]
     fn extraction_never_changes_live_or_nonempty_destinations() {
         for format in ["gz", "zip"] {
@@ -1100,6 +1131,7 @@ mod tests {
         }
     }
 
+    /// Checks that only real, empty staging directories can be reused for extraction.
     #[test]
     fn extraction_accepts_empty_staging_but_not_a_symlink_destination() {
         for format in ["gz", "zip"] {
@@ -1120,6 +1152,7 @@ mod tests {
         }
     }
 
+    /// Checks that TAR extraction rejects escaping hardlinks and special file types.
     #[test]
     fn tar_rejects_external_hardlinks_and_special_entries() {
         for kind in [b'1', b'3', b'4', b'6'] {
@@ -1133,6 +1166,7 @@ mod tests {
         }
     }
 
+    /// Checks that ZIP extraction rejects device, FIFO, and socket entry modes.
     #[test]
     fn zip_rejects_special_entry_modes() {
         for kind in [libc::S_IFCHR, libc::S_IFBLK, libc::S_IFIFO, libc::S_IFSOCK] {
@@ -1153,6 +1187,7 @@ mod tests {
         }
     }
 
+    /// Checks that converting between gigabytes and bytes preserves the value.
     #[test]
     fn size_conversion_is_reversible() {
         let value = 3.5;

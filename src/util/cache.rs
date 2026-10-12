@@ -38,6 +38,7 @@ const ASSET_BUDGET: u64 = 512 * 1024 * 1024;
 const ASSET_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_CATALOG_SIZE: u64 = 4 * 1024 * 1024;
 
+/// Kind of cached artwork to retrieve.
 #[derive(Debug, Clone, Copy)]
 pub enum AssetType {
     Image,
@@ -47,6 +48,7 @@ pub enum AssetType {
     Overlay,
 }
 
+/// Asset catalog returned by Aedes for a game and locale.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AedesResponse {
     backgrounds: Vec<AedesBackgroundAssets>,
@@ -58,6 +60,7 @@ struct AedesResponse {
     shortcut_cn: String,
 }
 
+/// Background image with its optional video and matching overlay.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AedesBackgroundAssets {
     image: String,
@@ -65,6 +68,7 @@ struct AedesBackgroundAssets {
     overlay: Option<String>,
 }
 
+/// Available background and matching overlay selected from the cache.
 #[derive(Debug, Default)]
 pub struct ResolvedMedia {
     pub background: Option<PathBuf>,
@@ -72,6 +76,7 @@ pub struct ResolvedMedia {
     pub is_video: bool,
 }
 
+/// Per-game results of refreshing the requested locale's assets.
 #[derive(Debug, Default)]
 pub struct CacheRefresh {
     /// Games whose requested-locale catalog was refreshed successfully.
@@ -80,6 +85,7 @@ pub struct CacheRefresh {
     pub failures: Vec<(Game, String)>,
 }
 
+/// Bounded asset cache with catalogs, active-media pins and a refresh guard.
 struct Store {
     relative: PathBuf,
     root: PathBuf,
@@ -89,20 +95,25 @@ struct Store {
     refreshing: AtomicBool,
 }
 
+/// Holds exclusive access to a cache refresh until dropped.
 struct RefreshPermit<'a>(&'a AtomicBool);
 impl Drop for RefreshPermit<'_> {
+    /// Release the refresh permit.
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
     }
 }
 
+/// Removes an unpublished staging file when dropped.
 struct TemporaryFile(PathBuf);
 impl Drop for TemporaryFile {
+    /// Remove any staging file left at the guarded path.
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
 }
 
+/// Initialize and return the shared asset cache.
 fn store() -> Result<&'static Store> {
     static STORE: OnceLock<Store> = OnceLock::new();
     if STORE.get().is_none() {
@@ -111,6 +122,7 @@ fn store() -> Result<&'static Store> {
     STORE.get().context("Asset cache is unavailable")
 }
 
+/// Refresh all games for the requested locale with English fallback.
 pub async fn refresh_cache(locale: &str) -> Result<CacheRefresh> {
     let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
     store()?
@@ -129,6 +141,7 @@ pub async fn refresh_cache(locale: &str) -> Result<CacheRefresh> {
         .await
 }
 
+/// Refresh the display locale's assets and report any per-game failures.
 pub async fn update_cache() -> Result<()> {
     let report = refresh_cache(&settings::display_locale()?).await?;
     ensure!(
@@ -154,6 +167,7 @@ pub fn cache_available(locale: &str) -> Result<bool> {
         .all(|game| store.ready(game, &locale, use_video)))
 }
 
+/// Check whether a game has usable cached assets, allowing English fallback.
 pub fn game_cache_available(game: Game, locale: &str) -> Result<bool> {
     let locale = settings::normalize_locale(locale)?;
     let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
@@ -166,6 +180,7 @@ pub fn set_active_assets(paths: &[PathBuf]) -> Result<()> {
     store()?.set_active(paths)
 }
 
+/// Select a cached background and matching overlay for the requested locale.
 pub fn resolve_media(game: Game, locale: &str, use_video: bool) -> Result<ResolvedMedia> {
     let locale = settings::normalize_locale(locale)?;
     log::info!(
@@ -182,6 +197,7 @@ pub fn resolve_media(game: Game, locale: &str, use_video: bool) -> Result<Resolv
     Ok(media)
 }
 
+/// Return the selected background and overlay paths.
 pub fn media_paths(
     game: Game,
     locale: &str,
@@ -191,6 +207,7 @@ pub fn media_paths(
     Ok((media.background, media.overlay))
 }
 
+/// List available assets of a kind, falling back to the English catalog.
 pub fn get_cached_asset_paths(
     game: Game,
     locale: &str,
@@ -205,6 +222,7 @@ pub fn get_cached_asset_paths(
 }
 
 impl AedesResponse {
+    /// Iterate background assets followed by the global icon and shortcut.
     fn asset_paths(&self) -> impl Iterator<Item = Option<&str>> {
         self.backgrounds
             .iter()
@@ -218,12 +236,14 @@ impl AedesResponse {
             .chain([Some(self.icon.as_str()), Some(self.shortcut.as_str())])
     }
 
+    /// Iterate all listed asset paths, including localized artwork.
     fn all_paths(&self) -> impl Iterator<Item = &str> {
         self.asset_paths()
             .flatten()
             .chain([self.icon_cn.as_str(), self.shortcut_cn.as_str()])
     }
 
+    /// Order icon or shortcut candidates by locale preference.
     fn variants(&self, locale: &str, shortcut: bool) -> Vec<&str> {
         let (global, cn) = if shortcut {
             (&self.shortcut, &self.shortcut_cn)
@@ -239,10 +259,12 @@ impl AedesResponse {
     }
 }
 
+/// Build the cache key for a game's localized catalog.
 fn metadata_path(game: Game, locale: &str) -> PathBuf {
     PathBuf::from(format!("cache/catalogs/{}/{}.json", game.code(), locale))
 }
 
+/// Validate a server asset path and map its full key into the cache.
 fn cache_path(path: &Path) -> Result<PathBuf> {
     let text = path.to_str().context("Asset path is not UTF-8")?;
     let relative = text
@@ -274,11 +296,13 @@ fn cache_path(path: &Path) -> Result<PathBuf> {
     Ok(PathBuf::from("cache/assets").join(relative))
 }
 
+/// Try the requested locale before English, without duplicates.
 fn locales(locale: &str) -> impl Iterator<Item = &str> {
     std::iter::once(locale).chain((locale != "en-us").then_some("en-us"))
 }
 
 impl Store {
+    /// Create a cache store with a validated root, byte budget and asset lifetime.
     fn new(relative: PathBuf, budget: u64, ttl: Duration) -> Result<Self> {
         let root = full_path(Some(relative.clone()), None)?;
         let store = Self {
@@ -324,6 +348,7 @@ impl Store {
         Ok(destination)
     }
 
+    /// Resolve a server path to an existing, nonempty regular cache file.
     fn existing(&self, server_path: &str) -> Option<PathBuf> {
         let path = self.path(&cache_path(Path::new(server_path)).ok()?).ok()?;
         std::fs::symlink_metadata(&path)
@@ -332,6 +357,7 @@ impl Store {
             .map(|_| path)
     }
 
+    /// Read a cached catalog while checking its file type and size.
     fn read_catalog(&self, game: Game, locale: &str) -> Result<AedesResponse> {
         let path = self.path(&metadata_path(game, locale))?;
         let metadata = std::fs::symlink_metadata(&path)?;
@@ -350,6 +376,7 @@ impl Store {
         serde_json::from_slice(&bytes).context("Invalid cached catalog")
     }
 
+    /// Read a catalog, treating missing or invalid metadata as unavailable.
     fn catalog(&self, game: Game, locale: &str) -> Option<AedesResponse> {
         match self.read_catalog(game, locale) {
             Ok(response) => Some(response),
@@ -363,6 +390,7 @@ impl Store {
         }
     }
 
+    /// Select an available background and its own overlay, preferring video if enabled.
     fn selected(&self, response: &AedesResponse, use_video: bool) -> ResolvedMedia {
         for video in [true, false] {
             if video && !use_video {
@@ -389,6 +417,7 @@ impl Store {
         ResolvedMedia::default()
     }
 
+    /// Resolve cached media from the requested locale or English fallback.
     fn resolve(&self, game: Game, locale: &str, use_video: bool) -> ResolvedMedia {
         for source in locales(locale) {
             if let Some(response) = self.catalog(game, source) {
@@ -401,6 +430,7 @@ impl Store {
         ResolvedMedia::default()
     }
 
+    /// Resolve existing assets of a kind from a catalog in preference order.
     fn paths(&self, response: &AedesResponse, locale: &str, kind: AssetType) -> Vec<PathBuf> {
         let paths: Vec<&str> = match kind {
             AssetType::Image => response
@@ -427,6 +457,7 @@ impl Store {
             .collect()
     }
 
+    /// Find assets of a kind in the requested locale or English fallback.
     fn cached_paths(&self, game: Game, locale: &str, kind: AssetType) -> Vec<PathBuf> {
         for source in locales(locale) {
             if let Some(response) = self.catalog(game, source) {
@@ -439,12 +470,14 @@ impl Store {
         Vec::new()
     }
 
+    /// Check that a catalog provides a cached background, icon and shortcut.
     fn usable(&self, response: &AedesResponse, locale: &str, use_video: bool) -> bool {
         self.selected(response, use_video).background.is_some()
             && !self.paths(response, locale, AssetType::Icon).is_empty()
             && !self.paths(response, locale, AssetType::Shortcut).is_empty()
     }
 
+    /// Check for a usable requested-locale or English catalog.
     fn ready(&self, game: Game, locale: &str, use_video: bool) -> bool {
         locales(locale).any(|source| {
             self.catalog(game, source)
@@ -452,6 +485,7 @@ impl Store {
         })
     }
 
+    /// Replace active-media pins after validating every supplied cache file.
     fn set_active(&self, paths: &[PathBuf]) -> Result<()> {
         let mut active = self
             .active
@@ -473,6 +507,7 @@ impl Store {
         Ok(())
     }
 
+    /// Acquire exclusive refresh access without waiting for another refresh.
     fn permit(&self) -> Result<RefreshPermit<'_>> {
         ensure!(
             self.refreshing
@@ -483,6 +518,7 @@ impl Store {
         Ok(RefreshPermit(&self.refreshing))
     }
 
+    /// Collect asset paths referenced by supported game and locale catalogs.
     fn references(&self) -> HashSet<PathBuf> {
         let mut paths = HashSet::new();
         for game in GAMES {
@@ -565,6 +601,7 @@ impl Store {
         Ok(total)
     }
 
+    /// Remove expired catalog staging files without touching published catalogs.
     fn collect_catalog_temporaries(&self) {
         for game in GAMES {
             let Ok(directory) = self.path(&Path::new("cache/catalogs").join(game.code())) else {
@@ -601,6 +638,7 @@ impl Store {
         }
     }
 
+    /// Reuse or refresh an asset within budget, retaining usable stale files on failure.
     async fn asset<D, DF>(
         &self,
         server_path: &str,
@@ -673,6 +711,7 @@ impl Store {
         Ok(destination)
     }
 
+    /// Publish a size-bounded catalog through a synced staging file.
     fn write_catalog(&self, game: Game, locale: &str, response: &AedesResponse) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(response)?;
         ensure!(
@@ -695,6 +734,7 @@ impl Store {
         Ok(())
     }
 
+    /// Cache required artwork and selected media before publishing a catalog.
     async fn prepare<D, DF>(
         &self,
         game: Game,
@@ -782,6 +822,7 @@ impl Store {
         self.write_catalog(game, source, &response)
     }
 
+    /// Refresh game catalogs with fallback using the supplied network operations.
     async fn refresh_with<F, FF, D, DF>(
         &self,
         locale: &str,
@@ -843,6 +884,7 @@ mod tests {
     use anyhow::bail;
     use futures_util::FutureExt;
 
+    /// Build a sample catalog with video and localized artwork.
     fn response() -> AedesResponse {
         AedesResponse {
             backgrounds: vec![AedesBackgroundAssets {
@@ -857,8 +899,10 @@ mod tests {
         }
     }
 
+    /// Isolated cache store removed when the test fixture is dropped.
     struct Fixture(Store);
     impl Fixture {
+        /// Create an isolated cache with the requested byte budget.
         fn new(budget: u64) -> Self {
             Self(
                 Store::new(
@@ -869,18 +913,22 @@ mod tests {
                 .unwrap(),
             )
         }
+        /// Write fixture bytes at a validated cache key.
         fn put(&self, key: &Path, bytes: &[u8]) -> PathBuf {
             let path = self.0.path(key).unwrap();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, bytes).unwrap();
             path
         }
+        /// Seed a server asset path with a small fixture payload.
         fn asset(&self, path: &str) -> PathBuf {
             self.put(&cache_path(Path::new(path)).unwrap(), b"asset")
         }
+        /// Publish a fixture catalog for a game and locale.
         fn catalog(&self, game: Game, locale: &str, response: &AedesResponse) {
             self.0.write_catalog(game, locale, response).unwrap();
         }
+        /// Seed every asset referenced by a fixture catalog.
         fn populate(&self, response: &AedesResponse) {
             for path in response.all_paths() {
                 self.asset(path);
@@ -888,11 +936,13 @@ mod tests {
         }
     }
     impl Drop for Fixture {
+        /// Remove the isolated cache tree.
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0.root);
         }
     }
 
+    /// Run an async cache test on a single-threaded runtime.
     fn run(test: impl Future<Output = ()>) {
         tokio::runtime::Builder::new_current_thread()
             .build()
@@ -900,6 +950,7 @@ mod tests {
             .block_on(test);
     }
 
+    /// Write a fixed fixture payload while respecting the supplied size limit.
     async fn download(_url: String, destination: PathBuf, limit: u64) -> Result<()> {
         ensure!(limit >= 5, "fixture body exceeds {limit} byte limit");
         let path = full_path(Some(destination), None)?;
@@ -908,6 +959,7 @@ mod tests {
         Ok(())
     }
 
+    /// Verify cleanup expires staging files but retains fresh and published files.
     #[test]
     fn abandoned_downloads_and_catalogs_expire_without_removing_fresh_ones() {
         let fixture = Fixture::new(100);
@@ -937,6 +989,7 @@ mod tests {
         assert_eq!(std::fs::read(published).unwrap(), b"keep");
     }
 
+    /// Verify asset iteration preserves order and omits missing optional entries.
     #[test]
     fn asset_paths_preserve_order_and_skip_optional_assets() {
         let response = response();
@@ -952,6 +1005,7 @@ mod tests {
         );
     }
 
+    /// Verify cache keys reject unsafe or ambiguous server paths.
     #[test]
     fn cache_paths_require_safe_absolute_server_paths() {
         assert_eq!(
@@ -982,6 +1036,7 @@ mod tests {
         }
     }
 
+    /// Verify encoded filenames retain their full cache key and download URL.
     #[test]
     fn encoded_asset_filenames_preserve_the_full_server_key() {
         run(async {
@@ -1008,6 +1063,7 @@ mod tests {
         });
     }
 
+    /// Verify catalog keys include both game and locale.
     #[test]
     fn metadata_paths_use_game_and_locale() {
         assert_eq!(
@@ -1016,6 +1072,7 @@ mod tests {
         );
     }
 
+    /// Verify matching filenames in different server directories remain distinct.
     #[test]
     fn full_server_paths_do_not_collide() {
         let fixture = Fixture::new(1024);
@@ -1031,6 +1088,7 @@ mod tests {
         assert!(files.iter().all(|file| file.is_file()));
     }
 
+    /// Verify media selection pairs each background with only its own available overlay.
     #[test]
     fn media_uses_one_entry_and_missing_options_are_harmless() {
         let fixture = Fixture::new(1024);
@@ -1066,6 +1124,7 @@ mod tests {
         assert_eq!(resolved.overlay, fixture.0.existing("/overlays/wrong.png"));
     }
 
+    /// Verify unusable localized catalogs fall back to cached English media.
     #[test]
     fn corrupt_missing_and_unusable_catalogs_fall_back_to_english() {
         let fixture = Fixture::new(1024);
@@ -1097,6 +1156,7 @@ mod tests {
         assert!(!fixture.0.ready(Game::Hk4e, "fr-fr", false));
     }
 
+    /// Verify simplified Chinese prefers localized artwork with global fallback.
     #[test]
     fn locale_variants_use_cn_artwork_without_changing_server_region() {
         let fixture = Fixture::new(1024);
@@ -1120,6 +1180,7 @@ mod tests {
         );
     }
 
+    /// Verify warm refreshes reuse assets and only fetch videos when enabled.
     #[test]
     fn warm_refresh_skips_bodies_and_static_preference_skips_videos() {
         run(async {
@@ -1176,6 +1237,7 @@ mod tests {
         });
     }
 
+    /// Verify per-game failures do not stop refreshes or hide usable English fallback.
     #[test]
     fn per_game_errors_continue_and_locale_fallback_remains_usable() {
         run(async {
@@ -1229,10 +1291,12 @@ mod tests {
         });
     }
 
+    /// Return a fixture catalog error with the supplied message.
     fn bail_result(message: &str) -> Result<AedesResponse> {
         bail!("{message}")
     }
 
+    /// Verify a required download failure preserves the previous catalog and assets.
     #[test]
     fn failed_required_download_keeps_last_catalog_and_assets() {
         run(async {
@@ -1263,6 +1327,7 @@ mod tests {
         });
     }
 
+    /// Verify unavailable optional assets still allow a usable catalog to publish.
     #[test]
     fn optional_failures_and_unused_alternatives_do_not_block_commit() {
         run(async {
@@ -1300,6 +1365,7 @@ mod tests {
         });
     }
 
+    /// Verify budget enforcement preserves pinned, referenced and in-flight assets.
     #[test]
     fn budget_limits_downloads_and_protects_active_and_referenced_assets() {
         run(async {
@@ -1351,6 +1417,7 @@ mod tests {
         });
     }
 
+    /// Verify insufficient budget prevents catalog publication without exceeding the cap.
     #[test]
     fn oversized_working_set_fails_soft_without_publishing_catalogs() {
         run(async {
@@ -1372,6 +1439,7 @@ mod tests {
         });
     }
 
+    /// Verify stale assets refresh unless pinned, and survive failed revalidation.
     #[test]
     fn expired_assets_revalidate_but_active_files_and_failed_rechecks_survive() {
         run(async {
@@ -1411,6 +1479,7 @@ mod tests {
         });
     }
 
+    /// Verify pinning an asset during a download prevents replacing its contents.
     #[test]
     fn pins_added_during_download_prevent_replacement() {
         run(async {
@@ -1435,6 +1504,7 @@ mod tests {
         });
     }
 
+    /// Verify collection ignores symlinks and pins stay within the asset tree.
     #[test]
     fn collector_never_follows_symlinks_or_accepts_unowned_pins() {
         use std::os::unix::fs::symlink;
@@ -1458,6 +1528,7 @@ mod tests {
         assert!(assets.join("linked-file").is_symlink());
     }
 
+    /// Verify pin replacement releases old assets and invalid replacements preserve pins.
     #[test]
     fn replacing_pins_releases_old_files_and_preserves_new_selection() {
         let fixture = Fixture::new(1024);
@@ -1480,6 +1551,7 @@ mod tests {
         );
     }
 
+    /// Verify corrupt catalogs and empty background lists cannot report a ready cache.
     #[test]
     fn corrupt_catalogs_with_no_backgrounds_never_report_success() {
         run(async {
@@ -1516,6 +1588,7 @@ mod tests {
         });
     }
 
+    /// Verify dropping a refresh releases its permit and removes staged assets.
     #[test]
     fn cancelling_refresh_releases_permit_and_staging_files() {
         let fixture = Fixture::new(1024);
@@ -1533,6 +1606,7 @@ mod tests {
         assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 0);
     }
 
+    /// Verify localized artwork is preferred and locale catalogs remain independent.
     #[test]
     fn localized_refresh_downloads_cn_variants_into_distinct_catalogs() {
         run(async {
@@ -1578,6 +1652,7 @@ mod tests {
         });
     }
 
+    /// Verify invalid asset bodies are rejected and their staging files removed.
     #[test]
     fn empty_or_oversized_bodies_are_not_published_and_staging_is_cleaned() {
         run(async {
@@ -1607,6 +1682,7 @@ mod tests {
         });
     }
 
+    /// Verify a symlinked asset root cannot expose unrelated files to collection.
     #[test]
     fn symlinked_asset_root_cannot_turn_collection_into_unrelated_deletion() {
         let fixture = Fixture::new(1024);
@@ -1618,6 +1694,7 @@ mod tests {
         assert_eq!(std::fs::read(outside).unwrap(), b"keep");
     }
 
+    /// Verify refresh permits reject overlap and become available after release.
     #[test]
     fn refresh_permit_rejects_overlap_and_releases_on_drop() {
         let fixture = Fixture::new(1024);

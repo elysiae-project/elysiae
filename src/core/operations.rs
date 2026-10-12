@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::game::Game;
 
+/// Backend actions that require exclusive installation or runtime ownership.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationKind {
     Install,
@@ -28,6 +29,7 @@ pub enum OperationKind {
 }
 
 impl OperationKind {
+    /// Checks whether this action supports download pause and resume controls.
     fn supports_download_controls(self) -> bool {
         matches!(
             self,
@@ -35,11 +37,13 @@ impl OperationKind {
         )
     }
 
+    /// Checks whether this action supports cancellation in an interruptible phase.
     fn supports_cancellation(self) -> bool {
         self.supports_download_controls() || matches!(self, Self::Relocate | Self::Components)
     }
 }
 
+/// Current stage or final outcome of an owned backend operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Running,
@@ -51,6 +55,7 @@ pub enum Phase {
     Failed,
 }
 
+/// Snapshot of an operation's identity, target game, phase, and error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStatus {
     pub id: Uuid,
@@ -60,12 +65,14 @@ pub struct OperationStatus {
     pub error: Option<String>,
 }
 
+/// Active operation state together with its controls and optional profile lock.
 struct ActiveOperation {
     status: OperationStatus,
     handle: DownloadHandle,
     _profile_lock: Option<File>,
 }
 
+/// Tracks the active operation, last result, and profile-locking policy.
 #[derive(Default)]
 struct State {
     persistent: bool,
@@ -73,9 +80,11 @@ struct State {
     last: Option<OperationStatus>,
 }
 
+/// Shared coordinator that allows only one backend operation at a time.
 #[derive(Clone, Default)]
 pub struct Operations(Arc<Mutex<State>>);
 
+/// Returns the process-wide coordinator with cross-process profile locking enabled.
 pub fn operations() -> &'static Operations {
     static OPERATIONS: OnceLock<Operations> = OnceLock::new();
     OPERATIONS.get_or_init(|| {
@@ -86,6 +95,7 @@ pub fn operations() -> &'static Operations {
     })
 }
 
+/// Acquires an exclusive profile lock using an unshared, non-symlink file.
 fn lock_profile(path: &Path) -> Result<File> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     std::fs::create_dir_all(path.parent().context("Operation lock has no parent")?)?;
@@ -108,6 +118,7 @@ fn lock_profile(path: &Path) -> Result<File> {
 }
 
 impl Operations {
+    /// Acquires ownership for a new operation, refusing conflicting work or sessions.
     pub fn begin(&self, kind: OperationKind, game: Option<Game>) -> Result<Operation> {
         let mut state = self
             .0
@@ -148,6 +159,7 @@ impl Operations {
         })
     }
 
+    /// Returns the active operation's status, or the most recent final status.
     pub fn status(&self) -> Result<Option<OperationStatus>> {
         let state = self
             .0
@@ -160,6 +172,7 @@ impl Operations {
             .or_else(|| state.last.clone()))
     }
 
+    /// Checks whether an operation currently holds ownership.
     pub fn is_busy(&self) -> Result<bool> {
         Ok(self
             .0
@@ -169,6 +182,7 @@ impl Operations {
             .is_some())
     }
 
+    /// Pauses or resumes an active download when its phase allows it.
     pub fn toggle_pause(&self) -> Result<()> {
         let mut state = self
             .0
@@ -197,6 +211,7 @@ impl Operations {
         Ok(())
     }
 
+    /// Requests safe cancellation while retaining ownership until the worker exits.
     pub fn cancel(&self) -> Result<()> {
         let state = self
             .0
@@ -217,6 +232,7 @@ impl Operations {
     }
 }
 
+/// Exclusive operation lease held until its worker finishes or drops it.
 pub struct Operation {
     owner: Operations,
     id: Uuid,
@@ -225,10 +241,12 @@ pub struct Operation {
 }
 
 impl Operation {
+    /// Returns the download control handle associated with this lease.
     pub fn handle(&self) -> &DownloadHandle {
         &self.handle
     }
 
+    /// Checks that this lease still owns the requested game's installation.
     pub fn check_game(&self, game: Game) -> Result<()> {
         let state = self
             .owner
@@ -244,11 +262,13 @@ impl Operation {
         Ok(())
     }
 
+    /// Fails if cancellation has been requested for this operation.
     pub fn check_cancelled(&self) -> Result<()> {
         ensure!(!self.handle.is_cancelled(), "Operation cancelled");
         Ok(())
     }
 
+    /// Updates a nonterminal phase after checking ownership and cancellation.
     pub fn set_phase(&self, phase: Phase) -> Result<()> {
         ensure!(
             matches!(phase, Phase::Running | Phase::Verifying | Phase::Committing),
@@ -272,6 +292,7 @@ impl Operation {
         Ok(())
     }
 
+    /// Records the final result and releases ownership, returning the result unchanged.
     pub fn finish<T>(mut self, result: Result<T>) -> Result<T> {
         let phase = if result.is_ok() {
             Phase::Completed
@@ -288,6 +309,7 @@ impl Operation {
         result
     }
 
+    /// Stores the terminal status and releases ownership if this lease is still active.
     fn release(&self, phase: Phase, error: Option<String>) {
         let Ok(mut state) = self.owner.0.lock() else {
             log::error!("Operation lock poisoned during completion");
@@ -307,6 +329,7 @@ impl Operation {
 }
 
 impl Drop for Operation {
+    /// Releases an unfinished lease, requesting cancellation and recording its status.
     fn drop(&mut self) {
         if !self.finished {
             let phase = if self.handle.is_cancelled() {
@@ -324,6 +347,7 @@ impl Drop for Operation {
 mod tests {
     use super::*;
 
+    /// Checks exclusive operation ownership and its release on completion.
     #[test]
     fn first_operation_starts_and_completion_releases_ownership() {
         let owner = Operations::default();
@@ -337,6 +361,7 @@ mod tests {
         assert!(!owner.is_busy().unwrap());
     }
 
+    /// Checks cancellation retains ownership without reusing cancelled controls.
     #[test]
     fn cancellation_keeps_ownership_until_worker_exits_then_uses_fresh_handle() {
         let owner = Operations::default();
@@ -364,6 +389,7 @@ mod tests {
         next.finish(Ok(())).unwrap();
     }
 
+    /// Checks that verification rejects controls and preserves the final failure details.
     #[test]
     fn noncancellable_phases_keep_ownership_and_retain_errors() {
         let owner = Operations::default();
@@ -381,6 +407,7 @@ mod tests {
         assert_eq!(status.error.as_deref(), Some("repair failed"));
     }
 
+    /// Checks exclusive profile locking and refusal to follow lock-file symlinks.
     #[test]
     fn independent_process_handles_cannot_share_a_profile_lock() {
         let root = std::env::temp_dir().join(format!("elysiae-lock-{}", Uuid::new_v4()));
@@ -396,6 +423,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// Checks relocation cancellation boundaries and matching game ownership.
     #[test]
     fn relocation_cancels_before_commit_but_commit_cannot_be_interrupted() {
         let owner = Operations::default();
@@ -415,6 +443,7 @@ mod tests {
         operation.finish(Ok(())).unwrap();
     }
 
+    /// Checks pause/resume and dropped-lease cleanup before starting a later operation.
     #[test]
     fn pause_and_drop_do_not_poison_subsequent_operations() {
         let owner = Operations::default();

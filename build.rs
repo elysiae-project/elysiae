@@ -1,3 +1,4 @@
+/// Builds the embedded resources and settings schema, then checks the host kernel.
 #[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-env-changed=ELYSIAE_SKIP_KERNEL_CHECK");
@@ -40,6 +41,7 @@ fn compile_resources() {
     );
 }
 
+/// Checks the recommended kernel version, unless the build-time check is disabled.
 #[cfg(not(test))]
 fn supported_kernel() -> bool {
     if std::env::var_os("ELYSIAE_SKIP_KERNEL_CHECK").is_some() {
@@ -49,6 +51,7 @@ fn supported_kernel() -> bool {
         .is_ok_and(|release| version_at_least(&release, (6, 14, 0)))
 }
 
+/// Compares the numeric parts of a kernel release with a minimum version.
 fn version_at_least(release: &str, minimum: (u64, u64, u64)) -> bool {
     let mut parts = release
         .trim()
@@ -65,6 +68,7 @@ fn version_at_least(release: &str, minimum: (u64, u64, u64)) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Checks version ordering, distribution suffixes and invalid release strings.
     #[test]
     fn compares_kernel_versions() {
         assert!(version_at_least("6.14.0", (6, 14, 0)));

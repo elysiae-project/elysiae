@@ -23,6 +23,7 @@ use crate::{
     },
 };
 
+/// Installation and update states used to decide which game actions are available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAvailability {
     Updated,
@@ -35,6 +36,7 @@ pub enum UpdateAvailability {
     Untracked,
 }
 
+/// Game download actions handled by the shared operation worker.
 #[derive(Clone, Copy)]
 enum DownloadAction {
     Install,
@@ -54,6 +56,7 @@ pub async fn download_game(
     start_download(DownloadAction::Install, game, lang, sender).await
 }
 
+/// Downloads a preinstall or applies the game's current update.
 pub async fn download_update(
     game: Game,
     lang: &str,
@@ -62,6 +65,7 @@ pub async fn download_update(
     start_download(DownloadAction::Update, game, lang, sender).await
 }
 
+/// Runs an integrity scan and attempts repairs for an installed game.
 pub async fn repair_game(
     game: Game,
     lang: &str,
@@ -70,6 +74,7 @@ pub async fn repair_game(
     start_download(DownloadAction::Repair, game, lang, sender).await
 }
 
+/// Starts an owned download worker and reports its authoritative final result.
 async fn start_download(
     action: DownloadAction,
     game: Game,
@@ -101,6 +106,7 @@ async fn start_download(
     .await
 }
 
+/// Runs work on the backend runtime, retaining ownership if the caller detaches.
 async fn run_worker<F: Future<Output = Result<()>> + Send + 'static>(
     operation: Operation,
     work: impl FnOnce(Operation) -> F,
@@ -110,6 +116,7 @@ async fn run_worker<F: Future<Output = Result<()>> + Send + 'static>(
         .context("Backend worker failed")?
 }
 
+/// Performs the requested game mutation and verifies installed files as needed.
 async fn execute_download(
     action: DownloadAction,
     game: Game,
@@ -227,12 +234,14 @@ async fn execute_download(
     Ok(())
 }
 
+/// Forwards progress without blocking, leaving completion to the operation worker.
 fn forward_progress(sender: &async_channel::Sender<SophonProgress>, event: SophonProgress) {
     if !matches!(event, SophonProgress::Finished) {
         let _ = sender.try_send(event);
     }
 }
 
+/// Builds a fully verifying installer with the shared HTTP client.
 fn installer(game: Game, lang: &str, path: PathBuf) -> Result<Sophon> {
     Ok(Sophon::builder(game.code(), path)
         .vo_lang(lang)
@@ -241,6 +250,7 @@ fn installer(game: Game, lang: &str, path: PathBuf) -> Result<Sophon> {
         .build())
 }
 
+/// Queries game update metadata with a bounded wait.
 async fn checked_update(sophon: &Sophon) -> Result<irmin::game_installer::UpdateInfo> {
     // This query has no mutation workers, so dropping it on deadline is safe.
     Ok(
@@ -250,6 +260,7 @@ async fn checked_update(sophon: &Sophon) -> Result<irmin::game_installer::Update
     )
 }
 
+/// Reads a path's mount identifier without following its final symlink.
 fn mount_id(path: &Path) -> Result<u64> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
@@ -309,6 +320,7 @@ fn validate_mutation_tree(root: &Path, operation: &Operation) -> Result<()> {
     Ok(())
 }
 
+/// Tracks scan completeness and errors independently of upstream completion events.
 #[derive(Default)]
 struct VerificationReport {
     total: u64,
@@ -318,6 +330,7 @@ struct VerificationReport {
 }
 
 impl VerificationReport {
+    /// Records scan progress and errors reported during verification.
     fn observe(&mut self, event: &SophonProgress) {
         match event {
             SophonProgress::Verifying {
@@ -336,6 +349,7 @@ impl VerificationReport {
         }
     }
 
+    /// Accepts only a complete scan that reported no damaged files or errors.
     fn result(&self) -> Result<()> {
         if let Some(error) = &self.error {
             bail!("Integrity scan failed: {error}");
@@ -353,6 +367,7 @@ impl VerificationReport {
     }
 }
 
+/// Runs integrity verification and checks that the reported scan is complete and clean.
 async fn verify(sophon: &Sophon, sender: async_channel::Sender<SophonProgress>) -> Result<()> {
     // Verification in the current irmin pin has no control handle. Do not drop
     // its future on cancel: spawned work could continue after releasing ownership.
@@ -374,6 +389,7 @@ async fn verify(sophon: &Sophon, sender: async_channel::Sender<SophonProgress>) 
         .result()
 }
 
+/// Reads a bounded installed-version marker, treating missing or empty markers as absent.
 fn installed_tag(path: &Path) -> Result<Option<String>> {
     use std::io::Read;
     let marker = path.join(".sophon_version");
@@ -397,6 +413,7 @@ fn installed_tag(path: &Path) -> Result<Option<String>> {
 
 const PENDING_VERIFICATION: &str = ".elysiae-verification-pending";
 
+/// Checks whether an installation still has a pending-verification marker.
 fn mutation_pending(root: &Path) -> Result<bool> {
     match std::fs::symlink_metadata(root.join(PENDING_VERIFICATION)) {
         Ok(_) => Ok(true),
@@ -405,6 +422,7 @@ fn mutation_pending(root: &Path) -> Result<bool> {
     }
 }
 
+/// Durably marks an installation as awaiting successful verification.
 fn mark_pending(root: &Path) -> Result<()> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let path = root.join(PENDING_VERIFICATION);
@@ -428,12 +446,14 @@ fn mark_pending(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Durably removes the pending marker after successful verification.
 fn clear_pending(root: &Path) -> Result<()> {
     std::fs::remove_file(root.join(PENDING_VERIFICATION))?;
     std::fs::File::open(root)?.sync_all()?;
     Ok(())
 }
 
+/// Classifies local installation markers and the executable without network access.
 fn local_status(game: Game, path: &Path) -> Result<UpdateAvailability> {
     if !path.try_exists()? {
         return Ok(UpdateAvailability::NotInstalled);
@@ -453,6 +473,7 @@ fn local_status(game: Game, path: &Path) -> Result<UpdateAvailability> {
     Ok(UpdateAvailability::Updated)
 }
 
+/// Classifies update metadata, prioritizing required updates over future preinstalls.
 fn classify_update(info: &irmin::game_installer::UpdateInfo) -> UpdateAvailability {
     if info.current_tag.is_none() {
         UpdateAvailability::Incomplete
@@ -465,12 +486,14 @@ fn classify_update(info: &irmin::game_installer::UpdateInfo) -> UpdateAvailabili
     }
 }
 
+/// Checks whether the downloaded preinstall matches the currently available update.
 fn apply_live_preinstall(info: &irmin::game_installer::UpdateInfo) -> bool {
     info.update_available
         && info.preinstall_downloaded
         && info.preinstall_tag.as_deref() == Some(info.remote_tag.as_str())
 }
 
+/// Gets local installation status, recognizing explicitly imported untracked games.
 pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
     game.executable()?;
     let path = installations::path(game)?;
@@ -492,6 +515,7 @@ pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
     Ok(status)
 }
 
+/// Combines local installation state with remote update availability when applicable.
 pub async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability> {
     let path = installations::path(game)?;
     let local = local_update_status(game)?;
@@ -502,13 +526,16 @@ pub async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability>
     Ok(classify_update(&checked_update(&sophon).await?))
 }
 
+/// Pauses or resumes the active download when its phase permits it.
 pub fn toggle_downloading() -> Result<()> {
     operations().toggle_pause()
 }
+/// Requests cancellation without releasing the active worker's ownership.
 pub fn cancel_download() -> Result<()> {
     operations().cancel()
 }
 
+/// Checks whether local installation state allows the game to be launched.
 pub fn game_installed(game: Game) -> Result<bool> {
     Ok(matches!(
         local_update_status(game)?,
@@ -516,6 +543,7 @@ pub fn game_installed(game: Game) -> Result<bool> {
     ))
 }
 
+/// Writes a desktop shortcut that selects the game in Elysiae without launching it.
 fn generate_desktop_file(game: Game) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let icon = get_cached_asset_paths(game, "en-us", AssetType::Icon)
@@ -547,6 +575,7 @@ fn generate_desktop_file(game: Game) -> Result<()> {
     Ok(())
 }
 
+/// Prepares the runtime and launches an installed game under operation ownership.
 pub async fn launch_game(game: Game) -> Result<()> {
     runtime::spawn(async move {
         ensure!(
@@ -578,6 +607,7 @@ pub async fn launch_game(game: Game) -> Result<()> {
     .context("Launch worker failed")?
 }
 
+/// Registers an existing installation with the requested modification permission.
 pub async fn import_game(game: Game, path: PathBuf, allow_modify: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Import, Some(game))?;
     runtime::spawn(async move {
@@ -592,6 +622,7 @@ pub async fn import_game(game: Game, path: PathBuf, allow_modify: bool) -> Resul
     .context("Import task failed")?
 }
 
+/// Relocates an installation, optionally deleting its confirmed managed source.
 pub async fn relocate_game(
     game: Game,
     destination: PathBuf,
@@ -617,6 +648,7 @@ pub async fn relocate_game(
     .context("Relocation task failed")?
 }
 
+/// Unregisters a game, optionally deleting its confirmed managed installation.
 pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Uninstall, Some(game))?;
     runtime::spawn(async move {
@@ -631,6 +663,7 @@ pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: b
     .context("Uninstall task failed")?
 }
 
+/// Recovers interrupted installation maintenance under exclusive operation ownership.
 pub async fn recover_maintenance(game: Game) -> Result<()> {
     let operation = operations().begin(OperationKind::Relocate, Some(game))?;
     runtime::spawn(async move {
@@ -649,6 +682,7 @@ pub async fn recover_maintenance(game: Game) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// Builds update metadata with both a current update and a future preinstall.
     fn update_info() -> irmin::game_installer::UpdateInfo {
         irmin::game_installer::UpdateInfo {
             update_available: true,
@@ -664,6 +698,7 @@ mod tests {
         }
     }
 
+    /// Checks update priority and release matching for promoted preinstalls.
     #[test]
     fn required_live_updates_precede_future_preinstalls() {
         let mut info = update_info();
@@ -680,6 +715,7 @@ mod tests {
         assert_eq!(classify_update(&info), UpdateAvailability::Incomplete);
     }
 
+    /// Checks installation completeness and rejects pending or invalid version markers.
     #[test]
     fn empty_or_partial_directories_are_not_installed() {
         let root = std::env::temp_dir().join(format!("elysiae-status-{}", uuid::Uuid::new_v4()));
@@ -732,6 +768,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// Checks that installers receive absolute roots and normalized voice languages.
     #[test]
     fn builder_uses_resolved_absolute_root_and_normalized_voice() {
         let path = installations::path(Game::Bh3).unwrap();
@@ -741,6 +778,7 @@ mod tests {
         assert_eq!(sophon.vo_lang(), "en");
     }
 
+    /// Checks that mutation preflight rejects symbolic and hard links to external files.
     #[test]
     fn mutation_preflight_rejects_links_before_touching_external_files() {
         let root = std::env::temp_dir().join(format!("elysiae-mutation-{}", uuid::Uuid::new_v4()));
@@ -758,6 +796,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// Checks that upstream completion cannot conceal scan errors or uncertain repairs.
     #[test]
     fn upstream_finished_does_not_override_failed_repairs() {
         let mut report = VerificationReport::default();
@@ -788,6 +827,7 @@ mod tests {
         assert!(clean.result().is_err());
     }
 
+    /// Checks that a full progress queue stays nonblocking and reserves final completion.
     #[test]
     fn full_progress_queue_cannot_block_or_fabricate_completion() {
         let (sender, receiver) = async_channel::bounded(1);
@@ -807,6 +847,7 @@ mod tests {
         ));
     }
 
+    /// Checks that detaching a waiter retains ownership until its worker completes.
     #[test]
     fn dropped_waiter_retains_ownership_until_worker_finishes() {
         let owner = crate::core::operations::Operations::default();

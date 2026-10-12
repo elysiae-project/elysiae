@@ -17,6 +17,7 @@ const REGISTRY: &str = "installations.json";
 const OWNER_MARKER: &str = ".elysiae-owner.json";
 const SCHEMA_VERSION: u32 = 1;
 
+/// A registered game root with ownership identity and write consent.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Installation {
@@ -27,6 +28,7 @@ pub(crate) struct Installation {
     pub(crate) ownership_token: String,
 }
 
+/// Versioned installation records indexed by unique game code.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Registry {
@@ -35,6 +37,7 @@ struct Registry {
     installations: BTreeMap<String, Installation>,
 }
 
+/// In-tree proof tying a managed directory to its registered game and token.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct OwnerMarker {
@@ -120,10 +123,11 @@ pub(crate) fn registered(game: Game) -> Result<Option<Installation>> {
     Store(PathBuf::new()).registered(game)
 }
 
-// Relative to AppData. Tests use a unique subdirectory, never a shared registry.
+/// Registry access scoped to an AppData-relative directory, isolated in tests.
 struct Store(PathBuf);
 
 impl Store {
+    /// Resolve this store's application-data directory.
     fn root(&self) -> Result<PathBuf> {
         if self.0.as_os_str().is_empty() {
             fs::full_path(None, None)
@@ -132,10 +136,12 @@ impl Store {
         }
     }
 
+    /// Resolve a relative path within this store's application-data directory.
     fn resolve(&self, relative: &Path) -> Result<PathBuf> {
         fs::full_path(Some(self.0.join(relative)), None)
     }
 
+    /// Read and validate the registry, using an empty registry only when absent.
     fn load(&self) -> Result<Registry> {
         let file = self.resolve(Path::new(REGISTRY))?;
         match std::fs::symlink_metadata(&file) {
@@ -171,6 +177,7 @@ impl Store {
         Ok(registry)
     }
 
+    /// Serialize the registry to this store's metadata file.
     fn save(&self, registry: &Registry) -> Result<()> {
         fs::write_file(
             self.0.join(REGISTRY),
@@ -180,10 +187,12 @@ impl Store {
         .context("Could not save installation registry")
     }
 
+    /// Read a validated game record without checking its ownership marker.
     fn registered(&self, game: Game) -> Result<Option<Installation>> {
         Ok(self.load()?.installations.remove(game.code()))
     }
 
+    /// Return the registered root or the unregistered default installation path.
     fn path(&self, game: Game) -> Result<PathBuf> {
         match self.registered(game)? {
             Some(installation) => Ok(installation.path),
@@ -191,6 +200,7 @@ impl Store {
         }
     }
 
+    /// Check the operation and ownership or import consent before returning a path.
     fn writable_path(&self, game: Game, operation: &Operation) -> Result<PathBuf> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
@@ -213,6 +223,7 @@ impl Store {
         Ok(installation.path)
     }
 
+    /// Prepare or resume a managed root, retaining its ownership token on recreation.
     fn prepare_install(&self, game: Game, operation: &Operation) -> Result<PathBuf> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
@@ -271,6 +282,7 @@ impl Store {
         Ok(expected)
     }
 
+    /// Write ownership and registration, removing only the new marker on failure.
     fn commit_managed(
         &self,
         game: Game,
@@ -297,6 +309,7 @@ impl Store {
         Ok(())
     }
 
+    /// Register an existing game or update its consent without modifying its files.
     fn import(
         &self,
         game: Game,
@@ -348,6 +361,7 @@ impl Store {
         self.save(&registry)
     }
 
+    /// Require a canonical, safe directory path while allowing a missing root.
     fn validate_root(&self, root: &Path) -> Result<()> {
         ensure!(
             root.is_absolute(),
@@ -369,6 +383,7 @@ impl Store {
         self.check_safe_root(root)
     }
 
+    /// Exclude roots containing home or AppData, or overlapping shared runtime data.
     fn check_safe_root(&self, root: &Path) -> Result<()> {
         let home = canonicalize_with_missing(&fs::full_path(None, Some(fs::BaseDirectory::Home))?)?;
         let data = canonicalize_with_missing(&self.root()?)?;
@@ -394,8 +409,7 @@ impl Store {
     }
 }
 
-// Managed roots can eventually be relocated outside AppData. Use native I/O
-// on the validated absolute root; fs wrappers accept only base-relative paths.
+/// Create an ownership marker in an empty installation directory by absolute path.
 fn write_owner(game: Game, installation: &Installation) -> Result<()> {
     use std::io::Write;
 
@@ -430,6 +444,7 @@ fn write_owner(game: Game, installation: &Installation) -> Result<()> {
     result
 }
 
+/// Check that the marker at the installation path matches its game and token.
 fn verify_owner(game: Game, installation: &Installation) -> Result<()> {
     let marker = installation.path.join(OWNER_MARKER);
     ensure!(
@@ -445,6 +460,7 @@ fn verify_owner(game: Game, installation: &Installation) -> Result<()> {
     Ok(())
 }
 
+/// Reject roots that contain or lie within another game's registered directory.
 fn check_conflicts(registry: &Registry, game: Game, root: &Path) -> Result<()> {
     for (code, installation) in &registry.installations {
         ensure!(
@@ -456,8 +472,8 @@ fn check_conflicts(registry: &Registry, game: Game, root: &Path) -> Result<()> {
     Ok(())
 }
 
-// Resolve configured bases even before AppData or shared runtime directories
-// exist. A dangling symlink is an error, not a missing directory to recreate.
+/// Resolve existing ancestors while allowing missing trailing directories.
+/// Reject dangling symlinks rather than treating them as missing directories.
 fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
     match std::fs::symlink_metadata(path) {
         Ok(_) => Ok(path.canonicalize()?),
@@ -470,18 +486,21 @@ fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
     }
 }
 
-// serde's map default accepts duplicate keys and silently discards an entry.
+/// Deserialize installation records while rejecting duplicate game codes.
 fn unique_installations<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<BTreeMap<String, Installation>, D::Error> {
+    /// A map visitor that preserves the registry's unique-game constraint.
     struct Entries;
     impl<'de> serde::de::Visitor<'de> for Entries {
         type Value = BTreeMap<String, Installation>;
 
+        /// Describe the expected registry map for deserialization errors.
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             formatter.write_str("a map of unique game codes to installations")
         }
 
+        /// Collect installation entries, rejecting any repeated game code.
         fn visit_map<M: serde::de::MapAccess<'de>>(
             self,
             mut map: M,
@@ -506,12 +525,14 @@ mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
 
+    /// An isolated temporary store and game directories for installation tests.
     pub(super) struct Fixture {
         pub(super) directory: PathBuf,
         pub(super) store: Store,
     }
 
     impl Fixture {
+        /// Create a unique store beneath the test application's temporary data root.
         pub(super) fn new() -> Self {
             let relative = PathBuf::from(format!("installation-tests-{}", Uuid::new_v4()));
             let directory = fs::full_path(Some(relative.clone()), None).unwrap();
@@ -521,6 +542,7 @@ mod tests {
             Self { directory, store }
         }
 
+        /// Create a game directory with an inert file named for its executable.
         pub(super) fn game(&self, name: &str, game: Game) -> PathBuf {
             let root = self.directory.join(name);
             std::fs::create_dir_all(&root).unwrap();
@@ -532,23 +554,27 @@ mod tests {
             root.canonicalize().unwrap()
         }
 
+        /// Return the fixture's installation registry path.
         pub(super) fn registry(&self) -> PathBuf {
             self.store.resolve(Path::new(REGISTRY)).unwrap()
         }
     }
 
     impl Drop for Fixture {
+        /// Remove this fixture's temporary files and directories.
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.directory).unwrap();
         }
     }
 
+    /// Create an independent install operation for the selected test game.
     fn operation(game: Game) -> Operation {
         Operations::default()
             .begin(OperationKind::Install, Some(game))
             .unwrap()
     }
 
+    /// Verify fallback paths are absolute without granting writes or adopting files.
     #[test]
     fn fallback_is_absolute_but_unregistered_files_are_never_adopted() {
         let fixture = Fixture::new();
@@ -570,6 +596,7 @@ mod tests {
         assert!(!fixture.registry().exists());
     }
 
+    /// Verify managed resume and recreation preserve the ownership token and registry.
     #[test]
     fn managed_installations_resume_and_recreate_with_the_same_token() {
         let fixture = Fixture::new();
@@ -602,6 +629,7 @@ mod tests {
         assert_eq!(fixture.store.writable_path(game, &operation).unwrap(), root);
     }
 
+    /// Verify management accepts empty defaults but rejects orphan ownership markers.
     #[test]
     fn empty_existing_default_can_be_managed_but_orphan_markers_cannot() {
         let fixture = Fixture::new();
@@ -619,6 +647,7 @@ mod tests {
         );
     }
 
+    /// Verify invalid, missing, mismatched, or symlinked markers prevent managed writes.
     #[test]
     fn managed_writes_require_a_matching_regular_owner_marker() {
         let fixture = Fixture::new();
@@ -653,6 +682,7 @@ mod tests {
         assert_eq!(std::fs::read(fixture.registry()).unwrap(), registry);
     }
 
+    /// Verify symlink redirection of a default root or its parent prevents creation.
     #[test]
     fn managed_creation_rejects_redirected_default_directory_and_ancestor() {
         for redirect_parent in [false, true] {
@@ -674,6 +704,7 @@ mod tests {
         }
     }
 
+    /// Verify imports preserve files while write consent can be granted or revoked.
     #[test]
     fn imports_are_non_destructive_and_write_consent_is_explicit_and_revocable() {
         let fixture = Fixture::new();
@@ -724,6 +755,7 @@ mod tests {
         assert!(!root.exists());
     }
 
+    /// Verify imports require a real directory containing a known executable.
     #[test]
     fn import_requires_a_known_executable_contained_in_a_real_game_directory() {
         let fixture = Fixture::new();
@@ -786,6 +818,7 @@ mod tests {
         assert!(!fixture.registry().exists());
     }
 
+    /// Verify root validation excludes home, application data, and shared runtime trees.
     #[test]
     fn roots_cannot_contain_home_appdata_or_shared_runtime_data() {
         let fixture = Fixture::new();
@@ -835,6 +868,7 @@ mod tests {
         );
     }
 
+    /// Verify imports reject overlapping roots, relocation, and managed-root replacement.
     #[test]
     fn conflicting_roots_and_implicit_replacement_are_rejected_without_rewriting_registry() {
         let fixture = Fixture::new();
@@ -890,6 +924,7 @@ mod tests {
         );
     }
 
+    /// Verify malformed or unsupported registries are rejected without overwriting.
     #[test]
     fn invalid_or_future_registry_is_never_reset() {
         let fixture = Fixture::new();
@@ -955,6 +990,7 @@ mod tests {
         }
     }
 
+    /// Verify symlink replacement of a registered root or ancestor invalidates access.
     #[test]
     fn registered_root_and_parent_symlink_replacement_are_rejected() {
         for replace_parent in [false, true] {
@@ -986,6 +1022,7 @@ mod tests {
         }
     }
 
+    /// Verify managed recreation refuses an ancestor replaced by a symlink.
     #[test]
     fn missing_managed_roots_cannot_be_recreated_through_redirected_ancestors() {
         let fixture = Fixture::new();
@@ -1001,6 +1038,7 @@ mod tests {
         assert!(std::fs::read_dir(moved).unwrap().next().is_none());
     }
 
+    /// Verify a symlinked registry is rejected and its target remains unchanged.
     #[test]
     fn registry_symlinks_are_not_read_or_overwritten() {
         let fixture = Fixture::new();
@@ -1030,6 +1068,7 @@ mod tests {
         );
     }
 
+    /// Verify failed registration removes its marker but preserves the empty root.
     #[test]
     fn failed_registry_commit_removes_only_the_new_ownership_marker() {
         let fixture = Fixture::new();
@@ -1065,6 +1104,7 @@ mod tests {
         );
     }
 
+    /// Verify cancelled or mismatched operations fail before installation writes.
     #[test]
     fn mutations_reject_wrong_game_or_cancelled_operation_before_writing() {
         let fixture = Fixture::new();
