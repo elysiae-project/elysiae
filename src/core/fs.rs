@@ -3,6 +3,7 @@ use fs_extra::dir::get_size;
 use sha256::try_digest;
 use std::{
     fs::{self, create_dir_all},
+    io::Read,
     path::{Component, Path, PathBuf},
     sync::OnceLock,
 };
@@ -237,74 +238,249 @@ pub fn remove(p: PathBuf, base_dir: Option<BaseDirectory>, recursive: Option<boo
 /// directory after extraction one level up), and does so by default. to disable
 /// this behaviour, set the flatten parameter to Some(false)
 ///
-/// Both the archive path and destination folder are paths relative to a base
-/// directory. Paths that don't provide a base directory parameter default to
-/// the app data directory (~/.local/share/elysiae)
+/// Both paths are relative to a base directory (AppData by default). The
+/// destination must be absent or an empty, real directory, even when overwrite
+/// is enabled. On failure it may contain partial output; callers must discard
+/// staging rather than extract into a live installation. Concurrent mutation
+/// of staging by another process is unsupported by the archive crates.
 pub async fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> Result<()> {
-    let ifp = full_path(Some(options.init_path), options.init_path_base_dir)
-        .context("Could not resolve initial path")?;
-    let dfp = full_path(Some(options.dest_path), options.dest_path_base_dir)
-        .context("Could not resolve destination path")?;
-
-    let should_flatten = flatten.unwrap_or(true);
-
-    ensure!(
-        ifp.try_exists()?,
-        "The initial path \"{}\" does not exist",
-        ifp.to_string_lossy()
-    );
-
-    let allow_overwrites = options.overwrite.unwrap_or(true);
-
-    ensure!(
-        !dfp.try_exists()? || allow_overwrites,
-        "The destination path \"{}\" already exists and overwriting files has been disabled!",
-        dfp.to_string_lossy()
-    );
-
-    let ifp_ext = ifp
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase)
-        .context("The archive has no valid UTF-8 extension")?;
-
     tokio::task::spawn_blocking(move || -> Result<()> {
+        let ifp = full_path(Some(options.init_path), options.init_path_base_dir)
+            .context("Could not resolve initial path")?;
+        let dfp = full_path(Some(options.dest_path), options.dest_path_base_dir)
+            .context("Could not resolve destination path")?;
+        let extension = ifp
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .context("The archive has no valid UTF-8 extension")?;
+        ensure!(
+            matches!(
+                extension.as_str(),
+                "gz" | "tgz" | "xz" | "txz" | "zst" | "zstd" | "zip"
+            ),
+            "Unsupported archive extension: .{extension}"
+        );
         let file = fs::File::open(&ifp).context("Could not open the initial path")?;
-        if !dfp.exists() {
-            fs::create_dir_all(&dfp).context("Could not create the extraction directory")?;
+        match fs::symlink_metadata(&dfp) {
+            Ok(metadata) => {
+                ensure!(
+                    metadata.is_dir(),
+                    "Extraction destination must be a real directory"
+                );
+                ensure!(
+                    fs::read_dir(&dfp)?.next().transpose()?.is_none(),
+                    "Extraction destination must be empty"
+                );
+                ensure!(
+                    options.overwrite.unwrap_or(true),
+                    "Extraction destination already exists"
+                );
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir_all(&dfp).context("Could not create the extraction directory")?;
+            }
+            Err(error) => return Err(error.into()),
         }
-
-        // Archive formats handled by Elysiae are tarballs and zip files. Fail
-        // explicitly for unknown extensions instead of silently reporting success.
-        match ifp_ext.as_str() {
-            "gz" | "tgz" => Tar::new(Gz::new(file)).unpack(&dfp)?,
-            "xz" | "txz" => Tar::new(Xz::new(file)).unpack(&dfp)?,
-            "zst" | "zstd" => Tar::new(Zstd::new(file)?).unpack(&dfp)?,
-            "zip" => Zip::new(file)?.extract(&dfp)?,
-            extension => bail!("Unsupported archive extension: .{extension}"),
+        let root = dfp.canonicalize()?;
+        match extension.as_str() {
+            "gz" | "tgz" => extract_tar(Gz::new(file), &root)?,
+            "xz" | "txz" => extract_tar(Xz::new(file), &root)?,
+            "zst" | "zstd" => extract_tar(Zstd::new(file)?, &root)?,
+            "zip" => extract_zip(file, &root)?,
+            _ => unreachable!("archive extension validated above"),
         }
+        validate_archive_links(&root)?;
 
-        if should_flatten {
-            let entries: Vec<_> = std::fs::read_dir(&dfp)?.collect::<Result<_, _>>()?;
-
-            if entries.len() == 1 && entries[0].path().is_dir() {
+        if flatten.unwrap_or(true) {
+            let entries: Vec<_> = fs::read_dir(&root)?.collect::<Result<_, _>>()?;
+            // DirEntry::file_type does not follow a symlink to an outside directory.
+            if entries.len() == 1 && entries[0].file_type()?.is_dir() {
                 let inner_dir = entries[0].path();
-
-                for archive_entry in fs::read_dir(&inner_dir)? {
-                    let entry = archive_entry?;
-
-                    let target = dfp.join(entry.file_name());
-                    fs::rename(entry.path(), target)?;
+                // Removing the wrapper changes the meaning of relative links.
+                validate_archive_links(&inner_dir)?;
+                for entry in fs::read_dir(&inner_dir)? {
+                    let entry = entry?;
+                    fs::rename(entry.path(), root.join(entry.file_name()))?;
                 }
-
                 fs::remove_dir(inner_dir)?;
+                validate_archive_links(&root)?;
             }
         }
-
         Ok(())
     })
     .await
     .context("Extraction task panicked or was cancelled")?
+}
+
+fn archive_path(path: &Path) -> Result<()> {
+    ensure!(
+        !path.as_os_str().is_empty()
+            && path
+                .components()
+                .all(|part| matches!(part, Component::Normal(_) | Component::CurDir)),
+        "Unsafe archive path: {}",
+        path.display()
+    );
+    Ok(())
+}
+
+fn extract_tar(reader: impl Read, root: &Path) -> Result<()> {
+    let mut archive = Tar::new(reader);
+    archive.set_overwrite(false);
+    archive.set_mask(0o7000);
+    let mut directories = Vec::new();
+    let mut links = Vec::new();
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let kind = entry.header().entry_type();
+        // Local PAX/GNU metadata is consumed by entries(); global PAX records
+        // have no filesystem node to extract.
+        if kind.is_pax_global_extensions() {
+            continue;
+        }
+        archive_path(&entry.path()?)?;
+        ensure!(
+            kind.is_file()
+                || kind.is_gnu_sparse()
+                || kind.is_dir()
+                || kind.is_symlink()
+                || kind.is_hard_link(),
+            "Unsupported archive entry type: {kind:?}"
+        );
+        if kind.is_dir() {
+            // Like Archive::unpack, defer restrictive directory permissions.
+            fs::create_dir_all(root.join(entry.path()?))?;
+            directories.push(entry);
+        } else if kind.is_symlink() || kind.is_hard_link() {
+            links.push(entry);
+        } else {
+            ensure!(entry.unpack_in(root)?, "Archive path was not extracted");
+        }
+    }
+    // No file data is ever written through an archive-created symlink. TAR's
+    // unpack_in also checks containment of parents and hardlink sources.
+    links.sort_by_key(|entry| entry.header().entry_type().is_symlink());
+    for mut entry in links {
+        let path = entry.path()?.into_owned();
+        let target = entry
+            .link_name()?
+            .context("Archive link has no target")?
+            .into_owned();
+        ensure!(
+            !target.as_os_str().is_empty() && !target.is_absolute(),
+            "Archive links must have relative targets"
+        );
+        resolve_archive_path(root, &path, &mut 40)?;
+        if entry.header().entry_type().is_hard_link() {
+            let resolved = resolve_archive_path(root, &target, &mut 40)?;
+            ensure!(
+                fs::symlink_metadata(resolved)?.is_file(),
+                "Hardlink target must be an extracted file"
+            );
+        } else {
+            resolve_archive_path(
+                root,
+                &path.parent().context("Link has no parent")?.join(target),
+                &mut 40,
+            )?;
+        }
+        ensure!(entry.unpack_in(root)?, "Archive link was not extracted");
+    }
+    directories.sort_by_key(|entry| std::cmp::Reverse(entry.path_bytes().into_owned()));
+    for mut directory in directories {
+        resolve_archive_path(root, &directory.path()?, &mut 40)?;
+        ensure!(
+            directory.unpack_in(root)?,
+            "Archive directory was not extracted"
+        );
+    }
+    Ok(())
+}
+
+fn extract_zip(file: fs::File, root: &Path) -> Result<()> {
+    let mut archive = Zip::new(file)?;
+    // ZipArchive::extract guards writes through existing links but can create
+    // an escaping terminal symlink. Validate those targets before extraction.
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        archive_path(Path::new(entry.name()))?;
+        let path = entry.enclosed_name().context("Unsafe ZIP entry path")?;
+        let kind = entry.unix_mode().unwrap_or(0) & libc::S_IFMT;
+        ensure!(
+            matches!(kind, 0 | libc::S_IFREG | libc::S_IFDIR | libc::S_IFLNK),
+            "Unsupported ZIP entry type"
+        );
+        if entry.is_symlink() {
+            let mut target = String::new();
+            (&mut entry).take(4097).read_to_string(&mut target)?;
+            ensure!(
+                !target.is_empty() && target.len() <= 4096,
+                "Invalid ZIP link target length"
+            );
+            resolve_archive_path(
+                root,
+                &path.parent().context("Link has no parent")?.join(&target),
+                &mut 40,
+            )?;
+        }
+    }
+    archive.extract(root)?;
+    Ok(())
+}
+
+/// Resolve each symlink before processing '..', including dangling internal
+/// targets. Lexical normalization alone would miss escapes such as alias/../x.
+fn resolve_archive_path(root: &Path, path: &Path, links_left: &mut usize) -> Result<PathBuf> {
+    let mut resolved = root.to_path_buf();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                ensure!(
+                    resolved != root,
+                    "Archive link escapes extraction directory"
+                );
+                resolved.pop();
+            }
+            Component::Normal(name) => {
+                resolved.push(name);
+                match fs::symlink_metadata(&resolved) {
+                    Ok(metadata) if metadata.is_symlink() => {
+                        ensure!(*links_left > 0, "Archive symlink cycle or excessive depth");
+                        *links_left -= 1;
+                        let target = fs::read_link(&resolved)?;
+                        let parent = resolved
+                            .parent()
+                            .context("Link has no parent")?
+                            .strip_prefix(root)?;
+                        resolved = resolve_archive_path(root, &parent.join(target), links_left)?;
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            _ => bail!("Archive links must have relative targets"),
+        }
+    }
+    Ok(resolved)
+}
+
+fn validate_archive_links(root: &Path) -> Result<()> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            if kind.is_symlink() {
+                resolve_archive_path(root, entry.path().strip_prefix(root)?, &mut 40)?;
+            } else if kind.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validates the integrity of a file relative to a base bath against the
@@ -494,6 +670,122 @@ fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use rand::Rng;
+    use std::{
+        io::Write,
+        os::unix::fs::{MetadataExt, PermissionsExt},
+    };
+
+    struct ArchiveFixture {
+        relative: PathBuf,
+        root: PathBuf,
+    }
+
+    impl ArchiveFixture {
+        fn new() -> Self {
+            let relative = PathBuf::from(uuid::Uuid::new_v4().to_string());
+            let root = full_path(Some(relative.clone()), None).unwrap();
+            fs::create_dir_all(root.join("outside")).unwrap();
+            fs::write(root.join("outside/sentinel"), b"keep").unwrap();
+            Self { relative, root }
+        }
+
+        fn archive(&self, format: &str, entries: &[(&str, u8, &[u8])]) {
+            let bytes = if format == "zip" {
+                let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+                let options = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+                for &(name, kind, data) in entries {
+                    match kind {
+                        b'2' => writer
+                            .add_symlink(name, std::str::from_utf8(data).unwrap(), options)
+                            .unwrap(),
+                        b'5' => writer.add_directory(name, options).unwrap(),
+                        b'0' => {
+                            writer.start_file(name, options).unwrap();
+                            writer.write_all(data).unwrap();
+                        }
+                        _ => panic!("unsupported ZIP test entry"),
+                    }
+                }
+                writer.finish().unwrap().into_inner()
+            } else {
+                let mut builder = tar::Builder::new(Vec::new());
+                builder.preserve_absolute(true);
+                for &(name, kind, data) in entries {
+                    let mut header = tar::Header::new_gnu();
+                    header.set_mode(0o755);
+                    header.set_mtime(1);
+                    header.set_entry_type(tar::EntryType::new(kind));
+                    header.set_size(if kind == b'0' { data.len() as u64 } else { 0 });
+                    if kind == b'1' || kind == b'2' {
+                        builder
+                            .append_link(&mut header, name, std::str::from_utf8(data).unwrap())
+                            .unwrap();
+                    } else if name.contains("..") {
+                        // Write the raw name to allow intentionally malicious ../ fixtures.
+                        header.as_old_mut().name[..name.len()].copy_from_slice(name.as_bytes());
+                        header.set_cksum();
+                        builder.append(&header, data).unwrap();
+                    } else {
+                        builder
+                            .append_data(&mut header, name, if kind == b'0' { data } else { &[] })
+                            .unwrap();
+                    }
+                }
+                let tar = builder.into_inner().unwrap();
+                match format {
+                    "gz" => {
+                        let mut encoder =
+                            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+                        encoder.write_all(&tar).unwrap();
+                        encoder.finish().unwrap()
+                    }
+                    "xz" => {
+                        let mut encoder = xz::write::XzEncoder::new(Vec::new(), 1);
+                        encoder.write_all(&tar).unwrap();
+                        encoder.finish().unwrap()
+                    }
+                    "zst" => zstd::stream::encode_all(tar.as_slice(), 1).unwrap(),
+                    _ => panic!("unsupported TAR test compression"),
+                }
+            };
+            fs::write(self.root.join(format!("input.{format}")), bytes).unwrap();
+        }
+
+        fn extract(
+            &self,
+            format: &str,
+            destination: &str,
+            flatten: bool,
+            overwrite: bool,
+        ) -> Result<()> {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(extract_file(
+                    MultiPathOptions {
+                        init_path: self.relative.join(format!("input.{format}")),
+                        init_path_base_dir: None,
+                        dest_path: self.relative.join(destination),
+                        dest_path_base_dir: None,
+                        overwrite: Some(overwrite),
+                    },
+                    Some(flatten),
+                ))
+        }
+
+        fn assert_sentinel(&self) {
+            assert_eq!(
+                fs::read(self.root.join("outside/sentinel")).unwrap(),
+                b"keep"
+            );
+            assert_eq!(fs::read_dir(self.root.join("outside")).unwrap().count(), 1);
+        }
+    }
+
+    impl Drop for ArchiveFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
 
     fn generate_random_data() -> Vec<u8> {
         let mut file_data = vec![0u8; rand::random_range(100..1000) as usize];
@@ -637,6 +929,231 @@ mod tests {
             );
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extraction_rejects_single_external_symlink_without_flattening_it() {
+        for format in ["gz", "xz", "zst", "zip"] {
+            let fixture = ArchiveFixture::new();
+            let absolute = fixture.root.join("outside");
+            for target in ["../outside", absolute.to_str().unwrap()] {
+                fixture.archive(format, &[("escape", b'2', target.as_bytes())]);
+                assert!(
+                    fixture.extract(format, "stage", true, true).is_err(),
+                    "{format}: {target}"
+                );
+                fixture.assert_sentinel();
+            }
+        }
+    }
+
+    #[test]
+    fn extraction_rejects_traversal_paths() {
+        for format in ["gz", "xz", "zst", "zip"] {
+            let fixture = ArchiveFixture::new();
+            let absolute = fixture.root.join("outside/sentinel");
+            for path in [
+                "../outside/sentinel",
+                "wrapped/../../outside/sentinel",
+                absolute.to_str().unwrap(),
+            ] {
+                fixture.archive(format, &[(path, b'0', b"replace")]);
+                assert!(
+                    fixture.extract(format, "stage", true, true).is_err(),
+                    "{format}: {path}"
+                );
+                fixture.assert_sentinel();
+            }
+        }
+    }
+
+    #[test]
+    fn extraction_preserves_wrapped_runtime_and_safe_relative_links() {
+        for format in ["gz", "xz", "zst", "zip"] {
+            let fixture = ArchiveFixture::new();
+            let mut entries: Vec<(&str, u8, &[u8])> = vec![
+                ("runtime/", b'5', b""),
+                ("runtime/proton", b'0', b"#!/bin/sh\n"),
+                ("runtime/files/lib/libwine.so", b'0', b"library"),
+                ("runtime/files/lib64/libwine.so", b'2', b"../lib/libwine.so"),
+                ("runtime/launcher", b'2', b"proton"),
+                ("runtime/optional", b'2', b"not-installed"),
+            ];
+            if format != "zip" {
+                entries.push(("runtime/proton-hardlink", b'1', b"runtime/proton"));
+            }
+            fixture.archive(format, &entries);
+            fixture.extract(format, "stage", true, true).unwrap();
+            let stage = fixture.root.join("stage");
+            assert_eq!(fs::read(stage.join("proton")).unwrap(), b"#!/bin/sh\n");
+            assert_eq!(fs::read(stage.join("launcher")).unwrap(), b"#!/bin/sh\n");
+            assert_eq!(
+                fs::read_link(stage.join("files/lib64/libwine.so")).unwrap(),
+                Path::new("../lib/libwine.so")
+            );
+            assert_eq!(
+                fs::read(stage.join("files/lib64/libwine.so")).unwrap(),
+                b"library"
+            );
+            assert_eq!(
+                fs::read_link(stage.join("optional")).unwrap(),
+                Path::new("not-installed")
+            );
+            assert!(
+                fs::metadata(stage.join("proton"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o111
+                    != 0
+            );
+            assert!(!stage.join("runtime").exists());
+            if format != "zip" {
+                assert_eq!(
+                    fs::metadata(stage.join("proton")).unwrap().ino(),
+                    fs::metadata(stage.join("proton-hardlink")).unwrap().ino()
+                );
+            }
+            fixture.assert_sentinel();
+        }
+    }
+
+    #[test]
+    fn extraction_rejects_link_chains_and_link_parent_traversal() {
+        for format in ["gz", "zip"] {
+            for entries in [
+                vec![
+                    ("escape", b'2', b"../outside".as_slice()),
+                    ("escape/sentinel", b'0', b"replace"),
+                ],
+                // Each target is lexically in-root, but following alias before
+                // processing '..' makes this escape. A lexical-only check fails.
+                vec![
+                    ("alias", b'2', b".".as_slice()),
+                    ("escape", b'2', b"alias/../outside"),
+                    ("escape/sentinel", b'0', b"replace"),
+                ],
+                vec![
+                    ("escape", b'2', b"alias/../outside".as_slice()),
+                    ("alias", b'2', b"."),
+                ],
+            ] {
+                let fixture = ArchiveFixture::new();
+                fixture.archive(format, &entries);
+                assert!(
+                    fixture.extract(format, "stage", false, true).is_err(),
+                    "{format}"
+                );
+                fixture.assert_sentinel();
+            }
+        }
+    }
+
+    #[test]
+    fn flatten_rejects_links_that_escape_after_wrapper_removal() {
+        for format in ["gz", "zip"] {
+            let fixture = ArchiveFixture::new();
+            fixture.archive(format, &[("runtime/link", b'2', b"../outside")]);
+            assert!(fixture.extract(format, "flattened", true, true).is_err());
+            fixture.extract(format, "wrapped", false, true).unwrap();
+            assert!(fixture.root.join("wrapped/runtime/link").is_symlink());
+            fixture.assert_sentinel();
+        }
+    }
+
+    #[test]
+    fn flatten_never_follows_a_single_directory_symlink() {
+        for format in ["gz", "zip"] {
+            let fixture = ArchiveFixture::new();
+            fixture.archive(format, &[("self", b'2', b".")]);
+            fixture.extract(format, "stage", true, true).unwrap();
+            assert_eq!(
+                fs::read_link(fixture.root.join("stage/self")).unwrap(),
+                Path::new(".")
+            );
+            fixture.assert_sentinel();
+        }
+    }
+
+    #[test]
+    fn extraction_never_changes_live_or_nonempty_destinations() {
+        for format in ["gz", "zip"] {
+            let fixture = ArchiveFixture::new();
+            for overwrite in [true, false] {
+                fixture.archive(format, &[("sentinel", b'0', b"replace")]);
+                assert!(fixture.extract(format, "outside", true, overwrite).is_err());
+                fixture.assert_sentinel();
+                fs::write(
+                    fixture.root.join(format!("input.{format}")),
+                    b"invalid archive",
+                )
+                .unwrap();
+                assert!(fixture.extract(format, "outside", true, overwrite).is_err());
+                fixture.assert_sentinel();
+            }
+            fixture.archive(
+                format,
+                &[
+                    ("proton", b'0', b"new runtime"),
+                    ("../outside/sentinel", b'0', b"replace"),
+                ],
+            );
+            assert!(fixture.extract(format, "stage", false, true).is_err());
+            fixture.assert_sentinel();
+        }
+    }
+
+    #[test]
+    fn extraction_accepts_empty_staging_but_not_a_symlink_destination() {
+        for format in ["gz", "zip"] {
+            let fixture = ArchiveFixture::new();
+            fixture.archive(format, &[("proton", b'0', b"runtime")]);
+            fs::create_dir(fixture.root.join("empty")).unwrap();
+            assert!(fixture.extract(format, "empty", false, false).is_err());
+            fixture.extract(format, "empty", false, true).unwrap();
+            fs::create_dir(fixture.root.join("other-empty")).unwrap();
+            std::os::unix::fs::symlink("other-empty", fixture.root.join("linked")).unwrap();
+            assert!(fixture.extract(format, "linked", true, true).is_err());
+            assert_eq!(
+                fs::read_dir(fixture.root.join("other-empty"))
+                    .unwrap()
+                    .count(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn tar_rejects_external_hardlinks_and_special_entries() {
+        for kind in [b'1', b'3', b'4', b'6'] {
+            let fixture = ArchiveFixture::new();
+            fixture.archive("gz", &[("unsafe", kind, b"../outside/sentinel")]);
+            assert!(
+                fixture.extract("gz", "stage", false, true).is_err(),
+                "{kind}"
+            );
+            fixture.assert_sentinel();
+        }
+    }
+
+    #[test]
+    fn zip_rejects_special_entry_modes() {
+        for kind in [libc::S_IFCHR, libc::S_IFBLK, libc::S_IFIFO, libc::S_IFSOCK] {
+            let fixture = ArchiveFixture::new();
+            fixture.archive("zip", &[("unsafe", b'0', b"")]);
+            let path = fixture.root.join("input.zip");
+            let mut bytes = fs::read(&path).unwrap();
+            let central = bytes
+                .windows(4)
+                .position(|bytes| bytes == b"PK\x01\x02")
+                .unwrap();
+            bytes[central + 5] = 3; // UNIX creator system.
+            bytes[central + 38..central + 42]
+                .copy_from_slice(&((kind | 0o644) << 16).to_le_bytes());
+            fs::write(path, bytes).unwrap();
+            assert!(fixture.extract("zip", "stage", false, true).is_err());
+            fixture.assert_sentinel();
+        }
     }
 
     #[test]
