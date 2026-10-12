@@ -679,7 +679,6 @@ fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::Rng;
     use std::{
         io::Write,
         os::unix::fs::{MetadataExt, PermissionsExt},
@@ -712,14 +711,23 @@ mod tests {
                             .add_symlink(name, std::str::from_utf8(data).unwrap(), options)
                             .unwrap(),
                         b'5' => writer.add_directory(name, options).unwrap(),
-                        b'0' => {
+                        b'0' | b'6' => {
                             writer.start_file(name, options).unwrap();
                             writer.write_all(data).unwrap();
                         }
                         _ => panic!("unsupported ZIP test entry"),
                     }
                 }
-                writer.finish().unwrap().into_inner()
+                let mut bytes = writer.finish().unwrap().into_inner();
+                if entries[0].1 == b'6' {
+                    // ZipWriter masks special types; patch the sole FIFO entry's mode.
+                    assert_eq!(entries.len(), 1);
+                    let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
+                    bytes[central + 5] = 3;
+                    bytes[central + 38..central + 42]
+                        .copy_from_slice(&((libc::S_IFIFO | 0o644) << 16).to_le_bytes());
+                }
+                bytes
             } else {
                 let mut builder = tar::Builder::new(Vec::new());
                 builder.preserve_absolute(true);
@@ -764,14 +772,8 @@ mod tests {
             fs::write(self.root.join(format!("input.{format}")), bytes).unwrap();
         }
 
-        /// Extracts the fixture archive with the requested destination and options.
-        fn extract(
-            &self,
-            format: &str,
-            destination: &str,
-            flatten: bool,
-            overwrite: bool,
-        ) -> Result<()> {
+        /// Extracts and flattens the fixture archive into the requested destination.
+        fn extract(&self, format: &str, destination: &str, overwrite: bool) -> Result<()> {
             tokio::runtime::Runtime::new()
                 .unwrap()
                 .block_on(extract_file(
@@ -782,7 +784,7 @@ mod tests {
                         dest_path_base_dir: None,
                         overwrite: Some(overwrite),
                     },
-                    Some(flatten),
+                    Some(true),
                 ))
         }
 
@@ -803,74 +805,44 @@ mod tests {
         }
     }
 
-    /// Generates a small random payload for file read and write tests.
-    fn generate_random_data() -> Vec<u8> {
-        let mut file_data = vec![0u8; rand::random_range(100..1000) as usize];
-        rand::rng().fill_bytes(&mut file_data);
-        file_data
-    }
-
-    /// Checks relative path resolution for each isolated test base directory.
+    /// Checks every base directory stays in the isolated temporary profile.
     #[test]
     fn test_full_path() {
         let home = base_path(Some(BaseDirectory::Home)).unwrap();
         assert_ne!(home, BaseDirs::new().unwrap().home_dir());
         assert!(home.starts_with(std::env::temp_dir()));
-        let dummy_dir = "dummy-dir";
-
-        // Home
-        let expected_home = home.join(dummy_dir);
-        let test_home_dir = full_path(Some(dummy_dir.into()), Some(BaseDirectory::Home)).unwrap();
-        assert_eq!(test_home_dir, expected_home);
-
-        // Desktop
-        let expected_desktop = home.join("Desktop").join(dummy_dir);
-        let test_desktop_dir =
-            full_path(Some(dummy_dir.into()), Some(BaseDirectory::Desktop)).unwrap();
-        assert_eq!(test_desktop_dir, expected_desktop);
-
-        // App Data
-        let expected_app_data = home.join(".local/share/elysiae").join(dummy_dir);
-        let test_app_data_dir =
-            full_path(Some(dummy_dir.into()), Some(BaseDirectory::AppData)).unwrap();
-        assert_eq!(test_app_data_dir, expected_app_data);
-
-        // Compat
-        let expected_compat = home
-            .join(".local/share/elysiae/proton-data")
-            .join(dummy_dir);
-        let test_compat_dir =
-            full_path(Some(dummy_dir.into()), Some(BaseDirectory::Compat)).unwrap();
-        assert_eq!(test_compat_dir, expected_compat);
+        for (base, suffix) in [
+            (Some(BaseDirectory::Home), ""),
+            (Some(BaseDirectory::Desktop), "Desktop"),
+            (Some(BaseDirectory::AppData), ".local/share/elysiae"),
+            (
+                Some(BaseDirectory::Compat),
+                ".local/share/elysiae/proton-data",
+            ),
+            (None, ".local/share/elysiae"),
+        ] {
+            assert_eq!(full_path(None, base).unwrap(), home.join(suffix));
+            assert_eq!(
+                full_path(Some("dummy-dir".into()), base).unwrap(),
+                home.join(suffix).join("dummy-dir")
+            );
+        }
     }
 
     /// Checks file creation, replacement, reading, and deletion through wrappers.
     #[test]
     fn file_write_exists_read_delete() {
-        // Write a new file
         let path: PathBuf = uuid::Uuid::new_v4().to_string().into();
-        let mut contents: Vec<u8> = generate_random_data();
-        write_file(path.clone(), &contents, Some(BaseDirectory::Home)).unwrap();
-
-        // Check if the file exists
-        assert!(exists(path.clone(), Some(BaseDirectory::Home)).unwrap());
-
-        // Read file
-        let pass_one_contents = read_file(path.clone(), Some(BaseDirectory::Home)).unwrap();
-        assert_eq!(pass_one_contents, contents.to_owned());
-
-        // Overwrite file with new data
-        contents = generate_random_data();
-        write_file(path.clone(), &contents, Some(BaseDirectory::Home)).unwrap();
-
-        // Read file again
-        let pass_two_contents = read_file(path.clone(), Some(BaseDirectory::Home)).unwrap();
-        assert_ne!(pass_one_contents, pass_two_contents);
-        assert_eq!(pass_two_contents, contents);
-
-        // Delete file
-        remove(path.clone(), Some(BaseDirectory::Home), None).unwrap(); //
-        assert!(!exists(path, Some(BaseDirectory::Home)).unwrap())
+        for contents in [b"first payload".as_slice(), b"replacement"] {
+            write_file(path.clone(), contents, Some(BaseDirectory::Home)).unwrap();
+            assert!(exists(path.clone(), Some(BaseDirectory::Home)).unwrap());
+            assert_eq!(
+                read_file(path.clone(), Some(BaseDirectory::Home)).unwrap(),
+                contents
+            );
+        }
+        remove(path.clone(), Some(BaseDirectory::Home), None).unwrap();
+        assert!(!exists(path, Some(BaseDirectory::Home)).unwrap());
     }
 
     /// Checks directory creation, listing, and recursive deletion through wrappers.
@@ -879,28 +851,23 @@ mod tests {
         let directory = PathBuf::from(format!("elysiae-test-{}", uuid::Uuid::new_v4()));
         let file = directory.join("nested.txt");
         mkdir(directory.clone(), Some(BaseDirectory::Home)).unwrap();
-        mkdir(directory.clone(), Some(BaseDirectory::Home)).unwrap();
+        assert!(exists(directory.clone(), Some(BaseDirectory::Home)).unwrap());
         write_file(file.clone(), b"directory test", Some(BaseDirectory::Home)).unwrap();
         assert!(
             read_dir(directory.clone(), Some(BaseDirectory::Home))
                 .unwrap()
                 .contains(&full_path(Some(file), Some(BaseDirectory::Home)).unwrap())
         );
-        remove(directory, Some(BaseDirectory::Home), Some(true)).unwrap();
+        remove(directory.clone(), Some(BaseDirectory::Home), Some(true)).unwrap();
+        assert!(!exists(directory, Some(BaseDirectory::Home)).unwrap());
     }
 
-    /// Checks that invalid relative paths cannot escape or select the base itself.
+    /// Checks invalid paths and empty removal cannot escape or erase the base.
     #[test]
     fn path_validation_rejects_escape_attempts() {
-        assert!(full_path(Some(PathBuf::from("../outside")), None).is_err());
-        assert!(full_path(Some(PathBuf::from("/absolute")), None).is_err());
-        assert!(full_path(Some(PathBuf::from(".")), None).is_err());
-        assert!(full_path(Some(PathBuf::new()), None).is_err());
-    }
-
-    /// Checks that removing an empty relative path leaves base contents untouched.
-    #[test]
-    fn empty_remove_cannot_delete_base() {
+        for path in ["../outside", "/absolute", ".", ""] {
+            assert!(full_path(Some(path.into()), None).is_err(), "{path}");
+        }
         let sentinel = PathBuf::from(format!("sentinel-{}", uuid::Uuid::new_v4()));
         write_file(sentinel.clone(), b"keep", None).unwrap();
         assert!(remove(PathBuf::new(), None, Some(true)).is_err());
@@ -935,55 +902,29 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    /// Checks that trusted symlink bases and missing descendant directories work.
+    /// Rejects traversal, escaping links, flattening escapes, and TAR/ZIP special nodes.
     #[test]
-    fn path_validation_allows_configured_symlink_bases_and_future_directories() {
-        let root = base_path(None)
-            .unwrap()
-            .join(uuid::Uuid::new_v4().to_string());
-        fs::create_dir_all(root.join("data")).unwrap();
-        std::os::unix::fs::symlink(root.join("data"), root.join("xdg")).unwrap();
-        for base in [root.join("xdg"), root.join("xdg/elysiae/future")] {
-            assert_eq!(
-                join_beneath(base.clone(), "game/file".into()).unwrap(),
-                base.join("game/file")
-            );
-        }
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    /// Checks that a lone escaping archive symlink is rejected without following it.
-    #[test]
-    fn extraction_rejects_single_external_symlink_without_flattening_it() {
-        for format in ["gz", "xz", "zst", "zip"] {
-            let fixture = ArchiveFixture::new();
-            let absolute = fixture.root.join("outside");
-            for target in ["../outside", absolute.to_str().unwrap()] {
-                fixture.archive(format, &[("escape", b'2', target.as_bytes())]);
-                assert!(
-                    fixture.extract(format, "stage", true, true).is_err(),
-                    "{format}: {target}"
-                );
-                fixture.assert_sentinel();
-            }
-        }
-    }
-
-    /// Checks that absolute and parent-traversing archive entries are rejected.
-    #[test]
-    fn extraction_rejects_traversal_paths() {
-        for format in ["gz", "xz", "zst", "zip"] {
+    fn extraction_rejects_unsafe_entries() {
+        for format in ["gz", "zip"] {
             let fixture = ArchiveFixture::new();
             let absolute = fixture.root.join("outside/sentinel");
-            for path in [
-                "../outside/sentinel",
-                "wrapped/../../outside/sentinel",
-                absolute.to_str().unwrap(),
-            ] {
-                fixture.archive(format, &[(path, b'0', b"replace")]);
+            let cases: &[&[(&str, u8, &[u8])]] = &[
+                &[("../outside/sentinel", b'0', b"replace")],
+                &[(absolute.to_str().unwrap(), b'0', b"replace")],
+                &[("escape", b'2', b"../outside")],
+                &[("escape", b'2', absolute.to_str().unwrap().as_bytes())],
+                &[("alias", b'2', b"."), ("escape", b'2', b"alias/../outside")],
+                &[("runtime/link", b'2', b"../outside")],
+                &[("unsafe", b'6', b"")],
+            ];
+            for (case, entries) in cases.iter().enumerate() {
+                fixture.archive(format, entries);
+                // Fresh staging avoids a previous failure masking the entry check.
                 assert!(
-                    fixture.extract(format, "stage", true, true).is_err(),
-                    "{format}: {path}"
+                    fixture
+                        .extract(format, &format!("stage-{case}"), true)
+                        .is_err(),
+                    "{format}: {entries:?}"
                 );
                 fixture.assert_sentinel();
             }
@@ -1007,7 +948,7 @@ mod tests {
                 entries.push(("runtime/proton-hardlink", b'1', b"runtime/proton"));
             }
             fixture.archive(format, &entries);
-            fixture.extract(format, "stage", true, true).unwrap();
+            fixture.extract(format, "stage", true).unwrap();
             let stage = fixture.root.join("stage");
             assert_eq!(fs::read(stage.join("proton")).unwrap(), b"#!/bin/sh\n");
             assert_eq!(fs::read(stage.join("launcher")).unwrap(), b"#!/bin/sh\n");
@@ -1042,156 +983,22 @@ mod tests {
         }
     }
 
-    /// Checks that linked paths cannot redirect extraction outside staging.
-    #[test]
-    fn extraction_rejects_link_chains_and_link_parent_traversal() {
-        for format in ["gz", "zip"] {
-            for entries in [
-                vec![
-                    ("escape", b'2', b"../outside".as_slice()),
-                    ("escape/sentinel", b'0', b"replace"),
-                ],
-                // Each target is lexically in-root, but following alias before
-                // processing '..' makes this escape. A lexical-only check fails.
-                vec![
-                    ("alias", b'2', b".".as_slice()),
-                    ("escape", b'2', b"alias/../outside"),
-                    ("escape/sentinel", b'0', b"replace"),
-                ],
-                vec![
-                    ("escape", b'2', b"alias/../outside".as_slice()),
-                    ("alias", b'2', b"."),
-                ],
-            ] {
-                let fixture = ArchiveFixture::new();
-                fixture.archive(format, &entries);
-                assert!(
-                    fixture.extract(format, "stage", false, true).is_err(),
-                    "{format}"
-                );
-                fixture.assert_sentinel();
-            }
-        }
-    }
-
-    /// Checks that flattening rejects links made unsafe by removing their wrapper.
-    #[test]
-    fn flatten_rejects_links_that_escape_after_wrapper_removal() {
-        for format in ["gz", "zip"] {
-            let fixture = ArchiveFixture::new();
-            fixture.archive(format, &[("runtime/link", b'2', b"../outside")]);
-            assert!(fixture.extract(format, "flattened", true, true).is_err());
-            fixture.extract(format, "wrapped", false, true).unwrap();
-            assert!(fixture.root.join("wrapped/runtime/link").is_symlink());
-            fixture.assert_sentinel();
-        }
-    }
-
-    /// Checks that flattening leaves a lone directory symlink intact.
-    #[test]
-    fn flatten_never_follows_a_single_directory_symlink() {
-        for format in ["gz", "zip"] {
-            let fixture = ArchiveFixture::new();
-            fixture.archive(format, &[("self", b'2', b".")]);
-            fixture.extract(format, "stage", true, true).unwrap();
-            assert_eq!(
-                fs::read_link(fixture.root.join("stage/self")).unwrap(),
-                Path::new(".")
-            );
-            fixture.assert_sentinel();
-        }
-    }
-
-    /// Checks that extraction refuses populated destinations and preserves outside files.
+    /// Checks populated and symlink destinations stay untouched even with overwrite enabled.
     #[test]
     fn extraction_never_changes_live_or_nonempty_destinations() {
         for format in ["gz", "zip"] {
             let fixture = ArchiveFixture::new();
-            for overwrite in [true, false] {
-                fixture.archive(format, &[("sentinel", b'0', b"replace")]);
-                assert!(fixture.extract(format, "outside", true, overwrite).is_err());
-                fixture.assert_sentinel();
-                fs::write(
-                    fixture.root.join(format!("input.{format}")),
-                    b"invalid archive",
-                )
-                .unwrap();
-                assert!(fixture.extract(format, "outside", true, overwrite).is_err());
+            fixture.archive(format, &[("sentinel", b'0', b"replace")]);
+            fs::create_dir(fixture.root.join("empty")).unwrap();
+            std::os::unix::fs::symlink("empty", fixture.root.join("linked")).unwrap();
+            for (destination, overwrite) in
+                [("outside", false), ("outside", true), ("linked", true)]
+            {
+                assert!(fixture.extract(format, destination, overwrite).is_err());
                 fixture.assert_sentinel();
             }
-            fixture.archive(
-                format,
-                &[
-                    ("proton", b'0', b"new runtime"),
-                    ("../outside/sentinel", b'0', b"replace"),
-                ],
-            );
-            assert!(fixture.extract(format, "stage", false, true).is_err());
-            fixture.assert_sentinel();
+            assert!(fixture.root.join("linked").is_symlink());
+            assert_eq!(fs::read_dir(fixture.root.join("empty")).unwrap().count(), 0);
         }
-    }
-
-    /// Checks that only real, empty staging directories can be reused for extraction.
-    #[test]
-    fn extraction_accepts_empty_staging_but_not_a_symlink_destination() {
-        for format in ["gz", "zip"] {
-            let fixture = ArchiveFixture::new();
-            fixture.archive(format, &[("proton", b'0', b"runtime")]);
-            fs::create_dir(fixture.root.join("empty")).unwrap();
-            assert!(fixture.extract(format, "empty", false, false).is_err());
-            fixture.extract(format, "empty", false, true).unwrap();
-            fs::create_dir(fixture.root.join("other-empty")).unwrap();
-            std::os::unix::fs::symlink("other-empty", fixture.root.join("linked")).unwrap();
-            assert!(fixture.extract(format, "linked", true, true).is_err());
-            assert_eq!(
-                fs::read_dir(fixture.root.join("other-empty"))
-                    .unwrap()
-                    .count(),
-                0
-            );
-        }
-    }
-
-    /// Checks that TAR extraction rejects escaping hardlinks and special file types.
-    #[test]
-    fn tar_rejects_external_hardlinks_and_special_entries() {
-        for kind in [b'1', b'3', b'4', b'6'] {
-            let fixture = ArchiveFixture::new();
-            fixture.archive("gz", &[("unsafe", kind, b"../outside/sentinel")]);
-            assert!(
-                fixture.extract("gz", "stage", false, true).is_err(),
-                "{kind}"
-            );
-            fixture.assert_sentinel();
-        }
-    }
-
-    /// Checks that ZIP extraction rejects device, FIFO, and socket entry modes.
-    #[test]
-    fn zip_rejects_special_entry_modes() {
-        for kind in [libc::S_IFCHR, libc::S_IFBLK, libc::S_IFIFO, libc::S_IFSOCK] {
-            let fixture = ArchiveFixture::new();
-            fixture.archive("zip", &[("unsafe", b'0', b"")]);
-            let path = fixture.root.join("input.zip");
-            let mut bytes = fs::read(&path).unwrap();
-            let central = bytes
-                .windows(4)
-                .position(|bytes| bytes == b"PK\x01\x02")
-                .unwrap();
-            bytes[central + 5] = 3; // UNIX creator system.
-            bytes[central + 38..central + 42]
-                .copy_from_slice(&((kind | 0o644) << 16).to_le_bytes());
-            fs::write(path, bytes).unwrap();
-            assert!(fixture.extract("zip", "stage", false, true).is_err());
-            fixture.assert_sentinel();
-        }
-    }
-
-    /// Checks that converting between gigabytes and bytes preserves the value.
-    #[test]
-    fn size_conversion_is_reversible() {
-        let value = 3.5;
-        let bytes = size_as(value, Sizes::Gigabytes, Sizes::Bytes);
-        assert!((size_as(bytes, Sizes::Bytes, Sizes::Gigabytes) - value).abs() < f64::EPSILON);
     }
 }

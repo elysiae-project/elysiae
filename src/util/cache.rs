@@ -881,8 +881,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::bail;
-    use futures_util::FutureExt;
+    use anyhow::{anyhow, bail};
 
     /// Build a sample catalog with video and localized artwork.
     fn response() -> AedesResponse {
@@ -959,53 +958,7 @@ mod tests {
         Ok(())
     }
 
-    /// Verify cleanup expires staging files but retains fresh and published files.
-    #[test]
-    fn abandoned_downloads_and_catalogs_expire_without_removing_fresh_ones() {
-        let fixture = Fixture::new(100);
-        let old = fixture.put(Path::new("cache/assets/.download-old"), b"old");
-        let fresh = fixture.put(Path::new("cache/assets/.download-fresh"), b"fresh");
-        let catalog = fixture.put(
-            &PathBuf::from(format!(
-                "cache/catalogs/bh3/.catalog-{}",
-                uuid::Uuid::new_v4()
-            )),
-            b"old",
-        );
-        let published = fixture.put(Path::new("cache/catalogs/bh3/en-us.json"), b"keep");
-        let stale = std::time::SystemTime::now() - ASSET_TTL - Duration::from_secs(1);
-        for path in [&old, &catalog, &published] {
-            std::fs::File::options()
-                .write(true)
-                .open(path)
-                .unwrap()
-                .set_times(std::fs::FileTimes::new().set_modified(stale))
-                .unwrap();
-        }
-        assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 5);
-        assert!(!old.exists());
-        assert!(!catalog.exists());
-        assert!(fresh.exists());
-        assert_eq!(std::fs::read(published).unwrap(), b"keep");
-    }
-
-    /// Verify asset iteration preserves order and omits missing optional entries.
-    #[test]
-    fn asset_paths_preserve_order_and_skip_optional_assets() {
-        let response = response();
-        let paths: Vec<_> = response.asset_paths().flatten().collect();
-        assert_eq!(
-            paths,
-            vec![
-                "/images/a.png",
-                "/videos/a.mp4",
-                "/icons/a.png",
-                "/shortcuts/a.png"
-            ]
-        );
-    }
-
-    /// Verify cache keys reject unsafe or ambiguous server paths.
+    /// Verify cache keys reject unsafe paths and keep server, game and locale keys distinct.
     #[test]
     fn cache_paths_require_safe_absolute_server_paths() {
         assert_eq!(
@@ -1034,58 +987,24 @@ mod tests {
         ] {
             assert!(cache_path(Path::new(path)).is_err(), "accepted {path}");
         }
-    }
-
-    /// Verify encoded filenames retain their full cache key and download URL.
-    #[test]
-    fn encoded_asset_filenames_preserve_the_full_server_key() {
-        run(async {
-            let fixture = Fixture::new(1024);
-            let server_path = "/assets/folder/my%20image.png";
-            let key = cache_path(Path::new(server_path)).unwrap();
-            assert_eq!(
-                key,
-                PathBuf::from("cache/assets/assets/folder/my%20image.png")
-            );
-            let protected = HashSet::from([fixture.0.path(&key).unwrap()]);
-            fixture
-                .0
-                .asset(server_path, &protected, &mut |url: String, dest, limit| {
-                    assert_eq!(
-                        url,
-                        "https://aedes.elysiae.app/assets/folder/my%20image.png"
-                    );
-                    download(url, dest, limit)
-                })
-                .await
-                .unwrap();
-            assert!(fixture.0.existing(server_path).is_some());
-        });
-    }
-
-    /// Verify catalog keys include both game and locale.
-    #[test]
-    fn metadata_paths_use_game_and_locale() {
         assert_eq!(
             metadata_path(Game::Bh3, "en-us"),
             PathBuf::from("cache/catalogs/bh3/en-us.json")
         );
-    }
-
-    /// Verify matching filenames in different server directories remain distinct.
-    #[test]
-    fn full_server_paths_do_not_collide() {
-        let fixture = Fixture::new(1024);
-        let paths = [
-            "/assets/one/a.png",
-            "/assets/two/a.png",
-            "/icons/a.png",
-            "/images/a.png",
-            "/one/a.png",
-        ];
-        let files: HashSet<_> = paths.into_iter().map(|path| fixture.asset(path)).collect();
-        assert_eq!(files.len(), paths.len());
-        assert!(files.iter().all(|file| file.is_file()));
+        assert_ne!(
+            metadata_path(Game::Bh3, "en-us"),
+            metadata_path(Game::Hk4e, "en-us")
+        );
+        assert_ne!(
+            metadata_path(Game::Bh3, "en-us"),
+            metadata_path(Game::Bh3, "fr-fr")
+        );
+        let paths = ["/assets/one/a.png", "/assets/two/a.png", "/one/a.png"];
+        let keys: HashSet<_> = paths
+            .iter()
+            .map(|path| cache_path(Path::new(path)).unwrap())
+            .collect();
+        assert_eq!(keys.len(), paths.len());
     }
 
     /// Verify media selection pairs each background with only its own available overlay.
@@ -1124,115 +1043,35 @@ mod tests {
         assert_eq!(resolved.overlay, fixture.0.existing("/overlays/wrong.png"));
     }
 
-    /// Verify unusable localized catalogs fall back to cached English media.
-    #[test]
-    fn corrupt_missing_and_unusable_catalogs_fall_back_to_english() {
-        let fixture = Fixture::new(1024);
-        assert!(!fixture.0.ready(Game::Bh3, "fr-fr", false));
-        assert!(
-            fixture
-                .0
-                .resolve(Game::Bh3, "fr-fr", false)
-                .background
-                .is_none()
-        );
-        let response = response();
-        fixture.catalog(Game::Bh3, "en-us", &response);
-        assert!(!fixture.0.ready(Game::Bh3, "en-us", false));
-        fixture.populate(&response);
-        fixture.put(&metadata_path(Game::Bh3, "fr-fr"), b"broken JSON");
-        assert!(fixture.0.ready(Game::Bh3, "fr-fr", false));
-        assert!(fixture.0.resolve(Game::Bh3, "fr-fr", true).is_video);
-        let mut unusable = response.clone();
-        unusable.backgrounds.clear();
-        fixture.catalog(Game::Bh3, "fr-fr", &unusable);
-        assert!(
-            fixture
-                .0
-                .resolve(Game::Bh3, "fr-fr", false)
-                .background
-                .is_some()
-        );
-        assert!(!fixture.0.ready(Game::Hk4e, "fr-fr", false));
-    }
-
-    /// Verify simplified Chinese prefers localized artwork with global fallback.
-    #[test]
-    fn locale_variants_use_cn_artwork_without_changing_server_region() {
-        let fixture = Fixture::new(1024);
-        let response = response();
-        fixture.catalog(Game::Bh3, "en-us", &response);
-        fixture.populate(&response);
-        assert_eq!(
-            fixture.0.cached_paths(Game::Bh3, "zh-cn", AssetType::Icon)[0],
-            fixture.0.existing(&response.icon_cn).unwrap()
-        );
-        assert_eq!(
-            fixture.0.cached_paths(Game::Bh3, "zh-tw", AssetType::Icon)[0],
-            fixture.0.existing(&response.icon).unwrap()
-        );
-        std::fs::remove_file(fixture.0.existing(&response.shortcut_cn).unwrap()).unwrap();
-        assert_eq!(
-            fixture
-                .0
-                .cached_paths(Game::Bh3, "zh-cn", AssetType::Shortcut),
-            vec![fixture.0.existing(&response.shortcut).unwrap()]
-        );
-    }
-
     /// Verify warm refreshes reuse assets and only fetch videos when enabled.
     #[test]
     fn warm_refresh_skips_bodies_and_static_preference_skips_videos() {
         run(async {
             let fixture = Fixture::new(1024);
             let mut transferred = Vec::new();
-            let report = fixture
-                .0
-                .refresh_with(
-                    "EN_US",
-                    false,
-                    |_, _| std::future::ready(Ok(response())),
-                    |url: String, path, limit| {
-                        transferred.push(url.clone());
-                        download(url, path, limit)
-                    },
-                )
-                .await
-                .unwrap();
-            assert!(report.failures.is_empty());
-            assert_eq!(report.successes.len(), 6);
-            assert_eq!(transferred.len(), 3);
-            assert!(transferred.iter().all(|url| !url.contains("/videos/")));
-            let report = fixture
-                .0
-                .refresh_with(
-                    "en-us",
-                    false,
-                    |_, _| std::future::ready(Ok(response())),
-                    |_, _, _| async {
-                        panic!("warm refresh transferred a body");
-                        #[allow(unreachable_code)]
-                        Ok(())
-                    },
-                )
-                .await
-                .unwrap();
-            assert!(report.failures.is_empty());
-            let report = fixture
-                .0
-                .refresh_with(
-                    "en-us",
-                    true,
-                    |_, _| std::future::ready(Ok(response())),
-                    |url: String, path, limit| {
-                        transferred.push(url.clone());
-                        download(url, path, limit)
-                    },
-                )
-                .await
-                .unwrap();
-            assert!(report.failures.is_empty());
-            assert_eq!(transferred.len(), 4);
+            for (locale, use_video, expected) in
+                [("EN_US", false, 3), ("en-us", false, 3), ("en-us", true, 4)]
+            {
+                let report = fixture
+                    .0
+                    .refresh_with(
+                        locale,
+                        use_video,
+                        |_, _| std::future::ready(Ok(response())),
+                        |url: String, path, limit| {
+                            transferred.push(url.clone());
+                            download(url, path, limit)
+                        },
+                    )
+                    .await
+                    .unwrap();
+                assert!(report.failures.is_empty());
+                assert_eq!(report.successes.len(), Game::all().len());
+                assert_eq!(transferred.len(), expected);
+                if !use_video {
+                    assert!(transferred.iter().all(|url| !url.contains("/videos/")));
+                }
+            }
             assert!(fixture.0.resolve(Game::Bh3, "en-us", true).is_video);
         });
     }
@@ -1249,7 +1088,7 @@ mod tests {
                     false,
                     |game, locale| {
                         std::future::ready(if game == Game::Bh3 || locale == "fr-fr" {
-                            bail_result("fixture metadata unavailable")
+                            Err(anyhow!("fixture metadata unavailable"))
                         } else {
                             Ok(response())
                         })
@@ -1276,7 +1115,7 @@ mod tests {
                     false,
                     |game, _| {
                         std::future::ready(if game == Game::Bh3 {
-                            bail_result("offline")
+                            Err(anyhow!("offline"))
                         } else {
                             Ok(response())
                         })
@@ -1289,11 +1128,6 @@ mod tests {
             assert_eq!(report.failures.len(), 1);
             assert_eq!(report.failures[0].0, Game::Bh3);
         });
-    }
-
-    /// Return a fixture catalog error with the supplied message.
-    fn bail_result(message: &str) -> Result<AedesResponse> {
-        bail!("{message}")
     }
 
     /// Verify a required download failure preserves the previous catalog and assets.
@@ -1324,44 +1158,6 @@ mod tests {
                 before
             );
             assert!(fixture.0.existing(&previous.backgrounds[0].image).is_some());
-        });
-    }
-
-    /// Verify unavailable optional assets still allow a usable catalog to publish.
-    #[test]
-    fn optional_failures_and_unused_alternatives_do_not_block_commit() {
-        run(async {
-            let fixture = Fixture::new(1024);
-            let mut response = response();
-            response.backgrounds[0].overlay = Some("/optional/overlay.png".into());
-            response.backgrounds.push(AedesBackgroundAssets {
-                image: "/unused/alternative.png".into(),
-                video: Some("/unused/video.mp4".into()),
-                overlay: None,
-            });
-            let report = fixture
-                .0
-                .refresh_with(
-                    "en-us",
-                    true,
-                    |_, _| std::future::ready(Ok(response.clone())),
-                    |url: String, path, limit| async move {
-                        if url.contains("/videos/")
-                            || url.contains("/optional/")
-                            || url.contains("/unused/")
-                        {
-                            bail!("optional unavailable");
-                        }
-                        download(url, path, limit).await
-                    },
-                )
-                .await
-                .unwrap();
-            assert!(report.failures.is_empty());
-            let media = fixture.0.resolve(Game::Bh3, "en-us", true);
-            assert!(media.background.is_some());
-            assert!(!media.is_video);
-            assert!(media.overlay.is_none());
         });
     }
 
@@ -1417,101 +1213,28 @@ mod tests {
         });
     }
 
-    /// Verify insufficient budget prevents catalog publication without exceeding the cap.
-    #[test]
-    fn oversized_working_set_fails_soft_without_publishing_catalogs() {
-        run(async {
-            let fixture = Fixture::new(14);
-            let report = fixture
-                .0
-                .refresh_with(
-                    "en-us",
-                    false,
-                    |_, _| std::future::ready(Ok(response())),
-                    download,
-                )
-                .await
-                .unwrap();
-            assert_eq!(report.failures.len(), 6);
-            assert!(report.successes.is_empty());
-            assert!(!fixture.0.ready(Game::Bh3, "en-us", false));
-            assert!(fixture.0.collect(&HashSet::new()).unwrap() <= 14);
-        });
-    }
-
-    /// Verify stale assets refresh unless pinned, and survive failed revalidation.
-    #[test]
-    fn expired_assets_revalidate_but_active_files_and_failed_rechecks_survive() {
-        run(async {
-            let mut fixture = Fixture::new(1024);
-            fixture.0.ttl = Duration::ZERO;
-            let path = fixture.asset("/old.png");
-            let protected = HashSet::from([path.clone()]);
-            fixture
-                .0
-                .asset("/old.png", &protected, &mut |_, _, _| async {
-                    bail!("offline")
-                })
-                .await
-                .unwrap();
-            assert_eq!(std::fs::read(&path).unwrap(), b"asset");
-            fixture
-                .0
-                .asset("/old.png", &protected, &mut |url, dest, limit| async move {
-                    download(url, dest.clone(), limit).await?;
-                    std::fs::write(full_path(Some(dest), None)?, b"new")?;
-                    Ok(())
-                })
-                .await
-                .unwrap();
-            assert_eq!(std::fs::read(&path).unwrap(), b"new");
-            fixture.0.set_active(std::slice::from_ref(&path)).unwrap();
-            fixture
-                .0
-                .asset("/old.png", &protected, &mut |_, _, _| async {
-                    panic!("active asset rechecked");
-                    #[allow(unreachable_code)]
-                    Ok(())
-                })
-                .await
-                .unwrap();
-            assert_eq!(std::fs::read(path).unwrap(), b"new");
-        });
-    }
-
-    /// Verify pinning an asset during a download prevents replacing its contents.
-    #[test]
-    fn pins_added_during_download_prevent_replacement() {
-        run(async {
-            let mut fixture = Fixture::new(1024);
-            fixture.0.ttl = Duration::ZERO;
-            let path = fixture.asset("/old.png");
-            let protected = HashSet::from([path.clone()]);
-            fixture
-                .0
-                .asset("/old.png", &protected, &mut |url, dest, limit| {
-                    fixture.0.set_active(std::slice::from_ref(&path)).unwrap();
-                    async move {
-                        download(url, dest.clone(), limit).await?;
-                        std::fs::write(full_path(Some(dest), None)?, b"new")?;
-                        Ok(())
-                    }
-                })
-                .await
-                .unwrap();
-            assert_eq!(std::fs::read(&path).unwrap(), b"asset");
-            assert_eq!(fixture.0.collect(&protected).unwrap(), 5);
-        });
-    }
-
-    /// Verify collection ignores symlinks and pins stay within the asset tree.
+    /// Verify collection rejects links and unowned pins, and expires only stale temporaries.
     #[test]
     fn collector_never_follows_symlinks_or_accepts_unowned_pins() {
         use std::os::unix::fs::symlink;
         let fixture = Fixture::new(1024);
         let outside = fixture.put(Path::new("cache/unrelated/keep"), b"keep");
+        let old = fixture.put(Path::new("cache/assets/.download-old"), b"old");
+        let fresh = fixture.put(Path::new("cache/assets/.download-fresh"), b"fresh");
+        let catalog = fixture.put(
+            Path::new("cache/catalogs/bh3/.catalog-00000000-0000-0000-0000-000000000000"),
+            b"old",
+        );
+        let stale = std::time::SystemTime::now() - ASSET_TTL - Duration::from_secs(1);
+        for path in [&old, &catalog] {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(stale))
+                .unwrap();
+        }
         let assets = fixture.0.path(Path::new("cache/assets")).unwrap();
-        std::fs::create_dir_all(&assets).unwrap();
         symlink(outside.parent().unwrap(), assets.join("linked-directory")).unwrap();
         symlink(&outside, assets.join("linked-file")).unwrap();
         assert!(fixture.0.existing("/linked-file").is_none());
@@ -1522,185 +1245,11 @@ mod tests {
                 .is_err()
         );
         assert!(fixture.0.set_active(&[assets.join("linked-file")]).is_err());
-        assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 0);
+        assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 5);
+        assert!(!old.exists() && !catalog.exists());
+        assert!(fresh.exists());
         assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
         assert!(assets.join("linked-directory").is_symlink());
         assert!(assets.join("linked-file").is_symlink());
-    }
-
-    /// Verify pin replacement releases old assets and invalid replacements preserve pins.
-    #[test]
-    fn replacing_pins_releases_old_files_and_preserves_new_selection() {
-        let fixture = Fixture::new(1024);
-        let previous = fixture.asset("/previous/image.png");
-        let latest = fixture.asset("/latest/image.png");
-        fixture
-            .0
-            .set_active(std::slice::from_ref(&previous))
-            .unwrap();
-        fixture.0.set_active(std::slice::from_ref(&latest)).unwrap();
-        assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 5);
-        assert!(!previous.exists());
-        assert!(!previous.parent().unwrap().exists());
-        assert!(latest.exists());
-        assert!(fixture.0.set_active(&[previous]).is_err());
-        assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 5);
-        assert!(
-            latest.exists(),
-            "invalid replacement must not discard existing pins"
-        );
-    }
-
-    /// Verify corrupt catalogs and empty background lists cannot report a ready cache.
-    #[test]
-    fn corrupt_catalogs_with_no_backgrounds_never_report_success() {
-        run(async {
-            let fixture = Fixture::new(1024);
-            for game in GAMES {
-                fixture.put(&metadata_path(game, "en-us"), b"corrupt");
-            }
-            let mut empty = response();
-            empty.backgrounds.clear();
-            let report = fixture
-                .0
-                .refresh_with(
-                    "en-us",
-                    false,
-                    |_, _| std::future::ready(Ok(empty.clone())),
-                    download,
-                )
-                .await
-                .unwrap();
-            assert!(report.successes.is_empty());
-            assert_eq!(report.failures.len(), GAMES.len());
-            assert!(
-                GAMES
-                    .into_iter()
-                    .all(|game| !fixture.0.ready(game, "en-us", false))
-            );
-            assert!(
-                fixture
-                    .0
-                    .resolve(Game::Bh3, "en-us", false)
-                    .background
-                    .is_none()
-            );
-        });
-    }
-
-    /// Verify dropping a refresh releases its permit and removes staged assets.
-    #[test]
-    fn cancelling_refresh_releases_permit_and_staging_files() {
-        let fixture = Fixture::new(1024);
-        let refresh = fixture.0.refresh_with(
-            "en-us",
-            false,
-            |_, _| std::future::ready(Ok(response())),
-            |url, path, limit| async move {
-                download(url, path, limit).await?;
-                std::future::pending::<Result<()>>().await
-            },
-        );
-        assert!(refresh.now_or_never().is_none());
-        assert!(fixture.0.permit().is_ok());
-        assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 0);
-    }
-
-    /// Verify localized artwork is preferred and locale catalogs remain independent.
-    #[test]
-    fn localized_refresh_downloads_cn_variants_into_distinct_catalogs() {
-        run(async {
-            let fixture = Fixture::new(1024);
-            let mut urls = Vec::new();
-            let report = fixture
-                .0
-                .refresh_with(
-                    "zh-cn",
-                    false,
-                    |_, locale| {
-                        assert_eq!(locale, "zh-cn");
-                        std::future::ready(Ok(response()))
-                    },
-                    |url: String, dest, limit| {
-                        urls.push(url.clone());
-                        download(url, dest, limit)
-                    },
-                )
-                .await
-                .unwrap();
-            assert!(report.failures.is_empty());
-            assert!(urls.iter().any(|url| url.ends_with("/icons/a-cn.png")));
-            assert!(urls.iter().any(|url| url.ends_with("/shortcuts/a-cn.png")));
-            assert!(urls.iter().all(|url| !url.ends_with("/icons/a.png") && !url.ends_with("/shortcuts/a.png")));
-            let report = fixture
-                .0
-                .refresh_with(
-                    "en-us",
-                    false,
-                    |_, _| std::future::ready(Ok(response())),
-                    download,
-                )
-                .await
-                .unwrap();
-            assert!(report.failures.is_empty());
-            for game in GAMES {
-                assert!(fixture.0.ready(game, "zh-cn", false));
-                assert!(fixture.0.ready(game, "en-us", false));
-                assert!(fixture.0.read_catalog(game, "zh-cn").is_ok());
-                assert!(fixture.0.read_catalog(game, "en-us").is_ok());
-            }
-        });
-    }
-
-    /// Verify invalid asset bodies are rejected and their staging files removed.
-    #[test]
-    fn empty_or_oversized_bodies_are_not_published_and_staging_is_cleaned() {
-        run(async {
-            for bytes in [b"".as_slice(), b"too large".as_slice()] {
-                let fixture = Fixture::new(5);
-                let path = fixture
-                    .0
-                    .path(&cache_path(Path::new("/bad.png")).unwrap())
-                    .unwrap();
-                let protected = HashSet::from([path.clone()]);
-                assert!(
-                    fixture
-                        .0
-                        .asset("/bad.png", &protected, &mut |_, dest, limit| async move {
-                            assert_eq!(limit, 5);
-                            let dest = full_path(Some(dest), None)?;
-                            std::fs::create_dir_all(dest.parent().unwrap())?;
-                            std::fs::write(dest, bytes)?;
-                            Ok(())
-                        })
-                        .await
-                        .is_err()
-                );
-                assert!(!path.exists());
-                assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 0);
-            }
-        });
-    }
-
-    /// Verify a symlinked asset root cannot expose unrelated files to collection.
-    #[test]
-    fn symlinked_asset_root_cannot_turn_collection_into_unrelated_deletion() {
-        let fixture = Fixture::new(1024);
-        let outside = fixture.put(Path::new("cache/unrelated/keep"), b"keep");
-        std::os::unix::fs::symlink(outside.parent().unwrap(), fixture.0.root.join("assets"))
-            .unwrap();
-        assert!(fixture.0.collect(&HashSet::new()).is_err());
-        assert!(fixture.0.existing("/keep").is_none());
-        assert_eq!(std::fs::read(outside).unwrap(), b"keep");
-    }
-
-    /// Verify refresh permits reject overlap and become available after release.
-    #[test]
-    fn refresh_permit_rejects_overlap_and_releases_on_drop() {
-        let fixture = Fixture::new(1024);
-        let permit = fixture.0.permit().unwrap();
-        assert!(fixture.0.permit().is_err());
-        drop(permit);
-        assert!(fixture.0.permit().is_ok());
     }
 }

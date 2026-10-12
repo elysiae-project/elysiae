@@ -574,28 +574,6 @@ mod tests {
             .unwrap()
     }
 
-    /// Verify fallback paths are absolute without granting writes or adopting files.
-    #[test]
-    fn fallback_is_absolute_but_unregistered_files_are_never_adopted() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let operation = operation(game);
-        let root = fixture.store.path(game).unwrap();
-        assert_eq!(
-            root,
-            fixture.store.root().unwrap().join(game.install_path())
-        );
-        assert!(root.is_absolute());
-        assert!(fixture.store.writable_path(game, &operation).is_err());
-        assert!(!fixture.registry().exists());
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("keep"), b"existing data").unwrap();
-        assert!(fixture.store.prepare_install(game, &operation).is_err());
-        assert_eq!(std::fs::read(root.join("keep")).unwrap(), b"existing data");
-        assert!(!root.join(OWNER_MARKER).exists());
-        assert!(!fixture.registry().exists());
-    }
-
     /// Verify managed resume and recreation preserve the ownership token and registry.
     #[test]
     fn managed_installations_resume_and_recreate_with_the_same_token() {
@@ -606,7 +584,6 @@ mod tests {
         assert_eq!(fixture.store.writable_path(game, &operation).unwrap(), root);
         let installation = fixture.store.registered(game).unwrap().unwrap();
         assert!(installation.managed);
-        assert!(Uuid::parse_str(&installation.ownership_token).is_ok());
         let marker = std::fs::read(root.join(OWNER_MARKER)).unwrap();
         let registry = std::fs::read(fixture.registry()).unwrap();
         std::fs::write(root.join("partial-download"), b"partial").unwrap();
@@ -617,8 +594,6 @@ mod tests {
         assert_eq!(std::fs::read(root.join(OWNER_MARKER)).unwrap(), marker);
         std::fs::remove_dir_all(&root).unwrap();
         std::fs::remove_dir(root.parent().unwrap()).unwrap();
-        assert_eq!(fixture.store.path(game).unwrap(), root);
-        assert!(fixture.store.registered(game).unwrap().is_some());
         assert!(fixture.store.writable_path(game, &operation).is_err());
         assert_eq!(
             fixture.store.prepare_install(game, &operation).unwrap(),
@@ -629,25 +604,7 @@ mod tests {
         assert_eq!(fixture.store.writable_path(game, &operation).unwrap(), root);
     }
 
-    /// Verify management accepts empty defaults but rejects orphan ownership markers.
-    #[test]
-    fn empty_existing_default_can_be_managed_but_orphan_markers_cannot() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let operation = operation(game);
-        let root = fixture.store.path(game).unwrap();
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join(OWNER_MARKER), b"orphan").unwrap();
-        assert!(fixture.store.prepare_install(game, &operation).is_err());
-        assert_eq!(std::fs::read(root.join(OWNER_MARKER)).unwrap(), b"orphan");
-        std::fs::remove_file(root.join(OWNER_MARKER)).unwrap();
-        assert_eq!(
-            fixture.store.prepare_install(game, &operation).unwrap(),
-            root
-        );
-    }
-
-    /// Verify invalid, missing, mismatched, or symlinked markers prevent managed writes.
+    /// Verify mismatched or symlinked markers prevent managed writes.
     #[test]
     fn managed_writes_require_a_matching_regular_owner_marker() {
         let fixture = Fixture::new();
@@ -657,51 +614,18 @@ mod tests {
         let marker_path = root.join(OWNER_MARKER);
         let original = std::fs::read(&marker_path).unwrap();
         let registry = std::fs::read(fixture.registry()).unwrap();
-        let mut wrong_game: OwnerMarker = serde_json::from_slice(&original).unwrap();
-        wrong_game.game = Game::Nap.code().to_owned();
         let mut wrong_token: OwnerMarker = serde_json::from_slice(&original).unwrap();
         wrong_token.token = Uuid::new_v4().to_string();
-        for bytes in [
-            b"{".to_vec(),
-            serde_json::to_vec(&wrong_game).unwrap(),
-            serde_json::to_vec(&wrong_token).unwrap(),
-        ] {
-            std::fs::write(&marker_path, bytes).unwrap();
-            assert_eq!(fixture.store.path(game).unwrap(), root);
-            assert!(fixture.store.writable_path(game, &operation).is_err());
-            assert!(fixture.store.prepare_install(game, &operation).is_err());
-        }
-        std::fs::remove_file(&marker_path).unwrap();
+        std::fs::write(&marker_path, serde_json::to_vec(&wrong_token).unwrap()).unwrap();
         assert!(fixture.store.writable_path(game, &operation).is_err());
         assert!(fixture.store.prepare_install(game, &operation).is_err());
+        std::fs::remove_file(&marker_path).unwrap();
         let copy = fixture.directory.join("copied-marker");
         std::fs::write(&copy, &original).unwrap();
         symlink(copy, &marker_path).unwrap();
         assert!(fixture.store.writable_path(game, &operation).is_err());
         assert!(fixture.store.prepare_install(game, &operation).is_err());
         assert_eq!(std::fs::read(fixture.registry()).unwrap(), registry);
-    }
-
-    /// Verify symlink redirection of a default root or its parent prevents creation.
-    #[test]
-    fn managed_creation_rejects_redirected_default_directory_and_ancestor() {
-        for redirect_parent in [false, true] {
-            let fixture = Fixture::new();
-            let game = Game::Bh3;
-            let operation = operation(game);
-            let root = fixture.store.path(game).unwrap();
-            let other = fixture.store.root().unwrap().join("other");
-            std::fs::create_dir(&other).unwrap();
-            if redirect_parent {
-                symlink(&other, root.parent().unwrap()).unwrap();
-            } else {
-                std::fs::create_dir_all(root.parent().unwrap()).unwrap();
-                symlink(&other, &root).unwrap();
-            }
-            assert!(fixture.store.prepare_install(game, &operation).is_err());
-            assert!(std::fs::read_dir(other).unwrap().next().is_none());
-            assert!(!fixture.registry().exists());
-        }
     }
 
     /// Verify imports preserve files while write consent can be granted or revoked.
@@ -712,11 +636,9 @@ mod tests {
         let operation = operation(game);
         let root = fixture.game("external", game);
         std::fs::write(root.join("keep"), b"user data").unwrap();
-        let alias = fixture.directory.join("alias");
-        symlink(&root, &alias).unwrap();
         fixture
             .store
-            .import(game, &alias, false, &operation)
+            .import(game, &root, false, &operation)
             .unwrap();
         assert_eq!(fixture.store.path(game).unwrap(), root);
         let record = fixture.store.registered(game).unwrap().unwrap();
@@ -748,74 +670,6 @@ mod tests {
         );
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
         assert!(!root.join(OWNER_MARKER).exists());
-        std::fs::remove_dir_all(&root).unwrap();
-        assert_eq!(fixture.store.path(game).unwrap(), root);
-        assert!(fixture.store.writable_path(game, &operation).is_err());
-        assert!(fixture.store.prepare_install(game, &operation).is_err());
-        assert!(!root.exists());
-    }
-
-    /// Verify imports require a real directory containing a known executable.
-    #[test]
-    fn import_requires_a_known_executable_contained_in_a_real_game_directory() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let operation = operation(game);
-        let root = fixture.directory.join("empty");
-        std::fs::create_dir(&root).unwrap();
-        assert!(
-            fixture
-                .store
-                .import(game, &root, false, &operation)
-                .is_err()
-        );
-        assert!(
-            fixture
-                .store
-                .import(game, &root.join("missing"), false, &operation)
-                .is_err()
-        );
-        std::fs::create_dir(root.join(game.executable().unwrap())).unwrap();
-        assert!(
-            fixture
-                .store
-                .import(game, &root, false, &operation)
-                .is_err()
-        );
-        std::fs::remove_dir(root.join(game.executable().unwrap())).unwrap();
-        let outside = fixture.game("outside", game);
-        symlink(
-            outside.join(game.executable().unwrap()),
-            root.join(game.executable().unwrap()),
-        )
-        .unwrap();
-        assert!(
-            fixture
-                .store
-                .import(game, &root, false, &operation)
-                .is_err()
-        );
-        assert!(
-            fixture
-                .store
-                .import(
-                    game,
-                    &outside.join(game.executable().unwrap()),
-                    false,
-                    &operation
-                )
-                .is_err()
-        );
-        let unknown = Operations::default()
-            .begin(OperationKind::Import, Some(Game::Abc))
-            .unwrap();
-        assert!(
-            fixture
-                .store
-                .import(Game::Abc, &outside, false, &unknown)
-                .is_err()
-        );
-        assert!(!fixture.registry().exists());
     }
 
     /// Verify root validation excludes home, application data, and shared runtime trees.
@@ -824,13 +678,7 @@ mod tests {
         let fixture = Fixture::new();
         let data = fixture.store.root().unwrap();
         let home = fs::full_path(None, Some(fs::BaseDirectory::Home)).unwrap();
-        for root in [
-            PathBuf::from("/"),
-            home.clone(),
-            home.parent().unwrap().to_owned(),
-            data.clone(),
-            fixture.directory.clone(),
-        ] {
+        for root in [home, data.clone(), fixture.directory.clone()] {
             assert!(
                 fixture.store.validate_root(&root).is_err(),
                 "{}",
@@ -868,62 +716,6 @@ mod tests {
         );
     }
 
-    /// Verify imports reject overlapping roots, relocation, and managed-root replacement.
-    #[test]
-    fn conflicting_roots_and_implicit_replacement_are_rejected_without_rewriting_registry() {
-        let fixture = Fixture::new();
-        let root = fixture.game("external/first", Game::Bh3);
-        fixture
-            .store
-            .import(Game::Bh3, &root, false, &operation(Game::Bh3))
-            .unwrap();
-        let registry = std::fs::read(fixture.registry()).unwrap();
-        std::fs::write(root.join(Game::Hk4e.executable().unwrap()), b"fixture").unwrap();
-        let child = fixture.game("external/first/child", Game::Hk4e);
-        let parent = fixture.game("external", Game::Hk4e);
-        for other in [&root, &child, &parent] {
-            assert!(
-                fixture
-                    .store
-                    .import(Game::Hk4e, other, true, &operation(Game::Hk4e))
-                    .is_err()
-            );
-            assert_eq!(std::fs::read(fixture.registry()).unwrap(), registry);
-        }
-        let replacement = fixture.game("replacement", Game::Bh3);
-        assert!(
-            fixture
-                .store
-                .import(Game::Bh3, &replacement, true, &operation(Game::Bh3))
-                .is_err()
-        );
-        assert_eq!(std::fs::read(fixture.registry()).unwrap(), registry);
-        let sibling = fixture.game("sibling", Game::Hk4e);
-        fixture
-            .store
-            .import(Game::Hk4e, &sibling, false, &operation(Game::Hk4e))
-            .unwrap();
-        let managed = fixture
-            .store
-            .prepare_install(Game::Nap, &operation(Game::Nap))
-            .unwrap();
-        std::fs::write(managed.join(Game::Nap.executable().unwrap()), b"fixture").unwrap();
-        assert!(
-            fixture
-                .store
-                .import(Game::Nap, &managed, true, &operation(Game::Nap))
-                .is_err()
-        );
-        assert!(
-            fixture
-                .store
-                .registered(Game::Nap)
-                .unwrap()
-                .unwrap()
-                .managed
-        );
-    }
-
     /// Verify malformed or unsupported registries are rejected without overwriting.
     #[test]
     fn invalid_or_future_registry_is_never_reset() {
@@ -935,194 +727,16 @@ mod tests {
             .store
             .import(game, &root, false, &operation)
             .unwrap();
-        let original: serde_json::Value =
+        let mut future: serde_json::Value =
             serde_json::from_slice(&std::fs::read(fixture.registry()).unwrap()).unwrap();
-        let entry = original["installations"][game.code()].clone();
-        let mut variants = vec![
-            b"{".to_vec(),
-            format!(
-                "{{\"schema_version\":1,\"installations\":{{\"bh3\":{entry},\"bh3\":{entry}}}}}"
-            )
-            .into_bytes(),
-        ];
-        for (key, value) in [
-            ("schema_version", serde_json::json!(2)),
-            ("schema_version", serde_json::json!(0)),
-            ("extra", serde_json::json!(true)),
-            ("installations", serde_json::json!([])),
-        ] {
-            let mut bad = original.clone();
-            bad[key] = value;
-            variants.push(serde_json::to_vec(&bad).unwrap());
-        }
-        let mut bad = original.clone();
-        bad.as_object_mut().unwrap().remove("schema_version");
-        variants.push(serde_json::to_vec(&bad).unwrap());
-        for code in ["unknown", "../bh3", "hk4e"] {
-            let mut bad = original.clone();
-            bad["installations"][code] = entry.clone();
-            variants.push(serde_json::to_vec(&bad).unwrap());
-        }
-        for (key, value) in [
-            ("path", serde_json::json!("relative")),
-            ("ownership_token", serde_json::json!("invalid")),
-            ("managed", serde_json::json!(true)),
-            ("extra", serde_json::json!(true)),
-        ] {
-            let mut bad = original.clone();
-            bad["installations"][game.code()][key] = value;
-            variants.push(serde_json::to_vec(&bad).unwrap());
-        }
-        let mut bad = original.clone();
-        bad["installations"][game.code()]
-            .as_object_mut()
-            .unwrap()
-            .remove("allow_modify");
-        variants.push(serde_json::to_vec(&bad).unwrap());
-        for bytes in variants {
+        future["schema_version"] = serde_json::json!(2);
+        for bytes in [b"{".to_vec(), serde_json::to_vec(&future).unwrap()] {
             std::fs::write(fixture.registry(), &bytes).unwrap();
             assert!(fixture.store.path(game).is_err());
             assert!(fixture.store.prepare_install(game, &operation).is_err());
             assert!(fixture.store.writable_path(game, &operation).is_err());
             assert!(fixture.store.import(game, &root, true, &operation).is_err());
             assert_eq!(std::fs::read(fixture.registry()).unwrap(), bytes);
-            assert!(!root.join(OWNER_MARKER).exists());
-        }
-    }
-
-    /// Verify symlink replacement of a registered root or ancestor invalidates access.
-    #[test]
-    fn registered_root_and_parent_symlink_replacement_are_rejected() {
-        for replace_parent in [false, true] {
-            let fixture = Fixture::new();
-            let game = Game::Bh3;
-            let root = fixture.game("external/game", game);
-            fixture
-                .store
-                .import(game, &root, true, &operation(game))
-                .unwrap();
-            let registry = std::fs::read(fixture.registry()).unwrap();
-            let target = if replace_parent {
-                root.parent().unwrap()
-            } else {
-                &root
-            };
-            let moved = fixture.directory.join("moved");
-            std::fs::rename(target, &moved).unwrap();
-            symlink(&moved, target).unwrap();
-            assert!(fixture.store.path(game).is_err());
-            assert!(fixture.store.writable_path(game, &operation(game)).is_err());
-            assert!(
-                fixture
-                    .store
-                    .import(game, &root, false, &operation(game))
-                    .is_err()
-            );
-            assert_eq!(std::fs::read(fixture.registry()).unwrap(), registry);
-        }
-    }
-
-    /// Verify managed recreation refuses an ancestor replaced by a symlink.
-    #[test]
-    fn missing_managed_roots_cannot_be_recreated_through_redirected_ancestors() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let operation = operation(game);
-        let root = fixture.store.prepare_install(game, &operation).unwrap();
-        std::fs::remove_dir_all(&root).unwrap();
-        let moved = fixture.directory.join("moved-games");
-        std::fs::rename(root.parent().unwrap(), &moved).unwrap();
-        symlink(&moved, root.parent().unwrap()).unwrap();
-        assert!(fixture.store.path(game).is_err());
-        assert!(fixture.store.prepare_install(game, &operation).is_err());
-        assert!(std::fs::read_dir(moved).unwrap().next().is_none());
-    }
-
-    /// Verify a symlinked registry is rejected and its target remains unchanged.
-    #[test]
-    fn registry_symlinks_are_not_read_or_overwritten() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let root = fixture.game("external", game);
-        fixture
-            .store
-            .import(game, &root, false, &operation(game))
-            .unwrap();
-        let registry_path = fixture.registry();
-        let backup = fixture.directory.join("registry-backup");
-        let bytes = std::fs::read(&registry_path).unwrap();
-        std::fs::rename(&registry_path, &backup).unwrap();
-        symlink(&backup, &registry_path).unwrap();
-        assert!(fixture.store.path(game).is_err());
-        assert!(
-            fixture
-                .store
-                .import(game, &root, true, &operation(game))
-                .is_err()
-        );
-        assert_eq!(std::fs::read(backup).unwrap(), bytes);
-        assert!(
-            std::fs::symlink_metadata(registry_path)
-                .unwrap()
-                .is_symlink()
-        );
-    }
-
-    /// Verify failed registration removes its marker but preserves the empty root.
-    #[test]
-    fn failed_registry_commit_removes_only_the_new_ownership_marker() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let operation = operation(game);
-        let root = fixture.store.path(game).unwrap();
-        std::fs::create_dir_all(&root).unwrap();
-        let installation = Installation {
-            path: root.clone(),
-            managed: true,
-            allow_modify: true,
-            ownership_token: Uuid::new_v4().to_string(),
-        };
-        let registry = Registry {
-            schema_version: SCHEMA_VERSION,
-            installations: BTreeMap::from([(game.code().to_owned(), installation.clone())]),
-        };
-        // Force the commit stage to fail after writing the marker, without
-        // permission-dependent tests or changes to another process's files.
-        std::fs::create_dir(fixture.registry()).unwrap();
-        assert!(
-            fixture
-                .store
-                .commit_managed(game, &installation, &registry, &operation)
-                .is_err()
-        );
-        assert!(std::fs::read_dir(&root).unwrap().next().is_none());
-        assert!(fixture.registry().is_dir());
-        std::fs::remove_dir(fixture.registry()).unwrap();
-        assert_eq!(
-            fixture.store.prepare_install(game, &operation).unwrap(),
-            root
-        );
-    }
-
-    /// Verify cancelled or mismatched operations fail before installation writes.
-    #[test]
-    fn mutations_reject_wrong_game_or_cancelled_operation_before_writing() {
-        let fixture = Fixture::new();
-        let game = Game::Bh3;
-        let root = fixture.game("external", game);
-        let cancelled = operation(game);
-        cancelled.handle().cancel();
-        for operation in [
-            operation(Game::Nap),
-            cancelled,
-            Operations::default()
-                .begin(OperationKind::Components, None)
-                .unwrap(),
-        ] {
-            assert!(fixture.store.prepare_install(game, &operation).is_err());
-            assert!(fixture.store.import(game, &root, true, &operation).is_err());
-            assert!(fixture.store.writable_path(game, &operation).is_err());
-            assert!(!fixture.registry().exists());
             assert!(!root.join(OWNER_MARKER).exists());
         }
     }

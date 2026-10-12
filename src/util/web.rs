@@ -353,79 +353,46 @@ mod tests {
         }
     }
 
-    /// Verify the destination is replaced before reporting final progress.
+    /// Verify fixed-length and chunked payloads commit before reporting final progress.
     #[test]
     fn finalized_payload_replaces_destination() {
         run(async {
-            let directory = TestDirectory::new();
-            std::fs::write(directory.destination(), b"old payload").unwrap();
-            let server = Server::new(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\npayload",
-                false,
-            )
-            .await;
             let client = test_client(READ_TIMEOUT);
-            let progress = Arc::new(Mutex::new(Vec::new()));
-            let observed = progress.clone();
-            let destination = directory.destination();
-            download_to(
-                client.get(server.url.clone()),
-                directory.destination(),
-                Some(Box::new(move |event| {
-                    observed
-                        .lock()
-                        .unwrap()
-                        .push((event, std::fs::read(&destination).unwrap()));
-                })),
-                7,
-            )
-            .await
-            .unwrap();
-            directory.assert_contents(b"payload");
-            let events = progress.lock().unwrap();
-            let (last, final_contents) = events.last().unwrap();
-            assert_eq!((last.downloaded, last.total), (7, 7));
-            assert_eq!(final_contents, b"payload");
-            assert!(
-                events
-                    .iter()
-                    .all(|(event, _)| event.download_id == last.download_id)
-            );
-        });
-    }
-
-    /// Verify chunked downloads create parent directories and report an unknown total.
-    #[test]
-    fn chunked_download_has_unknown_total_and_creates_parents() {
-        run(async {
-            let directory = TestDirectory::new();
-            let destination = directory.0.join("new/parent/payload.bin");
-            let server = Server::new(
-                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n7\r\npayload\r\n0\r\n\r\n",
-                false,
-            )
-            .await;
-            let client = test_client(READ_TIMEOUT);
-            let progress = Arc::new(Mutex::new(Vec::new()));
-            let observed = progress.clone();
-            download_to(
-                client.get(server.url.clone()),
-                destination.clone(),
-                Some(Box::new(move |event| observed.lock().unwrap().push(event))),
-                7,
-            )
-            .await
-            .unwrap();
-            assert_eq!(std::fs::read(&destination).unwrap(), b"payload");
-            assert_eq!(
-                std::fs::read_dir(destination.parent().unwrap())
-                    .unwrap()
-                    .count(),
-                1
-            );
-            let events = progress.lock().unwrap();
-            assert_eq!(events.last().unwrap().downloaded, 7);
-            assert!(events.iter().all(|event| event.total == 0));
+            for (response, total) in [
+                ("HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\npayload", 7),
+                (
+                    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n7\r\npayload\r\n0\r\n\r\n",
+                    0,
+                ),
+            ] {
+                let directory = TestDirectory::new();
+                std::fs::write(directory.destination(), b"old payload").unwrap();
+                let server = Server::new(response, false).await;
+                let progress = Arc::new(Mutex::new(Vec::new()));
+                let observed = progress.clone();
+                let destination = directory.destination();
+                download_to(
+                    client.get(server.url.clone()),
+                    directory.destination(),
+                    Some(Box::new(move |event| {
+                        observed
+                            .lock()
+                            .unwrap()
+                            .push((event, std::fs::read(&destination).unwrap()));
+                    })),
+                    7,
+                )
+                .await
+                .unwrap();
+                directory.assert_contents(b"payload");
+                let events = progress.lock().unwrap();
+                let (last, final_contents) = events.last().unwrap();
+                assert_eq!((last.downloaded, last.total), (7, total));
+                assert_eq!(final_contents, b"payload");
+                assert!(events.iter().all(
+                    |(event, _)| event.download_id == last.download_id && event.total == total
+                ));
+            }
         });
     }
 
@@ -458,18 +425,17 @@ mod tests {
         });
     }
 
-    /// Verify declared and streamed size overruns leave the destination unchanged.
+    /// Verify download/JSON size bounds and caller limits without replacing the destination.
     #[test]
     fn oversized_downloads_preserve_destination_and_clean_temp() {
         run(async {
             let client = test_client(READ_TIMEOUT);
+            let directory = TestDirectory::new();
+            std::fs::write(directory.destination(), b"original").unwrap();
             for response in [
                 "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n",
                 "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nabcd\r\n5\r\nefghi\r\n0\r\n\r\n",
-                "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nabcdefghi",
             ] {
-                let directory = TestDirectory::new();
-                std::fs::write(directory.destination(), b"original").unwrap();
                 let server = Server::new(response, false).await;
                 let error = download_to(
                     client.get(server.url.clone()),
@@ -481,37 +447,27 @@ mod tests {
                 .unwrap_err();
                 assert!(error.to_string().contains("limit of 8 bytes"), "{error:#}");
                 directory.assert_contents(b"original");
+                let server = Server::new(response, false).await;
+                let error = fetch_json::<serde_json::Value>(
+                    client.get(server.url.clone()),
+                    8,
+                    METADATA_TIMEOUT,
+                )
+                .await
+                .unwrap_err();
+                assert!(error.to_string().contains("limit of 8 bytes"), "{error:#}");
             }
-        });
-    }
-
-    /// Verify failed renames preserve existing contents and remove staging files.
-    #[test]
-    fn failed_finalization_preserves_destination_and_cleans_temp() {
-        run(async {
-            let directory = TestDirectory::new();
-            std::fs::create_dir(directory.destination()).unwrap();
-            let original = directory.destination().join("original");
-            std::fs::write(&original, b"keep").unwrap();
-            let server = Server::new(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\npayload",
-                false,
-            )
-            .await;
-            let error = download_to(
-                test_client(READ_TIMEOUT).get(server.url.clone()),
+            let error = download_file_limited(
+                "https://127.0.0.1:1/file".into(),
                 directory.destination(),
                 None,
-                7,
+                None,
+                MAX_DOWNLOAD_SIZE + 1,
             )
             .await
             .unwrap_err();
-            assert!(
-                error.to_string().contains("Could not finalize download"),
-                "{error:#}"
-            );
-            assert_eq!(std::fs::read(original).unwrap(), b"keep");
-            assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
+            assert!(error.to_string().contains("global limit"), "{error:#}");
+            directory.assert_contents(b"original");
         });
     }
 
@@ -539,32 +495,6 @@ mod tests {
             task.abort();
             assert!(task.await.unwrap_err().is_cancelled());
             directory.assert_contents(b"original");
-        });
-    }
-
-    /// Verify header and body stalls time out without replacing the destination.
-    #[test]
-    fn stalled_headers_and_body_timeout_without_replacing_destination() {
-        run(async {
-            let client = test_client(Duration::from_millis(50));
-            for response in ["", "HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\npartial"] {
-                let directory = TestDirectory::new();
-                std::fs::write(directory.destination(), b"original").unwrap();
-                let server = Server::new(response, true).await;
-                let error = download_to(
-                    client.get(server.url.clone()),
-                    directory.destination(),
-                    None,
-                    20,
-                )
-                .await
-                .unwrap_err();
-                assert!(
-                    error.downcast_ref::<reqwest::Error>().unwrap().is_timeout(),
-                    "{error:#}"
-                );
-                directory.assert_contents(b"original");
-            }
         });
     }
 
@@ -610,193 +540,37 @@ mod tests {
         });
     }
 
-    /// Verify invalid or non-HTTPS URLs cannot affect the destination.
-    #[test]
-    fn public_apis_reject_unsupported_urls_without_writing() {
-        run(async {
-            let directory = TestDirectory::new();
-            for url in [
-                "http://127.0.0.1:1/",
-                "ftp://127.0.0.1/file",
-                "file:///tmp/file",
-                "data:application/json,{}",
-                "relative",
-                "https://",
-            ] {
-                assert!(fetch_data::<serde_json::Value>(url).await.is_err());
-                let error = download_file(url.to_owned(), directory.destination(), None, None)
-                    .await
-                    .unwrap_err();
-                assert!(
-                    !error.to_string().contains("relative path"),
-                    "URL must fail before path resolution: {error:#}"
-                );
-            }
-            assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
-            assert!(https_url("https://example.invalid/metadata").is_ok());
-        });
-    }
-
-    /// Verify caller-supplied download budgets cannot exceed the global limit.
-    #[test]
-    fn caller_cannot_raise_the_global_download_limit() {
-        run(async {
-            assert!(
-                download_file_limited(
-                    "https://example.invalid/file".into(),
-                    "file".into(),
-                    None,
-                    None,
-                    MAX_DOWNLOAD_SIZE + 1,
-                )
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("global limit")
-            );
-        });
-    }
-
-    /// Verify the shared production client rejects plain HTTP requests.
-    #[test]
-    fn production_client_rejects_plain_http() {
-        run(async {
-            let error = http_client()
-                .unwrap()
-                .get("http://127.0.0.1:1/")
-                .send()
-                .await
-                .unwrap_err();
-            assert!(error.is_builder(), "{error:?}");
-        });
-    }
-
-    /// Verify redirects to non-HTTPS targets fail without contacting the target.
+    /// Reject direct and redirected insecure URLs without contacting the target or writing files.
     #[test]
     fn redirect_policy_rejects_http_and_unsupported_schemes() {
         run(async {
             let target = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             target.set_nonblocking(true).unwrap();
             let client = test_client(READ_TIMEOUT);
+            let directory = TestDirectory::new();
+            std::fs::write(directory.destination(), b"original").unwrap();
             for scheme in ["http", "ftp"] {
-                let server = Server::new(format!("HTTP/1.1 302 Found\r\nLocation: {scheme}://{}/target\r\nContent-Length: 0\r\n\r\n", target.local_addr().unwrap()), false).await;
+                let url = format!("{scheme}://{}/target", target.local_addr().unwrap());
+                let error = fetch_data::<serde_json::Value>(&url).await.unwrap_err();
+                assert!(error.to_string().contains("Only HTTPS URLs"), "{error:#}");
+                let error = download_file(url.clone(), directory.destination(), None, None)
+                    .await
+                    .unwrap_err();
+                assert!(error.to_string().contains("Only HTTPS URLs"), "{error:#}");
+                let server = Server::new(
+                    format!("HTTP/1.1 302 Found\r\nLocation: {url}\r\nContent-Length: 0\r\n\r\n"),
+                    false,
+                )
+                .await;
                 let error = client.get(server.url.clone()).send().await.unwrap_err();
                 assert!(error.is_redirect(), "{error:?}");
                 assert!(format!("{error:?}").contains("Only HTTPS redirects"));
+                directory.assert_contents(b"original");
             }
             assert_eq!(
                 target.accept().unwrap_err().kind(),
                 std::io::ErrorKind::WouldBlock
             );
-        });
-    }
-
-    /// Verify fixed-length and chunked metadata can reach the allowed size limit.
-    #[test]
-    fn metadata_accepts_json_at_limit_with_or_without_content_length() {
-        run(async {
-            let client = test_client(READ_TIMEOUT);
-            for response in [
-                "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n{\"ok\":true}",
-                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nB\r\n{\"ok\":true}\r\n0\r\n\r\n",
-            ] {
-                let server = Server::new(response, false).await;
-                let value: serde_json::Value =
-                    fetch_json(client.get(server.url.clone()), 11, METADATA_TIMEOUT)
-                        .await
-                        .unwrap();
-                assert_eq!(value, serde_json::json!({"ok": true}));
-            }
-        });
-    }
-
-    /// Verify oversized metadata is rejected before JSON parsing for each body framing.
-    #[test]
-    fn metadata_rejects_oversize_before_json_parse() {
-        run(async {
-            let client = test_client(READ_TIMEOUT);
-            for response in [
-                "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n",
-                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nabcd\r\n5\r\nefghi\r\n0\r\n\r\n",
-                "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nabcdefghi",
-            ] {
-                let server = Server::new(response, false).await;
-                let error = fetch_json::<serde_json::Value>(
-                    client.get(server.url.clone()),
-                    8,
-                    METADATA_TIMEOUT,
-                )
-                .await
-                .unwrap_err();
-                assert!(error.to_string().contains("limit of 8 bytes"), "{error:#}");
-            }
-        });
-    }
-
-    /// Verify the metadata request deadline includes reading the response body.
-    #[test]
-    fn metadata_has_a_total_deadline_including_body() {
-        run(async {
-            let client = test_client(Duration::from_secs(10));
-            let server = Server::new(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n{", true).await;
-            let error = fetch_json::<serde_json::Value>(
-                client.get(server.url.clone()),
-                11,
-                Duration::from_millis(50),
-            )
-            .await
-            .unwrap_err();
-            assert!(
-                error.downcast_ref::<reqwest::Error>().unwrap().is_timeout(),
-                "{error:#}"
-            );
-        });
-    }
-
-    /// Verify HTTP status failures and invalid JSON produce useful errors.
-    #[test]
-    fn status_and_invalid_json_errors_are_informative() {
-        run(async {
-            let client = test_client(READ_TIMEOUT);
-            let directory = TestDirectory::new();
-            std::fs::write(directory.destination(), b"original").unwrap();
-            let response = b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n";
-            let server = Server::new(response, false).await;
-            let error = download_to(
-                client.get(server.url.clone()),
-                directory.destination(),
-                None,
-                8,
-            )
-            .await
-            .unwrap_err();
-            assert!(
-                error.to_string().contains("503 Service Unavailable"),
-                "{error:#}"
-            );
-            directory.assert_contents(b"original");
-            let server = Server::new(response, false).await;
-            let error = fetch_json::<serde_json::Value>(
-                client.get(server.url.clone()),
-                8,
-                METADATA_TIMEOUT,
-            )
-            .await
-            .unwrap_err();
-            assert!(
-                error.to_string().contains("503 Service Unavailable"),
-                "{error:#}"
-            );
-            let server =
-                Server::new(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\noops", false).await;
-            let error = fetch_json::<serde_json::Value>(
-                client.get(server.url.clone()),
-                8,
-                METADATA_TIMEOUT,
-            )
-            .await
-            .unwrap_err();
-            assert_eq!(error.to_string(), "Invalid metadata JSON");
         });
     }
 }

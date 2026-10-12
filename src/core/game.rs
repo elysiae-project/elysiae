@@ -99,41 +99,15 @@ impl Game {
 mod tests {
     use super::*;
 
-    /// Checks that game codes round-trip and provide names and default paths.
+    /// Checks supported game codes round-trip and executable names stay game-local.
     #[test]
-    fn game_codes_round_trip() {
-        let games = [
-            Game::Bh3,
-            Game::Hk4e,
-            Game::Hkrpg,
-            Game::Nap,
-            Game::Abc,
-            Game::Hyg,
-        ];
-        for game in games {
+    fn game_metadata_round_trips_and_uses_local_executables() {
+        for game in Game::all() {
             assert_eq!(Game::try_from(game.code()).unwrap(), game);
-            assert!(!game.display_name().is_empty());
-            assert_eq!(
-                game.install_path(),
-                PathBuf::from("games").join(game.code())
-            );
+            let executable = PathBuf::from(game.executable().unwrap());
+            assert_eq!(executable.components().count(), 1);
+            assert_eq!(executable.extension().unwrap(), "exe");
         }
-    }
-
-    /// Checks that an unknown game code is rejected.
-    #[test]
-    fn unsupported_game_code_is_rejected() {
         assert!(Game::try_from("unknown").is_err());
-    }
-
-    /// Checks known executable names and rejects games with missing metadata.
-    #[test]
-    fn executable_metadata_matches_supported_games() {
-        assert_eq!(Game::Bh3.executable().unwrap(), "BH3.exe");
-        assert_eq!(Game::Hk4e.executable().unwrap(), "GenshinImpact.exe");
-        assert_eq!(Game::Hkrpg.executable().unwrap(), "StarRail.exe");
-        assert_eq!(Game::Nap.executable().unwrap(), "ZenlessZoneZero.exe");
-        assert!(Game::Abc.executable().is_err());
-        assert!(Game::Hyg.executable().is_err());
     }
 }

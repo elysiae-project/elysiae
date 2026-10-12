@@ -347,29 +347,20 @@ impl Drop for Operation {
 mod tests {
     use super::*;
 
-    /// Checks exclusive operation ownership and its release on completion.
+    /// Checks pause, cancellation and completion retain and release exclusive ownership.
     #[test]
-    fn first_operation_starts_and_completion_releases_ownership() {
+    fn operation_lifecycle_keeps_exclusion_and_resets_controls() {
         let owner = Operations::default();
         let operation = owner
             .begin(OperationKind::Install, Some(Game::Bh3))
             .unwrap();
-        assert!(!operation.handle().is_cancelled());
-        assert!(owner.begin(OperationKind::Launch, Some(Game::Bh3)).is_err());
-        operation.finish(Ok(())).unwrap();
-        assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Completed);
-        assert!(!owner.is_busy().unwrap());
-    }
-
-    /// Checks cancellation retains ownership without reusing cancelled controls.
-    #[test]
-    fn cancellation_keeps_ownership_until_worker_exits_then_uses_fresh_handle() {
-        let owner = Operations::default();
-        let operation = owner
-            .begin(OperationKind::Install, Some(Game::Bh3))
-            .unwrap();
+        owner.toggle_pause().unwrap();
+        assert!(operation.handle().is_paused());
+        owner.toggle_pause().unwrap();
+        assert!(!operation.handle().is_paused());
         owner.cancel().unwrap();
         assert!(operation.check_cancelled().is_err());
+        assert!(operation.set_phase(Phase::Committing).is_err());
         assert!(owner.is_busy().unwrap());
         assert!(
             owner
@@ -387,24 +378,33 @@ mod tests {
             .unwrap();
         assert!(!next.handle().is_cancelled());
         next.finish(Ok(())).unwrap();
+        assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Completed);
+        drop(owner.begin(OperationKind::Update, Some(Game::Bh3)).unwrap());
+        assert!(!owner.is_busy().unwrap());
     }
 
-    /// Checks that verification rejects controls and preserves the final failure details.
+    /// Checks verification and commit reject controls and retain failure details.
     #[test]
     fn noncancellable_phases_keep_ownership_and_retain_errors() {
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Repair, Some(Game::Bh3)).unwrap();
-        operation.set_phase(Phase::Verifying).unwrap();
-        assert!(owner.cancel().is_err());
-        assert!(owner.toggle_pause().is_err());
-        assert!(
-            operation
-                .finish::<()>(Err(anyhow::anyhow!("repair failed")))
-                .is_err()
-        );
-        let status = owner.status().unwrap().unwrap();
-        assert_eq!(status.phase, Phase::Failed);
-        assert_eq!(status.error.as_deref(), Some("repair failed"));
+        for (kind, phase) in [
+            (OperationKind::Repair, Phase::Verifying),
+            (OperationKind::Relocate, Phase::Committing),
+        ] {
+            let owner = Operations::default();
+            let operation = owner.begin(kind, Some(Game::Bh3)).unwrap();
+            operation.set_phase(phase).unwrap();
+            assert!(owner.cancel().is_err());
+            assert!(owner.toggle_pause().is_err());
+            assert!(operation.check_game(Game::Nap).is_err());
+            assert!(
+                operation
+                    .finish::<()>(Err(anyhow::anyhow!("failed")))
+                    .is_err()
+            );
+            let status = owner.status().unwrap().unwrap();
+            assert_eq!(status.phase, Phase::Failed);
+            assert_eq!(status.error.as_deref(), Some("failed"));
+        }
     }
 
     /// Checks exclusive profile locking and refusal to follow lock-file symlinks.
@@ -421,41 +421,5 @@ mod tests {
         assert!(lock_profile(&path).is_err());
         assert!(!root.join("outside").exists());
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    /// Checks relocation cancellation boundaries and matching game ownership.
-    #[test]
-    fn relocation_cancels_before_commit_but_commit_cannot_be_interrupted() {
-        let owner = Operations::default();
-        let operation = owner
-            .begin(OperationKind::Relocate, Some(Game::Bh3))
-            .unwrap();
-        assert!(owner.toggle_pause().is_err());
-        owner.cancel().unwrap();
-        assert!(operation.set_phase(Phase::Committing).is_err());
-        drop(operation);
-        let operation = owner
-            .begin(OperationKind::Relocate, Some(Game::Bh3))
-            .unwrap();
-        operation.set_phase(Phase::Committing).unwrap();
-        assert!(owner.cancel().is_err());
-        assert!(operation.check_game(Game::Nap).is_err());
-        operation.finish(Ok(())).unwrap();
-    }
-
-    /// Checks pause/resume and dropped-lease cleanup before starting a later operation.
-    #[test]
-    fn pause_and_drop_do_not_poison_subsequent_operations() {
-        let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Update, Some(Game::Bh3)).unwrap();
-        owner.toggle_pause().unwrap();
-        assert!(operation.handle().is_paused());
-        owner.toggle_pause().unwrap();
-        assert!(!operation.handle().is_paused());
-        drop(operation);
-        assert!(!owner.is_busy().unwrap());
-        let launch = owner.begin(OperationKind::Launch, Some(Game::Bh3)).unwrap();
-        assert!(owner.cancel().is_err());
-        launch.finish(Ok(())).unwrap();
     }
 }

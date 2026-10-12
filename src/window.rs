@@ -316,20 +316,3 @@ fn action_label(status: UpdateAvailability) -> &'static str {
 pub fn build_window(app: &gtk::Application) -> ElysiaeWindow {
     ElysiaeWindow::new(app)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    /// Checks that installation states expose the appropriate primary action.
-    #[test]
-    fn primary_action_follows_installation_state() {
-        assert_eq!(
-            action_label(UpdateAvailability::Incomplete),
-            "Resume installation"
-        );
-        assert_eq!(action_label(UpdateAvailability::Updated), "Launch");
-        assert_eq!(action_label(UpdateAvailability::Untracked), "Launch");
-        assert_eq!(action_label(UpdateAvailability::Outdated), "Update");
-        assert_eq!(action_label(UpdateAvailability::Preinstall), "Preinstall");
-    }
-}

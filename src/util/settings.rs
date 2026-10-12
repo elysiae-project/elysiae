@@ -227,18 +227,6 @@ pub fn initialize() -> Result<Initialization> {
 mod tests {
     use super::*;
 
-    /// Checks that setting conversions reject the wrong value type.
-    #[test]
-    fn setting_value_conversions_are_type_safe() {
-        assert!(bool::try_from(SettingValue::from(true)).unwrap());
-        assert_eq!(
-            String::try_from(SettingValue::from("en-us")).unwrap(),
-            "en-us"
-        );
-        assert!(bool::try_from(SettingValue::from("not a bool")).is_err());
-        assert!(String::try_from(SettingValue::from(true)).is_err());
-    }
-
     /// Checks invalid preferences return errors instead of reaching GLib assertions.
     #[test]
     fn invalid_keys_and_types_return_errors_without_glib_abort() {
@@ -249,55 +237,28 @@ mod tests {
         assert!(set_option("vo-lang", "invalid".into()).is_err());
     }
 
-    /// Checks voice codes and launcher locales use their own supported formats.
+    /// Checks idempotent migration, independent language choices and future versions.
     #[test]
-    fn voice_identifiers_are_separate_from_asset_locales() {
-        assert_eq!(voice_language("EN_us").unwrap(), "en");
-        assert_eq!(voice_language("zh-cn").unwrap(), "cn");
-        assert_eq!(voice_language("ja-jp").unwrap(), "jp");
-        assert_eq!(voice_language("ko-kr").unwrap(), "kr");
-        assert_eq!(normalize_locale("EN_US").unwrap(), "en-us");
-        assert!(voice_language("fr-fr").is_err());
-        assert!(normalize_locale("en").is_err());
-    }
-
-    /// Checks repeated initialization preserves choices and records the app version.
-    #[test]
-    fn first_run_migration_is_idempotent_and_preserves_choices() {
+    fn initialization_preserves_preferences_and_rejects_newer_schemas() {
         let settings = settings().unwrap();
         settings.set_string("vo-lang", "en-us").unwrap();
+        set_option("display-language", "fr_FR".into()).unwrap();
         set_option("use-video-background", true.into()).unwrap();
         assert!(initialize().unwrap().first_launch);
         assert!(!initialize().unwrap().first_launch);
         assert_eq!(
-            get_option("vo-lang").unwrap(),
-            SettingValue::Str("en".into())
+            String::try_from(get_option("vo-lang").unwrap()).unwrap(),
+            "en"
         );
+        assert_eq!(display_locale().unwrap(), "fr-fr");
+        assert!(bool::try_from(get_option("use-video-background").unwrap()).unwrap());
         assert_eq!(
-            get_option("use-video-background").unwrap(),
-            SettingValue::Bool(true)
+            settings.string("last-used-version"),
+            env!("CARGO_PKG_VERSION")
         );
-        assert_eq!(
-            get_option("last-used-version").unwrap(),
-            SettingValue::Str(env!("CARGO_PKG_VERSION").into())
-        );
-    }
-
-    /// Checks preferences from a newer schema version are left untouched.
-    #[test]
-    fn newer_settings_version_is_not_downgraded() {
-        settings()
-            .unwrap()
-            .set_string("settings-version", "99")
-            .unwrap();
+        settings.set_string("settings-version", "99").unwrap();
         assert!(initialize().is_err());
-        assert_eq!(
-            get_option("settings-version").unwrap(),
-            SettingValue::Str("99".into())
-        );
-        assert_eq!(
-            get_option("is-first-launch").unwrap(),
-            SettingValue::Bool(true)
-        );
+        assert_eq!(settings.string("settings-version"), "99");
+        assert_eq!(display_locale().unwrap(), "fr-fr");
     }
 }

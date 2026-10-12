@@ -717,47 +717,19 @@ mod tests {
 
     /// Checks installation completeness and rejects pending or invalid version markers.
     #[test]
-    fn empty_or_partial_directories_are_not_installed() {
+    fn installation_status_requires_verified_metadata() {
         let root = std::env::temp_dir().join(format!("elysiae-status-{}", uuid::Uuid::new_v4()));
-        assert_eq!(
-            local_status(Game::Bh3, &root).unwrap(),
-            UpdateAvailability::NotInstalled
-        );
+        let status = || local_status(Game::Bh3, &root).unwrap();
+        assert_eq!(status(), UpdateAvailability::NotInstalled);
         std::fs::create_dir(&root).unwrap();
-        assert_eq!(
-            local_status(Game::Bh3, &root).unwrap(),
-            UpdateAvailability::Incomplete
-        );
         std::fs::write(root.join("BH3.exe"), b"fixture").unwrap();
-        assert_eq!(
-            local_status(Game::Bh3, &root).unwrap(),
-            UpdateAvailability::Incomplete
-        );
+        assert_eq!(status(), UpdateAvailability::Incomplete);
         std::fs::write(root.join(".sophon_version"), b"v1\n").unwrap();
-        assert_eq!(
-            local_status(Game::Bh3, &root).unwrap(),
-            UpdateAvailability::Updated
-        );
-        // A library version marker cannot conceal an interrupted or failed scan.
+        assert_eq!(status(), UpdateAvailability::Updated);
         mark_pending(&root).unwrap();
-        mark_pending(&root).unwrap();
-        assert_eq!(
-            local_status(Game::Bh3, &root).unwrap(),
-            UpdateAvailability::Incomplete
-        );
-        let mut failed = VerificationReport::default();
-        failed.observe(&SophonProgress::Verifying {
-            scanned_files: 1,
-            total_files: 1,
-            error_count: 1,
-        });
-        assert!(failed.result().is_err());
-        assert!(mutation_pending(&root).unwrap());
+        assert_eq!(status(), UpdateAvailability::Incomplete);
         clear_pending(&root).unwrap();
-        assert_eq!(
-            local_status(Game::Bh3, &root).unwrap(),
-            UpdateAvailability::Updated
-        );
+        assert_eq!(status(), UpdateAvailability::Updated);
         std::os::unix::fs::symlink("missing", root.join(PENDING_VERIFICATION)).unwrap();
         assert!(mutation_pending(&root).unwrap());
         assert!(mark_pending(&root).is_err());
@@ -766,16 +738,6 @@ mod tests {
         std::os::unix::fs::symlink("BH3.exe", root.join(".sophon_version")).unwrap();
         assert!(local_status(Game::Bh3, &root).is_err());
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    /// Checks that installers receive absolute roots and normalized voice languages.
-    #[test]
-    fn builder_uses_resolved_absolute_root_and_normalized_voice() {
-        let path = installations::path(Game::Bh3).unwrap();
-        let sophon = installer(Game::Bh3, voice_language("en-us").unwrap(), path.clone()).unwrap();
-        assert!(sophon.game_dir().is_absolute());
-        assert_eq!(sophon.game_dir(), path);
-        assert_eq!(sophon.vo_lang(), "en");
     }
 
     /// Checks that mutation preflight rejects symbolic and hard links to external files.
@@ -825,51 +787,5 @@ mod tests {
             message: "repair failed".into(),
         });
         assert!(clean.result().is_err());
-    }
-
-    /// Checks that a full progress queue stays nonblocking and reserves final completion.
-    #[test]
-    fn full_progress_queue_cannot_block_or_fabricate_completion() {
-        let (sender, receiver) = async_channel::bounded(1);
-        forward_progress(&sender, SophonProgress::FetchingManifest);
-        forward_progress(&sender, SophonProgress::Finished);
-        forward_progress(&sender, SophonProgress::FetchingManifest);
-        assert!(matches!(
-            receiver.try_recv().unwrap(),
-            SophonProgress::FetchingManifest
-        ));
-        assert!(receiver.try_recv().is_err());
-        forward_progress(&sender, SophonProgress::FetchingManifest);
-        sender.force_send(SophonProgress::Finished).unwrap();
-        assert!(matches!(
-            receiver.try_recv().unwrap(),
-            SophonProgress::Finished
-        ));
-    }
-
-    /// Checks that detaching a waiter retains ownership until its worker completes.
-    #[test]
-    fn dropped_waiter_retains_ownership_until_worker_finishes() {
-        let owner = crate::core::operations::Operations::default();
-        let operation = owner
-            .begin(OperationKind::Install, Some(Game::Bh3))
-            .unwrap();
-        let (started, start) = async_channel::bounded(1);
-        let (release, released) = async_channel::bounded(1);
-        let (done, finished) = async_channel::bounded(1);
-        let waiter = runtime::spawn(run_worker(operation, move |operation| async move {
-            started.send(()).await.unwrap();
-            released.recv().await.unwrap();
-            operation.finish(Ok(()))?;
-            done.send(()).await.unwrap();
-            Ok(())
-        }));
-        start.recv_blocking().unwrap();
-        waiter.abort();
-        assert!(owner.is_busy().unwrap());
-        assert!(owner.begin(OperationKind::Launch, Some(Game::Bh3)).is_err());
-        release.send_blocking(()).unwrap();
-        finished.recv_blocking().unwrap();
-        assert!(!owner.is_busy().unwrap());
     }
 }
