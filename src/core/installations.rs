@@ -11,11 +11,13 @@ use uuid::Uuid;
 
 use super::{fs, game::Game, operations::Operation};
 
+mod maintenance;
+
 const REGISTRY: &str = "installations.json";
 const OWNER_MARKER: &str = ".elysiae-owner.json";
 const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Installation {
     pub(crate) path: PathBuf,
@@ -65,6 +67,50 @@ pub fn writable_path(game: Game, operation: &Operation) -> Result<PathBuf> {
 /// registered root or converting a managed installation requires maintenance.
 pub fn import(game: Game, root: &Path, allow_modify: bool, operation: &Operation) -> Result<()> {
     Store(PathBuf::new()).import(game, root, allow_modify, operation)
+}
+
+/// Copy and verify into a managed destination before switching registration.
+/// Destination must be canonical and absolute, absent or empty; missing parents
+/// are created durably. Confirmation must exactly match the registered source.
+/// Imported sources may be copied, but never deleted, regardless of write consent.
+/// Copying is cancellable; committing and confirmed cleanup must finish or recover.
+pub fn relocate(
+    game: Game,
+    destination: &Path,
+    confirmed_source: &Path,
+    remove_source: bool,
+    operation: &Operation,
+) -> Result<()> {
+    Store(PathBuf::new()).relocate(
+        game,
+        destination,
+        confirmed_source,
+        remove_source,
+        operation,
+    )
+}
+
+/// Unregister only, or quarantine and delete a confirmed, verified managed root.
+/// Imported installations never grant file-deletion authority.
+pub fn uninstall(
+    game: Game,
+    confirmed_root: &Path,
+    delete_files: bool,
+    operation: &Operation,
+) -> Result<()> {
+    Store(PathBuf::new()).uninstall(game, confirmed_root, delete_files, operation)
+}
+
+/// Finish committed cleanup or roll back an interrupted pre-commit transaction.
+/// Recovery never discovers or adopts unjournaled staging directories. If the
+/// source changed before deletion, restore its registration and report an error.
+pub fn recover(game: Game, operation: &Operation) -> Result<()> {
+    Store(PathBuf::new()).recover(game, operation)
+}
+
+/// Whether a validated maintenance journal requires recovery for this game.
+pub fn pending(game: Game) -> Result<bool> {
+    Ok(Store(PathBuf::new()).journal(game)?.is_some())
 }
 
 /// Read a record with validated schema and canonical path (possibly missing).
@@ -148,6 +194,7 @@ impl Store {
     fn writable_path(&self, game: Game, operation: &Operation) -> Result<PathBuf> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
+        self.ensure_no_pending()?;
         let installation = self
             .registered(game)?
             .context("Installation is not registered; prepare or import it first")?;
@@ -169,6 +216,7 @@ impl Store {
     fn prepare_install(&self, game: Game, operation: &Operation) -> Result<PathBuf> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
+        self.ensure_no_pending()?;
         let mut registry = self.load()?;
         if let Some(installation) = registry.installations.get(game.code()) {
             ensure!(
@@ -258,6 +306,7 @@ impl Store {
     ) -> Result<()> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
+        self.ensure_no_pending()?;
         let mut registry = self.load()?;
         let root = root
             .canonicalize()
@@ -327,7 +376,14 @@ impl Store {
             !home.starts_with(root) && !data.starts_with(root),
             "Installation root must not contain home or application data"
         );
-        for directory in ["proton-data", "proton", "phlogiston", "components", "cache"] {
+        for directory in [
+            "proton-data",
+            "proton",
+            "phlogiston",
+            "components",
+            "cache",
+            "installation-transactions",
+        ] {
             let shared = canonicalize_with_missing(&data.join(directory))?;
             ensure!(
                 !root.starts_with(&shared) && !shared.starts_with(root),
@@ -450,13 +506,13 @@ mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
 
-    struct Fixture {
-        directory: PathBuf,
-        store: Store,
+    pub(super) struct Fixture {
+        pub(super) directory: PathBuf,
+        pub(super) store: Store,
     }
 
     impl Fixture {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let relative = PathBuf::from(format!("installation-tests-{}", Uuid::new_v4()));
             let directory = fs::full_path(Some(relative.clone()), None).unwrap();
             assert!(directory.starts_with(std::env::temp_dir()));
@@ -465,7 +521,7 @@ mod tests {
             Self { directory, store }
         }
 
-        fn game(&self, name: &str, game: Game) -> PathBuf {
+        pub(super) fn game(&self, name: &str, game: Game) -> PathBuf {
             let root = self.directory.join(name);
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(
@@ -476,7 +532,7 @@ mod tests {
             root.canonicalize().unwrap()
         }
 
-        fn registry(&self) -> PathBuf {
+        pub(super) fn registry(&self) -> PathBuf {
             self.store.resolve(Path::new(REGISTRY)).unwrap()
         }
     }
@@ -748,7 +804,14 @@ mod tests {
                 root.display()
             );
         }
-        for shared in ["proton-data", "proton", "phlogiston", "components", "cache"] {
+        for shared in [
+            "proton-data",
+            "proton",
+            "phlogiston",
+            "components",
+            "cache",
+            "installation-transactions",
+        ] {
             let root = data.join(shared);
             std::fs::create_dir_all(root.join("nested")).unwrap();
             assert!(fixture.store.validate_root(&root).is_err());
