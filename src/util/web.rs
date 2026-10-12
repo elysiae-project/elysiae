@@ -14,6 +14,7 @@ use uuid::Uuid;
 const MAX_DOWNLOAD_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 const MAX_METADATA_SIZE: usize = 4 * 1024 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
 static HTTP_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
 
@@ -28,11 +29,12 @@ fn client_builder(read_timeout: Duration) -> ClientBuilder {
             }
         }))
         .connect_timeout(Duration::from_secs(15))
+        .timeout(DOWNLOAD_TIMEOUT)
         .read_timeout(read_timeout)
         .pool_idle_timeout(Duration::from_secs(30))
 }
 
-fn http_client() -> Result<&'static Client> {
+pub(crate) fn http_client() -> Result<&'static Client> {
     HTTP_CLIENT
         .get_or_init(|| client_builder(READ_TIMEOUT).build())
         .as_ref()
@@ -103,10 +105,19 @@ pub async fn download_file_limited(
     on_progress: Option<Box<dyn Fn(DownloadProgress) + Send + 'static>>,
     max_size: u64,
 ) -> Result<()> {
-    ensure!(max_size <= MAX_DOWNLOAD_SIZE, "Download budget exceeds the global limit");
+    ensure!(
+        max_size <= MAX_DOWNLOAD_SIZE,
+        "Download budget exceeds the global limit"
+    );
     let parsed = https_url(&url)?;
     let destination = full_path(Some(dest), base_dir)?;
-    download_to(http_client()?.get(parsed), destination, on_progress, max_size).await
+    download_to(
+        http_client()?.get(parsed),
+        destination,
+        on_progress,
+        max_size,
+    )
+    .await
 }
 
 async fn download_to(
@@ -530,6 +541,47 @@ mod tests {
     }
 
     #[test]
+    fn request_deadline_bounds_downloads_even_without_read_inactivity() {
+        run(async {
+            let directory = TestDirectory::new();
+            std::fs::write(directory.destination(), b"original").unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}/slow", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n")
+                    .await
+                    .unwrap();
+                loop {
+                    if socket.write_all(b"x").await.is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            });
+            let result = download_to(
+                test_client(Duration::from_secs(10))
+                    .get(url)
+                    .timeout(Duration::from_millis(60)),
+                directory.destination(),
+                None,
+                1000,
+            )
+            .await;
+            task.abort();
+            assert!(
+                result
+                    .unwrap_err()
+                    .downcast_ref::<reqwest::Error>()
+                    .unwrap()
+                    .is_timeout()
+            );
+            directory.assert_contents(b"original");
+        });
+    }
+
+    #[test]
     fn public_apis_reject_unsupported_urls_without_writing() {
         run(async {
             let directory = TestDirectory::new();
@@ -558,10 +610,19 @@ mod tests {
     #[test]
     fn caller_cannot_raise_the_global_download_limit() {
         run(async {
-            assert!(download_file_limited(
-                "https://example.invalid/file".into(), "file".into(), None, None,
-                MAX_DOWNLOAD_SIZE + 1,
-            ).await.unwrap_err().to_string().contains("global limit"));
+            assert!(
+                download_file_limited(
+                    "https://example.invalid/file".into(),
+                    "file".into(),
+                    None,
+                    None,
+                    MAX_DOWNLOAD_SIZE + 1,
+                )
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("global limit")
+            );
         });
     }
 
