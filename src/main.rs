@@ -13,6 +13,10 @@ mod widgets;
 mod window;
 
 fn main() -> glib::ExitCode {
+    if let Err(error) = util::logging::init() {
+        eprintln!("Could not initialize logging: {error:#}");
+        return glib::ExitCode::FAILURE;
+    }
     // Set environment variables required to get proton working
     unsafe {
         let compat_path = full_path(None, Some(BaseDirectory::Compat)).unwrap();

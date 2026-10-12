@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod logging;
 pub mod notifications;
 pub mod runtime;
 pub mod settings;
