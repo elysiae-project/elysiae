@@ -1,13 +1,16 @@
 use anyhow::Result;
 use log::{LevelFilter, Log, Metadata, Record};
 
+/// Writes launcher logs to stderr using the configured severity filter.
 struct StderrLogger;
 
 impl Log for StderrLogger {
+    /// Checks whether a message is within the active log level.
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.level() <= log::max_level()
     }
 
+    /// Prints an enabled message with its severity and logging target.
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
             eprintln!(
@@ -19,9 +22,11 @@ impl Log for StderrLogger {
         }
     }
 
+    /// Completes the logger interface; this logger keeps no buffered messages.
     fn flush(&self) {}
 }
 
+/// Parses the requested log level, defaulting to info when none is provided.
 fn level(value: Option<&str>) -> Result<LevelFilter> {
     value
         .unwrap_or("info")
@@ -29,6 +34,7 @@ fn level(value: Option<&str>) -> Result<LevelFilter> {
         .map_err(|_| anyhow::anyhow!("ELYSIAE_LOG must be off, error, warn, info, debug, or trace"))
 }
 
+/// Installs the stderr logger and reads its level from ELYSIAE_LOG.
 pub fn init() -> Result<()> {
     static LOGGER: StderrLogger = StderrLogger;
     let filter = level(std::env::var("ELYSIAE_LOG").ok().as_deref())?;
@@ -41,6 +47,7 @@ pub fn init() -> Result<()> {
 mod tests {
     use super::*;
 
+    /// Checks the default level, supported overrides and invalid values.
     #[test]
     fn log_level_is_explicit_and_validated() {
         assert_eq!(level(None).unwrap(), LevelFilter::Info);

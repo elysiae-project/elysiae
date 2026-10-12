@@ -8,6 +8,7 @@ mod util;
 mod widgets;
 mod window;
 
+/// Initializes logging, preferences and resources before running the GTK launcher.
 fn main() -> glib::ExitCode {
     if let Err(error) = util::logging::init() {
         eprintln!("Could not initialize logging: {error:#}");

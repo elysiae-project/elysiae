@@ -14,6 +14,7 @@ const APP_ID: &str = "app.elysiae.Elysiae";
 const APP_STYLE_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_APPLICATION;
 const APP_FONT: &[u8] = include_bytes!("../data/fonts/PretendardVariable.woff2");
 
+/// Builds the GTK application and wires recovery, URI routing and backend actions.
 pub fn build_app() -> gtk::Application {
     let app = gtk::Application::builder()
         .application_id(APP_ID)
@@ -108,6 +109,7 @@ pub fn build_app() -> gtk::Application {
     app
 }
 
+/// Refreshes localized assets in the background, then updates visible media on GTK.
 pub fn refresh_assets(app: &gtk::Application) {
     let locale = display_locale().unwrap_or_else(|_| "en-us".into());
     let (sender, receiver) = async_channel::bounded(1);
@@ -140,6 +142,7 @@ pub fn refresh_assets(app: &gtk::Application) {
     });
 }
 
+/// Registers transfer controls and the explicit runtime update action.
 fn add_actions(app: &gtk::Application) {
     for (name, control) in [
         (
@@ -186,6 +189,7 @@ fn add_actions(app: &gtk::Application) {
     app.add_action(&action);
 }
 
+/// Reads a game selection from an elysiae navigation URI, rejecting extra commands.
 fn parse_game_uri(uri: &str) -> Option<Game> {
     let url = url::Url::parse(uri).ok()?;
     if url.scheme() != "elysiae"
@@ -201,6 +205,7 @@ fn parse_game_uri(uri: &str) -> Option<Game> {
     Game::try_from(url.path().trim_matches('/')).ok()
 }
 
+/// Loads the embedded stylesheet and follows the desktop color scheme.
 fn load_css() {
     let display = gtk::gdk::Display::default().expect("Could not connect to a display");
     let provider = CssProvider::new();
@@ -216,6 +221,7 @@ fn load_css() {
     style_context_add_provider_for_display(&display, &provider, APP_STYLE_PRIORITY);
 }
 
+/// Presents the existing application window or creates it on first activation.
 fn build_ui(app: &gtk::Application) {
     if let Some(window) = app.active_window() {
         window.present();
@@ -227,6 +233,7 @@ fn build_ui(app: &gtk::Application) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Checks that game URIs only select known games and reject foreign inputs.
     #[test]
     fn game_uri_is_navigation_only_and_rejects_foreign_inputs() {
         assert_eq!(parse_game_uri("elysiae://open-game/hk4e"), Some(Game::Hk4e));

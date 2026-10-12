@@ -13,6 +13,7 @@ mod imp {
     use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
     use std::cell::{Cell, OnceCell};
 
+    /// Media layers and request state behind the game background widget.
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/app/elysiae/Elysiae/ui/background.ui")]
     pub struct Background {
@@ -27,15 +28,19 @@ mod imp {
         const NAME: &'static str = "ElysiaeBackground";
         type Type = super::Background;
         type ParentType = gtk::Box;
+        /// Binds the background widget's template to its GTK class.
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
         }
+        /// Instantiates the template children for this background widget.
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
     }
 
     impl Background {
+        /// Sets up the media layers once GTK has finished building the template.
+        /// Reuses compatible template children when they are present.
         pub fn initialize_layers(&self) {
             if self.background.get().is_some() {
                 return;
@@ -99,6 +104,7 @@ mod imp {
     impl BoxImpl for Background {}
 }
 
+/// Finds a direct child widget by its GtkBuilder ID.
 fn named_child(parent: &impl IsA<gtk::Widget>, id: &str) -> Option<gtk::Widget> {
     let mut child = parent.first_child();
     while let Some(widget) = child {
@@ -111,18 +117,22 @@ fn named_child(parent: &impl IsA<gtk::Widget>, id: &str) -> Option<gtk::Widget> 
 }
 
 glib::wrapper! {
+    /// Displays a game's cached image or video background and optional overlay.
     pub struct Background(ObjectSubclass<imp::Background>)
         @extends gtk::Box, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl Background {
+    /// Creates a background widget with its media layers initialized.
     pub fn new() -> Self {
         let widget: Self = glib::Object::builder().build();
         widget.imp().initialize_layers();
         widget
     }
 
+    /// Loads cached media using the selected game and display preferences.
+    /// Ignores older lookups when a newer request has taken their place.
     pub fn set_media(&self, game: Game) {
         self.imp().initialize_layers();
         let request = self.imp().request.get().wrapping_add(1);
@@ -166,6 +176,7 @@ impl Background {
         });
     }
 
+    /// Displays resolved media and pins its files against cache cleanup.
     fn apply_media(&self, media: ResolvedMedia) {
         let paths: Vec<_> = media
             .background
@@ -199,6 +210,7 @@ impl Background {
         overlay.set_visible(media.overlay.is_some());
     }
 
+    /// Clears the visible layers, stops video playback and releases cache pins.
     fn clear_media(&self) {
         if let Some(background) = self.imp().background.get() {
             background.set_visible(false);
@@ -220,6 +232,7 @@ impl Background {
 }
 
 impl Default for Background {
+    /// Creates the default initialized background widget.
     fn default() -> Self {
         Self::new()
     }

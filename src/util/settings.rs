@@ -10,28 +10,33 @@ pub const SUPPORTED_LOCALES: &[&str] = &[
     "zh-tw", "vi-vn", "pt-br",
 ];
 
+/// Boolean or string value supported by the launcher's preferences.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingValue {
     Bool(bool),
     Str(String),
 }
 impl From<bool> for SettingValue {
+    /// Wraps a boolean as a setting value.
     fn from(v: bool) -> Self {
         Self::Bool(v)
     }
 }
 impl From<String> for SettingValue {
+    /// Wraps an owned string as a setting value.
     fn from(v: String) -> Self {
         Self::Str(v)
     }
 }
 impl From<&str> for SettingValue {
+    /// Copies a borrowed string into a setting value.
     fn from(v: &str) -> Self {
         Self::Str(v.into())
     }
 }
 impl TryFrom<SettingValue> for bool {
     type Error = anyhow::Error;
+    /// Reads a boolean setting, rejecting string values.
     fn try_from(v: SettingValue) -> Result<Self> {
         match v {
             SettingValue::Bool(v) => Ok(v),
@@ -41,6 +46,7 @@ impl TryFrom<SettingValue> for bool {
 }
 impl TryFrom<SettingValue> for String {
     type Error = anyhow::Error;
+    /// Reads a string setting, rejecting boolean values.
     fn try_from(v: SettingValue) -> Result<Self> {
         match v {
             SettingValue::Str(v) => Ok(v),
@@ -55,6 +61,8 @@ thread_local! {
     static SETTINGS: RefCell<Option<Settings>> = const { RefCell::new(None) };
 }
 
+/// Returns the calling thread's cached settings object using the app schema.
+/// Tests use a private in-memory backend instead of desktop preferences.
 fn settings() -> Result<Settings> {
     SETTINGS.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -74,6 +82,7 @@ fn settings() -> Result<Settings> {
     })
 }
 
+/// Rejects unknown preference keys before calling GSettings accessors.
 fn require_key(settings: &Settings, key: &str) -> Result<()> {
     ensure!(
         settings
@@ -92,6 +101,7 @@ pub fn connect_changed(callback: impl Fn(&str) + 'static) -> Result<()> {
     Ok(())
 }
 
+/// Reads a known preference as a boolean or string value.
 pub fn get_option(key: &str) -> Result<SettingValue> {
     let settings = settings()?;
     require_key(&settings, key)?;
@@ -105,6 +115,7 @@ pub fn get_option(key: &str) -> Result<SettingValue> {
     }
 }
 
+/// Validates and saves a preference, normalizing language identifiers as needed.
 pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
     let settings = settings()?;
     require_key(&settings, key)?;
@@ -147,6 +158,7 @@ pub fn voice_language(value: &str) -> Result<&'static str> {
     }
 }
 
+/// Converts a supported launcher locale to its lowercase, hyphenated form.
 pub fn normalize_locale(value: &str) -> Result<String> {
     let locale = value.replace('_', "-").to_ascii_lowercase();
     ensure!(
@@ -156,10 +168,12 @@ pub fn normalize_locale(value: &str) -> Result<String> {
     Ok(locale)
 }
 
+/// Returns the configured display language as a validated launcher locale.
 pub fn display_locale() -> Result<String> {
     normalize_locale(&String::try_from(get_option("display-language")?)?)
 }
 
+/// Startup preference state captured before migrations are applied.
 #[derive(Debug, PartialEq)]
 pub struct Initialization {
     pub first_launch: bool,
@@ -213,6 +227,7 @@ pub fn initialize() -> Result<Initialization> {
 mod tests {
     use super::*;
 
+    /// Checks that setting conversions reject the wrong value type.
     #[test]
     fn setting_value_conversions_are_type_safe() {
         assert!(bool::try_from(SettingValue::from(true)).unwrap());
@@ -224,6 +239,7 @@ mod tests {
         assert!(String::try_from(SettingValue::from(true)).is_err());
     }
 
+    /// Checks invalid preferences return errors instead of reaching GLib assertions.
     #[test]
     fn invalid_keys_and_types_return_errors_without_glib_abort() {
         assert!(get_option("not-a-key").is_err());
@@ -233,6 +249,7 @@ mod tests {
         assert!(set_option("vo-lang", "invalid".into()).is_err());
     }
 
+    /// Checks voice codes and launcher locales use their own supported formats.
     #[test]
     fn voice_identifiers_are_separate_from_asset_locales() {
         assert_eq!(voice_language("EN_us").unwrap(), "en");
@@ -244,6 +261,7 @@ mod tests {
         assert!(normalize_locale("en").is_err());
     }
 
+    /// Checks repeated initialization preserves choices and records the app version.
     #[test]
     fn first_run_migration_is_idempotent_and_preserves_choices() {
         let settings = settings().unwrap();
@@ -265,6 +283,7 @@ mod tests {
         );
     }
 
+    /// Checks preferences from a newer schema version are left untouched.
     #[test]
     fn newer_settings_version_is_not_downgraded() {
         settings()

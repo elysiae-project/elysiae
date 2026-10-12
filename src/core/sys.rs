@@ -3,6 +3,7 @@ use anyhow::{Context, Result, ensure};
 use std::{ffi::CString, fs, mem::MaybeUninit, os::unix::ffi::OsStrExt, path::Path};
 use sysinfo::System;
 
+/// Returns the running kernel's version without its distribution suffix.
 pub fn kernel_version() -> Result<String> {
     System::kernel_version()
         .context("Kernel version unavailable")
@@ -57,6 +58,8 @@ pub fn get_available_storage(destination: &str, unit: Sizes) -> Result<f64> {
     ))
 }
 
+/// Checks whether the destination filesystem has room for the estimated size.
+/// The estimate is expressed in the supplied unit.
 pub fn required_storage_available(
     destination: &str,
     estimated_size: f64,
@@ -74,6 +77,7 @@ pub fn required_storage_available(
 mod tests {
     use super::*;
 
+    /// Checks that missing destinations use their nearest existing ancestor.
     #[test]
     fn storage_uses_existing_destination_ancestor() {
         let root = std::env::temp_dir().join(format!("elysiae-storage-{}", uuid::Uuid::new_v4()));
@@ -90,6 +94,7 @@ mod tests {
         fs::remove_dir(root).unwrap();
     }
 
+    /// Checks that invalid paths and storage estimates return errors.
     #[test]
     fn storage_rejects_invalid_paths_and_estimates() {
         for path in ["", "relative/path", "/tmp/../tmp", "/tmp/invalid\0path"] {
@@ -111,6 +116,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// Checks space against the destination mount rather than the root filesystem.
     #[test]
     fn storage_follows_destination_filesystem_not_root() {
         // /dev/shm is a separate tmpfs on Linux; skip only if it is unavailable.
