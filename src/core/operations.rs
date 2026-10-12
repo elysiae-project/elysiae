@@ -1,8 +1,12 @@
 //! One owner for mutations and the shared Wine prefix. The lease stays alive
 //! until all work, including blocking workers and launched processes, has ended.
-use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    fs::File,
+    path::Path,
+    sync::{Arc, Mutex, OnceLock},
+};
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use irmin::DownloadHandle;
 use uuid::Uuid;
 
@@ -19,6 +23,8 @@ pub enum OperationKind {
     Import,
     Relocate,
     Uninstall,
+    /// Re-establish quiescence after an interrupted or uncertain Wine session.
+    Recovery,
 }
 
 impl OperationKind {
@@ -57,10 +63,12 @@ pub struct OperationStatus {
 struct ActiveOperation {
     status: OperationStatus,
     handle: DownloadHandle,
+    _profile_lock: Option<File>,
 }
 
 #[derive(Default)]
 struct State {
+    persistent: bool,
     active: Option<ActiveOperation>,
     last: Option<OperationStatus>,
 }
@@ -70,7 +78,33 @@ pub struct Operations(Arc<Mutex<State>>);
 
 pub fn operations() -> &'static Operations {
     static OPERATIONS: OnceLock<Operations> = OnceLock::new();
-    OPERATIONS.get_or_init(Operations::default)
+    OPERATIONS.get_or_init(|| {
+        Operations(Arc::new(Mutex::new(State {
+            persistent: true,
+            ..State::default()
+        })))
+    })
+}
+
+fn lock_profile(path: &Path) -> Result<File> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    std::fs::create_dir_all(path.parent().context("Operation lock has no parent")?)?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    ensure!(
+        metadata.is_file() && metadata.nlink() == 1,
+        "Operation lock must be an unshared regular file"
+    );
+    file.try_lock()
+        .context("Another Elysiae process owns this profile, or the filesystem cannot lock it")?;
+    Ok(file)
 }
 
 impl Operations {
@@ -81,6 +115,17 @@ impl Operations {
             .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
         if let Some(active) = &state.active {
             bail!("An operation is already active: {:?}", active.status.kind);
+        }
+        let profile_lock = if state.persistent {
+            Some(lock_profile(&super::fs::full_path(
+                Some("operations.lock".into()),
+                None,
+            )?)?)
+        } else {
+            None
+        };
+        if state.persistent && kind != OperationKind::Recovery {
+            super::proton_manager::ensure_no_session()?;
         }
         let status = OperationStatus {
             id: Uuid::new_v4(),
@@ -93,6 +138,7 @@ impl Operations {
         state.active = Some(ActiveOperation {
             status: status.clone(),
             handle: handle.clone(),
+            _profile_lock: profile_lock,
         });
         Ok(Operation {
             owner: self.clone(),
@@ -218,7 +264,10 @@ impl Operation {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Operation is no longer active"))?;
         ensure!(active.status.id == self.id, "Operation ownership changed");
-        ensure!(!active.handle.is_cancelled(), "Operation cancelled before phase transition");
+        ensure!(
+            !active.handle.is_cancelled(),
+            "Operation cancelled before phase transition"
+        );
         active.status.phase = phase;
         Ok(())
     }
@@ -333,14 +382,33 @@ mod tests {
     }
 
     #[test]
+    fn independent_process_handles_cannot_share_a_profile_lock() {
+        let root = std::env::temp_dir().join(format!("elysiae-lock-{}", Uuid::new_v4()));
+        let path = root.join("operations.lock");
+        let first = lock_profile(&path).unwrap();
+        assert!(lock_profile(&path).is_err());
+        drop(first);
+        drop(lock_profile(&path).unwrap());
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink("outside", &path).unwrap();
+        assert!(lock_profile(&path).is_err());
+        assert!(!root.join("outside").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn relocation_cancels_before_commit_but_commit_cannot_be_interrupted() {
         let owner = Operations::default();
-        let operation = owner.begin(OperationKind::Relocate, Some(Game::Bh3)).unwrap();
+        let operation = owner
+            .begin(OperationKind::Relocate, Some(Game::Bh3))
+            .unwrap();
         assert!(owner.toggle_pause().is_err());
         owner.cancel().unwrap();
         assert!(operation.set_phase(Phase::Committing).is_err());
         drop(operation);
-        let operation = owner.begin(OperationKind::Relocate, Some(Game::Bh3)).unwrap();
+        let operation = owner
+            .begin(OperationKind::Relocate, Some(Game::Bh3))
+            .unwrap();
         operation.set_phase(Phase::Committing).unwrap();
         assert!(owner.cancel().is_err());
         assert!(operation.check_game(Game::Nap).is_err());
