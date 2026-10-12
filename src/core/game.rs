@@ -84,10 +84,8 @@ impl Game {
             Self::Nap => {
                 Ok("\x5a\x65\x6e\x6c\x65\x73\x73\x5a\x6f\x6e\x65\x5a\x65\x72\x6f\x2e\x65\x78\x65")
             }
-            // FIXME: I won't know the executable names of these two until the sophon endpoints for the games release. add executable names after the fact
-            Self::Abc | Self::Hyg => {
-                bail!("Executable metadata is not available for {}", self.code())
-            }
+            Self::Abc => Ok("\x4e\x65\x78\x75\x73\x41\x6e\x69\x6d\x61\x2e\x65\x78\x65"),
+            Self::Hyg => Ok("\x50\x65\x74\x69\x74\x50\x6c\x61\x6e\x65\x74\x2e\x65\x78\x65"),
         }
     }
 
