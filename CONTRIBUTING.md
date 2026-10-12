@@ -11,8 +11,8 @@ Elyisae *must* run on a Linux system in order to successfully compile. If you ar
 To compile Elysiae, you should have the following present on your system:
 
 1. A x86_64 or aarch64 CPU
-2. Linux Kernel >= 6.14 (Recommended)
-3. Rustup or an installation of Rust >= 1.92.0
+2. Linux kernel >= 5.8 for mount-aware write checks; >= 6.14 recommended. Unsupported safety primitives fail closed.
+3. Rustup and the pinned Rust 1.95.0 toolchain from `rust-toolchain`
 4. FreeType >= 2.9.1
 5. GTK >= 4.22
 6. Any modern version of LLVM/Clang
@@ -24,7 +24,8 @@ To compile Elysiae, you should have the following present on your system:
 
 ```sh
 sudo apt update
-sudo apt install libgtk-4-dev libfreetype-dev build-essential llvm clang -y
+sudo apt install libgtk-4-dev libfreetype-dev libssl-dev pkg-config build-essential llvm clang meson ninja-build gettext python3 -y
+# Your distribution must actually provide GTK >= 4.22; older stable releases may not.
 
 # Rustup might exist in a repo if you use a derivative of debian, but it is likely outdated. use curl to install the latest version instead:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -33,7 +34,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 #### Arch-Based
 
 ```sh
-sudo pacman -Syu rustup freetype2 gtk4 base-devel llvm clang --noconfirm
+sudo pacman -Syu rustup freetype2 gtk4 openssl pkgconf base-devel llvm clang meson ninja gettext python --noconfirm
 ```
 
 ## Post-clone
@@ -42,7 +43,7 @@ Make sure to install the toolchain used by Elysiae before doing anything else wi
 
 ```sh
 # In the project dir
-rustup toolchain install
+rustup show
 ```
 
 ## Creating Elysiae Builds
@@ -53,21 +54,48 @@ rustup toolchain install
 To create a developer build, run:
 
 ```sh
-mkdir build && cd build
-meson setup .. --buildtype=debug
-ninja -j$(nproc) # Build with all threads
+meson setup build -Dprofile=dev --prefix=/usr
+meson compile -C build
 ```
 
 To create a release build, run:
 
 ```sh
-mkdir build && cd build
-meson setup .. --buildtype=release
-ninja -j$(nproc)
+meson setup build-release -Dprofile=release --prefix=/usr
+meson compile -C build-release
 
-# If you want to install:
-ninja install -j$(nproc)
+# Review the install manifest before installing system-wide:
+meson install -C build-release --dry-run
 ```
+
+Cargo-only builds (`cargo build --locked`) also embed resources and compile the development GSettings schema. Dev and release builds deliberately share the application ID `app.elysiae.Elysiae`. Meson respects an existing `CARGO_TARGET_DIR` and does not replace `CARGO_HOME`.
+
+## Safe verification
+
+Unit tests use generated temporary filesystem profiles and an in-memory settings backend. **Do not override `HOME` for Cargo.** Fetch locked dependencies once when network access is allowed, then run:
+
+```sh
+cargo test --workspace --offline --locked
+cargo build --offline --locked
+cargo clippy --workspace --all-targets --offline --locked
+git diff --check
+```
+
+For packaging, also install `desktop-file-validate` and `appstreamcli`:
+
+```sh
+build=$(mktemp -d)
+stage=$(mktemp -d)
+CARGO_TARGET_DIR="$PWD/target" CARGO_NET_OFFLINE=true \
+  meson setup "$build" -Dprofile=dev --prefix=/usr
+CARGO_NET_OFFLINE=true meson compile -C "$build"
+glib-compile-schemas --strict --dry-run data
+desktop-file-validate "$build/data/app.elysiae.Elysiae.desktop"
+appstreamcli validate --no-net "$build/data/app.elysiae.Elysiae.metainfo.xml"
+DESTDIR="$stage" meson install -C "$build" --no-rebuild
+```
+
+CI declares native x86_64 and aarch64 runner jobs. Passing local x86_64 fixtures is not evidence that ARM hardware, real games, GPU drivers, or remote CI passed.
 
 ## Contribution Guidelines
 
