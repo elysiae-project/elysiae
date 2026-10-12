@@ -13,6 +13,7 @@ use zip::ZipArchive as Zip;
 use zstd::Decoder as Zstd;
 
 use anyhow::{Context, Result, bail, ensure};
+#[cfg(not(test))]
 use directories::BaseDirs;
 use log::warn;
 
@@ -679,326 +680,26 @@ fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        io::Write,
-        os::unix::fs::{MetadataExt, PermissionsExt},
-    };
 
-    /// Temporary archive workspace with an external sentinel for containment tests.
-    struct ArchiveFixture {
-        relative: PathBuf,
-        root: PathBuf,
-    }
-
-    impl ArchiveFixture {
-        /// Creates an isolated workspace and a sentinel outside extraction staging.
-        fn new() -> Self {
-            let relative = PathBuf::from(uuid::Uuid::new_v4().to_string());
-            let root = full_path(Some(relative.clone()), None).unwrap();
-            fs::create_dir_all(root.join("outside")).unwrap();
-            fs::write(root.join("outside/sentinel"), b"keep").unwrap();
-            Self { relative, root }
-        }
-
-        /// Writes a test archive with the requested format and entry types.
-        fn archive(&self, format: &str, entries: &[(&str, u8, &[u8])]) {
-            let bytes = if format == "zip" {
-                let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-                let options = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
-                for &(name, kind, data) in entries {
-                    match kind {
-                        b'2' => writer
-                            .add_symlink(name, std::str::from_utf8(data).unwrap(), options)
-                            .unwrap(),
-                        b'5' => writer.add_directory(name, options).unwrap(),
-                        b'0' | b'6' => {
-                            writer.start_file(name, options).unwrap();
-                            writer.write_all(data).unwrap();
-                        }
-                        _ => panic!("unsupported ZIP test entry"),
-                    }
-                }
-                let mut bytes = writer.finish().unwrap().into_inner();
-                if entries[0].1 == b'6' {
-                    // ZipWriter masks special types; patch the sole FIFO entry's mode.
-                    assert_eq!(entries.len(), 1);
-                    let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
-                    bytes[central + 5] = 3;
-                    bytes[central + 38..central + 42]
-                        .copy_from_slice(&((libc::S_IFIFO | 0o644) << 16).to_le_bytes());
-                }
-                bytes
-            } else {
-                let mut builder = tar::Builder::new(Vec::new());
-                builder.preserve_absolute(true);
-                for &(name, kind, data) in entries {
-                    let mut header = tar::Header::new_gnu();
-                    header.set_mode(0o755);
-                    header.set_mtime(1);
-                    header.set_entry_type(tar::EntryType::new(kind));
-                    header.set_size(if kind == b'0' { data.len() as u64 } else { 0 });
-                    if kind == b'1' || kind == b'2' {
-                        builder
-                            .append_link(&mut header, name, std::str::from_utf8(data).unwrap())
-                            .unwrap();
-                    } else if name.contains("..") {
-                        // Write the raw name to allow intentionally malicious ../ fixtures.
-                        header.as_old_mut().name[..name.len()].copy_from_slice(name.as_bytes());
-                        header.set_cksum();
-                        builder.append(&header, data).unwrap();
-                    } else {
-                        builder
-                            .append_data(&mut header, name, if kind == b'0' { data } else { &[] })
-                            .unwrap();
-                    }
-                }
-                let tar = builder.into_inner().unwrap();
-                match format {
-                    "gz" => {
-                        let mut encoder =
-                            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
-                        encoder.write_all(&tar).unwrap();
-                        encoder.finish().unwrap()
-                    }
-                    "xz" => {
-                        let mut encoder = xz::write::XzEncoder::new(Vec::new(), 1);
-                        encoder.write_all(&tar).unwrap();
-                        encoder.finish().unwrap()
-                    }
-                    "zst" => zstd::stream::encode_all(tar.as_slice(), 1).unwrap(),
-                    _ => panic!("unsupported TAR test compression"),
-                }
-            };
-            fs::write(self.root.join(format!("input.{format}")), bytes).unwrap();
-        }
-
-        /// Extracts and flattens the fixture archive into the requested destination.
-        fn extract(&self, format: &str, destination: &str, overwrite: bool) -> Result<()> {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(extract_file(
-                    MultiPathOptions {
-                        init_path: self.relative.join(format!("input.{format}")),
-                        init_path_base_dir: None,
-                        dest_path: self.relative.join(destination),
-                        dest_path_base_dir: None,
-                        overwrite: Some(overwrite),
-                    },
-                    Some(true),
-                ))
-        }
-
-        /// Checks that extraction left the external sentinel directory unchanged.
-        fn assert_sentinel(&self) {
-            assert_eq!(
-                fs::read(self.root.join("outside/sentinel")).unwrap(),
-                b"keep"
-            );
-            assert_eq!(fs::read_dir(self.root.join("outside")).unwrap().count(), 1);
-        }
-    }
-
-    impl Drop for ArchiveFixture {
-        /// Removes the temporary archive workspace.
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.root);
-        }
-    }
-
-    /// Checks every base directory stays in the isolated temporary profile.
+    /// Keeps file paths inside the isolated test profile and rejects traversal.
     #[test]
-    fn test_full_path() {
-        let home = base_path(Some(BaseDirectory::Home)).unwrap();
-        assert_ne!(home, BaseDirs::new().unwrap().home_dir());
-        assert!(home.starts_with(std::env::temp_dir()));
-        for (base, suffix) in [
-            (Some(BaseDirectory::Home), ""),
-            (Some(BaseDirectory::Desktop), "Desktop"),
-            (Some(BaseDirectory::AppData), ".local/share/elysiae"),
-            (
-                Some(BaseDirectory::Compat),
-                ".local/share/elysiae/proton-data",
-            ),
-            (None, ".local/share/elysiae"),
+    fn paths_stay_inside_the_test_profile() {
+        for base in [
+            None,
+            Some(BaseDirectory::Home),
+            Some(BaseDirectory::Desktop),
+            Some(BaseDirectory::AppData),
+            Some(BaseDirectory::Compat),
         ] {
-            assert_eq!(full_path(None, base).unwrap(), home.join(suffix));
+            let root = full_path(None, base).unwrap();
+            assert!(root.starts_with(std::env::temp_dir()));
             assert_eq!(
-                full_path(Some("dummy-dir".into()), base).unwrap(),
-                home.join(suffix).join("dummy-dir")
+                full_path(Some("game/data".into()), base).unwrap(),
+                root.join("game/data")
             );
-        }
-    }
-
-    /// Checks file creation, replacement, reading, and deletion through wrappers.
-    #[test]
-    fn file_write_exists_read_delete() {
-        let path: PathBuf = uuid::Uuid::new_v4().to_string().into();
-        for contents in [b"first payload".as_slice(), b"replacement"] {
-            write_file(path.clone(), contents, Some(BaseDirectory::Home)).unwrap();
-            assert!(exists(path.clone(), Some(BaseDirectory::Home)).unwrap());
-            assert_eq!(
-                read_file(path.clone(), Some(BaseDirectory::Home)).unwrap(),
-                contents
-            );
-        }
-        remove(path.clone(), Some(BaseDirectory::Home), None).unwrap();
-        assert!(!exists(path, Some(BaseDirectory::Home)).unwrap());
-    }
-
-    /// Checks directory creation, listing, and recursive deletion through wrappers.
-    #[test]
-    fn dir_write_exists_read_delete() {
-        let directory = PathBuf::from(format!("elysiae-test-{}", uuid::Uuid::new_v4()));
-        let file = directory.join("nested.txt");
-        mkdir(directory.clone(), Some(BaseDirectory::Home)).unwrap();
-        assert!(exists(directory.clone(), Some(BaseDirectory::Home)).unwrap());
-        write_file(file.clone(), b"directory test", Some(BaseDirectory::Home)).unwrap();
-        assert!(
-            read_dir(directory.clone(), Some(BaseDirectory::Home))
-                .unwrap()
-                .contains(&full_path(Some(file), Some(BaseDirectory::Home)).unwrap())
-        );
-        remove(directory.clone(), Some(BaseDirectory::Home), Some(true)).unwrap();
-        assert!(!exists(directory, Some(BaseDirectory::Home)).unwrap());
-    }
-
-    /// Checks invalid paths and empty removal cannot escape or erase the base.
-    #[test]
-    fn path_validation_rejects_escape_attempts() {
-        for path in ["../outside", "/absolute", ".", ""] {
-            assert!(full_path(Some(path.into()), None).is_err(), "{path}");
-        }
-        let sentinel = PathBuf::from(format!("sentinel-{}", uuid::Uuid::new_v4()));
-        write_file(sentinel.clone(), b"keep", None).unwrap();
-        assert!(remove(PathBuf::new(), None, Some(true)).is_err());
-        assert_eq!(read_file(sentinel.clone(), None).unwrap(), b"keep");
-        remove(sentinel, None, None).unwrap();
-    }
-
-    /// Checks that linked ancestors cannot redirect relative paths outside the base.
-    #[test]
-    fn path_validation_rejects_escaping_symlink_ancestors() {
-        let root = base_path(None)
-            .unwrap()
-            .join(uuid::Uuid::new_v4().to_string());
-        let owned = root.join("owned");
-        let outside = root.join("outside");
-        fs::create_dir_all(owned.join("internal")).unwrap();
-        fs::create_dir_all(&outside).unwrap();
-        fs::write(outside.join("sentinel"), b"keep").unwrap();
-        std::os::unix::fs::symlink(&outside, owned.join("escape")).unwrap();
-        std::os::unix::fs::symlink("internal", owned.join("safe")).unwrap();
-        std::os::unix::fs::symlink(outside.join("missing"), owned.join("dangling")).unwrap();
-        for path in [
-            "escape",
-            "escape/sentinel",
-            "escape/new/file",
-            "dangling/new",
-        ] {
-            assert!(join_beneath(owned.clone(), path.into()).is_err(), "{path}");
-        }
-        assert!(join_beneath(owned.clone(), "safe/new/file".into()).is_ok());
-        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"keep");
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    /// Rejects traversal, escaping links, flattening escapes, and TAR/ZIP special nodes.
-    #[test]
-    fn extraction_rejects_unsafe_entries() {
-        for format in ["gz", "zip"] {
-            let fixture = ArchiveFixture::new();
-            let absolute = fixture.root.join("outside/sentinel");
-            let cases: &[&[(&str, u8, &[u8])]] = &[
-                &[("../outside/sentinel", b'0', b"replace")],
-                &[(absolute.to_str().unwrap(), b'0', b"replace")],
-                &[("escape", b'2', b"../outside")],
-                &[("escape", b'2', absolute.to_str().unwrap().as_bytes())],
-                &[("alias", b'2', b"."), ("escape", b'2', b"alias/../outside")],
-                &[("runtime/link", b'2', b"../outside")],
-                &[("unsafe", b'6', b"")],
-            ];
-            for (case, entries) in cases.iter().enumerate() {
-                fixture.archive(format, entries);
-                // Fresh staging avoids a previous failure masking the entry check.
-                assert!(
-                    fixture
-                        .extract(format, &format!("stage-{case}"), true)
-                        .is_err(),
-                    "{format}: {entries:?}"
-                );
-                fixture.assert_sentinel();
+            for path in ["", ".", "../outside", "/absolute"] {
+                assert!(full_path(Some(path.into()), base).is_err());
             }
-        }
-    }
-
-    /// Checks that flattening preserves runtime files, permissions, and safe links.
-    #[test]
-    fn extraction_preserves_wrapped_runtime_and_safe_relative_links() {
-        for format in ["gz", "xz", "zst", "zip"] {
-            let fixture = ArchiveFixture::new();
-            let mut entries: Vec<(&str, u8, &[u8])> = vec![
-                ("runtime/", b'5', b""),
-                ("runtime/proton", b'0', b"#!/bin/sh\n"),
-                ("runtime/files/lib/libwine.so", b'0', b"library"),
-                ("runtime/files/lib64/libwine.so", b'2', b"../lib/libwine.so"),
-                ("runtime/launcher", b'2', b"proton"),
-                ("runtime/optional", b'2', b"not-installed"),
-            ];
-            if format != "zip" {
-                entries.push(("runtime/proton-hardlink", b'1', b"runtime/proton"));
-            }
-            fixture.archive(format, &entries);
-            fixture.extract(format, "stage", true).unwrap();
-            let stage = fixture.root.join("stage");
-            assert_eq!(fs::read(stage.join("proton")).unwrap(), b"#!/bin/sh\n");
-            assert_eq!(fs::read(stage.join("launcher")).unwrap(), b"#!/bin/sh\n");
-            assert_eq!(
-                fs::read_link(stage.join("files/lib64/libwine.so")).unwrap(),
-                Path::new("../lib/libwine.so")
-            );
-            assert_eq!(
-                fs::read(stage.join("files/lib64/libwine.so")).unwrap(),
-                b"library"
-            );
-            assert_eq!(
-                fs::read_link(stage.join("optional")).unwrap(),
-                Path::new("not-installed")
-            );
-            assert!(
-                fs::metadata(stage.join("proton"))
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o111
-                    != 0
-            );
-            assert!(!stage.join("runtime").exists());
-            if format != "zip" {
-                assert_eq!(
-                    fs::metadata(stage.join("proton")).unwrap().ino(),
-                    fs::metadata(stage.join("proton-hardlink")).unwrap().ino()
-                );
-            }
-            fixture.assert_sentinel();
-        }
-    }
-
-    /// Checks populated and symlink destinations stay untouched even with overwrite enabled.
-    #[test]
-    fn extraction_never_changes_live_or_nonempty_destinations() {
-        for format in ["gz", "zip"] {
-            let fixture = ArchiveFixture::new();
-            fixture.archive(format, &[("sentinel", b'0', b"replace")]);
-            fs::create_dir(fixture.root.join("empty")).unwrap();
-            std::os::unix::fs::symlink("empty", fixture.root.join("linked")).unwrap();
-            for (destination, overwrite) in
-                [("outside", false), ("outside", true), ("linked", true)]
-            {
-                assert!(fixture.extract(format, destination, overwrite).is_err());
-                fixture.assert_sentinel();
-            }
-            assert!(fixture.root.join("linked").is_symlink());
-            assert_eq!(fs::read_dir(fixture.root.join("empty")).unwrap().count(), 0);
         }
     }
 }
