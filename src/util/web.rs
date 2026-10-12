@@ -91,15 +91,22 @@ pub async fn download_file(
     base_dir: Option<BaseDirectory>,
     on_progress: Option<Box<dyn Fn(DownloadProgress) + Send + 'static>>,
 ) -> Result<()> {
+    download_file_limited(url, dest, base_dir, on_progress, MAX_DOWNLOAD_SIZE).await
+}
+
+/// A caller may impose a smaller resource budget, never increase the global
+/// limit. Both declared and streamed sizes are checked before finalization.
+pub async fn download_file_limited(
+    url: String,
+    dest: PathBuf,
+    base_dir: Option<BaseDirectory>,
+    on_progress: Option<Box<dyn Fn(DownloadProgress) + Send + 'static>>,
+    max_size: u64,
+) -> Result<()> {
+    ensure!(max_size <= MAX_DOWNLOAD_SIZE, "Download budget exceeds the global limit");
     let parsed = https_url(&url)?;
     let destination = full_path(Some(dest), base_dir)?;
-    download_to(
-        http_client()?.get(parsed),
-        destination,
-        on_progress,
-        MAX_DOWNLOAD_SIZE,
-    )
-    .await
+    download_to(http_client()?.get(parsed), destination, on_progress, max_size).await
 }
 
 async fn download_to(
@@ -545,6 +552,16 @@ mod tests {
             }
             assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
             assert!(https_url("https://example.invalid/metadata").is_ok());
+        });
+    }
+
+    #[test]
+    fn caller_cannot_raise_the_global_download_limit() {
+        run(async {
+            assert!(download_file_limited(
+                "https://example.invalid/file".into(), "file".into(), None, None,
+                MAX_DOWNLOAD_SIZE + 1,
+            ).await.unwrap_err().to_string().contains("global limit"));
         });
     }
 
