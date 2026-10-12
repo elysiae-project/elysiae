@@ -28,6 +28,10 @@ impl OperationKind {
             Self::Install | Self::Update | Self::Preinstall | Self::Repair
         )
     }
+
+    fn supports_cancellation(self) -> bool {
+        self.supports_download_controls() || matches!(self, Self::Relocate | Self::Components)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,7 +161,7 @@ impl Operations {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No active operation"))?;
         ensure!(
-            active.status.kind.supports_download_controls()
+            active.status.kind.supports_cancellation()
                 && matches!(active.status.phase, Phase::Running | Phase::Paused),
             "This phase must finish before cancellation is safe"
         );
@@ -214,6 +218,7 @@ impl Operation {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Operation is no longer active"))?;
         ensure!(active.status.id == self.id, "Operation ownership changed");
+        ensure!(!active.handle.is_cancelled(), "Operation cancelled before phase transition");
         active.status.phase = phase;
         Ok(())
     }
@@ -325,6 +330,21 @@ mod tests {
         let status = owner.status().unwrap().unwrap();
         assert_eq!(status.phase, Phase::Failed);
         assert_eq!(status.error.as_deref(), Some("repair failed"));
+    }
+
+    #[test]
+    fn relocation_cancels_before_commit_but_commit_cannot_be_interrupted() {
+        let owner = Operations::default();
+        let operation = owner.begin(OperationKind::Relocate, Some(Game::Bh3)).unwrap();
+        assert!(owner.toggle_pause().is_err());
+        owner.cancel().unwrap();
+        assert!(operation.set_phase(Phase::Committing).is_err());
+        drop(operation);
+        let operation = owner.begin(OperationKind::Relocate, Some(Game::Bh3)).unwrap();
+        operation.set_phase(Phase::Committing).unwrap();
+        assert!(owner.cancel().is_err());
+        assert!(operation.check_game(Game::Nap).is_err());
+        operation.finish(Ok(())).unwrap();
     }
 
     #[test]
