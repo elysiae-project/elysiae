@@ -68,36 +68,72 @@ impl Progressbar {
     fn format_sophon_progress(progress: &SophonProgress) -> String {
         match progress {
             SophonProgress::FetchingManifest => "Fetching manifest".into(),
-            SophonProgress::CalculatingDownloads { checked_files, total_files } => {
+            SophonProgress::CalculatingDownloads {
+                checked_files,
+                total_files,
+            } => {
                 format!("Calculating downloads: {checked_files}/{total_files}")
             }
-            SophonProgress::Downloading { downloaded_bytes, total_bytes, speed_bps, eta_seconds } => {
-                format!("Downloading: {downloaded_bytes}/{total_bytes} bytes ({speed_bps:.0} B/s, ETA {eta_seconds:.0}s)")
+            SophonProgress::Downloading {
+                downloaded_bytes,
+                total_bytes,
+                speed_bps,
+                eta_seconds,
+            } => {
+                format!(
+                    "Downloading: {downloaded_bytes}/{total_bytes} bytes ({speed_bps:.0} B/s, ETA {eta_seconds:.0}s)"
+                )
             }
-            SophonProgress::Paused { downloaded_bytes, total_bytes } => {
+            SophonProgress::Paused {
+                downloaded_bytes,
+                total_bytes,
+            } => {
                 format!("Paused: {downloaded_bytes}/{total_bytes} bytes")
             }
-            SophonProgress::Assembling { assembled_files, total_files } => {
+            SophonProgress::Assembling {
+                assembled_files,
+                total_files,
+            } => {
                 format!("Assembling: {assembled_files}/{total_files}")
             }
-            SophonProgress::CheckingFiles { checked_files, total_files } => {
+            SophonProgress::CheckingFiles {
+                checked_files,
+                total_files,
+            } => {
                 format!("Checking files: {checked_files}/{total_files}")
             }
-            SophonProgress::Verifying { scanned_files, total_files, error_count } => {
+            SophonProgress::Verifying {
+                scanned_files,
+                total_files,
+                error_count,
+            } => {
                 format!("Verifying: {scanned_files}/{total_files} (errors: {error_count})")
             }
             SophonProgress::Warning { message } => format!("Warning: {message}"),
             SophonProgress::Error { message } => format!("Error: {message}"),
-            SophonProgress::InstallingPlugins { current_plugin, total_plugins } => {
+            SophonProgress::InstallingPlugins {
+                current_plugin,
+                total_plugins,
+            } => {
                 format!("Installing plugin {current_plugin}/{total_plugins}")
             }
-            SophonProgress::InstallingSdks { current_sdk, total_sdks } => {
+            SophonProgress::InstallingSdks {
+                current_sdk,
+                total_sdks,
+            } => {
                 format!("Installing SDK {current_sdk}/{total_sdks}")
             }
-            SophonProgress::DownloadingPlugin { name, downloaded_bytes, total_bytes } => {
+            SophonProgress::DownloadingPlugin {
+                name,
+                downloaded_bytes,
+                total_bytes,
+            } => {
                 format!("Downloading {name}: {downloaded_bytes}/{total_bytes} bytes")
             }
-            SophonProgress::ApplyingPreinstall { applied_files, total_files } => {
+            SophonProgress::ApplyingPreinstall {
+                applied_files,
+                total_files,
+            } => {
                 format!("Applying preinstall: {applied_files}/{total_files}")
             }
             SophonProgress::Finished => "Finished".into(),
@@ -122,7 +158,10 @@ mod tests {
             downloaded: 50,
             total: 100,
         };
-        assert_eq!(Progressbar::handle_download_event(DownloadEvent::File(progress)), "Downloading: 50%");
+        assert_eq!(
+            Progressbar::handle_download_event(DownloadEvent::File(progress)),
+            "Downloading: 50%"
+        );
     }
 
     #[test]
@@ -132,6 +171,9 @@ mod tests {
             total_files: 4,
             error_count: 0,
         };
-        assert_eq!(Progressbar::handle_download_event(DownloadEvent::Sophon(progress)), "Verifying: 2/4 (errors: 0)");
+        assert_eq!(
+            Progressbar::handle_download_event(DownloadEvent::Sophon(progress)),
+            "Verifying: 2/4 (errors: 0)"
+        );
     }
 }

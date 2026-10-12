@@ -34,7 +34,10 @@ mod imp {
     impl Titlebar {
         #[template_callback]
         fn on_close_clicked(&self, _button: &gtk::Button) {
-            if let Some(window) = self.obj().root().and_then(|r| r.downcast::<gtk::Window>().ok())
+            if let Some(window) = self
+                .obj()
+                .root()
+                .and_then(|r| r.downcast::<gtk::Window>().ok())
             {
                 window.close();
             }

@@ -53,7 +53,7 @@ impl Settings {
     pub fn set_property_value(&self, key: &str, value: &str) -> Result<()> {
         let current = get_option(key)?;
         let setting = match current {
-            SettingValue::Bool(_) => SettingValue::Bool(value.parse()? ),
+            SettingValue::Bool(_) => SettingValue::Bool(value.parse()?),
             SettingValue::Str(_) => SettingValue::Str(value.to_owned()),
         };
         set_option(key, setting)
