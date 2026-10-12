@@ -34,6 +34,17 @@ impl TryFrom<&str> for Game {
 }
 
 impl Game {
+    pub fn all() -> [Self; 6] {
+        [
+            Self::Bh3,
+            Self::Hk4e,
+            Self::Hkrpg,
+            Self::Nap,
+            Self::Abc,
+            Self::Hyg,
+        ]
+    }
+
     pub fn code(self) -> &'static str {
         match self {
             Self::Bh3 => "\x62\x68\x33",

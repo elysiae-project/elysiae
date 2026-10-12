@@ -1,42 +1,41 @@
-use crate::core::{
-    game::Game,
-    game_downloader::{download_game as install_game, download_update, launch_game as run_game},
-    proton_manager::{components_installed, update_all_modules},
-};
 use anyhow::Result;
 use async_channel::Sender;
+use gtk::{glib, prelude::*, subclass::prelude::ObjectSubclassIsExt};
 use irmin::SophonProgress;
-use gtk::glib;
-use gtk::subclass::prelude::ObjectSubclassIsExt;
+
+use crate::{
+    core::{
+        game::Game,
+        game_downloader::{self, UpdateAvailability},
+        operations::operations,
+        proton_manager,
+    },
+    util::{runtime, settings::get_option},
+    widgets::progressbar::{DownloadEvent, Progressbar},
+};
 
 mod imp {
-    use gtk::CompositeTemplate;
-    use gtk::glib;
-    use gtk::glib::clone;
-    use gtk::glib::types::StaticType;
-    use gtk::prelude::ButtonExt;
-    use crate::core::game::Game;
-    use crate::util::{runtime, settings::{SettingValue, get_option}};
-    use crate::widgets::progressbar::{DownloadEvent, Progressbar};
-    use crate::core::{game_downloader::download_game as install_game, proton_manager::{components_installed, update_all_modules}};
-    use gtk::subclass::prelude::*;
-
-    use crate::widgets;
-    use crate::widgets::{background::Background, titlebar::Titlebar};
+    use crate::{
+        core::{game::Game, game_downloader::UpdateAvailability},
+        widgets::{background::Background, titlebar::Titlebar},
+    };
+    use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+    use std::cell::{Cell, OnceCell};
 
     #[derive(CompositeTemplate, Default)]
     #[template(resource = "/app/elysiae/Elysiae/window.ui")]
     pub struct ElysiaeWindow {
         #[template_child]
         pub settings_button: TemplateChild<gtk::Button>,
-
         #[template_child]
         pub operation_button: TemplateChild<gtk::Button>,
-
         #[template_child]
-        pub background: TemplateChild<widgets::background::Background>,
-
-        pub current_game: std::cell::Cell<Game>,
+        pub background: TemplateChild<Background>,
+        pub current_game: Cell<Game>,
+        pub status: Cell<Option<UpdateAvailability>>,
+        pub request: Cell<u64>,
+        pub busy: Cell<bool>,
+        pub popover: OnceCell<gtk::PopoverMenu>,
     }
 
     #[glib::object_subclass]
@@ -44,59 +43,52 @@ mod imp {
         const NAME: &'static str = "ElysiaeWindow";
         type Type = super::ElysiaeWindow;
         type ParentType = gtk::ApplicationWindow;
-
         fn class_init(klass: &mut Self::Class) {
             Titlebar::static_type();
             Background::static_type();
             klass.bind_template();
         }
-
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
-
     }
-
     impl ObjectImpl for ElysiaeWindow {
         fn constructed(&self) {
             self.parent_constructed();
-
-            let obj = self.obj();
-
-            self.settings_button.connect_clicked(clone!(
-                #[weak]
-                obj,
-                move |_| println!("Settings button clicked")
-            ));
-
-            self.operation_button.connect_clicked(clone!(
-                #[weak]
-                obj,
-                move |_| {
-                    let game = obj.get_current_game();
-                    let lang = match get_option("vo-lang") {
-                        Ok(SettingValue::Str(value)) => value,
-                        _ => "en-us".to_owned(),
-                    };
-                    let (sender, receiver) = async_channel::unbounded();
-                    glib::MainContext::default().spawn_local(async move {
-                        while let Ok(progress) = receiver.recv().await {
-                            let _ = Progressbar::handle_download_event(DownloadEvent::Sophon(progress));
-                        }
-                    });
-                    runtime::spawn(async move {
-                        if !components_installed().unwrap_or(false) {
-                            if let Err(error) = update_all_modules().await {
-                                log::error!("Component installation failed: {error:#}");
-                                return;
-                            }
-                        }
-                        if let Err(error) = install_game(game, &lang, sender).await {
-                            log::error!("Game download failed: {error:#}");
-                        }
-                    });
+            let weak = self.obj().downgrade();
+            self.operation_button.connect_clicked(move |_| {
+                if let Some(window) = weak.upgrade() {
+                    window.start_operation();
                 }
-            ));
+            });
+            // Backend actions are accessible without changing any UI resources.
+            let menu = gtk::gio::Menu::new();
+            menu.append(
+                Some("Check runtime updates"),
+                Some("app.check-runtime-update"),
+            );
+            menu.append(Some("Pause / resume transfer"), Some("app.pause-operation"));
+            menu.append(Some("Cancel operation"), Some("app.cancel-operation"));
+            let popover = gtk::PopoverMenu::from_model(Some(&menu));
+            popover.set_parent(&*self.settings_button);
+            self.popover
+                .set(popover.clone())
+                .expect("Popover initialized once");
+            self.settings_button
+                .connect_clicked(move |_| popover.popup());
+            let weak = self.obj().downgrade();
+            glib::timeout_add_local(std::time::Duration::from_millis(300), move || {
+                let Some(window) = weak.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                window.refresh_controls();
+                glib::ControlFlow::Continue
+            });
+        }
+        fn dispose(&self) {
+            if let Some(popover) = self.popover.get() {
+                popover.unparent();
+            }
         }
     }
     impl WidgetImpl for ElysiaeWindow {}
@@ -117,52 +109,227 @@ impl ElysiaeWindow {
         window.change_game(Game::Bh3);
         window
     }
-
     pub fn get_current_game(&self) -> Game {
         self.imp().current_game.get()
     }
-
     pub fn change_game(&self, game: Game) {
+        log::info!("Selected game: {}", game.code());
         self.imp().current_game.set(game);
-        self.imp().background.set_media(game);
+        self.refresh_media();
+        self.refresh_status();
+    }
+    pub fn refresh_media(&self) {
+        self.imp().background.set_media(self.get_current_game());
+    }
+
+    fn refresh_controls(&self) {
+        let busy = self.imp().busy.get() || operations().is_busy().unwrap_or(true);
+        self.imp()
+            .operation_button
+            .set_sensitive(!busy && self.imp().status.get().is_some());
+        if !busy && let Some(status) = self.imp().status.get() {
+            self.imp().operation_button.set_label(action_label(status));
+        }
+    }
+
+    pub fn refresh_status(&self) {
+        let game = self.get_current_game();
+        let request = self.imp().request.get().wrapping_add(1);
+        self.imp().request.set(request);
+        self.imp().status.set(None);
+        self.imp().operation_button.set_label("Checking…");
+        self.imp().operation_button.set_sensitive(false);
+        let lang = get_option("vo-lang")
+            .and_then(String::try_from)
+            .unwrap_or_else(|_| "en".into());
+        let check = get_option("check-for-updates")
+            .and_then(bool::try_from)
+            .unwrap_or(false);
+        let (sender, receiver) = async_channel::bounded(2);
+        runtime::spawn(async move {
+            let local =
+                tokio::task::spawn_blocking(move || game_downloader::local_update_status(game))
+                    .await;
+            match local {
+                Ok(Ok(status)) => {
+                    let _ = sender.send(Ok(status)).await;
+                    if status == UpdateAvailability::Updated
+                        && check
+                        && !operations().is_busy().unwrap_or(true)
+                    {
+                        match game_downloader::update_status(game, &lang).await {
+                            Ok(status) => {
+                                let _ = sender.send(Ok(status)).await;
+                            }
+                            Err(error) => log::warn!(
+                                "Game update check unavailable; offline launch remains available: {error:#}"
+                            ),
+                        }
+                    }
+                }
+                Ok(Err(error)) => {
+                    let _ = sender.send(Err(error.to_string())).await;
+                }
+                Err(error) => {
+                    let _ = sender.send(Err(error.to_string())).await;
+                }
+            }
+        });
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            while let Ok(result) = receiver.recv().await {
+                let Some(window) = weak.upgrade() else {
+                    break;
+                };
+                if window.imp().request.get() != request {
+                    break;
+                }
+                match result {
+                    Ok(status) => {
+                        window.imp().status.set(Some(status));
+                        if !window.imp().busy.get() {
+                            window
+                                .imp()
+                                .operation_button
+                                .set_label(action_label(status));
+                            window
+                                .imp()
+                                .operation_button
+                                .set_sensitive(!operations().is_busy().unwrap_or(true));
+                            window.imp().operation_button.set_tooltip_text(None);
+                        }
+                    }
+                    Err(error) => {
+                        window.imp().operation_button.set_label("Unavailable");
+                        window.imp().operation_button.set_tooltip_text(Some(&error));
+                    }
+                }
+            }
+        });
+    }
+
+    fn start_operation(&self) {
+        if self.imp().busy.get() || operations().is_busy().unwrap_or(true) {
+            return;
+        }
+        let Some(status) = self.imp().status.get() else {
+            return;
+        };
+        let game = self.get_current_game();
+        let lang = get_option("vo-lang")
+            .and_then(String::try_from)
+            .unwrap_or_else(|_| "en".into());
+        self.imp().busy.set(true);
+        self.imp().operation_button.set_sensitive(false);
+        self.imp().operation_button.set_label(
+            if matches!(
+                status,
+                UpdateAvailability::Updated | UpdateAvailability::Untracked
+            ) {
+                "Running…"
+            } else {
+                "Working…"
+            },
+        );
+        let (sender, receiver) = async_channel::bounded(32);
+        let (done, completion) = async_channel::bounded(1);
+        runtime::spawn(async move {
+            let result = match status {
+                UpdateAvailability::NotInstalled | UpdateAvailability::Incomplete => {
+                    game_downloader::download_game(game, &lang, sender).await
+                }
+                UpdateAvailability::Outdated | UpdateAvailability::Preinstall => {
+                    game_downloader::download_update(game, &lang, sender).await
+                }
+                UpdateAvailability::Updated | UpdateAvailability::Untracked => {
+                    game_downloader::launch_game(game).await
+                }
+            };
+            // Dedicated single terminal slot: ordinary progress cannot crowd out
+            // the operation result, including failures before irmin starts.
+            let _ = done.send(result).await;
+        });
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            while let Ok(progress) = receiver.recv().await {
+                let Some(window) = weak.upgrade() else {
+                    break;
+                };
+                let text = Progressbar::handle_download_event(DownloadEvent::Sophon(progress));
+                window.imp().operation_button.set_tooltip_text(Some(&text));
+            }
+        });
+        let weak = self.downgrade();
+        let hold = self.application().map(|app| app.hold());
+        glib::MainContext::default().spawn_local(async move {
+            let _hold = hold;
+            let result = completion.recv().await;
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            window.imp().busy.set(false);
+            if let Ok(Err(error)) = result {
+                log::error!("Operation failed: {error:#}");
+                gtk::AlertDialog::builder()
+                    .message("Operation failed")
+                    .detail(format!("{error:#}"))
+                    .build()
+                    .show(Some(&window));
+            }
+            window.refresh_status();
+        });
     }
 
     pub async fn download_components(&self) -> Result<()> {
-        update_all_modules().await?;
-        Ok(())
+        proton_manager::update_all_modules().await
     }
-
     pub async fn download_game(
         &self,
         game: Game,
         lang: &str,
         sender: Sender<SophonProgress>,
     ) -> Result<()> {
-        if !components_installed()? {
-            self.download_components().await?;
-        }
-
-        install_game(game, lang, sender).await
+        game_downloader::download_game(game, lang, sender).await
     }
-
     pub async fn update_game(
         &self,
         game: Game,
         lang: &str,
         sender: Sender<SophonProgress>,
     ) -> Result<()> {
-        if !components_installed()? {
-            self.download_components().await?;
-        }
-
-        download_update(game, lang, sender).await
+        game_downloader::download_update(game, lang, sender).await
     }
-
     pub async fn launch_game(&self, game: Game) -> Result<()> {
-        run_game(game).await
+        game_downloader::launch_game(game).await
+    }
+}
+
+fn action_label(status: UpdateAvailability) -> &'static str {
+    match status {
+        UpdateAvailability::Updated | UpdateAvailability::Untracked => "Launch",
+        UpdateAvailability::Outdated => "Update",
+        UpdateAvailability::Preinstall => "Preinstall",
+        UpdateAvailability::NotInstalled => "Download",
+        UpdateAvailability::Incomplete => "Resume installation",
     }
 }
 
 pub fn build_window(app: &gtk::Application) -> ElysiaeWindow {
     ElysiaeWindow::new(app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn primary_action_follows_installation_state() {
+        assert_eq!(
+            action_label(UpdateAvailability::Incomplete),
+            "Resume installation"
+        );
+        assert_eq!(action_label(UpdateAvailability::Updated), "Launch");
+        assert_eq!(action_label(UpdateAvailability::Untracked), "Launch");
+        assert_eq!(action_label(UpdateAvailability::Outdated), "Update");
+        assert_eq!(action_label(UpdateAvailability::Preinstall), "Preinstall");
+    }
 }

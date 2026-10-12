@@ -84,6 +84,14 @@ fn require_key(settings: &Settings, key: &str) -> Result<()> {
     Ok(())
 }
 
+/// Register one application-lifetime listener on the calling thread's settings.
+/// The application supplies weak GTK references, so the listener owns no windows.
+pub fn connect_changed(callback: impl Fn(&str) + 'static) -> Result<()> {
+    let settings = settings()?;
+    let _ = settings.connect_changed(None, move |_, key| callback(key));
+    Ok(())
+}
+
 pub fn get_option(key: &str) -> Result<SettingValue> {
     let settings = settings()?;
     require_key(&settings, key)?;

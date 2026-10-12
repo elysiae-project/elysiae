@@ -28,6 +28,10 @@
             <default>false</default>
             <summary>Use video backgrounds when available</summary>
         </key>
+        <key name="check-for-updates" type="b">
+            <default>true</default>
+            <summary>Check game and runtime releases without automatically applying updates</summary>
+        </key>
         <key name="display-language" type="s">
             <default>'en-us'</default>
             <summary>Launcher Language</summary>
