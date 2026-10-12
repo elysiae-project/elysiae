@@ -27,6 +27,9 @@ fn main() -> glib::ExitCode {
         // Setting this environment variable to be an empty string is intended. Proton doesn't need the variable to work, it just needs it to be defined
         set_var("STEAM_COMPAT_CLIENT_INSTALL_PATH", "");
     }
+    if let Err(error) = util::settings::initialize() {
+        log::error!("Settings initialization failed; existing preferences are unchanged: {error:#}");
+    }
     gio::resources_register_include!("elysiae.gresource").expect("Failed to register resources.");
 
     let app = app::build_app();

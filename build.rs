@@ -1,5 +1,12 @@
 fn main() {
     compile_resources();
+    let status = std::process::Command::new("glib-compile-schemas")
+        .args(["--strict", "--targetdir"])
+        .arg(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"))
+        .arg("data")
+        .status()
+        .expect("glib-compile-schemas is required to build Elysiae");
+    assert!(status.success(), "GSettings schema compilation failed");
 
     #[cfg(not(target_os = "linux"))]
     compile_error!(

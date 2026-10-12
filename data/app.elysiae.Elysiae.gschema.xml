@@ -1,5 +1,9 @@
 <schemalist xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <schema id="app.elysiae.Elysiae" path="/app/elysiae/Elysiae/">
+        <key name="settings-version" type="s">
+            <default>'0'</default>
+            <summary>Version of completed settings migrations</summary>
+        </key>
         <key name="is-first-launch" type="b">
             <default>true</default>
             <summary>First time this system has launched Elysiae</summary>
@@ -9,7 +13,7 @@
             <summary>Last used version of elysiae the user has ran on this system</summary>
         </key>
         <key name="vo-lang" type="s">
-            <default>'en-us'</default>
+            <default>'en'</default>
             <summary>Voice-over language to download alongside game downloads</summary>
         </key>
         <key name="generate-desktop-shortcut" type="b">

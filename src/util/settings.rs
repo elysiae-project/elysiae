@@ -1,5 +1,15 @@
-use anyhow::Result;
-use gtk::gio::{Settings, prelude::SettingsExt};
+use std::cell::RefCell;
+
+use anyhow::{Context, Result, ensure};
+use gtk::gio::{self, Settings, SettingsSchemaSource, prelude::SettingsExt};
+
+const APP_ID: &str = "app.elysiae.Elysiae";
+const SETTINGS_VERSION: u32 = 1;
+pub const SUPPORTED_LOCALES: &[&str] = &[
+    "en-us", "zh-cn", "ko-kr", "fr-fr", "de-de", "es-es", "ru-ru", "id-id", "ja-jp", "th-th",
+    "zh-tw", "vi-vn", "pt-br",
+];
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingValue {
     Bool(bool),
@@ -38,28 +48,157 @@ impl TryFrom<SettingValue> for String {
         }
     }
 }
+
+thread_local! {
+    // GObjects stay on the calling thread. Production objects share the normal
+    // GSettings backend; each test thread instead owns a private memory backend.
+    static SETTINGS: RefCell<Option<Settings>> = const { RefCell::new(None) };
+}
+
+fn settings() -> Result<Settings> {
+    SETTINGS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some(settings) = slot.as_ref() { return Ok(settings.clone()); }
+        let parent = SettingsSchemaSource::default();
+        let schema = SettingsSchemaSource::from_directory(env!("OUT_DIR"), parent.as_ref(), false)
+            .ok().and_then(|source| source.lookup(APP_ID, false))
+            .or_else(|| parent.and_then(|source| source.lookup(APP_ID, true)))
+            .context("Elysiae's GSettings schema is not installed; install it or set GSETTINGS_SCHEMA_DIR")?;
+        #[cfg(test)]
+        let backend = Some(gio::memory_settings_backend_new());
+        #[cfg(not(test))]
+        let backend: Option<gio::SettingsBackend> = None;
+        let settings = Settings::new_full(&schema, backend.as_ref(), None);
+        *slot = Some(settings.clone());
+        Ok(settings)
+    })
+}
+
+fn require_key(settings: &Settings, key: &str) -> Result<()> {
+    ensure!(
+        settings
+            .settings_schema()
+            .is_some_and(|schema| schema.has_key(key)),
+        "Unknown setting: {key}"
+    );
+    Ok(())
+}
+
 pub fn get_option(key: &str) -> Result<SettingValue> {
-    let s = Settings::new("app.elysiae.Elysiae");
-    let v = s.value(key);
-    if let Some(b) = v.get::<bool>() {
-        Ok(b.into())
-    } else if let Some(v) = v.get::<String>() {
-        Ok(v.into())
+    let settings = settings()?;
+    require_key(&settings, key)?;
+    let value = settings.value(key);
+    if let Some(value) = value.get::<bool>() {
+        Ok(value.into())
+    } else if let Some(value) = value.get::<String>() {
+        Ok(value.into())
     } else {
-        Err(anyhow::anyhow!("Unsupported setting type for key {key}"))
+        anyhow::bail!("Unsupported setting type for key {key}")
     }
 }
+
 pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
-    let s = Settings::new("app.elysiae.Elysiae");
+    let settings = settings()?;
+    require_key(&settings, key)?;
+    let current = settings.value(key);
     match value {
-        SettingValue::Bool(v) => {
-            s.set_boolean(key, v)?;
+        SettingValue::Bool(value) => {
+            ensure!(
+                current.get::<bool>().is_some(),
+                "Setting {key} expects a string"
+            );
+            settings.set_boolean(key, value)?;
         }
-        SettingValue::Str(v) => {
-            s.set_string(key, &v)?;
+        SettingValue::Str(value) => {
+            ensure!(
+                current.get::<String>().is_some(),
+                "Setting {key} expects a boolean"
+            );
+            let value = match key {
+                "vo-lang" => voice_language(&value)?.to_owned(),
+                "display-language" => normalize_locale(&value)?,
+                _ => value,
+            };
+            settings.set_string(key, &value)?;
         }
     }
+    if settings.is_delay_apply() {
+        settings.apply();
+    }
     Ok(())
+}
+
+/// The installer uses short identifiers, independently of launcher locale.
+pub fn voice_language(value: &str) -> Result<&'static str> {
+    match value.replace('_', "-").to_ascii_lowercase().as_str() {
+        "en" | "en-us" => Ok("en"),
+        "cn" | "zh-cn" | "zh-tw" => Ok("cn"),
+        "jp" | "ja" | "ja-jp" => Ok("jp"),
+        "kr" | "ko" | "ko-kr" => Ok("kr"),
+        _ => anyhow::bail!("Unsupported voice-over language: {value}"),
+    }
+}
+
+pub fn normalize_locale(value: &str) -> Result<String> {
+    let locale = value.replace('_', "-").to_ascii_lowercase();
+    ensure!(
+        SUPPORTED_LOCALES.contains(&locale.as_str()),
+        "Unsupported launcher locale: {value}"
+    );
+    Ok(locale)
+}
+
+pub fn display_locale() -> Result<String> {
+    normalize_locale(&String::try_from(get_option("display-language")?)?)
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Initialization {
+    pub first_launch: bool,
+    pub previous_version: String,
+}
+
+/// Commit migrations together, after parsing every value. An unsupported future
+/// version or malformed preference leaves the stored choices untouched.
+pub fn initialize() -> Result<Initialization> {
+    let settings = settings()?;
+    for key in [
+        "settings-version",
+        "is-first-launch",
+        "last-used-version",
+        "vo-lang",
+        "display-language",
+    ] {
+        require_key(&settings, key)?;
+    }
+    let version: u32 = String::try_from(get_option("settings-version")?)?
+        .parse()
+        .context("Invalid settings migration version")?;
+    ensure!(
+        version <= SETTINGS_VERSION,
+        "Settings were written by a newer Elysiae version"
+    );
+    let initial = Initialization {
+        first_launch: bool::try_from(get_option("is-first-launch")?)?,
+        previous_version: String::try_from(get_option("last-used-version")?)?,
+    };
+    let voice = voice_language(&String::try_from(get_option("vo-lang")?)?)?;
+    let locale = display_locale()?;
+    settings.delay();
+    let result = (|| -> Result<()> {
+        settings.set_string("vo-lang", voice)?;
+        settings.set_string("display-language", &locale)?;
+        settings.set_string("settings-version", &SETTINGS_VERSION.to_string())?;
+        settings.set_string("last-used-version", env!("CARGO_PKG_VERSION"))?;
+        settings.set_boolean("is-first-launch", false)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        settings.revert();
+        return Err(error);
+    }
+    settings.apply();
+    Ok(initial)
 }
 
 #[cfg(test)]
@@ -68,12 +207,70 @@ mod tests {
 
     #[test]
     fn setting_value_conversions_are_type_safe() {
-        assert_eq!(bool::try_from(SettingValue::from(true)).unwrap(), true);
+        assert!(bool::try_from(SettingValue::from(true)).unwrap());
         assert_eq!(
             String::try_from(SettingValue::from("en-us")).unwrap(),
             "en-us"
         );
         assert!(bool::try_from(SettingValue::from("not a bool")).is_err());
         assert!(String::try_from(SettingValue::from(true)).is_err());
+    }
+
+    #[test]
+    fn invalid_keys_and_types_return_errors_without_glib_abort() {
+        assert!(get_option("not-a-key").is_err());
+        assert!(set_option("not-a-key", true.into()).is_err());
+        assert!(set_option("vo-lang", true.into()).is_err());
+        assert!(set_option("allow-notifications", "yes".into()).is_err());
+        assert!(set_option("vo-lang", "invalid".into()).is_err());
+    }
+
+    #[test]
+    fn voice_identifiers_are_separate_from_asset_locales() {
+        assert_eq!(voice_language("EN_us").unwrap(), "en");
+        assert_eq!(voice_language("zh-cn").unwrap(), "cn");
+        assert_eq!(voice_language("ja-jp").unwrap(), "jp");
+        assert_eq!(voice_language("ko-kr").unwrap(), "kr");
+        assert_eq!(normalize_locale("EN_US").unwrap(), "en-us");
+        assert!(voice_language("fr-fr").is_err());
+        assert!(normalize_locale("en").is_err());
+    }
+
+    #[test]
+    fn first_run_migration_is_idempotent_and_preserves_choices() {
+        let settings = settings().unwrap();
+        settings.set_string("vo-lang", "en-us").unwrap();
+        set_option("use-video-background", true.into()).unwrap();
+        assert!(initialize().unwrap().first_launch);
+        assert!(!initialize().unwrap().first_launch);
+        assert_eq!(
+            get_option("vo-lang").unwrap(),
+            SettingValue::Str("en".into())
+        );
+        assert_eq!(
+            get_option("use-video-background").unwrap(),
+            SettingValue::Bool(true)
+        );
+        assert_eq!(
+            get_option("last-used-version").unwrap(),
+            SettingValue::Str(env!("CARGO_PKG_VERSION").into())
+        );
+    }
+
+    #[test]
+    fn newer_settings_version_is_not_downgraded() {
+        settings()
+            .unwrap()
+            .set_string("settings-version", "99")
+            .unwrap();
+        assert!(initialize().is_err());
+        assert_eq!(
+            get_option("settings-version").unwrap(),
+            SettingValue::Str("99".into())
+        );
+        assert_eq!(
+            get_option("is-first-launch").unwrap(),
+            SettingValue::Bool(true)
+        );
     }
 }
