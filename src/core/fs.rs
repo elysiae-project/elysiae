@@ -51,8 +51,10 @@ impl Sizes {
     }
 }
 
+#[cfg(not(test))]
 static BASE_DIRS: OnceLock<BaseDirs> = OnceLock::new();
 
+#[cfg(not(test))]
 fn base_dirs() -> Result<BaseDirs> {
     if let Some(dirs) = BASE_DIRS.get() {
         return Ok(dirs.clone());
@@ -373,9 +375,17 @@ pub fn read_dir(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<Vec<PathB
 /// If no base directory is provided, the function will default to the app data
 /// directory (~/.local/share/elysiae)
 pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
-    let d = base_dirs()?;
+    let dir_path = base_path(base_dir)?;
+    match p {
+        Some(relative) => join_beneath(dir_path, relative),
+        None => Ok(dir_path),
+    }
+}
 
-    let dir_path = match base_dir {
+#[cfg(not(test))]
+fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
+    let d = base_dirs()?;
+    Ok(match base_dir {
         Some(x) => match x {
             BaseDirectory::AppData => d.data_local_dir().to_path_buf().join("elysiae"),
             BaseDirectory::Desktop => d.home_dir().join("Desktop"),
@@ -387,12 +397,24 @@ pub fn full_path(p: Option<PathBuf>, base_dir: Option<BaseDirectory>) -> Result<
                 .join("proton-data"),
         },
         None => d.data_local_dir().to_path_buf().join("elysiae"),
-    };
+    })
+}
 
-    match p {
-        Some(x) => join_beneath(dir_path, x),
-        None => Ok(dir_path),
-    }
+// Test builds never resolve default paths into a real user profile, including
+// when a test forgets to configure its own fixture. Do not mutate HOME in tests:
+// Tokio workers and parallel tests share the process environment.
+#[cfg(test)]
+fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    let home = ROOT.get_or_init(|| {
+        std::env::temp_dir().join(format!("elysiae-tests-{}", uuid::Uuid::new_v4()))
+    });
+    Ok(match base_dir.unwrap_or(BaseDirectory::AppData) {
+        BaseDirectory::Home => home.clone(),
+        BaseDirectory::Desktop => home.join("Desktop"),
+        BaseDirectory::AppData => home.join(".local/share/elysiae"),
+        BaseDirectory::Compat => home.join(".local/share/elysiae/proton-data"),
+    })
 }
 
 /// Converts the size of something in the filesystem between units, primarilly
@@ -434,8 +456,9 @@ mod tests {
 
     #[test]
     fn test_full_path() {
-        let d = BaseDirs::new().unwrap();
-        let home = d.home_dir();
+        let home = base_path(Some(BaseDirectory::Home)).unwrap();
+        assert_ne!(home, BaseDirs::new().unwrap().home_dir());
+        assert!(home.starts_with(std::env::temp_dir()));
         let dummy_dir = "dummy-dir";
 
         // Home
