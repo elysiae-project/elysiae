@@ -8,12 +8,16 @@ The Elysiae launcher was created in response to dissatisfaction in the state of 
 
 ## Features
 
-- Unified Proton install: If you play multiple "Anime Games", this will save you ~350-450MB per extra game you play (compared to the individual launchers from an-anime-team)
-- Low-profile: Elysiae has been built to behave as a thin wrapper around the games it launches. Install size is low (< 1mb binary size) and memory usage has been reduced as much as possible (during game downloads, Elysiae will only use ~400MB of system memory)
-- Fast installs: Our game downloader library, irmin, has been optimized to download games faster than any other "Anime Game" launcher available. On gigabit networks, game downloads on elysiae are about 6x-10x faster than on projects created by an-anime-team
+- Shared Proton runtime and prefix, with validated transactional runtime replacement and recovery.
+- Game installation, updates, pre-downloads and integrity checks through the pinned irmin backend.
+- Explicit installation ownership and backend APIs for import, verified relocation and managed-only deletion.
+- Bounded localized media cache, English fallback and optional video backgrounds.
+- Offline launch of installed games when a healthy runtime is available; online runtime checks do not automatically replace it.
+
+Irmin's known pause/resume and repair limitations remain deferred upstream. Maintenance currently exposes Rust backend APIs, not new import/uninstall dialogs or CLI commands. Real-game compatibility and performance vary by game, runtime and hardware; the offline fixture suite does not establish either.
 
 ## Downloading Elysiae
 
 > [!IMPORTANT]  
 > Elysiae is not yet complete. Binaries will not be uploaded to package repositories until a stable 1.0 release is completed
-> If you want to create a build yourself, you can follow the steps in [CONTRIBUTING](https://github.com/elysiae-project/elysiae/CONTRIBUTING.md)
+> If you want to create a build yourself, you can follow the steps in [CONTRIBUTING](CONTRIBUTING.md)
