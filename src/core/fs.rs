@@ -3,7 +3,7 @@ use fs_extra::dir::get_size;
 use sha256::try_digest;
 use std::{
     fs::{self, create_dir_all},
-    path::{Component, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::OnceLock,
 };
 use tar::Archive as Tar;
@@ -23,7 +23,7 @@ use log::warn;
 ///
 /// AppData: ~/.local/share/elysiae
 ///
-/// Desktop: ~/Desktop
+/// Desktop: configured user desktop directory
 ///
 /// Home: ~
 ///
@@ -388,7 +388,11 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
     Ok(match base_dir {
         Some(x) => match x {
             BaseDirectory::AppData => d.data_local_dir().to_path_buf().join("elysiae"),
-            BaseDirectory::Desktop => d.home_dir().join("Desktop"),
+            BaseDirectory::Desktop => directories::UserDirs::new()
+                .context("user directories unavailable")?
+                .desktop_dir()
+                .context("desktop directory is not configured")?
+                .to_path_buf(),
             BaseDirectory::Home => d.home_dir().to_path_buf(),
             BaseDirectory::Compat => d
                 .data_local_dir()
@@ -428,19 +432,62 @@ pub fn size_as(initial_size: f64, initial_unit: Sizes, new_unit: Sizes) -> f64 {
     (initial_size * (1024.0 as f64).powi(initial_unit.power() - new_unit.power()))
 }
 
-/// Joins a path beneath a directory, preventing special path keywords like ./ and ../
-/// If a special path keyword is detected, the function fails
+/// Joins an untrusted relative path to a trusted (possibly XDG-configured) base.
 fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
     ensure!(
-        !relative.is_absolute()
+        !relative.as_os_str().is_empty()
+            && !relative.is_absolute()
             && relative
                 .components()
                 .all(|c| matches!(c, Component::Normal(_))),
-        "path must be a relative path without '.' or '..': {}",
+        "path must be a nonempty relative path without '.' or '..': {}",
         relative.display()
     );
 
+    // Resolve the base independently: XDG directories and their ancestors may
+    // legitimately be symlinks. Only paths *within* this base are untrusted.
+    let root = canonicalize_with_missing(&base)?;
+    let mut current = root.clone();
+    for component in relative.components() {
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(_) => {
+                current = current.canonicalize()?;
+                ensure!(
+                    current.starts_with(&root),
+                    "path escapes its base directory"
+                );
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
     Ok(base.join(relative))
+}
+
+fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
+    let mut ancestor = path;
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let mut resolved = ancestor.canonicalize()?;
+                for name in missing.into_iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(
+                    ancestor
+                        .file_name()
+                        .context("path has no existing ancestor")?,
+                );
+                ancestor = ancestor.parent().context("path has no existing ancestor")?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -538,6 +585,58 @@ mod tests {
         assert!(full_path(Some(PathBuf::from("../outside")), None).is_err());
         assert!(full_path(Some(PathBuf::from("/absolute")), None).is_err());
         assert!(full_path(Some(PathBuf::from(".")), None).is_err());
+        assert!(full_path(Some(PathBuf::new()), None).is_err());
+    }
+
+    #[test]
+    fn empty_remove_cannot_delete_base() {
+        let sentinel = PathBuf::from(format!("sentinel-{}", uuid::Uuid::new_v4()));
+        write_file(sentinel.clone(), b"keep", None).unwrap();
+        assert!(remove(PathBuf::new(), None, Some(true)).is_err());
+        assert_eq!(read_file(sentinel.clone(), None).unwrap(), b"keep");
+        remove(sentinel, None, None).unwrap();
+    }
+
+    #[test]
+    fn path_validation_rejects_escaping_symlink_ancestors() {
+        let root = base_path(None)
+            .unwrap()
+            .join(uuid::Uuid::new_v4().to_string());
+        let owned = root.join("owned");
+        let outside = root.join("outside");
+        fs::create_dir_all(owned.join("internal")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("sentinel"), b"keep").unwrap();
+        std::os::unix::fs::symlink(&outside, owned.join("escape")).unwrap();
+        std::os::unix::fs::symlink("internal", owned.join("safe")).unwrap();
+        std::os::unix::fs::symlink(outside.join("missing"), owned.join("dangling")).unwrap();
+        for path in [
+            "escape",
+            "escape/sentinel",
+            "escape/new/file",
+            "dangling/new",
+        ] {
+            assert!(join_beneath(owned.clone(), path.into()).is_err(), "{path}");
+        }
+        assert!(join_beneath(owned.clone(), "safe/new/file".into()).is_ok());
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"keep");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn path_validation_allows_configured_symlink_bases_and_future_directories() {
+        let root = base_path(None)
+            .unwrap()
+            .join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir_all(root.join("data")).unwrap();
+        std::os::unix::fs::symlink(root.join("data"), root.join("xdg")).unwrap();
+        for base in [root.join("xdg"), root.join("xdg/elysiae/future")] {
+            assert_eq!(
+                join_beneath(base.clone(), "game/file".into()).unwrap(),
+                base.join("game/file")
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
