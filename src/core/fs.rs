@@ -605,7 +605,7 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
 /// Support for larger units isn't needed because no games are even remotely close to the
 /// petabyte and beyond range as of writing
 pub fn size_as(initial_size: f64, initial_unit: Sizes, new_unit: Sizes) -> f64 {
-    (initial_size * (1024.0 as f64).powi(initial_unit.power() - new_unit.power()))
+    initial_size * 1024.0_f64.powi(initial_unit.power() - new_unit.power())
 }
 
 /// Joins an untrusted relative path to a trusted (possibly XDG-configured) base.
@@ -834,10 +834,7 @@ mod tests {
         write_file(path.clone(), &contents, Some(BaseDirectory::Home)).unwrap();
 
         // Check if the file exists
-        assert_eq!(
-            exists(path.clone(), Some(BaseDirectory::Home)).unwrap(),
-            true
-        );
+        assert!(exists(path.clone(), Some(BaseDirectory::Home)).unwrap());
 
         // Read file
         let pass_one_contents = read_file(path.clone(), Some(BaseDirectory::Home)).unwrap();
@@ -854,7 +851,7 @@ mod tests {
 
         // Delete file
         remove(path.clone(), Some(BaseDirectory::Home), None).unwrap(); //
-        assert_eq!(exists(path, Some(BaseDirectory::Home)).unwrap(), false)
+        assert!(!exists(path, Some(BaseDirectory::Home)).unwrap())
     }
 
     #[test]
