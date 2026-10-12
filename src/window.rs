@@ -20,7 +20,7 @@ mod imp {
         widgets::{background::Background, titlebar::Titlebar},
     };
     use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
-    use std::cell::{Cell, OnceCell};
+    use std::cell::Cell;
 
     /// Template controls and request state for the main launcher window.
     #[derive(CompositeTemplate, Default)]
@@ -36,7 +36,6 @@ mod imp {
         pub status: Cell<Option<UpdateAvailability>>,
         pub request: Cell<u64>,
         pub busy: Cell<bool>,
-        pub popover: OnceCell<gtk::PopoverMenu>,
     }
 
     #[glib::object_subclass]
@@ -56,7 +55,7 @@ mod imp {
         }
     }
     impl ObjectImpl for ElysiaeWindow {
-        /// Connects the window controls to backend actions and operation state.
+        /// Connects the primary button and keeps it in sync with backend operations.
         fn constructed(&self) {
             self.parent_constructed();
             let weak = self.obj().downgrade();
@@ -65,21 +64,6 @@ mod imp {
                     window.start_operation();
                 }
             });
-            // Backend actions are accessible without changing any UI resources.
-            let menu = gtk::gio::Menu::new();
-            menu.append(
-                Some("Check runtime updates"),
-                Some("app.check-runtime-update"),
-            );
-            menu.append(Some("Pause / resume transfer"), Some("app.pause-operation"));
-            menu.append(Some("Cancel operation"), Some("app.cancel-operation"));
-            let popover = gtk::PopoverMenu::from_model(Some(&menu));
-            popover.set_parent(&*self.settings_button);
-            self.popover
-                .set(popover.clone())
-                .expect("Popover initialized once");
-            self.settings_button
-                .connect_clicked(move |_| popover.popup());
             let weak = self.obj().downgrade();
             glib::timeout_add_local(std::time::Duration::from_millis(300), move || {
                 let Some(window) = weak.upgrade() else {
@@ -88,12 +72,6 @@ mod imp {
                 window.refresh_controls();
                 glib::ControlFlow::Continue
             });
-        }
-        /// Detaches the actions popover when the window is disposed.
-        fn dispose(&self) {
-            if let Some(popover) = self.popover.get() {
-                popover.unparent();
-            }
         }
     }
     impl WidgetImpl for ElysiaeWindow {}
