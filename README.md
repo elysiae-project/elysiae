@@ -14,13 +14,6 @@ The Elysiae launcher was created in response to dissatisfaction in the state of 
 - Bounded localized media cache, English fallback and optional video backgrounds.
 - Offline launch of installed games when a healthy runtime is available; online runtime checks do not automatically replace it.
 
-Irmin's known pause/resume and repair limitations remain deferred upstream. Maintenance currently exposes Rust backend APIs, not new import/uninstall dialogs or CLI commands. Real-game compatibility and performance vary by game, runtime and hardware; the offline fixture suite does not establish either.
-
-## Interface customization
-
-See [Interface customization](docs/interface.md) for CSS theme variables, widget
-classes, download/launch behavior, and GTK interaction tests.
-
 ## Downloading Elysiae
 
 > [!IMPORTANT]  
