@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Install system dependencies
         run: |
-          dnf install -y git gcc gcc-c++ clang llvm pkgconf-pkg-config gtk4-devel freetype-devel openssl-devel curl python3 meson ninja-build gettext desktop-file-utils appstream
+          dnf install -y git gcc gcc-c++ clang llvm pkgconf-pkg-config gtk4-devel freetype-devel fontconfig-devel pango-devel openssl-devel libxml2 curl python3 meson ninja-build gettext desktop-file-utils appstream
       - uses: actions/checkout@v6
       - name: Install pinned Rust toolchain
         run: |
@@ -45,13 +45,15 @@ jobs:
         env:
           CARGO_NET_OFFLINE: 'true'
         run: |
-          export CARGO_TARGET_DIR="$PWD/target"
-          meson setup build -Dprofile=dev --prefix=/usr
-          meson compile -C build
-          glib-compile-schemas --strict --dry-run data
-          desktop-file-validate build/data/app.elysiae.Elysiae.desktop
-          appstreamcli validate --no-net build/data/app.elysiae.Elysiae.metainfo.xml
+          meson setup build --buildtype=debug --prefix=/usr -Dcargo_target_dir="$PWD/target" -Dvalidation=enabled
+          ninja -C build
+          ninja -C build test
           DESTDIR="$PWD/stage" meson install -C build --no-rebuild
           test -x stage/usr/bin/Elysiae
           test -f stage/usr/share/glib-2.0/schemas/app.elysiae.Elysiae.gschema.xml
           test -f stage/usr/share/icons/hicolor/scalable/apps/app.elysiae.Elysiae.svg
+          test -f stage/usr/share/licenses/app.elysiae.Elysiae/LICENSE
+          test -f stage/usr/share/Elysiae/fonts/OFL.txt
+          test -f stage/usr/share/Elysiae/resources.gresource
+          test ! -e stage/usr/share/icons/hicolor/scalable/actions/close.svg
+          test ! -e stage/usr/share/icons/hicolor/scalable/actions/settings.svg

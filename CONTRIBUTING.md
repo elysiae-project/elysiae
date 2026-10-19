@@ -24,7 +24,7 @@ To compile Elysiae, you should have the following present on your system:
 
 ```sh
 sudo apt update
-sudo apt install libgtk-4-dev libfreetype-dev libssl-dev pkg-config build-essential llvm clang meson ninja-build gettext python3 -y
+sudo apt install libgtk-4-dev libfreetype-dev libssl-dev libxml2-utils pkg-config build-essential llvm clang meson ninja-build gettext python3 -y
 # Your distribution must actually provide GTK >= 4.22; older stable releases may not.
 
 # Rustup might exist in a repo if you use a derivative of debian, but it is likely outdated. use curl to install the latest version instead:
@@ -34,7 +34,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 #### Arch-Based
 
 ```sh
-sudo pacman -Syu rustup freetype2 gtk4 openssl pkgconf base-devel llvm clang meson ninja gettext python --noconfirm
+sudo pacman -Syu rustup freetype2 gtk4 openssl libxml2 pkgconf base-devel llvm clang meson ninja gettext python --noconfirm
 ```
 
 ## Post-clone
@@ -54,21 +54,23 @@ rustup show
 To create a developer build, run:
 
 ```sh
-meson setup build -Dprofile=dev --prefix=/usr
+meson setup build --buildtype=debug --prefix=/usr
 meson compile -C build
 ```
+
+To run tests after compiling, run `cargo fetch --locked` once, then `ninja -C build test`. To include GTK tests, use `meson configure build -Dgui_tests=true` and run the tests on a working display
 
 To create a release build, run:
 
 ```sh
-meson setup build-release -Dprofile=release --prefix=/usr
+meson setup build-release --buildtype=release --prefix=/usr
 meson compile -C build-release
 
 # Review the install manifest before installing system-wide:
 meson install -C build-release --dry-run
 ```
 
-Cargo-only builds (`cargo build --locked`) also embed resources and compile the development GSettings schema. Dev and release builds deliberately share the application ID `app.elysiae.Elysiae`. Meson respects an existing `CARGO_TARGET_DIR` and does not replace `CARGO_HOME`.
+Cargo-only builds (`cargo build --locked`) also embed resources and compile the development GSettings schema. Dev and release builds deliberately share the application ID `app.elysiae.Elysiae`. Meson reads `CARGO_TARGET_DIR` when configuring and does not replace `CARGO_HOME`. Use `-Dcargo_target_dir="$PWD/target"` to keep a shared cache across reconfigurations.
 
 ## Safe verification
 
@@ -86,12 +88,10 @@ For packaging, also install `desktop-file-validate` and `appstreamcli`:
 ```sh
 build=$(mktemp -d)
 stage=$(mktemp -d)
-CARGO_TARGET_DIR="$PWD/target" CARGO_NET_OFFLINE=true \
-  meson setup "$build" -Dprofile=dev --prefix=/usr
+meson setup "$build" --buildtype=debug --prefix=/usr \
+  -Dcargo_target_dir="$PWD/target" -Dvalidation=enabled
 CARGO_NET_OFFLINE=true meson compile -C "$build"
-glib-compile-schemas --strict --dry-run data
-desktop-file-validate "$build/data/app.elysiae.Elysiae.desktop"
-appstreamcli validate --no-net "$build/data/app.elysiae.Elysiae.metainfo.xml"
+CARGO_NET_OFFLINE=true ninja -C "$build" test
 DESTDIR="$stage" meson install -C "$build" --no-rebuild
 ```
 

@@ -4,7 +4,7 @@
 		{
 			"label": "Build Elysiae (Debug)",
 			"type": "shell",
-			"command": "meson setup build --buildtype=debug --reconfigure && meson compile -C build",
+			"command": "meson setup build --buildtype=debug -Dprofile=auto --reconfigure && meson compile -C build",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -14,7 +14,7 @@
 		{
 			"label": "Build & Run Elysiae (Debug)",
 			"type": "shell",
-			"command": "meson setup build --buildtype=debug --reconfigure && meson compile -C build && meson devenv -C build ./src/Elysiae",
+			"command": "meson setup build --buildtype=debug -Dprofile=auto --reconfigure && meson compile -C build && meson devenv -C build ./src/Elysiae",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -28,7 +28,7 @@
 		{
 			"label": "Build Elysiae (Release)",
 			"type": "shell",
-			"command": "meson setup build-release --buildtype=release && meson compile -C build-release",
+			"command": "meson setup build-release --buildtype=release -Dprofile=auto --reconfigure && meson compile -C build-release",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -38,7 +38,7 @@
 		{
 			"label": "Build & Run Elysiae (Release)",
 			"type": "shell",
-			"command": "meson setup build-release --buildtype=release && meson compile -C build-release && meson devenv -C build-release ./src/Elysiae",
+			"command": "meson setup build-release --buildtype=release -Dprofile=auto --reconfigure && meson compile -C build-release && meson devenv -C build-release ./src/Elysiae",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
@@ -48,7 +48,7 @@
 		{
 			"label": "Build & Run Tests (Debug)",
 			"type": "shell",
-			"command": "meson setup build --buildtype=debug --reconfigure && meson compile -C build && meson test -C build --print-errorlogs",
+			"command": "meson setup build --buildtype=debug -Dprofile=auto --reconfigure && meson compile -C build && meson test -C build --print-errorlogs",
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
