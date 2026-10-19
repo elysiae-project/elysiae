@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     future::Future,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -21,14 +22,7 @@ use crate::{
     },
 };
 
-const GAMES: [Game; 6] = [
-    Game::Bh3,
-    Game::Hk4e,
-    Game::Hkrpg,
-    Game::Nap,
-    Game::Abc,
-    Game::Hyg,
-];
+const CATALOG_CONCURRENCY: usize = 3;
 // The asset budget includes download staging files. Catalogs are separately
 // bounded to 4 MiB each and the supported game/locale pairs. Referenced or active
 // files are never evicted to make room: an oversized working set keeps its last
@@ -49,7 +43,7 @@ pub enum AssetType {
 }
 
 /// Asset catalog returned by Aedes for a game and locale.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct AedesResponse {
     backgrounds: Vec<AedesBackgroundAssets>,
     icon: String,
@@ -61,7 +55,7 @@ struct AedesResponse {
 }
 
 /// Background image with its optional video and matching overlay.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct AedesBackgroundAssets {
     image: String,
     video: Option<String>,
@@ -69,7 +63,7 @@ struct AedesBackgroundAssets {
 }
 
 /// Available background and matching overlay selected from the cache.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ResolvedMedia {
     pub background: Option<PathBuf>,
     pub overlay: Option<PathBuf>,
@@ -113,6 +107,36 @@ impl Drop for TemporaryFile {
     }
 }
 
+/// Accounting for serial downloads in one catalog transaction. Invalidate the
+/// total after a failed transfer, since staging-file cleanup can itself fail.
+#[derive(Default)]
+struct AssetBatch {
+    prospective: HashSet<PathBuf>,
+    used: Option<u64>,
+    attempted: HashSet<PathBuf>,
+}
+
+/// Keep the previous catalog recoverable while publishing incremental artwork.
+/// This also rolls back on cancellation; a cold cache retains its usable image.
+struct Publication<'a> {
+    store: &'a Store,
+    game: Game,
+    source: &'a str,
+    previous: Option<AedesResponse>,
+    committed: bool,
+}
+
+impl Drop for Publication<'_> {
+    fn drop(&mut self) {
+        if !self.committed
+            && let Some(previous) = &self.previous
+            && let Err(error) = self.store.write_catalog(self.game, self.source, previous)
+        {
+            log::warn!("Could not restore previous asset catalog: {error:#}");
+        }
+    }
+}
+
 /// Initialize and return the shared asset cache.
 fn store() -> Result<&'static Store> {
     static STORE: OnceLock<Store> = OnceLock::new();
@@ -124,11 +148,35 @@ fn store() -> Result<&'static Store> {
 
 /// Refresh all games for the requested locale with English fallback.
 pub async fn refresh_cache(locale: &str) -> Result<CacheRefresh> {
+    refresh_cache_with_progress(locale, Game::default(), |_| {}).await
+}
+
+/// Refresh with the selected game's static artwork first. Notifications run
+/// after atomic publication, before optional downloads, and may repeat as media
+/// or icons become available. Callbacks should be short and must not block.
+pub async fn refresh_cache_with_progress(
+    locale: &str,
+    priority: Game,
+    on_ready: impl Fn(Game) + Send + Sync,
+) -> Result<CacheRefresh> {
     let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
+    refresh_cache_with_preferences(locale, priority, use_video, on_ready).await
+}
+
+/// Use the GTK thread's preference snapshot instead of a worker thread's cached
+/// GSettings object, whose owning main context may not be dispatching changes.
+pub async fn refresh_cache_with_preferences(
+    locale: &str,
+    priority: Game,
+    use_video: bool,
+    on_ready: impl Fn(Game) + Send + Sync,
+) -> Result<CacheRefresh> {
     store()?
-        .refresh_with(
+        .refresh_with_progress(
             locale,
             use_video,
+            priority,
+            on_ready,
             |game, locale| async move {
                 let mut url = url::Url::parse("https://aedes.elysiae.app/getAssets")?;
                 url.query_pairs_mut()
@@ -162,7 +210,7 @@ pub fn cache_available(locale: &str) -> Result<bool> {
     let locale = settings::normalize_locale(locale)?;
     let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
     let store = store()?;
-    Ok(GAMES
+    Ok(Game::all()
         .into_iter()
         .all(|game| store.ready(game, &locale, use_video)))
 }
@@ -521,7 +569,7 @@ impl Store {
     /// Collect asset paths referenced by supported game and locale catalogs.
     fn references(&self) -> HashSet<PathBuf> {
         let mut paths = HashSet::new();
-        for game in GAMES {
+        for game in Game::all() {
             for locale in settings::SUPPORTED_LOCALES {
                 if let Ok(response) = self.read_catalog(game, locale) {
                     paths.extend(
@@ -603,7 +651,7 @@ impl Store {
 
     /// Remove expired catalog staging files without touching published catalogs.
     fn collect_catalog_temporaries(&self) {
-        for game in GAMES {
+        for game in Game::all() {
             let Ok(directory) = self.path(&Path::new("cache/catalogs").join(game.code())) else {
                 continue;
             };
@@ -642,7 +690,7 @@ impl Store {
     async fn asset<D, DF>(
         &self,
         server_path: &str,
-        prospective: &HashSet<PathBuf>,
+        batch: &mut AssetBatch,
         download: &mut D,
     ) -> Result<PathBuf>
     where
@@ -666,8 +714,15 @@ impl Store {
                 return Ok(destination);
             }
         }
+        if !batch.attempted.insert(key.clone()) {
+            return existing.context("Asset already attempted during this catalog refresh");
+        }
         let result = async {
-            let used = self.collect(prospective)?;
+            let used = match batch.used {
+                Some(used) => used,
+                None => self.collect(&batch.prospective)?,
+            };
+            batch.used = Some(used);
             let limit = self.budget.saturating_sub(used);
             ensure!(
                 limit > 0,
@@ -696,13 +751,26 @@ impl Store {
                 .map_err(|_| anyhow::anyhow!("Cache pin lock poisoned"))?;
             if !(active.contains(&destination) && existing.is_some()) {
                 let destination = self.path(&key)?;
+                let replaced = match std::fs::symlink_metadata(&destination) {
+                    Ok(metadata) => metadata.len(),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+                    Err(error) => return Err(error.into()),
+                };
                 std::fs::create_dir_all(destination.parent().context("Asset has no parent")?)?;
                 std::fs::rename(&temporary.0, destination)?;
+                batch.used = used
+                    .checked_add(metadata.len())
+                    .and_then(|n| n.checked_sub(replaced));
+            } else {
+                // The staging guard removes this unused download. Rescan next
+                // time rather than assuming that removal cannot fail.
+                batch.used = None;
             }
             Ok::<_, anyhow::Error>(())
         }
         .await;
         if let Err(error) = result {
+            batch.used = None;
             if existing.is_none() {
                 return Err(error).with_context(|| format!("Could not cache {server_path}"));
             }
@@ -734,7 +802,44 @@ impl Store {
         Ok(())
     }
 
-    /// Cache required artwork and selected media before publishing a catalog.
+    /// Download one usable alternative, preferring already-cached artwork.
+    async fn background<D, DF>(
+        &self,
+        response: &AedesResponse,
+        video: bool,
+        batch: &mut AssetBatch,
+        download: &mut D,
+    ) -> Result<usize>
+    where
+        D: FnMut(String, PathBuf, u64) -> DF,
+        DF: Future<Output = Result<()>>,
+    {
+        let mut candidates: Vec<_> = response
+            .backgrounds
+            .iter()
+            .enumerate()
+            .filter_map(|(index, background)| {
+                let path = if video {
+                    background.video.as_deref()
+                } else {
+                    Some(background.image.as_str())
+                }?;
+                Some((index, path))
+            })
+            .collect();
+        candidates.sort_by_key(|(_, path)| self.existing(path).is_none());
+        let mut errors = Vec::new();
+        for (index, path) in candidates {
+            match self.asset(path, batch, download).await {
+                Ok(_) => return Ok(index),
+                Err(error) => errors.push(format!("{error:#}")),
+            }
+        }
+        anyhow::bail!("No usable background: {}", errors.join("; "))
+    }
+
+    /// Publish usable static artwork before waiting for icons or optional media.
+    /// Keep old assets protected until all required replacements are usable.
     async fn prepare<D, DF>(
         &self,
         game: Game,
@@ -742,21 +847,94 @@ impl Store {
         locale: &str,
         use_video: bool,
         response: AedesResponse,
+        on_ready: &impl Fn(Game),
         download: &mut D,
     ) -> Result<()>
     where
         D: FnMut(String, PathBuf, u64) -> DF,
         DF: Future<Output = Result<()>>,
     {
-        let prospective = response
-            .all_paths()
-            .filter_map(|path| cache_path(Path::new(path)).ok())
-            .filter_map(|key| self.path(&key).ok())
-            .collect();
+        let previous = self.catalog(game, source);
+        let mut batch = AssetBatch {
+            prospective: response
+                .all_paths()
+                .chain(previous.iter().flat_map(AedesResponse::all_paths))
+                .filter_map(|path| cache_path(Path::new(path)).ok())
+                .filter_map(|key| self.path(&key).ok())
+                .collect(),
+            ..Default::default()
+        };
+        // Even a stale-but-valid image can be displayed before revalidation.
+        // Its normal TTL/pin checks still run immediately after publication.
+        let static_image = match response
+            .backgrounds
+            .iter()
+            .position(|background| self.existing(&background.image).is_some())
+        {
+            Some(index) => Ok(index),
+            None => {
+                self.background(&response, false, &mut batch, download)
+                    .await
+            }
+        };
+        let (index, video) = match static_image {
+            Ok(index) => (index, false),
+            Err(error) if use_video => {
+                log::debug!("Static background fallback unavailable: {error:#}");
+                (
+                    self.background(&response, true, &mut batch, download)
+                        .await?,
+                    true,
+                )
+            }
+            Err(error) => return Err(error),
+        };
+        let mut published = response.clone();
+        if let Some(previous) = &previous {
+            // An early background publication must not blank existing icons.
+            if self.paths(&response, locale, AssetType::Icon).is_empty() {
+                published.icon.clone_from(&previous.icon);
+                published.icon_cn.clone_from(&previous.icon_cn);
+            }
+            if self
+                .paths(&response, locale, AssetType::Shortcut)
+                .is_empty()
+            {
+                published.shortcut.clone_from(&previous.shortcut);
+                published.shortcut_cn.clone_from(&previous.shortcut_cn);
+            }
+        }
+        if previous.as_ref() != Some(&published) {
+            self.write_catalog(game, source, &published)?;
+        }
+        let mut publication = Publication {
+            store: self,
+            game,
+            source,
+            previous,
+            committed: false,
+        };
+        let mut last_display = None;
+        let mut notify = || {
+            let display = (
+                self.resolve(game, locale, use_video),
+                self.cached_paths(game, locale, AssetType::Icon),
+            );
+            if last_display.as_ref() != Some(&display) {
+                last_display = Some(display);
+                on_ready(game);
+            }
+        };
+        notify();
+        if !video {
+            self.asset(&response.backgrounds[index].image, &mut batch, download)
+                .await?;
+        }
+
         for shortcut in [false, true] {
             let mut errors = Vec::new();
             for candidate in response.variants(locale, shortcut) {
-                match self.asset(candidate, &prospective, download).await {
+                match self.asset(candidate, &mut batch, download).await {
                     Ok(_) => {
                         errors.clear();
                         break;
@@ -770,63 +948,79 @@ impl Store {
                 if shortcut { "shortcut" } else { "icon" },
                 errors.join("; ")
             );
-        }
-        let mut selected = None;
-        let mut errors = Vec::new();
-        for video in [true, false] {
-            if video && !use_video {
-                continue;
+            let changed = if shortcut {
+                let changed = published.shortcut != response.shortcut
+                    || published.shortcut_cn != response.shortcut_cn;
+                published.shortcut.clone_from(&response.shortcut);
+                published.shortcut_cn.clone_from(&response.shortcut_cn);
+                changed
+            } else {
+                let changed =
+                    published.icon != response.icon || published.icon_cn != response.icon_cn;
+                published.icon.clone_from(&response.icon);
+                published.icon_cn.clone_from(&response.icon_cn);
+                changed
+            };
+            if changed {
+                self.write_catalog(game, source, &published)?;
             }
-            let mut candidates: Vec<_> = response
-                .backgrounds
-                .iter()
-                .filter_map(|background| {
-                    let path = if video {
-                        background.video.as_deref()
-                    } else {
-                        Some(background.image.as_str())
-                    }?;
-                    Some((background, path))
-                })
-                .collect();
-            // Keep the already-usable alternative, rather than repeatedly
-            // transferring an unused, unavailable earlier entry at startup.
-            candidates.sort_by_key(|(_, path)| self.existing(path).is_none());
-            for (background, path) in candidates {
-                match self.asset(path, &prospective, download).await {
-                    Ok(_) => {
-                        selected = Some((background, video));
-                        break;
+            notify();
+        }
+        if let Some(overlay) = response.backgrounds[index].overlay.as_deref() {
+            if let Err(error) = self.asset(overlay, &mut batch, download).await {
+                log::debug!("Optional background overlay unavailable: {error:#}");
+            }
+            notify();
+        }
+        if use_video && !video {
+            match self.background(&response, true, &mut batch, download).await {
+                Ok(index) => {
+                    notify();
+                    if let Some(overlay) = response.backgrounds[index].overlay.as_deref() {
+                        if let Err(error) = self.asset(overlay, &mut batch, download).await {
+                            log::debug!("Optional video overlay unavailable: {error:#}");
+                        }
+                        notify();
                     }
-                    Err(error) => errors.push(format!("{error:#}")),
                 }
+                Err(error) => log::debug!("Optional video unavailable: {error:#}"),
             }
-            if selected.is_some() {
-                break;
-            }
-        }
-        let (background, video) =
-            selected.with_context(|| format!("No usable background: {}", errors.join("; ")))?;
-        if video && let Err(error) = self.asset(&background.image, &prospective, download).await {
-            log::debug!("Static background fallback unavailable: {error:#}");
-        }
-        if let Some(overlay) = background.overlay.as_deref()
-            && let Err(error) = self.asset(overlay, &prospective, download).await
-        {
-            log::debug!("Optional background overlay unavailable: {error:#}");
         }
         ensure!(
             self.usable(&response, locale, use_video),
             "Required cached assets disappeared during refresh"
         );
-        self.write_catalog(game, source, &response)
+        publication.committed = true;
+        Ok(())
     }
 
-    /// Refresh game catalogs with fallback using the supplied network operations.
+    /// Compatibility entry point for fixtures without progress notifications.
+    #[cfg(test)]
     async fn refresh_with<F, FF, D, DF>(
         &self,
         locale: &str,
         use_video: bool,
+        fetch: F,
+        download: D,
+    ) -> Result<CacheRefresh>
+    where
+        F: FnMut(Game, String) -> FF,
+        FF: Future<Output = Result<AedesResponse>>,
+        D: FnMut(String, PathBuf, u64) -> DF,
+        DF: Future<Output = Result<()>>,
+    {
+        self.refresh_with_progress(locale, use_video, Game::default(), |_| {}, fetch, download)
+            .await
+    }
+
+    /// Fetch at most three catalogs concurrently; assets and publications stay
+    /// serial. The priority game (including fallback) runs before unrelated work.
+    async fn refresh_with_progress<F, FF, D, DF>(
+        &self,
+        locale: &str,
+        use_video: bool,
+        priority: Game,
+        on_ready: impl Fn(Game) + Send + Sync,
         mut fetch: F,
         mut download: D,
     ) -> Result<CacheRefresh>
@@ -837,38 +1031,92 @@ impl Store {
         DF: Future<Output = Result<()>>,
     {
         let locale = settings::normalize_locale(locale)?;
-        // ponytail: one refresh per process; a nonblocking permit avoids holding
-        // a blocking mutex across network awaits or building a task queue.
         let _permit = self.permit()?;
         let mut report = CacheRefresh::default();
-        for game in GAMES {
-            let mut errors = Vec::new();
-            for source in locales(&locale) {
-                let result = match fetch(game, source.to_owned()).await {
-                    Ok(response) => {
-                        self.prepare(game, source, &locale, use_video, response, &mut download)
-                            .await
-                    }
-                    Err(error) => Err(error),
+        let mut jobs = VecDeque::from([(priority, locale.clone())]);
+        let mut pending = FuturesUnordered::new();
+        let mut ready = VecDeque::new();
+        loop {
+            // Completed catalogs count toward the bound too: a slow transfer
+            // must not accumulate an unbounded prefetch queue.
+            while pending.len() + ready.len() < CATALOG_CONCURRENCY {
+                let Some((game, source)) = jobs.pop_front() else {
+                    break;
                 };
-                match result {
-                    Ok(()) => {
-                        if errors.is_empty() {
-                            report.successes.push(game);
+                let request = fetch(game, source.clone());
+                pending.push(async move { (game, source, request.await) });
+            }
+            let next = match ready.pop_front() {
+                Some(next) => Some(next),
+                None => pending.next().await,
+            };
+            let Some((game, source, response)) = next else {
+                break;
+            };
+            let result = match response {
+                Ok(response) => {
+                    let preparation = self.prepare(
+                        game,
+                        &source,
+                        &locale,
+                        use_video,
+                        response,
+                        &on_ready,
+                        &mut download,
+                    );
+                    futures_util::pin_mut!(preparation);
+                    std::future::poll_fn(|cx| {
+                        let result = preparation.as_mut().poll(cx);
+                        // Continue polling catalog I/O during the one active
+                        // asset transaction, without spawning detached tasks.
+                        while let std::task::Poll::Ready(Some(catalog)) =
+                            pending.poll_next_unpin(cx)
+                        {
+                            ready.push_back(catalog);
                         }
-                        break;
+                        result
+                    })
+                    .await
+                }
+                Err(error) => Err(error),
+            };
+            let mut finished = true;
+            match result {
+                Ok(()) if source == locale => report.successes.push(game),
+                Ok(()) => {}
+                Err(error) => {
+                    log::warn!(
+                        "Cache refresh failed for {}/{source}: {error:#}",
+                        game.code()
+                    );
+                    let message = format!("{source}: {error:#}");
+                    if let Some((_, errors)) = report
+                        .failures
+                        .iter_mut()
+                        .find(|(failed, _)| *failed == game)
+                    {
+                        errors.push_str("; ");
+                        errors.push_str(&message);
+                    } else {
+                        report.failures.push((game, message));
                     }
-                    Err(error) => {
-                        log::warn!(
-                            "Cache refresh failed for {}/{source}: {error:#}",
-                            game.code()
-                        );
-                        errors.push(format!("{source}: {error:#}"));
+                    // prepare's rollback has restored the previous catalog.
+                    if self.resolve(game, &locale, use_video).background.is_some() {
+                        on_ready(game);
+                    }
+                    if source != "en-us" {
+                        jobs.push_front((game, "en-us".to_owned()));
+                        finished = false;
                     }
                 }
             }
-            if !errors.is_empty() {
-                report.failures.push((game, errors.join("; ")));
+            if game == priority && finished {
+                jobs.extend(
+                    Game::all()
+                        .into_iter()
+                        .filter(|game| *game != priority)
+                        .map(|game| (game, locale.clone())),
+                );
             }
         }
         if let Err(error) = self.collect(&HashSet::new()) {
@@ -877,6 +1125,10 @@ impl Store {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+#[path = "cache/tests.rs"]
+mod fixtures;
 
 #[cfg(test)]
 mod tests {
