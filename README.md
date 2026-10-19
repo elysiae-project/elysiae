@@ -1,5 +1,9 @@
 # Elysiae
 
+<p align="center">
+    <img src="https://raw.githubusercontent.com/elysiae-project/Elysiae/refs/heads/main/app-icon.png" alt="Elysiae App Icon" width="256">
+</p>
+
 Universal "Chinese Anime Game" launcher for Linux
 
 ## Why does this project exist?
