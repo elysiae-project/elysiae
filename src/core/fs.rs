@@ -1,6 +1,4 @@
 use flate2::read::GzDecoder as Gz;
-use fs_extra::dir::get_size;
-use sha256::try_digest;
 use std::{
     fs::{self, create_dir_all},
     io::Read,
@@ -15,7 +13,6 @@ use zstd::Decoder as Zstd;
 use anyhow::{Context, Result, bail, ensure};
 #[cfg(not(test))]
 use directories::BaseDirs;
-use log::warn;
 
 /// Directories that elysiae commonly uses, provided to make filesystem
 /// operations a bit cleaner by only requiring paths relative to these base
@@ -23,36 +20,15 @@ use log::warn;
 ///
 /// Paths:
 ///
-/// AppData: ~/.local/share/elysiae
-///
 /// Desktop: configured user desktop directory
 ///
 /// Home: ~
 ///
-/// Compat: ~/.local/share/elysiae/proton-data
+/// Omitting the base directory selects application data (~/.local/share/elysiae).
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum BaseDirectory {
-    AppData,
     Desktop,
     Home,
-    Compat,
-}
-
-/// Size units used for filesystem measurements and conversions.
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub enum Sizes {
-    Bytes,
-    Kilobytes,
-    Megabytes,
-    Gigabytes,
-    Terabytes,
-}
-
-impl Sizes {
-    /// Returns the unit's exponent for base-1024 conversions.
-    fn power(self) -> i32 {
-        self as i32
-    }
 }
 
 #[cfg(not(test))]
@@ -77,31 +53,6 @@ pub struct MultiPathOptions {
     pub dest_path: PathBuf,
     pub dest_path_base_dir: Option<BaseDirectory>,
     pub overwrite: Option<bool>,
-}
-
-/// Wrapper function for std::fs::exists(), but relative to a base directory
-///
-/// If no base directory is provided, the function defaults to the app data
-/// directory (~/.local/share/elysiae)
-pub fn exists(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<bool> {
-    let fp = full_path(Some(p), base_dir).context("Full path could not be resolved")?;
-    Ok(fp.try_exists()?)
-}
-
-/// Wrapper function for std::fs::read, relative to a base directory
-///
-/// If no base directory is provided, the function defaults to the app data
-/// directory (~/.local/share/elysiae)
-pub fn read_file(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<Vec<u8>> {
-    let fp = full_path(Some(p), base_dir)?;
-    ensure!(
-        fp.try_exists()?,
-        "The Path \"{}\" could not be found on disk",
-        fp.to_string_lossy()
-    );
-
-    let data = fs::read(fp).context("Could not read this file")?;
-    Ok(data)
 }
 
 /// Wraper function for std::fs::write, but relative to a base
@@ -136,102 +87,6 @@ pub fn write_file(p: PathBuf, contents: &[u8], base_dir: Option<BaseDirectory>) 
     fs::write(&temp_path, contents).context("Failed to write temporary file")?;
     fs::rename(temp_path, fp).context("Failed to atomically replace the path")?;
 
-    Ok(())
-}
-
-/// Wrapper function for std::fs::create_dir_all, relative to a base directory
-///
-/// If the path this function is trying to create exists, the function will emit
-/// a warning but still completes successfully, as it didn't run into any real
-/// errors
-///
-/// If no base directory is provided, the function defaults to the app data
-/// directory (~/.local/share/elysiae)
-pub fn mkdir(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<()> {
-    let fp = full_path(Some(p), base_dir).context("File path could not be resolved")?;
-
-    if fp.try_exists()? {
-        ensure!(fp.is_dir(), "The existing path is not a directory");
-        warn!(
-            "The path \"{}\" already exists. No action taken",
-            fp.to_string_lossy()
-        );
-        Ok(())
-    } else {
-        fs::create_dir_all(fp).context("The path could not be created")?;
-        Ok(())
-    }
-}
-
-/// Wrapper function for std::fs::rename(), relative to a base directory
-///
-/// Both paths must be of the same type, if they are different an error will be
-/// thrown
-///
-/// If no base directory is provided, the function defaults to the app data
-/// directory (~/.local/share/elysiae)
-pub fn rename(options: MultiPathOptions) -> Result<()> {
-    let ifp = full_path(Some(options.init_path), options.init_path_base_dir)
-        .context("Could not resolve initial path")?;
-    let dfp = full_path(Some(options.dest_path), options.dest_path_base_dir)
-        .context("Could not resolve destination path")?;
-
-    ensure!(
-        ifp.try_exists()?,
-        "The initial path \"{}\" does not exist",
-        ifp.to_string_lossy()
-    );
-
-    let allow_overwrites = options.overwrite.unwrap_or(true);
-
-    ensure!(
-        !dfp.try_exists()? || allow_overwrites,
-        "The destination path \"{}\" already exists and overwriting files has been disabled!",
-        dfp.to_string_lossy()
-    );
-
-    if dfp.try_exists()? {
-        ensure!(
-            (ifp.is_dir() && dfp.is_dir()) || (ifp.is_file() && dfp.is_file()),
-            "{} and {} are two different item types",
-            ifp.to_string_lossy(),
-            dfp.to_string_lossy()
-        );
-    } else if let Some(parent) = dfp.parent() {
-        create_dir_all(parent).context("Failed to create destination parent")?;
-    }
-
-    fs::rename(ifp, dfp)?;
-    Ok(())
-}
-
-/// Wrapper function for std::fs::remove_file, std::fs::remove_dir and
-/// std::fs::remove_dir_all, relative to a base directory
-///
-/// The function automatically determines weather the path you specified is a
-/// directory or not and calls the appropriate std function to remove the item
-/// from the filesystem
-///
-/// If a recursive parameter is not provided, it will automatically recursively
-/// delete a directory
-///
-/// If no base directory is provided, the function will default to the app data
-/// directory (~/.local/share/elysiae)
-pub fn remove(p: PathBuf, base_dir: Option<BaseDirectory>, recursive: Option<bool>) -> Result<()> {
-    let fp = full_path(Some(p), base_dir)?;
-    if !fp.try_exists()? {
-        return Ok(());
-    }
-    if fp.is_file() {
-        fs::remove_file(fp).context("Could not remove this file")?;
-    } else if fp.is_dir() {
-        match recursive {
-            Some(true) | None => {
-                fs::remove_dir_all(fp).context("Could not recursively delete this directory")?
-            }
-            Some(false) => fs::remove_dir(fp).context("Could not remove this directory")?,
-        };
-    }
     Ok(())
 }
 
@@ -492,66 +347,6 @@ fn validate_archive_links(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Validates the integrity of a file relative to a base bath against the
-/// expected sha256sum of the file. If no base directory is provided, the base
-/// directory will default to the App Data Directory (~/.local/share/elysiae)
-pub async fn verify_sha256sum(
-    file: PathBuf,
-    base_dir: Option<BaseDirectory>,
-    expected_sum: String,
-) -> Result<bool> {
-    let fp = full_path(Some(file), base_dir).context("Could not resolve full path")?;
-
-    // Get the file hash. If getting the hash from the file fails,
-    // default to an empty string, which can indicate to the function
-    // that the file hashes do not match
-    tokio::task::spawn_blocking(move || -> Result<bool> {
-        let fh = try_digest(fp).unwrap_or("".to_string());
-
-        Ok(fh.eq(&expected_sum))
-    })
-    .await
-    .context("Failed to verify integrity of file")?
-}
-
-/// Gets the size of a directory, relative to a Base directory. Size is returned
-/// in a specified unit (default: Bytes)
-///
-/// If no base directory is provided, the function will default to the app data
-/// directory (~/.local/share/elysiae)
-pub async fn get_dir_size(
-    p: PathBuf,
-    base_dir: Option<BaseDirectory>,
-    target_unit: Option<Sizes>,
-) -> Result<f64> {
-    let fp = full_path(Some(p), base_dir).context("The path could not be resolved")?;
-    tokio::task::spawn_blocking(move || -> Result<f64> {
-        let raw_size = get_size(fp).context("Could not get size of directory")? as f64;
-
-        Ok(size_as(
-            raw_size,
-            Sizes::Bytes,
-            target_unit.unwrap_or(Sizes::Bytes),
-        ))
-    })
-    .await
-    .context("Failed to get size of directory")?
-}
-
-/// Wrapper function for std::fs::read_dir, relative to a user-specified "base directory"
-/// Values are returned as a PathBuf Vector rather than a DirEntry Vector because it is more useful to Elysiae in that form
-///
-/// If no base directory is provided, the function will default to the app data
-/// directory (~/.local/share/elysiae)
-pub fn read_dir(p: PathBuf, base_dir: Option<BaseDirectory>) -> Result<Vec<PathBuf>> {
-    let fp = full_path(Some(p), base_dir).context("The path could not be resolved")?;
-
-    Ok(std::fs::read_dir(fp)?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .collect::<Vec<_>>())
-}
-
 /// Joins a specified base directory with a relative path
 ///
 /// If no relative path is provided, the base directory is returned by
@@ -573,18 +368,12 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
     let d = base_dirs()?;
     Ok(match base_dir {
         Some(x) => match x {
-            BaseDirectory::AppData => d.data_local_dir().to_path_buf().join("elysiae"),
             BaseDirectory::Desktop => directories::UserDirs::new()
                 .context("user directories unavailable")?
                 .desktop_dir()
                 .context("desktop directory is not configured")?
                 .to_path_buf(),
             BaseDirectory::Home => d.home_dir().to_path_buf(),
-            BaseDirectory::Compat => d
-                .data_local_dir()
-                .to_path_buf()
-                .join("elysiae")
-                .join("proton-data"),
         },
         None => d.data_local_dir().to_path_buf().join("elysiae"),
     })
@@ -600,23 +389,11 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
     let home = ROOT.get_or_init(|| {
         std::env::temp_dir().join(format!("elysiae-tests-{}", uuid::Uuid::new_v4()))
     });
-    Ok(match base_dir.unwrap_or(BaseDirectory::AppData) {
-        BaseDirectory::Home => home.clone(),
-        BaseDirectory::Desktop => home.join("Desktop"),
-        BaseDirectory::AppData => home.join(".local/share/elysiae"),
-        BaseDirectory::Compat => home.join(".local/share/elysiae/proton-data"),
+    Ok(match base_dir {
+        Some(BaseDirectory::Home) => home.clone(),
+        Some(BaseDirectory::Desktop) => home.join("Desktop"),
+        None => home.join(".local/share/elysiae"),
     })
-}
-
-/// Converts the size of something in the filesystem between units, primarilly
-/// intended for use in the frontend where displaying everything as bytes isn't
-/// as fashionable as it is in the backend
-///
-/// This function can convert between all values between bytes and terabytes.
-/// Support for larger units isn't needed because no games are even remotely close to the
-/// petabyte and beyond range as of writing
-pub fn size_as(initial_size: f64, initial_unit: Sizes, new_unit: Sizes) -> f64 {
-    initial_size * 1024.0_f64.powi(initial_unit.power() - new_unit.power())
 }
 
 /// Joins an untrusted relative path to a trusted (possibly XDG-configured) base.
@@ -739,12 +516,15 @@ mod tests {
     /// Keeps file paths inside the isolated test profile and rejects traversal.
     #[test]
     fn paths_stay_inside_the_test_profile() {
+        let home = full_path(None, Some(BaseDirectory::Home)).unwrap();
+        assert_eq!(
+            full_path(None, None).unwrap(),
+            home.join(".local/share/elysiae")
+        );
         for base in [
             None,
             Some(BaseDirectory::Home),
             Some(BaseDirectory::Desktop),
-            Some(BaseDirectory::AppData),
-            Some(BaseDirectory::Compat),
         ] {
             let root = full_path(None, base).unwrap();
             assert!(root.starts_with(std::env::temp_dir()));

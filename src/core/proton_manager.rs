@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     core::{
-        fs::{MultiPathOptions, Sizes, extract_file, full_path},
+        fs::{MultiPathOptions, extract_file, full_path},
         operations::{Operation, OperationKind, Operations, Phase, operations},
         sys::get_available_storage,
     },
@@ -315,11 +315,6 @@ fn checked_file(root: &Path, relative: &str, executable: bool) -> Result<PathBuf
     Ok(path)
 }
 
-/// Resolves canonical and supported legacy layouts without writing or executing them.
-pub fn runtime_executable() -> Result<PathBuf> {
-    Ok(RuntimePaths::appdata()?.resolve()?.executable)
-}
-
 /// Checks whether a complete supported Proton runtime is installed.
 pub fn components_installed() -> Result<bool> {
     Ok(RuntimePaths::appdata()?.resolve().is_ok())
@@ -545,10 +540,7 @@ fn verify_archive(archive: &Path, checksum: &str) -> Result<()> {
 
 /// Returns the free storage available at the runtime destination.
 fn available_bytes(destination: &Path) -> Result<u64> {
-    Ok(get_available_storage(
-        destination.to_str().context("Runtime path is not UTF-8")?,
-        Sizes::Bytes,
-    )? as u64)
+    Ok(get_available_storage(destination.to_str().context("Runtime path is not UTF-8")?)? as u64)
 }
 
 /// Charges an archive resource budget, rejecting overflow or excess usage.

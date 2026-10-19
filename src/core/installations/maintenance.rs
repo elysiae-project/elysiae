@@ -364,8 +364,7 @@ impl Store {
         ensure!(
             sys::required_storage_available(
                 destination.to_str().context("Destination is not UTF-8")?,
-                bytes.saturating_add(16 * 1024 * 1024) as f64,
-                fs::Sizes::Bytes
+                bytes.saturating_add(16 * 1024 * 1024) as f64
             )?,
             "Insufficient space on destination filesystem"
         );

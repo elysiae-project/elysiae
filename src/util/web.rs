@@ -94,16 +94,6 @@ impl Drop for FileDownload {
     }
 }
 
-/// Download an HTTPS file within the global size limit, reporting optional progress.
-pub async fn download_file(
-    url: String,
-    dest: PathBuf,
-    base_dir: Option<BaseDirectory>,
-    on_progress: Option<Box<dyn Fn(DownloadProgress) + Send + 'static>>,
-) -> Result<()> {
-    download_file_limited(url, dest, base_dir, on_progress, MAX_DOWNLOAD_SIZE).await
-}
-
 /// A caller may impose a smaller resource budget, never increase the global
 /// limit. Both declared and streamed sizes are checked before finalization.
 pub async fn download_file_limited(
@@ -188,7 +178,7 @@ async fn download_to(
         .await
         .context("Could not flush downloaded file")?;
     drop(file);
-    // These are resolved, same-parent paths, not inputs for core::fs::rename.
+    // These are resolved, same-parent paths.
     // Commit without an await so cancellation cannot race a background rename.
     std::fs::rename(&path, &destination)
         .with_context(|| format!("Could not finalize download to {}", destination.display()))?;

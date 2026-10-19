@@ -87,6 +87,7 @@ struct ActiveOperation {
 struct State {
     persistent: bool,
     active: Vec<ActiveOperation>,
+    #[cfg(test)]
     last: Option<OperationStatus>,
     // Owned by the group, never by whichever operation happens to finish first.
     profile_lock: Option<File>,
@@ -206,7 +207,8 @@ impl Operations {
         Ok(state.active.iter().map(|a| a.status.clone()).collect())
     }
 
-    /// Prefer the transfer over a concurrent session for existing progress callers.
+    /// Inspect active or last-completed status in tests, preferring a transfer.
+    #[cfg(test)]
     pub fn status(&self) -> Result<Option<OperationStatus>> {
         let state = self
             .0
@@ -400,7 +402,10 @@ impl Operation {
                 operation: status.clone(),
                 event: ProgressEvent::Finished { error },
             });
-            state.last = Some(status);
+            #[cfg(test)]
+            {
+                state.last = Some(status);
+            }
             if state.active.is_empty() {
                 state.profile_lock = None;
             }

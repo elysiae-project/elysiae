@@ -35,11 +35,8 @@ const MAX_CATALOG_SIZE: u64 = 4 * 1024 * 1024;
 /// Kind of cached artwork to retrieve.
 #[derive(Debug, Clone, Copy)]
 pub enum AssetType {
-    Image,
-    Video,
     Icon,
     Shortcut,
-    Overlay,
 }
 
 /// Asset catalog returned by Aedes for a game and locale.
@@ -146,23 +143,9 @@ fn store() -> Result<&'static Store> {
     STORE.get().context("Asset cache is unavailable")
 }
 
-/// Refresh all games for the requested locale with English fallback.
-pub async fn refresh_cache(locale: &str) -> Result<CacheRefresh> {
-    refresh_cache_with_progress(locale, Game::default(), |_| {}).await
-}
-
 /// Refresh with the selected game's static artwork first. Notifications run
 /// after atomic publication, before optional downloads, and may repeat as media
 /// or icons become available. Callbacks should be short and must not block.
-pub async fn refresh_cache_with_progress(
-    locale: &str,
-    priority: Game,
-    on_ready: impl Fn(Game) + Send + Sync,
-) -> Result<CacheRefresh> {
-    let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
-    refresh_cache_with_preferences(locale, priority, use_video, on_ready).await
-}
-
 /// Use the GTK thread's preference snapshot instead of a worker thread's cached
 /// GSettings object, whose owning main context may not be dispatching changes.
 pub async fn refresh_cache_with_preferences(
@@ -189,39 +172,6 @@ pub async fn refresh_cache_with_preferences(
         .await
 }
 
-/// Refresh the display locale's assets and report any per-game failures.
-pub async fn update_cache() -> Result<()> {
-    let report = refresh_cache(&settings::display_locale()?).await?;
-    ensure!(
-        report.failures.is_empty(),
-        "Asset cache refresh failed: {}",
-        report
-            .failures
-            .iter()
-            .map(|(game, error)| format!("{}: {error}", game.code()))
-            .collect::<Vec<_>>()
-            .join("; ")
-    );
-    Ok(())
-}
-
-/// All games have usable media, an icon and a shortcut (possibly in English).
-pub fn cache_available(locale: &str) -> Result<bool> {
-    let locale = settings::normalize_locale(locale)?;
-    let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
-    let store = store()?;
-    Ok(Game::all()
-        .into_iter()
-        .all(|game| store.ready(game, &locale, use_video)))
-}
-
-/// Check whether a game has usable cached assets, allowing English fallback.
-pub fn game_cache_available(game: Game, locale: &str) -> Result<bool> {
-    let locale = settings::normalize_locale(locale)?;
-    let use_video = bool::try_from(settings::get_option("use-video-background")?)?;
-    Ok(store()?.ready(game, &locale, use_video))
-}
-
 /// Replace the displayed-media pins. Passing an empty slice clears them.
 /// Only existing, regular files inside this cache's asset tree can be pinned.
 pub fn set_active_assets(paths: &[PathBuf]) -> Result<()> {
@@ -243,16 +193,6 @@ pub fn resolve_media(game: Game, locale: &str, use_video: bool) -> Result<Resolv
         media.is_video
     );
     Ok(media)
-}
-
-/// Return the selected background and overlay paths.
-pub fn media_paths(
-    game: Game,
-    locale: &str,
-    use_video: bool,
-) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
-    let media = resolve_media(game, locale, use_video)?;
-    Ok((media.background, media.overlay))
 }
 
 /// List available assets of a kind, falling back to the English catalog.
@@ -481,21 +421,6 @@ impl Store {
     /// Resolve existing assets of a kind from a catalog in preference order.
     fn paths(&self, response: &AedesResponse, locale: &str, kind: AssetType) -> Vec<PathBuf> {
         let paths: Vec<&str> = match kind {
-            AssetType::Image => response
-                .backgrounds
-                .iter()
-                .map(|b| b.image.as_str())
-                .collect(),
-            AssetType::Video => response
-                .backgrounds
-                .iter()
-                .filter_map(|b| b.video.as_deref())
-                .collect(),
-            AssetType::Overlay => response
-                .backgrounds
-                .iter()
-                .filter_map(|b| b.overlay.as_deref())
-                .collect(),
             AssetType::Icon => response.variants(locale, false),
             AssetType::Shortcut => response.variants(locale, true),
         };
@@ -526,6 +451,7 @@ impl Store {
     }
 
     /// Check for a usable requested-locale or English catalog.
+    #[cfg(test)]
     fn ready(&self, game: Game, locale: &str, use_video: bool) -> bool {
         locales(locale).any(|source| {
             self.catalog(game, source)
@@ -840,6 +766,10 @@ impl Store {
 
     /// Publish usable static artwork before waiting for icons or optional media.
     /// Keep old assets protected until all required replacements are usable.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep source and requested locales, preferences, and injected publication/download callbacks distinct"
+    )]
     async fn prepare<D, DF>(
         &self,
         game: Game,

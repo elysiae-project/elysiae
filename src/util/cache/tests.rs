@@ -86,7 +86,12 @@ async fn seed(store: &Store, game: Game, response: AedesResponse) {
 fn progress_api_future_can_run_on_the_background_runtime() {
     fn assert_send(_: impl Send) {}
     // Constructing (but never polling) the future performs no network or I/O.
-    assert_send(refresh_cache_with_progress("en-us", Game::Nap, |_| {}));
+    assert_send(refresh_cache_with_preferences(
+        "en-us",
+        Game::Nap,
+        true,
+        |_| {},
+    ));
 }
 
 #[test]

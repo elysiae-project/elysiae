@@ -50,9 +50,9 @@ enum DownloadAction {
 }
 
 /// Progress is best-effort and bounded by the caller's channel. Terminal events
-/// replace an older progress item if necessary. The returned Result and
-/// operations().status() remain authoritative even if the consumer closes;
-/// irmin's Finished event alone is not evidence that an operation succeeded.
+/// replace an older progress item if necessary. The worker's final Result remains
+/// authoritative even if the consumer closes; irmin's Finished event alone is
+/// not evidence that an operation succeeded.
 pub async fn download_game(
     game: Game,
     lang: &str,
@@ -80,6 +80,10 @@ pub async fn preinstall_game(
 }
 
 /// Runs an integrity scan and attempts repairs for an installed game.
+#[expect(
+    dead_code,
+    reason = "Repair backend retained until a UI caller is connected"
+)]
 pub async fn repair_game(
     game: Game,
     lang: &str,
@@ -655,6 +659,10 @@ pub async fn launch_game(game: Game) -> Result<()> {
 }
 
 /// Registers an existing installation with the requested modification permission.
+#[expect(
+    dead_code,
+    reason = "Import backend retained until a UI caller is connected"
+)]
 pub async fn import_game(game: Game, path: PathBuf, allow_modify: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Import, Some(game))?;
     runtime::spawn(async move {
@@ -670,6 +678,10 @@ pub async fn import_game(game: Game, path: PathBuf, allow_modify: bool) -> Resul
 }
 
 /// Relocates an installation, optionally deleting its confirmed managed source.
+#[expect(
+    dead_code,
+    reason = "Verified-relocation backend retained until a UI caller is connected"
+)]
 pub async fn relocate_game(
     game: Game,
     destination: PathBuf,
@@ -696,6 +708,10 @@ pub async fn relocate_game(
 }
 
 /// Unregisters a game, optionally deleting its confirmed managed installation.
+#[expect(
+    dead_code,
+    reason = "Managed-uninstall backend retained until a UI caller is connected"
+)]
 pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Uninstall, Some(game))?;
     runtime::spawn(async move {
