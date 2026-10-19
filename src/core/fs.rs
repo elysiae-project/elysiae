@@ -411,7 +411,8 @@ fn extract_zip(file: fs::File, root: &Path) -> Result<()> {
     // an escaping terminal symlink. Validate those targets before extraction.
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        archive_path(Path::new(entry.name()))?;
+        let name = entry.name().context("Could not decode ZIP entry name")?;
+        archive_path(Path::new(name.as_ref()))?;
         let path = entry.enclosed_name().context("Unsafe ZIP entry path")?;
         let kind = entry.unix_mode().unwrap_or(0) & libc::S_IFMT;
         ensure!(
@@ -680,6 +681,60 @@ fn canonicalize_with_missing(path: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn zip_fixture(names: &[&str]) -> (PathBuf, fs::File) {
+        use std::io::Write;
+        let root = std::env::temp_dir().join(format!("elysiae-zip-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(root.join("output")).unwrap();
+        let mut writer = zip::ZipWriter::new(fs::File::create(root.join("fixture.zip")).unwrap());
+        for name in names {
+            writer
+                .start_file(
+                    *name,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored),
+                )
+                .unwrap();
+            writer.write_all(b"archive contents").unwrap();
+        }
+        drop(writer.finish().unwrap());
+        let file = fs::File::open(root.join("fixture.zip")).unwrap();
+        (root, file)
+    }
+
+    #[test]
+    fn zip_extracts_nested_and_unicode_entry_names() {
+        let names = ["nested/data.txt", "nested/日本語.txt"];
+        let (root, file) = zip_fixture(&names);
+        extract_zip(file, &root.join("output")).unwrap();
+        for name in names {
+            assert_eq!(
+                fs::read(root.join("output").join(name)).unwrap(),
+                b"archive contents"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn zip_rejects_unsafe_names_before_extracting_any_files() {
+        let absolute =
+            std::env::temp_dir().join(format!("elysiae-zip-escape-{}", uuid::Uuid::new_v4()));
+        for name in [
+            "../escape.txt",
+            "nested/../inside.txt",
+            "nul\0name.txt",
+            absolute.to_str().unwrap(),
+        ] {
+            let (root, file) = zip_fixture(&["safe.txt", name]);
+            let error = extract_zip(file, &root.join("output")).unwrap_err();
+            assert!(error.to_string().contains("Unsafe"), "{error:#}");
+            assert_eq!(fs::read_dir(root.join("output")).unwrap().count(), 0);
+            assert!(!root.join("escape.txt").exists());
+            assert!(!absolute.exists());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 
     /// Keeps file paths inside the isolated test profile and rejects traversal.
     #[test]
