@@ -13,7 +13,10 @@ use crate::{
         game::Game,
         installations,
         operations::{Operation, OperationKind, Phase, operations},
-        proton_manager::{components_installed, recover_runtime, run_game, update_all_modules},
+        proton_manager::{
+            components_installed, recover_runtime, run_game, runtime_ready_for_launch,
+            update_all_modules,
+        },
     },
     util::{
         cache::{AssetType, get_cached_asset_paths},
@@ -41,6 +44,7 @@ pub enum UpdateAvailability {
 enum DownloadAction {
     Install,
     Update,
+    Preinstall,
     Repair,
 }
 
@@ -65,6 +69,15 @@ pub async fn download_update(
     start_download(DownloadAction::Update, game, lang, sender).await
 }
 
+/// Downloads staged future-version content without applying a live update.
+pub async fn preinstall_game(
+    game: Game,
+    lang: &str,
+    sender: async_channel::Sender<SophonProgress>,
+) -> Result<()> {
+    start_download(DownloadAction::Preinstall, game, lang, sender).await
+}
+
 /// Runs an integrity scan and attempts repairs for an installed game.
 pub async fn repair_game(
     game: Game,
@@ -86,6 +99,7 @@ async fn start_download(
     let kind = match action {
         DownloadAction::Install => OperationKind::Install,
         DownloadAction::Update => OperationKind::Update,
+        DownloadAction::Preinstall => OperationKind::Preinstall,
         DownloadAction::Repair => OperationKind::Repair,
     };
     let operation = operations().begin(kind, Some(game))?;
@@ -126,7 +140,7 @@ async fn execute_download(
 ) -> Result<()> {
     let path = match action {
         DownloadAction::Install => installations::prepare_install(game, operation)?,
-        DownloadAction::Update | DownloadAction::Repair => {
+        DownloadAction::Update | DownloadAction::Preinstall | DownloadAction::Repair => {
             installations::writable_path(game, operation)?
         }
     };
@@ -154,7 +168,7 @@ async fn execute_download(
             }
             broadcast_notification("Download Complete");
         }
-        DownloadAction::Update => {
+        DownloadAction::Update | DownloadAction::Preinstall => {
             ensure!(
                 local_status(game, sophon.game_dir())? != UpdateAvailability::Incomplete,
                 "Installation is incomplete; resume installation or repair it first"
@@ -164,7 +178,13 @@ async fn execute_download(
                 info.current_tag.is_some(),
                 "No installed version; install the game first"
             );
-            match classify_update(&info) {
+            let availability = classify_update(&info);
+            ensure!(
+                !matches!(action, DownloadAction::Preinstall)
+                    || availability != UpdateAvailability::Outdated,
+                "A live update is now required; finish the running game before applying it"
+            );
+            match availability {
                 UpdateAvailability::Outdated => {
                     mark_pending(sophon.game_dir())?;
                     if apply_live_preinstall(&info) {
@@ -207,6 +227,7 @@ async fn execute_download(
                     broadcast_notification("Update Complete");
                 }
                 UpdateAvailability::Preinstall => {
+                    operation.mark_preinstall()?;
                     sophon
                         .preinstall(operation.handle(), move |event| {
                             forward_progress(&sender, event)
@@ -582,14 +603,20 @@ pub async fn launch_game(game: Game) -> Result<()> {
             game_installed(game)?,
             "No complete or explicitly imported game installation"
         );
-        // Recovery is offline and runs before deciding whether a fresh runtime
-        // download is necessary. A restored working version is immediately usable.
-        recover_runtime().await?;
-        if !components_installed()? {
-            update_all_modules().await?;
+        // A healthy runtime is read-only here: recovery would unnecessarily
+        // take an exclusive lease and prevent launch alongside a game download.
+        if !runtime_ready_for_launch()? {
+            recover_runtime().await?;
+            if !components_installed()? {
+                update_all_modules().await?;
+            }
         }
         let operation = operations().begin(OperationKind::Launch, Some(game))?;
         let executable = (|| -> Result<PathBuf> {
+            ensure!(
+                runtime_ready_for_launch()?,
+                "The shared runtime needs recovery before launch"
+            );
             // Resolve again under ownership: a relocation may have completed
             // while the initial component install was running.
             ensure!(

@@ -322,6 +322,13 @@ pub fn components_installed() -> Result<bool> {
     Ok(RuntimePaths::appdata()?.resolve().is_ok())
 }
 
+/// A launch may share a game-download lease only with a complete runtime and
+/// no interrupted runtime transaction. This probe never performs recovery.
+pub fn runtime_ready_for_launch() -> Result<bool> {
+    let paths = RuntimePaths::appdata()?;
+    Ok(!node_exists(&paths.journal())? && paths.resolve().is_ok())
+}
+
 /// Read-only, including when offline or an operation is already active. Scheduling
 /// and deciding whether to offer an update belong to the caller.
 pub async fn check_runtime_update() -> Result<bool> {
