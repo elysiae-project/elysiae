@@ -24,6 +24,12 @@ option(
     description: 'Also register ignored GTK tests. Requires a working display when tests run.',
 )
 option(
+    'validation',
+    type: 'feature',
+    value: 'auto',
+    description: 'Desktop/AppStream validation tests: auto uses available tools, enabled requires both. Schema validation always runs when tests are enabled.',
+)
+option(
     'test_timeout',
     type: 'integer',
     min: 1,

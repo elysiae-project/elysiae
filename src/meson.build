@@ -1,6 +1,3 @@
-cargo = find_program('cargo')
-shell = find_program('sh')
-python = import('python').find_installation('python3')
 fs = import('fs')
 
 # Capture the cache at configure time so build and test use exactly the same
@@ -86,6 +83,7 @@ cargo_build = custom_target(
     install: true,
     install_dir: bindir,
     install_mode: 'rwxr-xr-x',
+    install_tag: 'runtime',
     depends: [resources, gsettings],
     command: [
         python, '-c', cargo_build_script,
