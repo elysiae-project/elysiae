@@ -700,10 +700,19 @@ mod tests {
         if let Ok(directory) = std::env::var("ELYSIAE_TEST_SCREENSHOTS") {
             std::fs::create_dir_all(&directory).unwrap();
             let paintable = gtk::WidgetPaintable::new(Some(window));
-            let snapshot = gtk::Snapshot::new();
-            paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
-            let node = snapshot.to_node().expect("Window must render");
-            let texture = window.renderer().unwrap().render_texture(&node, None);
+            let mut node = None;
+            pump_until(|| {
+                if node.is_none() {
+                    let snapshot = gtk::Snapshot::new();
+                    paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
+                    node = snapshot.to_node();
+                }
+                node.is_some()
+            });
+            let texture = window
+                .renderer()
+                .unwrap()
+                .render_texture(&node.unwrap(), None);
             texture
                 .save_to_png(std::path::Path::new(&directory).join(name))
                 .unwrap();
@@ -746,6 +755,33 @@ mod tests {
         assert!(window.imp().background.is_visible());
         let selector = window.imp().sidebar.compute_bounds(&window).unwrap();
         assert!((selector.center().x() - window.width() as f32 / 2.0).abs() < 2.0);
+        assert!(
+            selector.width() <= 260.0 && selector.height() <= 50.0,
+            "Selector should remain a compact strip: {selector:?}"
+        );
+        let settings_bounds = window
+            .imp()
+            .settings_button
+            .compute_bounds(&window)
+            .unwrap();
+        let operation_bounds = window
+            .imp()
+            .operation_button
+            .compute_bounds(&window)
+            .unwrap();
+        assert!(
+            (62.0..=68.0).contains(&settings_bounds.width())
+                && (62.0..=68.0).contains(&settings_bounds.height())
+        );
+        assert!(
+            (228.0..=240.0).contains(&operation_bounds.width())
+                && (62.0..=68.0).contains(&operation_bounds.height())
+        );
+        let footer = window.imp().progress.parent().unwrap();
+        assert!(!window.imp().settings_button.is_ancestor(&footer));
+        assert!(!window.imp().operation_button.is_ancestor(&footer));
+        let footer_bounds = footer.compute_bounds(&window).unwrap();
+        assert!(settings_bounds.y() >= footer_bounds.y() + footer_bounds.height() + 16.0);
         screenshot(&window, "launcher-desktop.png");
         let mut buttons = Vec::new();
         let mut child = window.imp().sidebar.imp().games.first_child();
@@ -754,6 +790,36 @@ mod tests {
             buttons.push(widget.downcast::<gtk::ToggleButton>().unwrap());
         }
         assert_eq!(buttons.len(), Game::all().len());
+        // Real artwork must not turn compact buttons into native-size images.
+        let artwork = gtk::gdk::MemoryTexture::new(
+            512,
+            512,
+            gtk::gdk::MemoryFormat::R8g8b8a8,
+            &glib::Bytes::from_owned(vec![192u8; 512 * 512 * 4]),
+            512 * 4,
+        );
+        for button in &buttons {
+            let icon = button
+                .child()
+                .unwrap()
+                .downcast::<crate::widgets::sidebar::GameIcon>()
+                .unwrap();
+            let picture = icon.imp().picture.borrow();
+            let picture = picture.as_ref().unwrap();
+            picture.set_paintable(Some(&artwork));
+            picture.set_visible(true);
+            icon.imp()
+                .fallback
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .set_visible(false);
+            assert!(
+                icon.measure(gtk::Orientation::Horizontal, -1).1 <= 32,
+                "Icon natural size must ignore artwork resolution: {:?}",
+                icon.measure(gtk::Orientation::Horizontal, -1)
+            );
+        }
         buttons[2].emit_clicked();
         assert_eq!(window.get_current_game(), Game::Hkrpg);
         assert!(buttons[2].has_css_class("is-selected"));
@@ -835,6 +901,8 @@ mod tests {
         pump_until(|| window.imp().progress.is_visible());
         assert_eq!(window.get_current_game(), Game::Hk4e);
         assert!(window.imp().progress.imp().verification_row.is_visible());
+        let selector = window.imp().sidebar.compute_bounds(&window).unwrap();
+        assert!(selector.width() <= 260.0 && selector.height() <= 50.0);
         let icon = buttons[2]
             .child()
             .unwrap()
@@ -844,6 +912,29 @@ mod tests {
         screenshot(&window, "download-desktop.png");
         window.set_default_size(720, 540);
         pump_until(|| window.width() <= 760);
+        pump_until(|| {
+            window
+                .imp()
+                .operation_button
+                .compute_bounds(&window)
+                .is_some_and(|bounds| bounds.x() + bounds.width() <= window.width() as f32)
+        });
+        let footer = window
+            .imp()
+            .progress
+            .parent()
+            .unwrap()
+            .compute_bounds(&window)
+            .unwrap();
+        let actions = window
+            .imp()
+            .settings_button
+            .parent()
+            .unwrap()
+            .compute_bounds(&window)
+            .unwrap();
+        assert!(actions.y() >= footer.y() + footer.height() + 16.0);
+        assert!(actions.y() + actions.height() <= window.height() as f32);
         window.imp().settings_button.emit_clicked();
         pump_until(|| {
             window

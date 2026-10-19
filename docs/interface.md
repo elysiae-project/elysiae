@@ -23,6 +23,13 @@ component rules or Rust rendering code.
 | Progress states | `.is-extracting`, `.is-error`, `.is-complete` |
 | Settings | `.settings-layer`, `.settings-backdrop`, `.settings-panel`, `.settings-header`, `.settings-heading`, `.settings-close`, `.settings-scroll`, `.settings-content`, `.settings-row`, `.settings-label`, `.settings-description`, `.settings-switch`, `.settings-dropdown`, `.settings-error`, `.settings-footer` |
 
+The selector uses a `--game-icon-size` of 26px with approximately 32px game
+buttons. The icon widget measures independently of the downloaded image, so a
+512px texture cannot enlarge the strip. Tune that variable and `.game-button`
+padding together. The primary action is approximately 232×64px and Settings is
+64×64px; their transparent `.launcher-actions` row sits outside the shaded
+progress/status footer, directly over the background.
+
 GTK CSS subnodes are scoped beneath their component classes, for example
 `.download-progress trough` and `.settings-switch slider`. Dimensions, spacing
 and rounding are grouped by component in the stylesheet. Icon desaturation uses

@@ -26,6 +26,9 @@
   --footer-shade: alpha(var(--bg-color-dark), 0.95);
   --shadow-color: alpha(var(--bg-color-dark), 0.5);
   --transparent: transparent;
+
+  /* Compact selector geometry, independent of artwork resolution. */
+  --game-icon-size: 26px;
 }
 
 * { font-family: "Pretendard Variable", sans-serif; }
@@ -42,17 +45,18 @@
 .background-image, .background-video, .background-art-overlay { background: var(--transparent); }
 .launcher-content { padding: 24px 32px 28px; }
 .launcher-footer { padding: 24px; border-radius: 16px; background: var(--footer-shade); }
+.launcher-actions { margin-top: 20px; background: var(--transparent); }
 .game-title { font-size: 22px; font-weight: 600; color: var(--text-primary); }
 .activity-label { color: var(--text-secondary); font-size: 14px; }
 
 /* Selector: content-sized, with overflow handled by its scrolled window. */
-.game-selector { padding: 8px; border-radius: 20px; background: var(--panel-color); }
+.game-selector { padding: 4px; border-radius: 12px; background: var(--panel-color); }
 .game-selector-scroll, .game-selector-items { background: var(--transparent); }
-.game-button { padding: 5px; margin: 2px; border: 2px solid var(--transparent); border-radius: 15px; background: var(--transparent); box-shadow: none; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
+.game-button { min-width: 0; min-height: 0; padding: 2px; margin: 0; border: 1px solid var(--transparent); border-radius: 8px; background: var(--transparent); box-shadow: none; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
 .game-button:hover { background: var(--surface-hover); }
 .game-button:checked, .game-button.is-selected { border-color: var(--download-color); background: var(--surface-selected); }
-.game-icon { border-radius: 9px; }
-.game-icon-fallback { color: var(--text-secondary); background: var(--surface-raised); }
+.game-icon { min-width: var(--game-icon-size); min-height: var(--game-icon-size); border-radius: 5px; }
+.game-icon-fallback { -gtk-icon-size: var(--game-icon-size); color: var(--text-secondary); background: var(--surface-raised); }
 .game-button.is-downloading { border-bottom-color: var(--verification-color); }
 
 /* Shared controls. Keep native keyboard focus visible. */
@@ -60,14 +64,17 @@
 .button:hover { background: var(--btn-primary-hover); }
 .button:active { background: var(--btn-primary); }
 .button:disabled { background: var(--surface-raised); color: var(--text-muted); }
-.operation-button { min-width: 132px; }
-.settings-button { min-width: 24px; padding: 12px; border-radius: 24px; }
+/* Approximately 1.35x the previous 172x48 and 48x48 action controls. */
+.operation-button, .settings-button { min-height: 32px; padding: 16px 27px; border-radius: 16px; font-size: 22px; }
+.operation-button { min-width: 178px; }
+.settings-button { min-width: 32px; padding: 16px; border-radius: 32px; -gtk-icon-size: 22px; }
 .preinstall-button { color: var(--text-primary); background: var(--surface-raised); }
 .preinstall-button:hover { background: var(--surface-hover); }
 .button:focus-visible, .game-button:focus-visible, .settings-close:focus-visible,
 .settings-switch:focus-visible, .settings-dropdown:focus-visible, .titlebar-close:focus-visible {
   outline: 2px solid var(--focus-color); outline-offset: 3px;
 }
+.game-button:focus-visible { outline-offset: -2px; }
 
 /* Progress: separate selectors for download and verification customization. */
 .progress-panel { padding: 16px 18px; border-radius: 12px; background: var(--surface); }

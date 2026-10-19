@@ -29,7 +29,7 @@ mod icon_imp {
     impl ObjectSubclass for GameIcon {
         const NAME: &'static str = "ElysiaeGameIcon";
         type Type = super::GameIcon;
-        type ParentType = gtk::Box;
+        type ParentType = gtk::Widget;
     }
     impl ObjectImpl for GameIcon {
         fn constructed(&self) {
@@ -43,34 +43,63 @@ mod icon_imp {
                 .visible(false)
                 .build();
             picture.add_css_class("game-icon-image");
-            picture.set_size_request(52, 52);
             let fallback = gtk::Image::from_icon_name("applications-games-symbolic");
-            fallback.set_pixel_size(32);
-            fallback.set_size_request(52, 52);
             fallback.add_css_class("game-icon-fallback");
-            obj.append(&picture);
-            obj.append(&fallback);
+            picture.set_parent(&*obj);
+            fallback.set_parent(&*obj);
             *self.picture.borrow_mut() = Some(picture);
             *self.fallback.borrow_mut() = Some(fallback);
         }
+        fn dispose(&self) {
+            if let Some(picture) = self.picture.borrow_mut().take() {
+                picture.unparent();
+            }
+            if let Some(fallback) = self.fallback.borrow_mut().take() {
+                fallback.unparent();
+            }
+        }
     }
     impl WidgetImpl for GameIcon {
+        // CSS controls the icon's size, not the downloaded texture's dimensions.
+        fn measure(&self, _: gtk::Orientation, _: i32) -> (i32, i32, i32, i32) {
+            (0, 0, -1, -1)
+        }
+        fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+            if let Some(picture) = self.picture.borrow().as_ref()
+                && picture.is_visible()
+            {
+                picture.allocate(width, height, baseline, None);
+            }
+            if let Some(fallback) = self.fallback.borrow().as_ref()
+                && fallback.is_visible()
+            {
+                fallback.allocate(width, height, baseline, None);
+            }
+        }
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             snapshot.push_color_matrix(
                 &gtk::graphene::Matrix::from_float(super::saturation_matrix(self.saturation.get())),
                 &gtk::graphene::Vec4::new(0.0, 0.0, 0.0, 0.0),
             );
-            self.parent_snapshot(snapshot);
+            if let Some(picture) = self.picture.borrow().as_ref()
+                && picture.is_visible()
+            {
+                self.obj().snapshot_child(picture, snapshot);
+            }
+            if let Some(fallback) = self.fallback.borrow().as_ref()
+                && fallback.is_visible()
+            {
+                self.obj().snapshot_child(fallback, snapshot);
+            }
             snapshot.pop();
         }
     }
-    impl BoxImpl for GameIcon {}
 }
 
 glib::wrapper! {
     pub struct GameIcon(ObjectSubclass<icon_imp::GameIcon>)
-        @extends gtk::Box, gtk::Widget,
-        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
+        @extends gtk::Widget,
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 /// Color-matrix coefficients are luminance weights, not theme colors.

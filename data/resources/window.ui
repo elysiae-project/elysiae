@@ -37,40 +37,41 @@
                     <style><class name="game-title"/></style>
                   </object>
                 </child>
-                <child><object class="ElysiaeProgressbar" id="progress"/></child>
                 <child>
-                  <object class="GtkBox">
-                    <property name="spacing">12</property>
-                    <style><class name="launcher-actions"/></style>
-                    <child>
-                      <object class="GtkLabel" id="activity_label">
-                        <property name="hexpand">true</property>
-                        <property name="xalign">0</property>
-                        <property name="wrap">true</property>
-                        <style><class name="activity-label"/></style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkButton" id="preinstall_button">
-                        <property name="label">Preinstall</property>
-                        <property name="visible">false</property>
-                        <style><class name="button"/><class name="preinstall-button"/></style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkButton" id="settings_button">
-                        <property name="icon-name">settings</property>
-                        <property name="tooltip-text">Settings</property>
-                        <accessibility><property name="label">Settings</property></accessibility>
-                        <style><class name="button"/><class name="settings-button"/></style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkButton" id="operation_button">
-                        <property name="label">Checking…</property>
-                        <style><class name="button"/><class name="operation-button"/></style>
-                      </object>
-                    </child>
+                  <object class="GtkLabel" id="activity_label">
+                    <property name="xalign">0</property>
+                    <property name="wrap">true</property>
+                    <style><class name="activity-label"/></style>
+                  </object>
+                </child>
+                <child><object class="ElysiaeProgressbar" id="progress"/></child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="halign">end</property>
+                <property name="spacing">16</property>
+                <style><class name="launcher-actions"/></style>
+                <child>
+                  <object class="GtkButton" id="preinstall_button">
+                    <property name="label">Preinstall</property>
+                    <property name="visible">false</property>
+                    <property name="valign">center</property>
+                    <style><class name="button"/><class name="preinstall-button"/></style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="settings_button">
+                    <property name="icon-name">settings</property>
+                    <property name="tooltip-text">Settings</property>
+                    <accessibility><property name="label">Settings</property></accessibility>
+                    <style><class name="button"/><class name="settings-button"/></style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="operation_button">
+                    <property name="label">Checking…</property>
+                    <style><class name="button"/><class name="operation-button"/></style>
                   </object>
                 </child>
               </object>

@@ -16,7 +16,7 @@
         <child>
           <object class="GtkBox" id="games">
             <property name="orientation">horizontal</property>
-            <property name="spacing">8</property>
+            <property name="spacing">4</property>
             <style><class name="game-selector-items"/></style>
           </object>
         </child>
