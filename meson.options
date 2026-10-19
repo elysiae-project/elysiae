@@ -1,7 +1,32 @@
 option(
     'profile',
     type: 'combo',
-    choices: ['release', 'dev'],
-    value: 'release',
-    description: 'The build profile for Elysiae. One of "release" or "dev".',
+    choices: ['auto', 'release', 'dev'],
+    value: 'auto',
+    description: 'Cargo profile override. auto maps Meson debug/release build types to Cargo dev/release.',
+)
+option(
+    'cargo_target_dir',
+    type: 'string',
+    value: '',
+    description: 'Cargo cache directory (relative paths use the source root). Empty uses CARGO_TARGET_DIR at configure time, then <build>/target.',
+)
+option(
+    'tests',
+    type: 'boolean',
+    value: true,
+    description: 'Register offline Cargo tests; fetch locked dependencies before building/testing.',
+)
+option(
+    'gui_tests',
+    type: 'boolean',
+    value: false,
+    description: 'Also register ignored GTK tests. Requires a working display when tests run.',
+)
+option(
+    'test_timeout',
+    type: 'integer',
+    min: 1,
+    value: 1800,
+    description: 'Timeout in seconds for each Cargo test invocation, including test compilation.',
 )

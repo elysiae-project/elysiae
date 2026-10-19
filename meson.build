@@ -1,10 +1,35 @@
 # Based on the instructions on the gtk4 rust cookbook
-project('Elysiae', 'rust', version: '1.0.0', meson_version: '>= 1.4')
+project(
+    'Elysiae', 'rust',
+    version: '1.0.0',
+    meson_version: '>= 1.4',
+    default_options: ['buildtype=release'],
+)
 
 gnome = import('gnome')
 base_id = 'app.elysiae.Elysiae'
 
-is_devel = get_option('profile') == 'dev'
+if meson.is_cross_build()
+    error('Meson cross builds are not supported; build natively on x86_64 or aarch64.')
+endif
+
+cargo_profile = get_option('profile')
+buildtype = get_option('buildtype')
+if cargo_profile == 'auto'
+    if buildtype == 'debug'
+        cargo_profile = 'dev'
+    elif buildtype == 'release'
+        cargo_profile = 'release'
+    else
+        error('Use --buildtype=debug/release, or explicitly select -Dprofile=dev/release. Cargo controls optimization settings.')
+    endif
+elif (cargo_profile == 'dev' and buildtype != 'debug') or (cargo_profile == 'release' and buildtype != 'release')
+    warning('-Dprofile=' + cargo_profile + ' overrides Meson buildtype=' + buildtype + ' for Cargo. Use -Dprofile=auto to follow --buildtype.')
+endif
+
+if get_option('gui_tests') and not get_option('tests')
+    error('-Dgui_tests=true requires -Dtests=true.')
+endif
 # Build profiles change optimization, not the running application's identity.
 # Rust, GSettings, icons and URI activation all use this same stable ID.
 profile = ''
