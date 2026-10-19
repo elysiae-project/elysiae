@@ -1,69 +1,103 @@
-* {
-  font-family: "Pretendard Variable";
-}
-
+/* Theme palette: all authored colors live here. Keep component rules below
+ * expressed through these variables when adjusting or extending the theme. */
 :root {
   --bg-color-dark: oklch(0.1732 0.0295 273.73);
-  --btn-primary: oklch(0.5807 0.183 271.11);
-  --btn-primary-hover: oklch(0.6529 0.183 271.11);
+  --btn-primary: oklch(0.55 0.183 271.11);
+  --btn-primary-hover: oklch(0.57 0.183 271.11);
+  --surface: oklch(0.235 0.034 273.73);
+  --surface-raised: oklch(0.29 0.043 273.73);
+  --surface-hover: oklch(0.34 0.055 273.73);
+  --surface-selected: oklch(0.36 0.09 271.11);
+  --text-primary: oklch(0.96 0.012 273.73);
+  --text-secondary: oklch(0.79 0.027 273.73);
+  --text-muted: oklch(0.71 0.035 273.73);
+  --text-on-primary: oklch(0.99 0.005 271.11);
+  --border-color: oklch(0.43 0.045 273.73);
+  --focus-color: oklch(0.8 0.12 271.11);
+  --download-color: oklch(0.72 0.15 271.11);
+  --verification-color: oklch(0.78 0.12 190);
+  --success-color: oklch(0.82 0.12 155);
+  --error-color: oklch(0.8 0.13 22);
+  --track-color: oklch(0.35 0.037 273.73);
+  --fallback-color: oklch(0.27 0.065 273.73);
+  --fallback-wordmark: oklch(0.68 0.065 273.73);
+  --panel-color: alpha(var(--surface), 0.96);
+  --backdrop-color: alpha(var(--bg-color-dark), 0.76);
+  --footer-shade: alpha(var(--bg-color-dark), 0.95);
+  --shadow-color: alpha(var(--bg-color-dark), 0.5);
+  --transparent: transparent;
 }
 
-svg {
-  color: white;
+* { font-family: "Pretendard Variable", sans-serif; }
+.launcher-window { background: var(--bg-color-dark); color: var(--text-primary); }
+.launcher-titlebar { background: var(--bg-color-dark); color: var(--text-primary); box-shadow: none; border: none; }
+.launcher-title { font-size: 15px; font-weight: 600; }
+.titlebar-close { background: var(--transparent); color: var(--text-secondary); border-radius: 10px; border: none; box-shadow: none; }
+.titlebar-close:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+/* Background layers always have an immediately paintable, non-black surface. */
+.background, .background-layers { background: var(--bg-color-dark); }
+.background-fallback { background: var(--fallback-color); }
+.background-wordmark { color: var(--fallback-wordmark); font-size: 56px; font-weight: 600; letter-spacing: -1px; }
+.background-image, .background-video, .background-art-overlay { background: var(--transparent); }
+.launcher-content { padding: 24px 32px 28px; }
+.launcher-footer { padding: 24px; border-radius: 16px; background: var(--footer-shade); }
+.game-title { font-size: 22px; font-weight: 600; color: var(--text-primary); }
+.activity-label { color: var(--text-secondary); font-size: 14px; }
+
+/* Selector: content-sized, with overflow handled by its scrolled window. */
+.game-selector { padding: 8px; border-radius: 20px; background: var(--panel-color); }
+.game-selector-scroll, .game-selector-items { background: var(--transparent); }
+.game-button { padding: 5px; margin: 2px; border: 2px solid var(--transparent); border-radius: 15px; background: var(--transparent); box-shadow: none; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
+.game-button:hover { background: var(--surface-hover); }
+.game-button:checked, .game-button.is-selected { border-color: var(--download-color); background: var(--surface-selected); }
+.game-icon { border-radius: 9px; }
+.game-icon-fallback { color: var(--text-secondary); background: var(--surface-raised); }
+.game-button.is-downloading { border-bottom-color: var(--verification-color); }
+
+/* Shared controls. Keep native keyboard focus visible. */
+.button { border: none; box-shadow: none; border-radius: 12px; padding: 12px 20px; min-height: 24px; font-size: 16px; font-weight: 600; color: var(--text-on-primary); background: var(--btn-primary); transition: background-color 160ms ease-out; }
+.button:hover { background: var(--btn-primary-hover); }
+.button:active { background: var(--btn-primary); }
+.button:disabled { background: var(--surface-raised); color: var(--text-muted); }
+.operation-button { min-width: 132px; }
+.settings-button { min-width: 24px; padding: 12px; border-radius: 24px; }
+.preinstall-button { color: var(--text-primary); background: var(--surface-raised); }
+.preinstall-button:hover { background: var(--surface-hover); }
+.button:focus-visible, .game-button:focus-visible, .settings-close:focus-visible,
+.settings-switch:focus-visible, .settings-dropdown:focus-visible, .titlebar-close:focus-visible {
+  outline: 2px solid var(--focus-color); outline-offset: 3px;
 }
 
-.progressbar {
-}
+/* Progress: separate selectors for download and verification customization. */
+.progress-panel { padding: 16px 18px; border-radius: 12px; background: var(--surface); }
+.progress-heading { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.progress-detail, .progress-label, .progress-value { font-size: 13px; color: var(--text-secondary); }
+.progress-value { font-variant-numeric: tabular-nums; }
+.download-progress trough, .verification-progress trough { min-height: 7px; border-radius: 8px; border: none; background: var(--track-color); }
+.download-progress progress, .verification-progress progress { min-height: 7px; min-width: 0; margin: 0; border-radius: 8px; border: none; background: var(--download-color); }
+.verification-progress progress { background: var(--verification-color); }
+.progress-panel.is-error .progress-heading, .progress-panel.is-error .progress-detail { color: var(--error-color); }
+.progress-panel.is-complete .progress-heading { color: var(--success-color); }
 
-@media (prefers-color-scheme: dark) {
-  .background {
-    background-color: var(--bg-color-dark);
-  }
+/* Modal: backdrop and panel are separate widgets; only the backdrop dismisses. */
+.settings-backdrop, .settings-backdrop:hover, .settings-backdrop:active {
+  background: var(--backdrop-color); border: none; border-radius: 0; box-shadow: none; padding: 0;
 }
-.background {
-  background-color: var(--bg-color-dark);
-}
-
-.titlebar {
-  font-size: 1.25rem;
-}
-
-.settings-button {
-  min-width: 3.5rem;
-  min-height: 3.5rem;
-
-  border-radius: 100%;
-}
-
-.operation-button {
-  margin-right: 5.5rem;
-  min-width: 12rem;
-  min-height: 3.5rem;
-  margin-bottom: 4rem;
-}
-
-.settings {
-  border-radius: 100%;
-}
-
-.button {
-  border-radius: 10px;
-  font-size: 1.5rem;
-  background: var(--btn-primary);
-  transition: background-color 200ms ease-in-out;
-}
-
-.button:focus {
-  outline: none;
-  outline-style: none;
-}
-
-.button:hover {
-  background: var(--btn-primary-hover);
-  transition: background-color 200ms ease-in-out;
-}
-
-.button:active {
-  background-color: var(--btn-primary);
-  transition: background-color 200ms ease-in-out;
-}
+.settings-panel { background: var(--surface); color: var(--text-primary); border-radius: 18px; padding: 24px; box-shadow: 0 12px 36px var(--shadow-color); }
+.settings-heading { font-size: 24px; font-weight: 600; }
+.settings-close { padding: 8px; min-width: 20px; min-height: 20px; color: var(--text-secondary); background: var(--surface-raised); border: none; border-radius: 20px; box-shadow: none; }
+.settings-close:hover { background: var(--surface-hover); color: var(--text-primary); }
+.settings-row { padding: 14px 0; }
+.settings-label { font-size: 15px; font-weight: 600; }
+.settings-description, .settings-footer { color: var(--text-secondary); font-size: 13px; }
+.settings-error { color: var(--error-color); font-size: 13px; }
+.settings-switch { background: var(--track-color); border: 1px solid var(--border-color); border-radius: 20px; }
+.settings-switch:checked { background: var(--btn-primary); border-color: var(--btn-primary); }
+.settings-switch slider { min-width: 22px; min-height: 22px; margin: 2px; background: var(--text-primary); border: none; box-shadow: none; border-radius: 100%; }
+.settings-dropdown > button { background: var(--surface-raised); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: none; padding: 8px 10px; }
+.settings-dropdown > button:hover { background: var(--surface-hover); }
+.settings-dropdown popover contents { background: var(--surface); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 12px; }
+.settings-dropdown popover row:selected { background: var(--surface-selected); color: var(--text-primary); }
+.settings-scroll scrollbar, .game-selector-scroll scrollbar { background: var(--transparent); }
+.settings-scroll scrollbar slider, .game-selector-scroll scrollbar slider { background: var(--border-color); border: none; border-radius: 8px; min-width: 5px; min-height: 5px; margin: 2px; }

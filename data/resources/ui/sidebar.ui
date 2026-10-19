@@ -2,8 +2,25 @@
 <interface>
   <requires lib="gtk" version="4.0"/>
   <template class="ElysiaeSidebar" parent="GtkBox">
-    <style>
-      <class name="sidebar"/>
-    </style>
+    <property name="halign">center</property>
+    <property name="valign">start</property>
+    <style><class name="game-selector"/></style>
+    <child>
+      <object class="GtkScrolledWindow">
+        <property name="hscrollbar-policy">automatic</property>
+        <property name="vscrollbar-policy">never</property>
+        <property name="propagate-natural-width">true</property>
+        <property name="propagate-natural-height">true</property>
+        <property name="max-content-width">720</property>
+        <style><class name="game-selector-scroll"/></style>
+        <child>
+          <object class="GtkBox" id="games">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">8</property>
+            <style><class name="game-selector-items"/></style>
+          </object>
+        </child>
+      </object>
+    </child>
   </template>
 </interface>

@@ -30,7 +30,7 @@ pub fn build_app() -> gtk::Application {
             let Some(app) = weak.upgrade() else { return; };
             if matches!(key, "display-language" | "use-video-background") {
                 if let Some(window) = app.active_window().and_downcast::<crate::window::ElysiaeWindow>() {
-                    window.refresh_media();
+                    window.refresh_artwork();
                 }
                 refresh_assets(&app);
             } else if key == "check-for-updates"
@@ -38,7 +38,10 @@ pub fn build_app() -> gtk::Application {
                 window.refresh_status();
             }
         }) { log::warn!("Could not observe preference changes: {error:#}"); }
-        refresh_assets(app);
+        let weak = app.downgrade();
+        glib::idle_add_local_once(move || {
+            if let Some(app) = weak.upgrade() { refresh_assets(&app); }
+        });
         let (ready, recovered) = async_channel::bounded(1);
         let hold = app.hold();
         glib::MainContext::default().spawn_local(async move {
@@ -109,41 +112,107 @@ pub fn build_app() -> gtk::Application {
     app
 }
 
-/// Refreshes localized assets in the background, then updates visible media on GTK.
+#[derive(Clone, PartialEq, Eq)]
+struct AssetRequest {
+    locale: String,
+    priority: Game,
+    use_video: bool,
+}
+
+thread_local! {
+    static ASSET_REFRESH: RefCell<(Option<AssetRequest>, Option<AssetRequest>)> = const { RefCell::new((None, None)) };
+}
+
+/// Coalesce preference changes instead of losing a refresh while one is active.
 pub fn refresh_assets(app: &gtk::Application) {
-    let locale = display_locale().unwrap_or_else(|_| "en-us".into());
-    let (sender, receiver) = async_channel::bounded(1);
+    let request = AssetRequest {
+        locale: display_locale().unwrap_or_else(|_| "en-us".into()),
+        priority: app
+            .active_window()
+            .and_downcast::<crate::window::ElysiaeWindow>()
+            .map(|w| w.get_current_game())
+            .unwrap_or_default(),
+        use_video: get_option("use-video-background")
+            .and_then(bool::try_from)
+            .unwrap_or(false),
+    };
+    start_asset_refresh(app, request);
+}
+
+fn start_asset_refresh(app: &gtk::Application, request: AssetRequest) {
+    let start = ASSET_REFRESH.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some(active) = &slot.0 {
+            slot.1 = if active == &request {
+                None
+            } else {
+                Some(request.clone())
+            };
+            false
+        } else {
+            slot.0 = Some(request.clone());
+            true
+        }
+    });
+    if !start {
+        return;
+    }
+    let (sender, receiver) = async_channel::bounded(16);
     runtime::spawn(async move {
-        match cache::refresh_cache(&locale).await {
+        let updates = sender.clone();
+        match cache::refresh_cache_with_preferences(
+            &request.locale,
+            request.priority,
+            request.use_video,
+            move |game| {
+                let _ = updates.force_send(Some(game));
+            },
+        )
+        .await
+        {
             Ok(report) => {
                 for (game, error) in report.failures {
-                    log::warn!(
-                        "Asset refresh for {} failed; retaining usable cached assets: {error}",
-                        game.code()
-                    );
+                    log::warn!("Artwork refresh for {} failed: {error}", game.code());
                 }
             }
-            Err(error) => log::warn!("Asset refresh unavailable: {error:#}"),
+            Err(error) => log::warn!("Artwork refresh unavailable: {error:#}"),
         }
-        let _ = sender.send(()).await;
+        let _ = sender.send(None).await;
     });
     let weak = app.downgrade();
-    // Unlike MainContext::invoke, this cannot execute GTK code immediately on
-    // an arbitrary worker while the main context happens to be unowned.
     glib::MainContext::default().spawn_local(async move {
-        if receiver.recv().await.is_ok()
+        while let Ok(Some(game)) = receiver.recv().await {
+            if let Some(app) = weak.upgrade()
+                && let Some(window) = app
+                    .active_window()
+                    .and_downcast::<crate::window::ElysiaeWindow>()
+            {
+                window.assets_ready(game);
+            }
+        }
+        let pending = ASSET_REFRESH.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            slot.0 = None;
+            slot.1.take()
+        });
+        if let Some(request) = pending
             && let Some(app) = weak.upgrade()
-            && let Some(window) = app
-                .active_window()
-                .and_downcast::<crate::window::ElysiaeWindow>()
         {
-            window.refresh_media();
+            start_asset_refresh(&app, request);
         }
     });
 }
 
 /// Registers transfer controls and the explicit runtime update action.
 fn add_actions(app: &gtk::Application) {
+    let refresh = gio::SimpleAction::new("refresh-assets", None);
+    let weak = app.downgrade();
+    refresh.connect_activate(move |_, _| {
+        if let Some(app) = weak.upgrade() {
+            refresh_assets(&app);
+        }
+    });
+    app.add_action(&refresh);
     for (name, control) in [
         (
             "pause-operation",

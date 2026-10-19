@@ -5,6 +5,8 @@
     <property name="orientation">vertical</property>
     <property name="spacing">20</property>
     <property name="overflow">hidden</property>
+    <property name="accessible-role">dialog</property>
+    <accessibility><property name="label">Settings</property><property name="modal">true</property></accessibility>
     <style>
       <class name="settings"/>
       <class name="settings-panel"/>
