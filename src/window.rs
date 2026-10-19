@@ -129,6 +129,23 @@ mod imp {
                     }
                 });
             }
+            // Request twice the panel's natural width, without raising the
+            // window's minimum size or overflowing compact displays.
+            self.settings_layer
+                .connect_get_child_position(|overlay, child| {
+                    let margins = child.margin_start() + child.margin_end();
+                    let (_, natural, _, _) = child.measure(gtk::Orientation::Horizontal, -1);
+                    let width = ((natural - margins) * 2 + margins).min(overlay.width());
+                    let (_, natural_height, _, _) =
+                        child.measure(gtk::Orientation::Vertical, width);
+                    let height = natural_height.min(overlay.height());
+                    Some(gtk::gdk::Rectangle::new(
+                        (overlay.width() - width) / 2,
+                        (overlay.height() - height) / 2,
+                        width,
+                        height,
+                    ))
+                });
             let keys = gtk::EventControllerKey::new();
             keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             let weak = window.downgrade();
@@ -140,10 +157,13 @@ mod imp {
                     return glib::Propagation::Proceed;
                 }
                 if key == gtk::gdk::Key::Escape {
-                    window.show_settings(false);
+                    if !window.imp().settings_panel.dismiss_dropdowns(true) {
+                        window.show_settings(false);
+                    }
                     return glib::Propagation::Stop;
                 }
                 if key == gtk::gdk::Key::Tab || key == gtk::gdk::Key::ISO_Left_Tab {
+                    window.imp().settings_panel.dismiss_dropdowns(false);
                     let direction = if modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK)
                         || key == gtk::gdk::Key::ISO_Left_Tab
                     {
@@ -256,6 +276,9 @@ impl ElysiaeWindow {
         if visible {
             *self.imp().previous_focus.borrow_mut() =
                 gtk::prelude::GtkWindowExt::focus(self).map(|w| w.downgrade());
+        }
+        if !visible {
+            self.imp().settings_panel.dismiss_dropdowns(false);
         }
         self.imp().content.set_sensitive(!visible);
         self.imp().content.set_can_target(!visible);
@@ -690,6 +713,7 @@ pub fn build_window(app: &gtk::Application) -> ElysiaeWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[track_caller]
     fn pump_until(mut ready: impl FnMut() -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         let context = glib::MainContext::default();
@@ -718,7 +742,7 @@ mod tests {
             let texture = window
                 .renderer()
                 .unwrap()
-                .render_texture(&node.unwrap(), None);
+                .render_texture(node.unwrap(), None);
             texture
                 .save_to_png(std::path::Path::new(&directory).join(name))
                 .unwrap();
@@ -874,6 +898,17 @@ mod tests {
             .settings_panel
             .compute_bounds(&window.imp().settings_layer.get())
             .unwrap();
+        let (_, natural, _, _) = window
+            .imp()
+            .settings_panel
+            .measure(gtk::Orientation::Horizontal, -1);
+        let margins =
+            window.imp().settings_panel.margin_start() + window.imp().settings_panel.margin_end();
+        let expected = ((natural - margins) * 2).min(window.imp().settings_layer.width() - margins);
+        assert!(
+            (panel.width() - expected as f32).abs() <= 2.0,
+            "Settings should be double natural width, capped to the window: {panel:?}, natural={natural}, expected={expected}"
+        );
         let picked = window
             .imp()
             .settings_layer
@@ -905,6 +940,31 @@ mod tests {
             })
             .next()
             .unwrap();
+        let dropdown = window.imp().settings_panel.dropdown("vo-lang");
+        dropdown.popup();
+        pump_until(|| dropdown.imp().popover.is_mapped());
+        assert!(keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::Escape,
+                &0u32,
+                &gtk::gdk::ModifierType::empty()
+            ]
+        ));
+        pump_until(|| !dropdown.is_open());
+        assert!(
+            window.imp().settings_layer.is_visible(),
+            "Escape closes the choices before the modal"
+        );
+        dropdown.popup();
+        pump_until(|| dropdown.imp().popover.is_mapped());
+        assert!(keys.emit_by_name::<bool>(
+            "key-pressed",
+            &[&gtk::gdk::Key::Tab, &0u32, &gtk::gdk::ModifierType::empty()]
+        ));
+        pump_until(|| !dropdown.is_open());
+        let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
+        assert!(!focus.is_ancestor(&dropdown), "Tab must leave the dropdown");
         for _ in 0..16 {
             assert!(keys.emit_by_name::<bool>(
                 "key-pressed",

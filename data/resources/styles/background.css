@@ -1,0 +1,22 @@
+/* Background layers always have an immediately paintable, non-black surface. */
+.background,
+.background-layers {
+  background: var(--bg-color-dark);
+}
+
+.background-fallback {
+  background: var(--fallback-color);
+}
+
+.background-wordmark {
+  color: var(--fallback-wordmark);
+  font-size: 56px;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.background-image,
+.background-video,
+.background-art-overlay {
+  background: var(--transparent);
+}

@@ -4,20 +4,26 @@
   <template class="ElysiaeTitlebar" parent="GtkBox">
     <child>
       <object class="GtkHeaderBar">
-        <style><class name="launcher-titlebar"/></style>
+        <style>
+          <class name="launcher-titlebar"/>
+        </style>
         <property name="hexpand">true</property>
         <property name="show-title-buttons">false</property>
         <property name="title-widget">
           <object class="GtkLabel">
             <property name="label">Elysiae</property>
-            <style><class name="launcher-title"/></style>
+            <style>
+              <class name="launcher-title"/>
+            </style>
           </object>
         </property>
         <child type="end">
           <object class="GtkButton">
             <property name="icon-name">window-close-symbolic</property>
             <property name="tooltip-text">Close</property>
-            <style><class name="titlebar-close"/></style>
+            <style>
+              <class name="titlebar-close"/>
+            </style>
             <signal name="clicked" handler="on_close_clicked" swapped="true"/>
           </object>
         </child>

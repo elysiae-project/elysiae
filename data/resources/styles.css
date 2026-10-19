@@ -1,4 +1,4 @@
-/* Theme palette: all authored colors live here. Keep component rules below
+/* Theme palette: all authored colors live here. Keep component rules
  * expressed through these variables when adjusting or extending the theme. */
 :root {
   --bg-color-dark: oklch(0.1732 0.0295 273.73);
@@ -26,93 +26,76 @@
   --footer-shade: alpha(var(--bg-color-dark), 0.95);
   --shadow-color: alpha(var(--bg-color-dark), 0.5);
   --transparent: transparent;
-
-  /* Selector geometry, independent of artwork resolution. */
-  --game-icon-size: 40px;
-  --game-button-padding: 6px;
-  --game-selector-padding: 10px;
 }
 
-* { font-family: "Pretendard Variable", sans-serif; }
-.launcher-window { background: var(--bg-color-dark); color: var(--text-primary); }
-.launcher-titlebar { background: var(--bg-color-dark); color: var(--text-primary); box-shadow: none; border: none; }
-.launcher-title { font-size: 15px; font-weight: 600; }
-.titlebar-close { background: var(--transparent); color: var(--text-secondary); border-radius: 10px; border: none; box-shadow: none; }
-.titlebar-close:hover { background: var(--surface-hover); color: var(--text-primary); }
-
-/* Background layers always have an immediately paintable, non-black surface. */
-.background, .background-layers { background: var(--bg-color-dark); }
-.background-fallback { background: var(--fallback-color); }
-.background-wordmark { color: var(--fallback-wordmark); font-size: 56px; font-weight: 600; letter-spacing: -1px; }
-.background-image, .background-video, .background-art-overlay { background: var(--transparent); }
-.launcher-content { padding: 24px 32px 28px; }
-.launcher-footer { padding: 16px; border-radius: 16px; background: var(--footer-shade); }
-.launcher-actions { background: var(--transparent); }
-.game-title { font-size: 22px; font-weight: 600; color: var(--text-primary); }
-.activity-label { color: var(--text-secondary); font-size: 14px; }
-
-/* Selector: content-sized, with overflow handled by its scrolled window. */
-.game-selector { padding: var(--game-selector-padding); border-radius: 16px; background: var(--panel-color); }
-.game-selector-scroll, .game-selector-items { background: var(--transparent); }
-.game-button { min-width: 0; min-height: 0; padding: var(--game-button-padding); margin: 0; border: 1px solid var(--transparent); border-radius: 12px; background: var(--transparent); box-shadow: none; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
-.game-button:hover { background: var(--surface-hover); }
-.game-button:checked, .game-button.is-selected { border-color: var(--download-color); background: var(--surface-selected); }
-.game-icon { min-width: var(--game-icon-size); min-height: var(--game-icon-size); border-radius: 8px; }
-.game-icon-fallback { -gtk-icon-size: var(--game-icon-size); color: var(--text-secondary); background: var(--surface-raised); }
-.game-button.is-downloading { border-bottom-color: var(--verification-color); }
+* {
+  font-family: "Pretendard Variable", sans-serif;
+}
 
 /* Shared controls. Keep native keyboard focus visible. */
-.button { border: none; box-shadow: none; border-radius: 12px; padding: 12px 20px; min-height: 24px; font-size: 16px; font-weight: 600; color: var(--text-on-primary); background: var(--btn-primary); transition: background-color 160ms ease-out; }
-.button:hover { background: var(--btn-primary-hover); }
-.button:active { background: var(--btn-primary); }
-.button:disabled { background: var(--surface-raised); color: var(--text-muted); }
-/* Approximately 1.35x the previous 172x48 and 48x48 action controls. */
-.operation-button, .settings-button { min-height: 32px; padding: 16px 27px; border-radius: 16px; font-size: 22px; }
-.operation-button { min-width: 178px; }
-.settings-button { min-width: 32px; padding: 16px; border-radius: 32px; -gtk-icon-size: 22px; }
-.preinstall-button { color: var(--text-primary); background: var(--surface-raised); }
-.preinstall-button:hover { background: var(--surface-hover); }
-.button:focus-visible, .game-button:focus-visible, .settings-close:focus-visible,
-.settings-switch:focus-visible, .settings-dropdown:focus-visible, .titlebar-close:focus-visible {
-  outline: 2px solid var(--focus-color); outline-offset: 3px;
+.button {
+  border: none;
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  min-height: 24px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-on-primary);
+  background: var(--btn-primary);
+  transition: background-color 160ms ease-out;
 }
-.game-button:focus-visible { outline-offset: -2px; }
 
-/* Progress: separate selectors for download and verification customization. */
-.progress-panel { padding: 16px 18px; border-radius: 12px; background: var(--surface); }
-.progress-heading { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.progress-detail, .progress-label, .progress-value { font-size: 13px; color: var(--text-secondary); }
-.progress-value { font-variant-numeric: tabular-nums; }
-.download-progress trough, .verification-progress trough { min-height: 7px; border-radius: 8px; border: none; background: var(--track-color); }
-.download-progress progress, .verification-progress progress { min-height: 7px; min-width: 0; margin: 0; border-radius: 8px; border: none; background: var(--download-color); }
-.verification-progress progress { background: var(--verification-color); }
-.progress-panel.is-error .progress-heading, .progress-panel.is-error .progress-detail { color: var(--error-color); }
-.progress-panel.is-complete .progress-heading { color: var(--success-color); }
-
-/* Modal: backdrop and panel are separate widgets; only the backdrop dismisses. */
-.settings-backdrop, .settings-backdrop:hover, .settings-backdrop:active {
-  background: var(--backdrop-color); border: none; border-radius: 0; box-shadow: none; padding: 0;
+.button:hover {
+  background: var(--btn-primary-hover);
 }
-.settings-panel { background: var(--surface); color: var(--text-primary); border-radius: 18px; padding: 24px; box-shadow: 0 12px 36px var(--shadow-color); }
-.settings-heading { font-size: 24px; font-weight: 600; }
-.settings-close { padding: 8px; min-width: 20px; min-height: 20px; color: var(--text-secondary); background: var(--surface-raised); border: none; border-radius: 20px; box-shadow: none; }
-.settings-close:hover { background: var(--surface-hover); color: var(--text-primary); }
-.settings-row { padding: 14px 0; }
-.settings-label { font-size: 15px; font-weight: 600; }
-.settings-description, .settings-footer { color: var(--text-secondary); font-size: 13px; }
-.settings-error { color: var(--error-color); font-size: 13px; }
-.settings-switch { background: var(--track-color); border: 1px solid var(--border-color); border-radius: 20px; }
-.settings-switch:checked { background: var(--btn-primary); border-color: var(--btn-primary); }
-.settings-switch slider { min-width: 22px; min-height: 22px; margin: 2px; background: var(--text-primary); border: none; box-shadow: none; border-radius: 100%; }
-.settings-dropdown > button { background: var(--surface-raised); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: none; padding: 8px 10px; }
-.settings-dropdown > button:hover { background: var(--surface-hover); }
-.settings-dropdown popover contents { background: var(--surface); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 12px; }
-.settings-dropdown popover row:selected { background: var(--surface-selected); color: var(--text-primary); }
-.settings-scroll scrollbar, .game-selector-scroll scrollbar { background: var(--transparent); }
-.settings-scroll scrollbar slider, .game-selector-scroll scrollbar slider { background: var(--border-color); border: none; border-radius: 8px; min-width: 5px; min-height: 5px; margin: 2px; }
 
-.launcher-bottom-row { background: var(--transparent); }
+.button:active {
+  background: var(--btn-primary);
+}
 
-.launcher-footer .progress-panel { padding: 12px 0 0; background: var(--transparent); }
+.button:disabled {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
 
-.launcher-action-column { margin-left: 24px; background: var(--transparent); }
+.button:focus-visible,
+.game-button:focus-visible,
+.settings-close:focus-visible,
+.settings-switch:focus-visible,
+.dropdown-trigger > button:focus-visible,
+.dropdown-option:focus-visible,
+.titlebar-close:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 3px;
+}
+
+.settings-scroll scrollbar,
+.game-selector-scroll scrollbar,
+.dropdown-scroll scrollbar {
+  background: var(--transparent);
+}
+
+.settings-scroll scrollbar slider,
+.game-selector-scroll scrollbar slider,
+.dropdown-scroll scrollbar slider {
+  background: var(--border-color);
+  border: none;
+  border-radius: 8px;
+  min-width: 5px;
+  min-height: 5px;
+  margin: 2px;
+}
+
+/* GTK accepts imports after rules. Keep component overrides after shared
+ * controls, in this same provider, so variables and source-order ties retain
+ * their original behavior (for example .button and .operation-button). */
+@import url("resource:///app/elysiae/Elysiae/styles/window.css");
+@import url("resource:///app/elysiae/Elysiae/styles/background.css");
+@import url("resource:///app/elysiae/Elysiae/styles/sidebar.css");
+@import url("resource:///app/elysiae/Elysiae/styles/game-icon.css");
+@import url("resource:///app/elysiae/Elysiae/styles/progressbar.css");
+@import url("resource:///app/elysiae/Elysiae/styles/settings.css");
+@import url("resource:///app/elysiae/Elysiae/styles/titlebar.css");
+@import url("resource:///app/elysiae/Elysiae/styles/dropdown.css");
+@import url("resource:///app/elysiae/Elysiae/styles/dropdown-option.css");

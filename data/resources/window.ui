@@ -118,7 +118,7 @@
             </child>
             <child type="overlay">
               <object class="ElysiaeSettings" id="settings_panel">
-                <property name="halign">center</property>
+                <property name="halign">fill</property>
                 <property name="valign">center</property>
                 <property name="margin-start">24</property>
                 <property name="margin-end">24</property>

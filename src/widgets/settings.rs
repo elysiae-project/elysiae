@@ -3,8 +3,9 @@ use std::cell::RefCell;
 use anyhow::{Context, Result, bail};
 use gtk::{glib, prelude::*, subclass::prelude::ObjectSubclassIsExt};
 
-use crate::util::settings::{
-    SUPPORTED_LOCALES, SettingValue, connect_changed, get_option, set_option,
+use crate::{
+    util::settings::{SUPPORTED_LOCALES, SettingValue, connect_changed, get_option, set_option},
+    widgets::dropdown::Dropdown,
 };
 
 const VOICE_LANGUAGES: &[&str] = &["en", "cn", "jp", "kr"];
@@ -79,7 +80,7 @@ fn language_label(language: &str) -> &str {
 
 enum Control {
     Switch(gtk::Switch),
-    Dropdown(gtk::DropDown, &'static [&'static str]),
+    Dropdown(Dropdown, &'static [&'static str]),
 }
 
 impl Control {
@@ -197,6 +198,26 @@ impl Settings {
         self.imp().close.grab_focus();
     }
 
+    /// Close nested choices before dismissing or moving focus around the modal.
+    pub fn dismiss_dropdowns(&self, restore_focus: bool) -> bool {
+        let mut dismissed = false;
+        for field in self.imp().fields.get().into_iter().flatten() {
+            if let Control::Dropdown(control, _) = &field.control {
+                dismissed |= control.dismiss(restore_focus);
+            }
+        }
+        dismissed
+    }
+
+    #[cfg(test)]
+    pub(crate) fn dropdown(&self, key: &str) -> Dropdown {
+        let Control::Dropdown(control, _) = &self.field(key).unwrap().control else {
+            panic!("Expected a dropdown preference");
+        };
+        control.clone()
+    }
+
+    #[cfg(test)]
     pub fn get_property_value(&self, key: &str) -> Result<String> {
         match get_option(key)? {
             SettingValue::Bool(value) => Ok(value.to_string()),
@@ -204,6 +225,7 @@ impl Settings {
         }
     }
 
+    #[cfg(test)]
     pub fn set_property_value(&self, key: &str, value: &str) -> Result<()> {
         let result = (|| {
             let setting = match get_option(key)? {
@@ -286,15 +308,10 @@ impl Settings {
                     .iter()
                     .map(|choice| language_label(choice))
                     .collect();
-                let model = gtk::StringList::new(&labels);
-                Control::Dropdown(
-                    gtk::DropDown::builder()
-                        .model(&model)
-                        .valign(gtk::Align::Center)
-                        .css_classes(["settings-dropdown"])
-                        .build(),
-                    choices,
-                )
+                let dropdown = Dropdown::new(&labels);
+                dropdown.set_valign(gtk::Align::Center);
+                dropdown.set_accessible_labels(&label, &description);
+                Control::Dropdown(dropdown, choices)
             }
             None => Control::Switch(
                 gtk::Switch::builder()
@@ -498,6 +515,15 @@ mod tests {
             set_option(field.spec.key, external.clone()).unwrap();
             assert_eq!(field.control.value().unwrap(), external);
         }
+        let dropdown = settings.dropdown("vo-lang");
+        let row = dropdown.imp().list.row_at_index(2).unwrap();
+        dropdown
+            .imp()
+            .list
+            .emit_by_name::<()>("row-activated", &[&row]);
+        assert_eq!(get_option("vo-lang").unwrap(), "jp".into());
+        drop(row);
+        drop(dropdown);
         set_option("vo-lang", "cn".into()).unwrap();
         assert_eq!(
             settings.field("vo-lang").unwrap().control.value().unwrap(),

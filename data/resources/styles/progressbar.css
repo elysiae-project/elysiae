@@ -1,0 +1,54 @@
+/* Progress: separate selectors for download and verification customization. */
+.progress-panel {
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.progress-heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.progress-detail,
+.progress-label,
+.progress-value {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.progress-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.download-progress trough,
+.verification-progress trough {
+  min-height: 7px;
+  border-radius: 8px;
+  border: none;
+  background: var(--track-color);
+}
+
+.download-progress progress,
+.verification-progress progress {
+  min-height: 7px;
+  min-width: 0;
+  margin: 0;
+  border-radius: 8px;
+  border: none;
+  background: var(--download-color);
+}
+
+.verification-progress progress {
+  background: var(--verification-color);
+}
+
+.progress-panel.is-error .progress-heading,
+.progress-panel.is-error .progress-detail {
+  color: var(--error-color);
+}
+
+.progress-panel.is-complete .progress-heading {
+  color: var(--success-color);
+}

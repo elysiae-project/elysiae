@@ -1,0 +1,79 @@
+/* Modal: backdrop and panel are separate widgets; only the backdrop dismisses. */
+.settings-backdrop,
+.settings-backdrop:hover,
+.settings-backdrop:active {
+  background: var(--backdrop-color);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.settings-panel {
+  background: var(--surface);
+  color: var(--text-primary);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 12px 36px var(--shadow-color);
+}
+
+.settings-heading {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.settings-close {
+  padding: 8px;
+  min-width: 20px;
+  min-height: 20px;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: none;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.settings-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.settings-row {
+  padding: 14px 0;
+}
+
+.settings-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-description {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-error {
+  color: var(--error-color);
+  font-size: 13px;
+}
+
+.settings-switch {
+  background: var(--track-color);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+}
+
+.settings-switch:checked {
+  background: var(--btn-primary);
+  border-color: var(--btn-primary);
+}
+
+.settings-switch slider {
+  min-width: 22px;
+  min-height: 22px;
+  margin: 2px;
+  background: var(--text-primary);
+  border: none;
+  box-shadow: none;
+  border-radius: 100%;
+}

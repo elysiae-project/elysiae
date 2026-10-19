@@ -6,7 +6,10 @@
     <property name="spacing">20</property>
     <property name="overflow">hidden</property>
     <property name="accessible-role">dialog</property>
-    <accessibility><property name="label">Settings</property><property name="modal">true</property></accessibility>
+    <accessibility>
+      <property name="label">Settings</property>
+      <property name="modal">true</property>
+    </accessibility>
     <style>
       <class name="settings"/>
       <class name="settings-panel"/>
@@ -14,14 +17,18 @@
     <child>
       <object class="GtkBox">
         <property name="spacing">16</property>
-        <style><class name="settings-header"/></style>
+        <style>
+          <class name="settings-header"/>
+        </style>
         <child>
           <object class="GtkLabel">
             <property name="label">Settings</property>
             <property name="xalign">0</property>
             <property name="hexpand">true</property>
             <property name="accessible-role">heading</property>
-            <style><class name="settings-heading"/></style>
+            <style>
+              <class name="settings-heading"/>
+            </style>
           </object>
         </child>
         <child>
@@ -30,12 +37,18 @@
             <property name="valign">center</property>
             <property name="width-request">40</property>
             <property name="height-request">40</property>
-            <accessibility><property name="label">Close settings</property></accessibility>
-            <style><class name="settings-close"/></style>
+            <accessibility>
+              <property name="label">Close settings</property>
+            </accessibility>
+            <style>
+              <class name="settings-close"/>
+            </style>
             <child>
               <object class="GtkImage">
                 <property name="icon-name">window-close-symbolic</property>
-                <style><class name="settings-close-icon"/></style>
+                <style>
+                  <class name="settings-close-icon"/>
+                </style>
               </object>
             </child>
           </object>
@@ -49,16 +62,22 @@
         <property name="vexpand">true</property>
         <property name="propagate-natural-height">true</property>
         <property name="max-content-height">480</property>
-        <style><class name="settings-scroll"/></style>
+        <style>
+          <class name="settings-scroll"/>
+        </style>
         <child>
           <object class="GtkViewport">
             <property name="scroll-to-focus">true</property>
-            <style><class name="settings-viewport"/></style>
+            <style>
+              <class name="settings-viewport"/>
+            </style>
             <child>
               <object class="GtkBox" id="content">
                 <property name="orientation">vertical</property>
                 <property name="spacing">20</property>
-                <style><class name="settings-content"/></style>
+                <style>
+                  <class name="settings-content"/>
+                </style>
               </object>
             </child>
           </object>
@@ -72,15 +91,9 @@
         <property name="xalign">0</property>
         <property name="selectable">true</property>
         <property name="accessible-role">alert</property>
-        <style><class name="settings-error"/></style>
-      </object>
-    </child>
-    <child>
-      <object class="GtkLabel">
-        <property name="label">Changes are saved immediately.</property>
-        <property name="xalign">0</property>
-        <property name="wrap">true</property>
-        <style><class name="settings-footer"/></style>
+        <style>
+          <class name="settings-error"/>
+        </style>
       </object>
     </child>
   </template>
