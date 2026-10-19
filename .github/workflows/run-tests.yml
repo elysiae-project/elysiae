@@ -33,9 +33,9 @@ jobs:
           rustup component add clippy rustfmt
           test "$(uname -m)" = "${{ matrix.arch }}"
           rustc -vV
-      - name: Fetch locked dependencies
+      - name: Install dependencies
         run: cargo fetch --locked
-      - name: Run offline fixture tests
+      - name: Run tests
         run: cargo test --workspace --offline --locked
       - name: Build and lint
         run: |
