@@ -377,12 +377,11 @@ impl Settings {
                 let previous = field.previous.borrow().clone();
                 let value = get_option(key).ok().or(previous.clone());
                 let was_refreshing = self.imp().refreshing.replace(true);
-                if let Some(value) = value {
-                    if field.control.set_value(&value).is_err() {
-                        if let Some(previous) = previous {
-                            let _ = field.control.set_value(&previous);
-                        }
-                    }
+                if let Some(value) = value
+                    && field.control.set_value(&value).is_err()
+                    && let Some(previous) = previous
+                {
+                    let _ = field.control.set_value(&previous);
                 }
                 self.imp().refreshing.set(was_refreshing);
                 self.show_error(

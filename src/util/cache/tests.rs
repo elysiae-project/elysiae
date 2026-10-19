@@ -472,7 +472,7 @@ fn stale_replacements_account_for_old_and_staged_bytes_and_keep_pins() {
         seed(&fixture.0, game, response.clone()).await;
         fixture.0.ttl = Duration::ZERO;
         let icon = fixture.0.existing(&response.icon).unwrap();
-        fixture.0.set_active(&[icon.clone()]).unwrap();
+        fixture.0.set_active(std::slice::from_ref(&icon)).unwrap();
         let limits = Mutex::new(Vec::new());
         let notified = AtomicBool::new(false);
         fixture

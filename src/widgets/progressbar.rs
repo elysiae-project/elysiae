@@ -264,10 +264,11 @@ fn format_sophon_progress(progress: &SophonProgress) -> String {
             let mut detail = "Downloading…".to_string();
             if speed_bps.is_finite() && *speed_bps >= 0.0 {
                 detail.push_str(&format!(" · {}/s", bytes(*speed_bps)));
-                if *speed_bps > 0.0 && *total_bytes > *downloaded_bytes {
-                    if let Some(eta) = eta(*eta_seconds) {
-                        detail.push_str(&format!(" · {eta}"));
-                    }
+                if *speed_bps > 0.0
+                    && *total_bytes > *downloaded_bytes
+                    && let Some(eta) = eta(*eta_seconds)
+                {
+                    detail.push_str(&format!(" · {eta}"));
                 }
             }
             detail
