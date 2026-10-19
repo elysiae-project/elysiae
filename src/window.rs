@@ -89,6 +89,11 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let window = self.obj();
+            // Long action labels must not change the footer's proportional split.
+            if let Some(label) = self.operation_button.child().and_downcast::<gtk::Label>() {
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                label.set_max_width_chars(16);
+            }
             let weak = window.downgrade();
             self.operation_button.connect_clicked(move |_| {
                 if let Some(window) = weak.upgrade() {
@@ -311,7 +316,8 @@ impl ElysiaeWindow {
         } else {
             action_label(status)
         });
-        imp.operation_button.set_tooltip_text(if !ready { Some("The shared runtime needs setup. It can be prepared when the current download finishes.") } else { None });
+        let label = imp.operation_button.label();
+        imp.operation_button.set_tooltip_text(if !ready { Some("The shared runtime needs setup. It can be prepared when the current download finishes.") } else { label.as_deref() });
         imp.preinstall_button
             .set_visible(status == UpdateAvailability::Preinstall);
         imp.preinstall_button.set_sensitive(
@@ -719,6 +725,37 @@ mod tests {
         }
     }
 
+    fn assert_footer_layout(window: &ElysiaeWindow) {
+        let footer = window.imp().progress.parent().unwrap();
+        let row = footer.parent().unwrap();
+        let actions = window.imp().settings_button.parent().unwrap();
+        pump_until(|| {
+            let row = row.compute_bounds(window).unwrap();
+            let actions = actions.compute_bounds(window).unwrap();
+            (row.width() - (window.width() as f32 - 64.0)).abs() <= 2.0
+                && actions.x() + actions.width() <= window.width() as f32
+                && (!window.imp().progress.is_visible() || window.imp().progress.height() > 0)
+        });
+        let area = footer.compute_bounds(window).unwrap();
+        let row = row.compute_bounds(window).unwrap();
+        let controls = actions.compute_bounds(window).unwrap();
+        assert!(
+            (area.width() - row.width() * 0.4).abs() <= 2.0,
+            "Expected a 40% progress area: {area:?} in {row:?}"
+        );
+        assert!(
+            controls.x() >= area.x() + area.width() + 23.0,
+            "Progress and controls must not overlap"
+        );
+        assert!(
+            (controls.y() + controls.height() - area.y() - area.height()).abs() <= 2.0,
+            "Progress and controls must share a bottom edge: {area:?}, {controls:?}"
+        );
+        assert!(controls.y() + controls.height() <= window.height() as f32);
+        assert!(!window.imp().settings_button.is_ancestor(&footer));
+        assert!(!window.imp().operation_button.is_ancestor(&footer));
+    }
+
     #[test]
     #[ignore = "requires a GTK display; run explicitly on one test thread"]
     fn gtk_launcher_interactions_and_layout() {
@@ -753,11 +790,12 @@ mod tests {
         });
         assert!(!window.imp().progress.is_visible());
         assert!(window.imp().background.is_visible());
-        let selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-        assert!((selector.center().x() - window.width() as f32 / 2.0).abs() < 2.0);
+        let initial_selector = window.imp().sidebar.compute_bounds(&window).unwrap();
+        assert!((initial_selector.center().x() - window.width() as f32 / 2.0).abs() < 2.0);
         assert!(
-            selector.width() <= 260.0 && selector.height() <= 50.0,
-            "Selector should remain a compact strip: {selector:?}"
+            initial_selector.width() >= Game::all().len() as f32 * 44.0
+                && (64.0..=120.0).contains(&initial_selector.height()),
+            "Selector should have comfortably spaced game buttons: {initial_selector:?}"
         );
         let settings_bounds = window
             .imp()
@@ -777,11 +815,7 @@ mod tests {
             (228.0..=240.0).contains(&operation_bounds.width())
                 && (62.0..=68.0).contains(&operation_bounds.height())
         );
-        let footer = window.imp().progress.parent().unwrap();
-        assert!(!window.imp().settings_button.is_ancestor(&footer));
-        assert!(!window.imp().operation_button.is_ancestor(&footer));
-        let footer_bounds = footer.compute_bounds(&window).unwrap();
-        assert!(settings_bounds.y() >= footer_bounds.y() + footer_bounds.height() + 16.0);
+        assert_footer_layout(&window);
         screenshot(&window, "launcher-desktop.png");
         let mut buttons = Vec::new();
         let mut child = window.imp().sidebar.imp().games.first_child();
@@ -790,7 +824,13 @@ mod tests {
             buttons.push(widget.downcast::<gtk::ToggleButton>().unwrap());
         }
         assert_eq!(buttons.len(), Game::all().len());
-        // Real artwork must not turn compact buttons into native-size images.
+        for pair in buttons.windows(2) {
+            let left = pair[0].compute_bounds(&window).unwrap();
+            let right = pair[1].compute_bounds(&window).unwrap();
+            assert!(left.width() >= 44.0 && left.height() >= 44.0);
+            assert!(right.x() - left.x() - left.width() >= 9.0);
+        }
+        // Real artwork must not override the configured CSS geometry.
         let artwork = gtk::gdk::MemoryTexture::new(
             512,
             512,
@@ -804,6 +844,7 @@ mod tests {
                 .unwrap()
                 .downcast::<crate::widgets::sidebar::GameIcon>()
                 .unwrap();
+            let natural_width = icon.measure(gtk::Orientation::Horizontal, -1).1;
             let picture = icon.imp().picture.borrow();
             let picture = picture.as_ref().unwrap();
             picture.set_paintable(Some(&artwork));
@@ -815,7 +856,7 @@ mod tests {
                 .unwrap()
                 .set_visible(false);
             assert!(
-                icon.measure(gtk::Orientation::Horizontal, -1).1 <= 32,
+                icon.measure(gtk::Orientation::Horizontal, -1).1 <= natural_width,
                 "Icon natural size must ignore artwork resolution: {:?}",
                 icon.measure(gtk::Orientation::Horizontal, -1)
             );
@@ -893,16 +934,18 @@ mod tests {
         assert!(window.imp().operation_button.is_sensitive());
         let reporter = transfer.reporter().unwrap();
         reporter.report(ProgressEvent::Sophon(SophonProgress::Downloading {
-            downloaded_bytes: 50,
-            total_bytes: 100,
-            speed_bps: 10.0,
-            eta_seconds: 5.0,
+            downloaded_bytes: 50 * 1024 * 1024 * 1024,
+            total_bytes: 100 * 1024 * 1024 * 1024,
+            speed_bps: 20.0 * 1024.0 * 1024.0,
+            eta_seconds: 2560.0,
         }));
         pump_until(|| window.imp().progress.is_visible());
         assert_eq!(window.get_current_game(), Game::Hk4e);
         assert!(window.imp().progress.imp().verification_row.is_visible());
         let selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-        assert!(selector.width() <= 260.0 && selector.height() <= 50.0);
+        assert!((selector.width() - initial_selector.width()).abs() <= 1.0);
+        assert!((selector.height() - initial_selector.height()).abs() <= 1.0);
+        assert_footer_layout(&window);
         let icon = buttons[2]
             .child()
             .unwrap()
@@ -912,29 +955,17 @@ mod tests {
         screenshot(&window, "download-desktop.png");
         window.set_default_size(720, 540);
         pump_until(|| window.width() <= 760);
-        pump_until(|| {
-            window
-                .imp()
-                .operation_button
-                .compute_bounds(&window)
-                .is_some_and(|bounds| bounds.x() + bounds.width() <= window.width() as f32)
-        });
-        let footer = window
+        assert_footer_layout(&window);
+        screenshot(&window, "download-compact.png");
+        window.imp().preinstall_button.set_visible(true);
+        window
             .imp()
-            .progress
-            .parent()
-            .unwrap()
-            .compute_bounds(&window)
-            .unwrap();
-        let actions = window
-            .imp()
-            .settings_button
-            .parent()
-            .unwrap()
-            .compute_bounds(&window)
-            .unwrap();
-        assert!(actions.y() >= footer.y() + footer.height() + 16.0);
-        assert!(actions.y() + actions.height() <= window.height() as f32);
+            .operation_button
+            .set_label("Resume installation");
+        pump_until(|| window.imp().preinstall_button.height() > 0);
+        assert_footer_layout(&window);
+        window.imp().preinstall_button.set_visible(false);
+        window.refresh_controls();
         window.imp().settings_button.emit_clicked();
         pump_until(|| {
             window

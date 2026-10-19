@@ -27,8 +27,10 @@
   --shadow-color: alpha(var(--bg-color-dark), 0.5);
   --transparent: transparent;
 
-  /* Compact selector geometry, independent of artwork resolution. */
-  --game-icon-size: 26px;
+  /* Selector geometry, independent of artwork resolution. */
+  --game-icon-size: 40px;
+  --game-button-padding: 6px;
+  --game-selector-padding: 10px;
 }
 
 * { font-family: "Pretendard Variable", sans-serif; }
@@ -44,18 +46,18 @@
 .background-wordmark { color: var(--fallback-wordmark); font-size: 56px; font-weight: 600; letter-spacing: -1px; }
 .background-image, .background-video, .background-art-overlay { background: var(--transparent); }
 .launcher-content { padding: 24px 32px 28px; }
-.launcher-footer { padding: 24px; border-radius: 16px; background: var(--footer-shade); }
-.launcher-actions { margin-top: 20px; background: var(--transparent); }
+.launcher-footer { padding: 16px; border-radius: 16px; background: var(--footer-shade); }
+.launcher-actions { background: var(--transparent); }
 .game-title { font-size: 22px; font-weight: 600; color: var(--text-primary); }
 .activity-label { color: var(--text-secondary); font-size: 14px; }
 
 /* Selector: content-sized, with overflow handled by its scrolled window. */
-.game-selector { padding: 4px; border-radius: 12px; background: var(--panel-color); }
+.game-selector { padding: var(--game-selector-padding); border-radius: 16px; background: var(--panel-color); }
 .game-selector-scroll, .game-selector-items { background: var(--transparent); }
-.game-button { min-width: 0; min-height: 0; padding: 2px; margin: 0; border: 1px solid var(--transparent); border-radius: 8px; background: var(--transparent); box-shadow: none; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
+.game-button { min-width: 0; min-height: 0; padding: var(--game-button-padding); margin: 0; border: 1px solid var(--transparent); border-radius: 12px; background: var(--transparent); box-shadow: none; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
 .game-button:hover { background: var(--surface-hover); }
 .game-button:checked, .game-button.is-selected { border-color: var(--download-color); background: var(--surface-selected); }
-.game-icon { min-width: var(--game-icon-size); min-height: var(--game-icon-size); border-radius: 5px; }
+.game-icon { min-width: var(--game-icon-size); min-height: var(--game-icon-size); border-radius: 8px; }
 .game-icon-fallback { -gtk-icon-size: var(--game-icon-size); color: var(--text-secondary); background: var(--surface-raised); }
 .game-button.is-downloading { border-bottom-color: var(--verification-color); }
 
@@ -108,3 +110,9 @@
 .settings-dropdown popover row:selected { background: var(--surface-selected); color: var(--text-primary); }
 .settings-scroll scrollbar, .game-selector-scroll scrollbar { background: var(--transparent); }
 .settings-scroll scrollbar slider, .game-selector-scroll scrollbar slider { background: var(--border-color); border: none; border-radius: 8px; min-width: 5px; min-height: 5px; margin: 2px; }
+
+.launcher-bottom-row { background: var(--transparent); }
+
+.launcher-footer .progress-panel { padding: 12px 0 0; background: var(--transparent); }
+
+.launcher-action-column { margin-left: 24px; background: var(--transparent); }
