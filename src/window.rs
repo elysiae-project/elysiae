@@ -1017,13 +1017,37 @@ mod tests {
         pump_until(|| window.width() <= 760);
         assert_footer_layout(&window);
         screenshot(&window, "download-compact.png");
+        // Pin this synthetic worst-case layout while the 250 ms status refresh
+        // runs; otherwise it can hide the extra button before GTK allocates it.
+        let keep_preinstall = window
+            .imp()
+            .preinstall_button
+            .connect_visible_notify(|button| {
+                if !button.is_visible() {
+                    button.set_visible(true);
+                }
+            });
+        let keep_label = window.imp().operation_button.connect_label_notify(|button| {
+            if button.label().as_deref() != Some("Resume installation") {
+                button.set_label("Resume installation");
+            }
+        });
         window.imp().preinstall_button.set_visible(true);
         window
             .imp()
             .operation_button
             .set_label("Resume installation");
+        // Exercise a refresh during the fixture rather than relying on timing.
+        window.refresh_controls();
+        assert!(window.imp().preinstall_button.is_visible());
+        assert_eq!(
+            window.imp().operation_button.label().as_deref(),
+            Some("Resume installation")
+        );
         pump_until(|| window.imp().preinstall_button.height() > 0);
         assert_footer_layout(&window);
+        window.imp().preinstall_button.disconnect(keep_preinstall);
+        window.imp().operation_button.disconnect(keep_label);
         window.imp().preinstall_button.set_visible(false);
         window.refresh_controls();
         window.imp().settings_button.emit_clicked();
