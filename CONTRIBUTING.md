@@ -58,8 +58,6 @@ meson setup build --buildtype=debug --prefix=/usr
 meson compile -C build
 ```
 
-To run tests after compiling, run `cargo fetch --locked` once, then `ninja -C build test`. To include GTK tests, use `meson configure build -Dgui_tests=true` and run the tests on a working display
-
 To create a release build, run:
 
 ```sh
@@ -72,30 +70,24 @@ meson install -C build-release --dry-run
 
 Cargo-only builds (`cargo build --locked`) also embed resources and compile the development GSettings schema. Dev and release builds deliberately share the application ID `app.elysiae.Elysiae`. Meson reads `CARGO_TARGET_DIR` when configuring and does not replace `CARGO_HOME`. Use `-Dcargo_target_dir="$PWD/target"` to keep a shared cache across reconfigurations.
 
-## Safe verification
+## Running Tests
 
-Unit tests use generated temporary filesystem profiles and an in-memory settings backend. **Do not override `HOME` for Cargo.** Fetch locked dependencies once when network access is allowed, then run:
-
-```sh
-cargo test --workspace --offline --locked
-cargo build --offline --locked
-cargo clippy --workspace --all-targets --offline --locked
-git diff --check
-```
-
-For packaging, also install `desktop-file-validate` and `appstreamcli`:
+After building Elysiae, run:
 
 ```sh
-build=$(mktemp -d)
-stage=$(mktemp -d)
-meson setup "$build" --buildtype=debug --prefix=/usr \
-  -Dcargo_target_dir="$PWD/target" -Dvalidation=enabled
-CARGO_NET_OFFLINE=true meson compile -C "$build"
-CARGO_NET_OFFLINE=true ninja -C "$build" test
-DESTDIR="$stage" meson install -C "$build" --no-rebuild
+ninja -C build test
 ```
 
-CI declares native x86_64 and aarch64 runner jobs. Passing local x86_64 fixtures is not evidence that ARM hardware, real games, GPU drivers, or remote CI passed.
+If you used a different build directory, replace `build` with that directory
+
+To include the GTK tests, run these from a desktop session:
+
+```sh
+meson configure build -Dgui_tests=true
+ninja -C build test
+```
+
+To disable the GTK tests again, run `meson configure build -Dgui_tests=false`
 
 ## Contribution Guidelines
 

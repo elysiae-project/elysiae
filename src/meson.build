@@ -94,7 +94,7 @@ cargo_build = custom_target(
 
 if get_option('tests')
     cargo_test_command = cargo_preamble + '''
-exec "$cargo" test --workspace --offline --locked --manifest-path "$source/Cargo.toml" --target-dir "$target" --profile "$profile" "$@"
+exec "$cargo" test --workspace --locked --manifest-path "$source/Cargo.toml" --target-dir "$target" --profile "$profile" "$@"
 '''
     test(
         'cargo-unit', shell,
@@ -142,6 +142,6 @@ endif
 summary({
     'Cargo profile': cargo_profile,
     'Cargo target directory': cargo_target_dir,
-    'Offline unit tests': get_option('tests'),
+    'Cargo unit tests': get_option('tests'),
     'Display-dependent GTK tests': get_option('gui_tests'),
 }, section: 'Cargo integration', bool_yn: true)

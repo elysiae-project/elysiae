@@ -15,7 +15,7 @@ option(
     'tests',
     type: 'boolean',
     value: true,
-    description: 'Register offline Cargo tests; fetch locked dependencies before building/testing.',
+    description: 'Register Cargo tests using locked dependency versions.',
 )
 option(
     'gui_tests',
