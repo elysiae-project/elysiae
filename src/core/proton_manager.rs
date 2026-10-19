@@ -19,7 +19,10 @@ use crate::{
         operations::{Operation, OperationKind, Operations, Phase, operations},
         sys::get_available_storage,
     },
-    util::web::{download_file_limited, fetch_data},
+    util::{
+        progress::ProgressEvent,
+        web::{download_file_limited, fetch_data},
+    },
 };
 
 const COMPONENTS_URL_BASE: &str = "https://aedes.elysiae.app/getComponentInfo";
@@ -424,11 +427,17 @@ async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<(
             // Do not drop an in-progress file transfer on cancellation: Tokio
             // file writes can outlive their future. Observe cancellation after
             // the transfer returns, while this worker still owns the lease.
+            let reporter = operation.reporter()?;
+            reporter.report(ProgressEvent::Message(
+                "Preparing Phlogiston download…".into(),
+            ));
             download_file_limited(
                 release.download.url.clone(),
                 relative_stage.join("download.tar.gz"),
                 None,
-                None,
+                Some(Box::new(move |progress| {
+                    reporter.report(ProgressEvent::File(progress))
+                })),
                 budget,
             )
             .await?;
@@ -463,6 +472,9 @@ async fn install_verified_archive(
     let relative_stage = stage.strip_prefix(full_path(None, None)?)?;
     operation.set_phase(Phase::Verifying)?;
     check_archive_space(&stage.join("download.tar.gz"), available_bytes(&stage)?)?;
+    operation
+        .reporter()?
+        .report(ProgressEvent::Extracting("download.tar.gz".into()));
     extract_file(
         MultiPathOptions {
             init_path: relative_stage.join("download.tar.gz"),
@@ -474,6 +486,9 @@ async fn install_verified_archive(
         Some(true),
     )
     .await?;
+    operation
+        .reporter()?
+        .report(ProgressEvent::Message("Validating Phlogiston…".into()));
     RuntimeLayout::validate(&stage.join("runtime"))?;
     let marker = RuntimeVersion {
         format: 1,

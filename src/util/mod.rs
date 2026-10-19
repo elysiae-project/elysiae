@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod logging;
 pub mod notifications;
+pub mod progress;
 pub mod runtime;
 pub mod settings;
 pub mod shell;

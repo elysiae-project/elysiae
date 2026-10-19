@@ -21,6 +21,7 @@ use crate::{
     util::{
         cache::{AssetType, get_cached_asset_paths},
         notifications::broadcast_notification,
+        progress::{ProgressEvent, ProgressReporter},
         runtime,
         settings::{get_option, voice_language},
     },
@@ -146,18 +147,19 @@ async fn execute_download(
     };
     validate_mutation_tree(&path, operation)?;
     let sophon = installer(game, lang, path)?;
+    let reporter = operation.reporter()?;
     match action {
         DownloadAction::Install => {
             mark_pending(sophon.game_dir())?;
-            let progress = sender.clone();
             sophon
-                .download(operation.handle(), move |event| {
-                    forward_progress(&progress, event)
-                })
+                .download(
+                    operation.handle(),
+                    progress_callback(sender.clone(), reporter.clone()),
+                )
                 .await?;
             operation.check_cancelled()?;
             operation.set_phase(Phase::Verifying)?;
-            verify(&sophon, sender).await?;
+            verify(&sophon, sender, reporter).await?;
             clear_pending(sophon.game_dir())?;
             if get_option("generate-desktop-shortcut")
                 .and_then(bool::try_from)
@@ -188,11 +190,12 @@ async fn execute_download(
                 UpdateAvailability::Outdated => {
                     mark_pending(sophon.game_dir())?;
                     if apply_live_preinstall(&info) {
-                        let progress = sender.clone();
                         let result = sophon
-                            .apply_preinstall(&info.remote_tag, operation.handle(), move |event| {
-                                forward_progress(&progress, event)
-                            })
+                            .apply_preinstall(
+                                &info.remote_tag,
+                                operation.handle(),
+                                progress_callback(sender.clone(), reporter.clone()),
+                            )
                             .await;
                         match result {
                             Ok(()) => {}
@@ -203,35 +206,36 @@ async fn execute_download(
                                     "Promoted preinstall metadata unavailable; using normal update"
                                 );
                                 operation.check_cancelled()?;
-                                let progress = sender.clone();
                                 sophon
-                                    .update(operation.handle(), move |event| {
-                                        forward_progress(&progress, event)
-                                    })
+                                    .update(
+                                        operation.handle(),
+                                        progress_callback(sender.clone(), reporter.clone()),
+                                    )
                                     .await?;
                             }
                             Err(error) => return Err(error.into()),
                         }
                     } else {
-                        let progress = sender.clone();
                         sophon
-                            .update(operation.handle(), move |event| {
-                                forward_progress(&progress, event)
-                            })
+                            .update(
+                                operation.handle(),
+                                progress_callback(sender.clone(), reporter.clone()),
+                            )
                             .await?;
                     }
                     operation.check_cancelled()?;
                     operation.set_phase(Phase::Verifying)?;
-                    verify(&sophon, sender).await?;
+                    verify(&sophon, sender, reporter).await?;
                     clear_pending(sophon.game_dir())?;
                     broadcast_notification("Update Complete");
                 }
                 UpdateAvailability::Preinstall => {
                     operation.mark_preinstall()?;
                     sophon
-                        .preinstall(operation.handle(), move |event| {
-                            forward_progress(&sender, event)
-                        })
+                        .preinstall(
+                            operation.handle(),
+                            progress_callback(sender, operation.reporter()?),
+                        )
                         .await?;
                     operation.check_cancelled()?;
                     broadcast_notification("Preinstall Download Complete");
@@ -247,7 +251,7 @@ async fn execute_download(
             );
             operation.set_phase(Phase::Verifying)?;
             mark_pending(sophon.game_dir())?;
-            verify(&sophon, sender).await?;
+            verify(&sophon, sender, reporter).await?;
             clear_pending(sophon.game_dir())?;
             broadcast_notification("Integrity scan complete: no errors reported");
         }
@@ -256,10 +260,22 @@ async fn execute_download(
 }
 
 /// Forwards progress without blocking, leaving completion to the operation worker.
-fn forward_progress(sender: &async_channel::Sender<SophonProgress>, event: SophonProgress) {
+fn forward_progress(
+    sender: &async_channel::Sender<SophonProgress>,
+    reporter: &ProgressReporter,
+    event: SophonProgress,
+) {
     if !matches!(event, SophonProgress::Finished) {
+        reporter.report(ProgressEvent::Sophon(event.clone()));
         let _ = sender.try_send(event);
     }
+}
+
+fn progress_callback(
+    sender: async_channel::Sender<SophonProgress>,
+    reporter: ProgressReporter,
+) -> impl Fn(SophonProgress) + Send + Sync + 'static {
+    move |event| forward_progress(&sender, &reporter, event)
 }
 
 /// Builds a fully verifying installer with the shared HTTP client.
@@ -389,7 +405,11 @@ impl VerificationReport {
 }
 
 /// Runs integrity verification and checks that the reported scan is complete and clean.
-async fn verify(sophon: &Sophon, sender: async_channel::Sender<SophonProgress>) -> Result<()> {
+async fn verify(
+    sophon: &Sophon,
+    sender: async_channel::Sender<SophonProgress>,
+    reporter: ProgressReporter,
+) -> Result<()> {
     // Verification in the current irmin pin has no control handle. Do not drop
     // its future on cancel: spawned work could continue after releasing ownership.
     // The upstream fixes are explicitly deferred; errors found during the scan
@@ -401,7 +421,7 @@ async fn verify(sophon: &Sophon, sender: async_channel::Sender<SophonProgress>) 
             if let Ok(mut report) = observed.lock() {
                 report.observe(&event);
             }
-            forward_progress(&sender, event);
+            forward_progress(&sender, &reporter, event);
         })
         .await?;
     report

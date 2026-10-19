@@ -11,6 +11,7 @@ use irmin::DownloadHandle;
 use uuid::Uuid;
 
 use super::game::Game;
+use crate::util::progress::{self, ProgressEvent, ProgressReporter, ProgressUpdate};
 
 /// Backend actions with game-file or shared-runtime ownership requirements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +174,10 @@ impl Operations {
             status: status.clone(),
             handle: handle.clone(),
         });
+        progress::publish(ProgressUpdate {
+            operation: status.clone(),
+            event: ProgressEvent::Started,
+        });
         Ok(Operation {
             owner: self.clone(),
             id: status.id,
@@ -285,6 +290,20 @@ impl Operation {
         &self.handle
     }
 
+    pub fn reporter(&self) -> Result<ProgressReporter> {
+        let state = self
+            .owner
+            .0
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
+        let active = state
+            .active
+            .iter()
+            .find(|a| a.status.id == self.id)
+            .context("Operation is no longer active")?;
+        Ok(ProgressReporter(active.status.clone()))
+    }
+
     pub fn check_game(&self, game: Game) -> Result<()> {
         let state = self
             .owner
@@ -376,7 +395,11 @@ impl Operation {
         if let Some(index) = state.active.iter().position(|a| a.status.id == self.id) {
             let mut status = state.active.remove(index).status;
             status.phase = phase;
-            status.error = error;
+            status.error = error.clone();
+            progress::publish(ProgressUpdate {
+                operation: status.clone(),
+                event: ProgressEvent::Finished { error },
+            });
             state.last = Some(status);
             if state.active.is_empty() {
                 state.profile_lock = None;
