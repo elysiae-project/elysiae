@@ -20,38 +20,47 @@ pub fn build_app() -> gtk::Application {
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_OPEN | gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
+
     app.connect_startup(|app| {
         if let Err(error) = fonts::load_app_fonts(&[("PretendardVariable.woff2", APP_FONT)]) {
             log::error!("Could not load application fonts: {error:#}");
         }
+
         load_css();
+
         let weak = app.downgrade();
         if let Err(error) = crate::util::settings::connect_changed(move |key| {
             let Some(app) = weak.upgrade() else { return; };
+
             if matches!(key, "display-language" | "use-video-background") {
                 if let Some(window) = app.active_window().and_downcast::<crate::window::ElysiaeWindow>() {
                     window.refresh_artwork();
                 }
+
                 refresh_assets(&app);
             } else if key == "check-for-updates"
                 && let Some(window) = app.active_window().and_downcast::<crate::window::ElysiaeWindow>() {
                 window.refresh_status();
             }
         }) { log::warn!("Could not observe preference changes: {error:#}"); }
+
         let weak = app.downgrade();
         glib::idle_add_local_once(move || {
             if let Some(app) = weak.upgrade() { refresh_assets(&app); }
         });
+
         let (ready, recovered) = async_channel::bounded(1);
         let hold = app.hold();
         glib::MainContext::default().spawn_local(async move {
             let _hold = hold;
             let _ = recovered.recv().await;
         });
+
         runtime::spawn(async move {
             if let Err(error) = proton_manager::recover_runtime().await {
                 log::error!("Runtime recovery needs attention: {error:#}");
             }
+
             for game in Game::all() {
                 match installations::pending(game) {
                     Ok(true) => if let Err(error) = game_downloader::recover_maintenance(game).await {
@@ -61,12 +70,16 @@ pub fn build_app() -> gtk::Application {
                     Err(error) => log::error!("Could not inspect maintenance recovery: {error:#}"),
                 }
             }
+
             let _ = ready.send(()).await;
+
             let mut interval = tokio::time::interval(Duration::from_secs(3600));
+
             loop {
                 interval.tick().await;
                 if !get_option("check-for-updates").and_then(bool::try_from).unwrap_or(false)
                     || operations().is_busy().unwrap_or(true) { continue; }
+
                 match proton_manager::check_runtime_update().await {
                     Ok(true) => log::info!("A runtime update is available; use the check-runtime-update action to review it"),
                     Ok(false) => {},
@@ -84,11 +97,15 @@ pub fn build_app() -> gtk::Application {
                 command_line.printerr_literal("Expected elysiae://open-game/<game-code>\n");
                 return glib::ExitCode::FAILURE;
             };
+
             *pending.borrow_mut() = Some(game);
         }
+
         app.activate();
+
         glib::ExitCode::SUCCESS
     });
+
     let pending = pending_game.clone();
     app.connect_open(move |app, files, _| {
         for file in files {
@@ -96,10 +113,13 @@ pub fn build_app() -> gtk::Application {
                 *pending.borrow_mut() = Some(game);
             }
         }
+
         app.activate();
     });
+
     app.connect_activate(move |app| {
         build_ui(app);
+
         if let Some(game) = pending_game.borrow_mut().take()
             && let Some(window) = app
                 .active_window()
@@ -108,7 +128,9 @@ pub fn build_app() -> gtk::Application {
             window.change_game(game);
         }
     });
+
     add_actions(&app);
+
     app
 }
 
@@ -136,27 +158,33 @@ pub fn refresh_assets(app: &gtk::Application) {
             .and_then(bool::try_from)
             .unwrap_or(false),
     };
+
     start_asset_refresh(app, request);
 }
 
 fn start_asset_refresh(app: &gtk::Application, request: AssetRequest) {
     let start = ASSET_REFRESH.with(|slot| {
         let mut slot = slot.borrow_mut();
+
         if let Some(active) = &slot.0 {
             slot.1 = if active == &request {
                 None
             } else {
                 Some(request.clone())
             };
+
             false
         } else {
             slot.0 = Some(request.clone());
+
             true
         }
     });
+
     if !start {
         return;
     }
+
     let (sender, receiver) = async_channel::bounded(16);
     runtime::spawn(async move {
         let updates = sender.clone();
@@ -177,8 +205,10 @@ fn start_asset_refresh(app: &gtk::Application, request: AssetRequest) {
             }
             Err(error) => log::warn!("Artwork refresh unavailable: {error:#}"),
         }
+
         let _ = sender.send(None).await;
     });
+
     let weak = app.downgrade();
     glib::MainContext::default().spawn_local(async move {
         while let Ok(Some(game)) = receiver.recv().await {
@@ -190,9 +220,11 @@ fn start_asset_refresh(app: &gtk::Application, request: AssetRequest) {
                 window.assets_ready(game);
             }
         }
+
         let pending = ASSET_REFRESH.with(|slot| {
             let mut slot = slot.borrow_mut();
             slot.0 = None;
+
             slot.1.take()
         });
         if let Some(request) = pending
@@ -213,6 +245,7 @@ fn add_actions(app: &gtk::Application) {
         }
     });
     app.add_action(&refresh);
+
     for (name, control) in [
         (
             "pause-operation",
@@ -228,11 +261,13 @@ fn add_actions(app: &gtk::Application) {
         });
         app.add_action(&action);
     }
+
     let action = gio::SimpleAction::new("check-runtime-update", None);
     let weak = app.downgrade();
     action.connect_activate(move |_, _| {
         let Some(app) = weak.upgrade() else { return; };
         let Some(window) = app.active_window() else { return; };
+
         glib::MainContext::default().spawn_local(async move {
             let result = runtime::spawn(proton_manager::check_runtime_update()).await;
             match result {
@@ -271,6 +306,7 @@ fn parse_game_uri(uri: &str) -> Option<Game> {
     {
         return None;
     }
+
     Game::try_from(url.path().trim_matches('/')).ok()
 }
 
@@ -278,6 +314,7 @@ fn parse_game_uri(uri: &str) -> Option<Game> {
 fn load_css() {
     let display = gtk::gdk::Display::default().expect("Could not connect to a display");
     let provider = CssProvider::new();
+
     gtk::Settings::for_display(&display)
         .bind_property(
             "gtk-interface-color-scheme",
@@ -296,16 +333,19 @@ fn build_ui(app: &gtk::Application) {
         window.present();
         return;
     }
+
     crate::window::build_window(app).present();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     /// Checks that game URIs only select known games and reject foreign inputs.
     #[test]
     fn game_uri_is_navigation_only_and_rejects_foreign_inputs() {
         assert_eq!(parse_game_uri("elysiae://open-game/hk4e"), Some(Game::Hk4e));
+
         for uri in [
             "https://open-game/hk4e",
             "elysiae://execute/hk4e",

@@ -73,6 +73,7 @@ mod imp {
         const NAME: &'static str = "ElysiaeWindow";
         type Type = super::ElysiaeWindow;
         type ParentType = gtk::ApplicationWindow;
+
         fn class_init(klass: &mut Self::Class) {
             Titlebar::static_type();
             Background::static_type();
@@ -81,43 +82,51 @@ mod imp {
             Settings::static_type();
             klass.bind_template();
         }
+
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
     }
+
     impl ObjectImpl for ElysiaeWindow {
         fn constructed(&self) {
             self.parent_constructed();
             let window = self.obj();
+
             // Long action labels must not change the footer's proportional split.
             if let Some(label) = self.operation_button.child().and_downcast::<gtk::Label>() {
                 label.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 label.set_max_width_chars(16);
             }
+
             let weak = window.downgrade();
             self.operation_button.connect_clicked(move |_| {
                 if let Some(window) = weak.upgrade() {
                     window.start_operation(false);
                 }
             });
+
             let weak = window.downgrade();
             self.preinstall_button.connect_clicked(move |_| {
                 if let Some(window) = weak.upgrade() {
                     window.start_operation(true);
                 }
             });
+
             let weak = window.downgrade();
             self.sidebar.connect_game_selected(move |game| {
                 if let Some(window) = weak.upgrade() {
                     window.change_game(game);
                 }
             });
+
             let weak = window.downgrade();
             self.settings_button.connect_clicked(move |_| {
                 if let Some(window) = weak.upgrade() {
                     window.show_settings(true);
                 }
             });
+
             for button in [
                 self.settings_backdrop.get(),
                 self.settings_panel.close_button(),
@@ -129,6 +138,7 @@ mod imp {
                     }
                 });
             }
+
             // Request twice the panel's natural width, without raising the
             // window's minimum size or overflowing compact displays.
             self.settings_layer
@@ -139,6 +149,7 @@ mod imp {
                     let (_, natural_height, _, _) =
                         child.measure(gtk::Orientation::Vertical, width);
                     let height = natural_height.min(overlay.height());
+
                     Some(gtk::gdk::Rectangle::new(
                         (overlay.width() - width) / 2,
                         (overlay.height() - height) / 2,
@@ -146,6 +157,7 @@ mod imp {
                         height,
                     ))
                 });
+
             let keys = gtk::EventControllerKey::new();
             keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             let weak = window.downgrade();
@@ -153,15 +165,19 @@ mod imp {
                 let Some(window) = weak.upgrade() else {
                     return glib::Propagation::Proceed;
                 };
+
                 if !window.imp().settings_layer.is_visible() {
                     return glib::Propagation::Proceed;
                 }
+
                 if key == gtk::gdk::Key::Escape {
                     if !window.imp().settings_panel.dismiss_dropdowns(true) {
                         window.show_settings(false);
                     }
+
                     return glib::Propagation::Stop;
                 }
+
                 if key == gtk::gdk::Key::Tab || key == gtk::gdk::Key::ISO_Left_Tab {
                     window.imp().settings_panel.dismiss_dropdowns(false);
                     let direction = if modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK)
@@ -175,11 +191,14 @@ mod imp {
                         gtk::prelude::GtkWindowExt::set_focus(&window, None::<&gtk::Widget>);
                         window.imp().settings_panel.child_focus(direction);
                     }
+
                     return glib::Propagation::Stop;
                 }
+
                 glib::Propagation::Proceed
             });
             window.add_controller(keys);
+
             let receiver = progress::subscribe();
             *self.progress_receiver.borrow_mut() = Some(receiver.clone());
             let weak = window.downgrade();
@@ -188,14 +207,17 @@ mod imp {
                     let Some(window) = weak.upgrade() else {
                         break;
                     };
+
                     window.handle_progress(update);
                 }
             });
+
             let weak = window.downgrade();
             glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
                 let Some(window) = weak.upgrade() else {
                     return glib::ControlFlow::Break;
                 };
+
                 let ids = operations()
                     .active()
                     .unwrap_or_default()
@@ -207,20 +229,28 @@ mod imp {
                     *window.imp().active_ids.borrow_mut() = ids;
                     window.refresh_status();
                 }
+
                 window.refresh_controls();
+
                 glib::ControlFlow::Continue
             });
+
             self.progress.reset();
         }
+
         fn dispose(&self) {
             if let Some(receiver) = self.progress_receiver.borrow_mut().take() {
                 receiver.close();
             }
+
             self.dispose_template();
         }
     }
+
     impl WidgetImpl for ElysiaeWindow {}
+
     impl WindowImpl for ElysiaeWindow {}
+
     impl ApplicationWindowImpl for ElysiaeWindow {}
 }
 
@@ -237,8 +267,10 @@ impl ElysiaeWindow {
         window.change_game(Game::default());
         window.imp().sidebar.refresh_icons();
         window.refresh_installations();
+
         window
     }
+
     pub fn get_current_game(&self) -> Game {
         self.imp().current_game.get()
     }
@@ -273,16 +305,20 @@ impl ElysiaeWindow {
         if visible == self.imp().settings_layer.is_visible() {
             return;
         }
+
         if visible {
             *self.imp().previous_focus.borrow_mut() =
                 gtk::prelude::GtkWindowExt::focus(self).map(|w| w.downgrade());
         }
+
         if !visible {
             self.imp().settings_panel.dismiss_dropdowns(false);
         }
+
         self.imp().content.set_sensitive(!visible);
         self.imp().content.set_can_target(!visible);
         self.imp().settings_layer.set_visible(visible);
+
         if visible {
             self.imp().settings_panel.focus_first();
         } else if let Some(widget) = self
@@ -314,6 +350,7 @@ impl ElysiaeWindow {
             imp.preinstall_button.set_visible(false);
             return;
         };
+
         let kind = action_kind(status);
         let launching = kind == OperationKind::Launch;
         let pending = if launching {
@@ -324,6 +361,7 @@ impl ElysiaeWindow {
         let ready = !launching || !transfer || imp.runtime_ready.get();
         let allowed =
             !pending && ready && operations().can_begin(kind, Some(game)).unwrap_or(false);
+
         imp.operation_button.set_sensitive(allowed);
         imp.operation_button.set_label(if running == Some(game) {
             "Running…"
@@ -341,6 +379,7 @@ impl ElysiaeWindow {
         });
         let label = imp.operation_button.label();
         imp.operation_button.set_tooltip_text(if !ready { Some("The shared runtime needs setup. It can be prepared when the current download finishes.") } else { label.as_deref() });
+
         imp.preinstall_button
             .set_visible(status == UpdateAvailability::Preinstall);
         imp.preinstall_button.set_sensitive(
@@ -349,6 +388,7 @@ impl ElysiaeWindow {
                     .can_begin(OperationKind::Preinstall, Some(game))
                     .unwrap_or(false),
         );
+
         imp.activity_label
             .set_label(&if let Some(running) = running {
                 format!("{} is running", running.display_name())
@@ -374,6 +414,7 @@ impl ElysiaeWindow {
         if previous.is_none() {
             self.imp().operation_button.set_label("Checking…");
         }
+
         let lang = get_option("vo-lang")
             .and_then(String::try_from)
             .unwrap_or_else(|_| "en".into());
@@ -381,6 +422,7 @@ impl ElysiaeWindow {
             .and_then(bool::try_from)
             .unwrap_or(false);
         let (sender, receiver) = async_channel::bounded(2);
+
         runtime::spawn(async move {
             let local = tokio::task::spawn_blocking(move || -> Result<_> {
                 Ok((
@@ -401,6 +443,7 @@ impl ElysiaeWindow {
                         status
                     };
                     let _ = sender.send(Ok((shown, ready))).await;
+
                     if status == UpdateAvailability::Updated
                         && check
                         && operations()
@@ -425,15 +468,18 @@ impl ElysiaeWindow {
                 }
             }
         });
+
         let weak = self.downgrade();
         glib::MainContext::default().spawn_local(async move {
             while let Ok(result) = receiver.recv().await {
                 let Some(window) = weak.upgrade() else {
                     break;
                 };
+
                 if window.imp().request.get() != request {
                     break;
                 }
+
                 match result {
                     Ok((status, ready)) => {
                         window.imp().status.set(Some(status));
@@ -462,6 +508,7 @@ impl ElysiaeWindow {
     fn refresh_installations(&self) {
         let request = self.imp().installation_request.get().wrapping_add(1);
         self.imp().installation_request.set(request);
+
         let (sender, receiver) = async_channel::bounded(1);
         runtime::spawn(async move {
             let result = tokio::task::spawn_blocking(|| {
@@ -478,6 +525,7 @@ impl ElysiaeWindow {
             .await;
             let _ = sender.send(result).await;
         });
+
         let weak = self.downgrade();
         glib::MainContext::default().spawn_local(async move {
             if let Ok(Ok(states)) = receiver.recv().await
@@ -495,6 +543,7 @@ impl ElysiaeWindow {
         let Some(status) = self.imp().status.get() else {
             return;
         };
+
         let game = self.get_current_game();
         let kind = if preinstall {
             OperationKind::Preinstall
@@ -502,9 +551,11 @@ impl ElysiaeWindow {
             action_kind(status)
         };
         let launching = kind == OperationKind::Launch;
+
         if preinstall && status != UpdateAvailability::Preinstall {
             return;
         }
+
         if !operations().can_begin(kind, Some(game)).unwrap_or(false)
             || (if launching {
                 self.imp().launch_pending.get().is_some()
@@ -514,16 +565,20 @@ impl ElysiaeWindow {
         {
             return;
         }
+
         if launching {
             self.imp().launch_pending.set(Some(game));
         } else {
             self.imp().transfer_pending.set(Some(game));
         }
+
         self.refresh_controls();
+
         let lang = get_option("vo-lang")
             .and_then(String::try_from)
             .unwrap_or_else(|_| "en".into());
         let (done, completion) = async_channel::bounded(1);
+
         runtime::spawn(async move {
             // Legacy backend API remains available; the UI receives identified
             // events through the shared reporter instead of an anonymous channel.
@@ -540,6 +595,7 @@ impl ElysiaeWindow {
             };
             let _ = done.send(result).await;
         });
+
         let weak = self.downgrade();
         let hold = self.application().map(|app| app.hold());
         glib::MainContext::default().spawn_local(async move {
@@ -548,16 +604,19 @@ impl ElysiaeWindow {
             let Some(window) = weak.upgrade() else {
                 return;
             };
+
             if launching {
                 window.imp().launch_pending.set(None);
             } else {
                 window.imp().transfer_pending.set(None);
             }
+
             match result {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => window.show_error(&format!("{error:#}")),
                 Err(error) => window.show_error(&format!("Operation worker disconnected: {error}")),
             }
+
             window.refresh_status();
             window.refresh_installations();
         });
@@ -584,22 +643,27 @@ impl ElysiaeWindow {
         ) {
             return;
         }
+
         if self.imp().completed.borrow().contains(&id) {
             return;
         }
+
         if update.operation.kind == OperationKind::Components
             && matches!(update.event, ProgressEvent::Started)
         {
             return;
         }
+
         if matches!(update.event, ProgressEvent::Finished { .. })
             && self.imp().displayed_operation.get() != Some(id)
         {
             return;
         }
+
         if self.imp().displayed_operation.replace(Some(id)) != Some(id) {
             self.imp().progress.reset();
         }
+
         self.imp().progress.update(&update);
         if let Some(game) = update.operation.game {
             match &update.event {
@@ -623,20 +687,24 @@ impl ElysiaeWindow {
                     if error.is_none() {
                         self.imp().sidebar.set_installed(game, true);
                     }
+
                     self.imp().sidebar.set_progress(game, None);
                     self.refresh_installations();
                 }
                 _ => {}
             }
         }
+
         if matches!(update.event, ProgressEvent::Finished { .. }) {
             let mut completed = self.imp().completed.borrow_mut();
             completed.push(id);
             if completed.len() > 32 {
                 completed.remove(0);
             }
+
             drop(completed);
             self.refresh_status();
+
             if matches!(update.event, ProgressEvent::Finished { error: None }) {
                 let weak = self.downgrade();
                 glib::timeout_add_local_once(std::time::Duration::from_secs(4), move || {
@@ -654,6 +722,7 @@ impl ElysiaeWindow {
     pub async fn download_components(&self) -> Result<()> {
         proton_manager::update_all_modules().await
     }
+
     pub async fn download_game(
         &self,
         game: Game,
@@ -662,6 +731,7 @@ impl ElysiaeWindow {
     ) -> Result<()> {
         game_downloader::download_game(game, lang, sender).await
     }
+
     pub async fn update_game(
         &self,
         game: Game,
@@ -670,6 +740,7 @@ impl ElysiaeWindow {
     ) -> Result<()> {
         game_downloader::download_update(game, lang, sender).await
     }
+
     pub async fn launch_game(&self, game: Game) -> Result<()> {
         game_downloader::launch_game(game).await
     }
@@ -713,16 +784,20 @@ pub fn build_window(app: &gtk::Application) -> ElysiaeWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[track_caller]
     fn pump_until(mut ready: impl FnMut() -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         let context = glib::MainContext::default();
+
         while !ready() && std::time::Instant::now() < deadline {
             while context.pending() {
                 context.iteration(false);
             }
+
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+
         assert!(ready(), "GTK did not reach the expected state");
     }
 
@@ -737,6 +812,7 @@ mod tests {
                     paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
                     node = snapshot.to_node();
                 }
+
                 node.is_some()
             });
             let texture = window
@@ -760,9 +836,11 @@ mod tests {
                 && actions.x() + actions.width() <= window.width() as f32
                 && (!window.imp().progress.is_visible() || window.imp().progress.height() > 0)
         });
+
         let area = footer.compute_bounds(window).unwrap();
         let row = row.compute_bounds(window).unwrap();
         let controls = actions.compute_bounds(window).unwrap();
+
         assert!(
             (area.width() - row.width() * 0.4).abs() <= 2.0,
             "Expected a 40% progress area: {area:?} in {row:?}"
@@ -786,6 +864,7 @@ mod tests {
         gtk::init().unwrap();
         gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
         crate::util::settings::set_option("check-for-updates", false.into()).unwrap();
+
         let provider = gtk::CssProvider::new();
         let css_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let errors = css_errors.clone();
@@ -802,11 +881,13 @@ mod tests {
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+
         let app = gtk::Application::builder()
             .application_id("app.elysiae.Elysiae.UiTests")
             .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gtk::gio::Cancellable>).unwrap();
+
         let window = ElysiaeWindow::new(&app);
         window.present();
         pump_until(|| {
@@ -814,6 +895,7 @@ mod tests {
         });
         assert!(!window.imp().progress.is_visible());
         assert!(window.imp().background.is_visible());
+
         let initial_selector = window.imp().sidebar.compute_bounds(&window).unwrap();
         assert!((initial_selector.center().x() - window.width() as f32 / 2.0).abs() < 2.0);
         assert!(
@@ -841,12 +923,14 @@ mod tests {
         );
         assert_footer_layout(&window);
         screenshot(&window, "launcher-desktop.png");
+
         let mut buttons = Vec::new();
         let mut child = window.imp().sidebar.imp().games.first_child();
         while let Some(widget) = child {
             child = widget.next_sibling();
             buttons.push(widget.downcast::<gtk::ToggleButton>().unwrap());
         }
+
         assert_eq!(buttons.len(), Game::all().len());
         for pair in buttons.windows(2) {
             let left = pair[0].compute_bounds(&window).unwrap();
@@ -854,6 +938,7 @@ mod tests {
             assert!(left.width() >= 44.0 && left.height() >= 44.0);
             assert!(right.x() - left.x() - left.width() >= 9.0);
         }
+
         // Real artwork must not override the configured CSS geometry.
         let artwork = gtk::gdk::MemoryTexture::new(
             512,
@@ -885,9 +970,11 @@ mod tests {
                 icon.measure(gtk::Orientation::Horizontal, -1)
             );
         }
+
         buttons[2].emit_clicked();
         assert_eq!(window.get_current_game(), Game::Hkrpg);
         assert!(buttons[2].has_css_class("is-selected"));
+
         window.imp().settings_button.emit_clicked();
         pump_until(|| {
             window.imp().settings_layer.is_visible() && window.imp().settings_panel.width() > 0
@@ -925,11 +1012,14 @@ mod tests {
         let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
         assert!(focus.is_ancestor(&window.imp().settings_panel.get()));
         screenshot(&window, "settings-desktop.png");
+
         window.imp().settings_panel.close_button().emit_clicked();
         assert!(!window.imp().settings_layer.is_visible());
+
         window.imp().settings_button.emit_clicked();
         window.imp().settings_backdrop.emit_clicked();
         assert!(!window.imp().settings_layer.is_visible());
+
         window.imp().settings_button.emit_clicked();
         let controllers = window.observe_controllers();
         let keys = (0..controllers.n_items())
@@ -956,6 +1046,7 @@ mod tests {
             window.imp().settings_layer.is_visible(),
             "Escape closes the choices before the modal"
         );
+
         dropdown.popup();
         pump_until(|| dropdown.imp().popover.is_mapped());
         assert!(keys.emit_by_name::<bool>(
@@ -965,6 +1056,7 @@ mod tests {
         pump_until(|| !dropdown.is_open());
         let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
         assert!(!focus.is_ancestor(&dropdown), "Tab must leave the dropdown");
+
         for _ in 0..16 {
             assert!(keys.emit_by_name::<bool>(
                 "key-pressed",
@@ -973,6 +1065,7 @@ mod tests {
             let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
             assert!(focus.is_ancestor(&window.imp().settings_panel.get()));
         }
+
         assert!(keys.emit_by_name::<bool>(
             "key-pressed",
             &[
@@ -992,6 +1085,7 @@ mod tests {
         window.refresh_controls();
         assert_eq!(window.imp().operation_button.label().unwrap(), "Launch");
         assert!(window.imp().operation_button.is_sensitive());
+
         let reporter = transfer.reporter().unwrap();
         reporter.report(ProgressEvent::Sophon(SophonProgress::Downloading {
             downloaded_bytes: 50 * 1024 * 1024 * 1024,
@@ -1013,10 +1107,12 @@ mod tests {
             .unwrap();
         assert!((icon.imp().target.get() - 0.5).abs() < 0.001);
         screenshot(&window, "download-desktop.png");
+
         window.set_default_size(720, 540);
         pump_until(|| window.width() <= 760);
         assert_footer_layout(&window);
         screenshot(&window, "download-compact.png");
+
         // Pin this synthetic worst-case layout while the 250 ms status refresh
         // runs; otherwise it can hide the extra button before GTK allocates it.
         let keep_preinstall = window
@@ -1037,6 +1133,7 @@ mod tests {
             .imp()
             .operation_button
             .set_label("Resume installation");
+
         // Exercise a refresh during the fixture rather than relying on timing.
         window.refresh_controls();
         assert!(window.imp().preinstall_button.is_visible());
@@ -1050,6 +1147,7 @@ mod tests {
         window.imp().operation_button.disconnect(keep_label);
         window.imp().preinstall_button.set_visible(false);
         window.refresh_controls();
+
         window.imp().settings_button.emit_clicked();
         pump_until(|| {
             window
@@ -1070,6 +1168,7 @@ mod tests {
         screenshot(&window, "settings-compact.png");
         window.show_settings(false);
         transfer.finish(Ok(())).unwrap();
+
         let component = operations().begin(OperationKind::Components, None).unwrap();
         let reporter = component.reporter().unwrap();
         reporter.report(ProgressEvent::File(crate::util::web::DownloadProgress {
@@ -1080,6 +1179,7 @@ mod tests {
         pump_until(|| window.imp().displayed_operation.get() == Some(reporter.0.id));
         assert!(window.imp().progress.imp().bars.is_visible());
         assert!(!window.imp().progress.imp().verification_row.is_visible());
+
         reporter.report(ProgressEvent::Extracting("download.tar.gz".into()));
         pump_until(|| !window.imp().progress.imp().bars.is_visible());
         assert!(!window.imp().progress.imp().heading.is_visible());

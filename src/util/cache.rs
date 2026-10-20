@@ -23,6 +23,7 @@ use crate::{
 };
 
 const CATALOG_CONCURRENCY: usize = 3;
+
 // The asset budget includes download staging files. Catalogs are separately
 // bounded to 4 MiB each and the supported game/locale pairs. Referenced or active
 // files are never evicted to make room: an oversized working set keeps its last
@@ -88,6 +89,7 @@ struct Store {
 
 /// Holds exclusive access to a cache refresh until dropped.
 struct RefreshPermit<'a>(&'a AtomicBool);
+
 impl Drop for RefreshPermit<'_> {
     /// Release the refresh permit.
     fn drop(&mut self) {
@@ -97,6 +99,7 @@ impl Drop for RefreshPermit<'_> {
 
 /// Removes an unpublished staging file when dropped.
 struct TemporaryFile(PathBuf);
+
 impl Drop for TemporaryFile {
     /// Remove any staging file left at the guarded path.
     fn drop(&mut self) {
@@ -137,9 +140,11 @@ impl Drop for Publication<'_> {
 /// Initialize and return the shared asset cache.
 fn store() -> Result<&'static Store> {
     static STORE: OnceLock<Store> = OnceLock::new();
+
     if STORE.get().is_none() {
         let _ = STORE.set(Store::new(PathBuf::from("cache"), ASSET_BUDGET, ASSET_TTL)?);
     }
+
     STORE.get().context("Asset cache is unavailable")
 }
 
@@ -165,6 +170,7 @@ pub async fn refresh_cache_with_preferences(
                 url.query_pairs_mut()
                     .append_pair("lang", &locale)
                     .append_pair("game", game.code());
+
                 fetch_data::<AedesResponse>(url.as_str()).await
             },
             |url, destination, limit| download_file_limited(url, destination, None, None, limit),
@@ -185,6 +191,7 @@ pub fn resolve_media(game: Game, locale: &str, use_video: bool) -> Result<Resolv
         "Resolving media paths: game={}, locale={locale}, use_video={use_video}",
         game.code()
     );
+
     let media = store()?.resolve(game, &locale, use_video);
     log::info!(
         "Resolved media: background={:?}, overlay={:?}, is_video={}",
@@ -192,6 +199,7 @@ pub fn resolve_media(game: Game, locale: &str, use_video: bool) -> Result<Resolv
         media.overlay,
         media.is_video
     );
+
     Ok(media)
 }
 
@@ -206,6 +214,7 @@ pub fn get_cached_asset_paths(
         "Reading cached assets: game={}, locale={locale}, type={asset_type:?}",
         game.code()
     );
+
     Ok(store()?.cached_paths(game, &locale, asset_type))
 }
 
@@ -238,6 +247,7 @@ impl AedesResponse {
         } else {
             (&self.icon, &self.icon_cn)
         };
+
         // This selects localized artwork, not a game-server region.
         if locale == "zh-cn" && !cn.is_empty() {
             vec![cn, global]
@@ -258,6 +268,7 @@ fn cache_path(path: &Path) -> Result<PathBuf> {
     let relative = text
         .strip_prefix('/')
         .context("Asset path must be absolute on the Aedes server")?;
+
     // Reject ambiguous URL syntax before Url can normalize it. Preserve every
     // server path component, including the server's own `assets` directory and
     // percent-encoded filenames, but never encoded separators or dot segments.
@@ -281,6 +292,7 @@ fn cache_path(path: &Path) -> Result<PathBuf> {
                 && !part.starts_with(".download-")),
         "Asset path contains unsafe components"
     );
+
     Ok(PathBuf::from("cache/assets").join(relative))
 }
 
@@ -301,7 +313,9 @@ impl Store {
             active: Mutex::new(HashSet::new()),
             refreshing: AtomicBool::new(false),
         };
+
         store.path(Path::new("cache/assets"))?;
+
         Ok(store)
     }
 
@@ -317,12 +331,15 @@ impl Store {
                 && tail.components().all(|c| matches!(c, Component::Normal(_))),
             "Unsafe cache path"
         );
+
         let destination = full_path(Some(self.relative.join(tail)), None)?;
         let mut current = self.root.clone();
+
         for component in std::iter::once(None).chain(tail.components().map(Some)) {
             if let Some(component) = component {
                 current.push(component);
             }
+
             match std::fs::symlink_metadata(&current) {
                 Ok(metadata) => ensure!(
                     !metadata.file_type().is_symlink(),
@@ -333,12 +350,14 @@ impl Store {
                 Err(error) => return Err(error.into()),
             }
         }
+
         Ok(destination)
     }
 
     /// Resolve a server path to an existing, nonempty regular cache file.
     fn existing(&self, server_path: &str) -> Option<PathBuf> {
         let path = self.path(&cache_path(Path::new(server_path)).ok()?).ok()?;
+
         std::fs::symlink_metadata(&path)
             .ok()
             .filter(|m| m.is_file() && m.len() > 0)
@@ -353,6 +372,7 @@ impl Store {
             metadata.is_file() && metadata.len() <= MAX_CATALOG_SIZE,
             "Invalid cached catalog size or type"
         );
+
         let mut bytes = Vec::new();
         std::fs::File::open(path)?
             .take(MAX_CATALOG_SIZE + 1)
@@ -361,6 +381,7 @@ impl Store {
             bytes.len() as u64 <= MAX_CATALOG_SIZE,
             "Cached catalog is oversized"
         );
+
         serde_json::from_slice(&bytes).context("Invalid cached catalog")
     }
 
@@ -373,6 +394,7 @@ impl Store {
                     "No usable asset catalog for {}/{locale}: {error:#}",
                     game.code()
                 );
+
                 None
             }
         }
@@ -384,12 +406,14 @@ impl Store {
             if video && !use_video {
                 continue;
             }
+
             for background in &response.backgrounds {
                 let candidate = if video {
                     background.video.as_deref()
                 } else {
                     Some(background.image.as_str())
                 };
+
                 if let Some(path) = candidate.and_then(|path| self.existing(path)) {
                     return ResolvedMedia {
                         background: Some(path),
@@ -402,6 +426,7 @@ impl Store {
                 }
             }
         }
+
         ResolvedMedia::default()
     }
 
@@ -415,6 +440,7 @@ impl Store {
                 }
             }
         }
+
         ResolvedMedia::default()
     }
 
@@ -424,6 +450,7 @@ impl Store {
             AssetType::Icon => response.variants(locale, false),
             AssetType::Shortcut => response.variants(locale, true),
         };
+
         paths
             .into_iter()
             .filter_map(|path| self.existing(path))
@@ -440,6 +467,7 @@ impl Store {
                 }
             }
         }
+
         Vec::new()
     }
 
@@ -466,6 +494,7 @@ impl Store {
             .lock()
             .map_err(|_| anyhow::anyhow!("Cache pin lock poisoned"))?;
         let mut pins = HashSet::new();
+
         for path in paths {
             let relative = path
                 .strip_prefix(self.root.join("assets"))
@@ -477,7 +506,9 @@ impl Store {
             );
             pins.insert(validated);
         }
+
         *active = pins;
+
         Ok(())
     }
 
@@ -489,12 +520,14 @@ impl Store {
                 .is_ok(),
             "An asset cache refresh is already running"
         );
+
         Ok(RefreshPermit(&self.refreshing))
     }
 
     /// Collect asset paths referenced by supported game and locale catalogs.
     fn references(&self) -> HashSet<PathBuf> {
         let mut paths = HashSet::new();
+
         for game in Game::all() {
             for locale in settings::SUPPORTED_LOCALES {
                 if let Ok(response) = self.read_catalog(game, locale) {
@@ -507,6 +540,7 @@ impl Store {
                 }
             }
         }
+
         paths
     }
 
@@ -516,19 +550,24 @@ impl Store {
     /// Published catalogs and unrelated cache roots are untouched.
     fn collect(&self, prospective: &HashSet<PathBuf>) -> Result<u64> {
         self.collect_catalog_temporaries();
+
         let mut protected = self.references();
         protected.extend(prospective.iter().cloned());
+
         let root = self.path(Path::new("cache/assets"))?;
         if !root.try_exists()? {
             return Ok(0);
         }
+
         let mut pending = vec![root];
         let mut directories = Vec::new();
         let mut files = Vec::new();
+
         while let Some(directory) = pending.pop() {
             let key = Path::new("cache").join(directory.strip_prefix(&self.root)?);
             self.path(&key)?;
             directories.push(directory.clone());
+
             for entry in std::fs::read_dir(directory)? {
                 let entry = entry?;
                 let kind = entry.file_type()?;
@@ -539,6 +578,7 @@ impl Store {
                 }
             }
         }
+
         let mut total = 0u64;
         for (path, metadata) in files {
             let size = metadata.len();
@@ -556,6 +596,7 @@ impl Store {
                     .ok()
                     .and_then(|time| time.elapsed().ok())
                     .is_none_or(|age| age < self.ttl);
+
             if recent_temporary || protected.contains(&path) || active.contains(&path) {
                 total = total.checked_add(size).context("Cache size overflow")?;
             } else {
@@ -563,6 +604,7 @@ impl Store {
                 std::fs::remove_file(self.path(&key)?)?;
             }
         }
+
         // Removed versions must not leave an ever-growing tree of empty folders.
         for directory in directories.into_iter().rev() {
             let key = Path::new("cache").join(directory.strip_prefix(&self.root)?);
@@ -572,6 +614,7 @@ impl Store {
                 Err(error) => return Err(error.into()),
             }
         }
+
         Ok(total)
     }
 
@@ -581,9 +624,11 @@ impl Store {
             let Ok(directory) = self.path(&Path::new("cache/catalogs").join(game.code())) else {
                 continue;
             };
+
             let Ok(entries) = std::fs::read_dir(directory) else {
                 continue;
             };
+
             for entry in entries.flatten() {
                 let name = entry.file_name();
                 let Some(id) = name
@@ -592,12 +637,15 @@ impl Store {
                 else {
                     continue;
                 };
+
                 if uuid::Uuid::parse_str(id).is_err() {
                     continue;
                 }
+
                 let Ok(metadata) = entry.metadata() else {
                     continue;
                 };
+
                 if metadata.is_file()
                     && metadata
                         .modified()
@@ -626,6 +674,7 @@ impl Store {
         let key = cache_path(Path::new(server_path))?;
         let destination = self.path(&key)?;
         let existing = self.existing(server_path);
+
         if existing.is_some() {
             let active = self
                 .active
@@ -640,9 +689,11 @@ impl Store {
                 return Ok(destination);
             }
         }
+
         if !batch.attempted.insert(key.clone()) {
             return existing.context("Asset already attempted during this catalog refresh");
         }
+
         let result = async {
             let used = match batch.used {
                 Some(used) => used,
@@ -655,6 +706,7 @@ impl Store {
                 "Asset cache budget of {} bytes is exhausted",
                 self.budget
             );
+
             let temporary_key = PathBuf::from(format!(
                 "cache/assets/.download-cache-{}",
                 uuid::Uuid::new_v4()
@@ -664,11 +716,13 @@ impl Store {
             let mut url = url::Url::parse("https://aedes.elysiae.app")?;
             url.set_path(server_path);
             download(url.into(), relative, limit).await?;
+
             let metadata = std::fs::symlink_metadata(&temporary.0)?;
             ensure!(
                 metadata.is_file() && metadata.len() > 0 && metadata.len() <= limit,
                 "Downloaded asset is empty or exceeds the cache budget"
             );
+
             // A display change may pin the old file while the download awaits.
             // Commit under the same short lock used by pinning and collection.
             let active = self
@@ -692,16 +746,20 @@ impl Store {
                 // time rather than assuming that removal cannot fail.
                 batch.used = None;
             }
+
             Ok::<_, anyhow::Error>(())
         }
         .await;
+
         if let Err(error) = result {
             batch.used = None;
             if existing.is_none() {
                 return Err(error).with_context(|| format!("Could not cache {server_path}"));
             }
+
             log::warn!("Retaining stale cached asset {server_path}: {error:#}");
         }
+
         Ok(destination)
     }
 
@@ -712,19 +770,23 @@ impl Store {
             bytes.len() as u64 <= MAX_CATALOG_SIZE,
             "Asset catalog is oversized"
         );
+
         let destination = self.path(&metadata_path(game, locale))?;
         let parent = destination.parent().context("Catalog has no parent")?;
         std::fs::create_dir_all(parent)?;
+
         let temporary_path = parent.join(format!(".catalog-{}", uuid::Uuid::new_v4()));
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temporary_path)?;
         let temporary = TemporaryFile(temporary_path);
+
         file.write_all(&bytes)?;
         file.sync_all()?;
         drop(file);
         std::fs::rename(&temporary.0, destination)?;
+
         Ok(())
     }
 
@@ -750,10 +812,12 @@ impl Store {
                 } else {
                     Some(background.image.as_str())
                 }?;
+
                 Some((index, path))
             })
             .collect();
         candidates.sort_by_key(|(_, path)| self.existing(path).is_none());
+
         let mut errors = Vec::new();
         for (index, path) in candidates {
             match self.asset(path, batch, download).await {
@@ -761,6 +825,7 @@ impl Store {
                 Err(error) => errors.push(format!("{error:#}")),
             }
         }
+
         anyhow::bail!("No usable background: {}", errors.join("; "))
     }
 
@@ -794,6 +859,7 @@ impl Store {
                 .collect(),
             ..Default::default()
         };
+
         // Even a stale-but-valid image can be displayed before revalidation.
         // Its normal TTL/pin checks still run immediately after publication.
         let static_image = match response
@@ -811,6 +877,7 @@ impl Store {
             Ok(index) => (index, false),
             Err(error) if use_video => {
                 log::debug!("Static background fallback unavailable: {error:#}");
+
                 (
                     self.background(&response, true, &mut batch, download)
                         .await?,
@@ -819,6 +886,7 @@ impl Store {
             }
             Err(error) => return Err(error),
         };
+
         let mut published = response.clone();
         if let Some(previous) = &previous {
             // An early background publication must not blank existing icons.
@@ -826,6 +894,7 @@ impl Store {
                 published.icon.clone_from(&previous.icon);
                 published.icon_cn.clone_from(&previous.icon_cn);
             }
+
             if self
                 .paths(&response, locale, AssetType::Shortcut)
                 .is_empty()
@@ -834,9 +903,11 @@ impl Store {
                 published.shortcut_cn.clone_from(&previous.shortcut_cn);
             }
         }
+
         if previous.as_ref() != Some(&published) {
             self.write_catalog(game, source, &published)?;
         }
+
         let mut publication = Publication {
             store: self,
             game,
@@ -855,7 +926,9 @@ impl Store {
                 on_ready(game);
             }
         };
+
         notify();
+
         if !video {
             self.asset(&response.backgrounds[index].image, &mut batch, download)
                 .await?;
@@ -872,36 +945,44 @@ impl Store {
                     Err(error) => errors.push(format!("{error:#}")),
                 }
             }
+
             ensure!(
                 errors.is_empty(),
                 "Required {} is unavailable: {}",
                 if shortcut { "shortcut" } else { "icon" },
                 errors.join("; ")
             );
+
             let changed = if shortcut {
                 let changed = published.shortcut != response.shortcut
                     || published.shortcut_cn != response.shortcut_cn;
                 published.shortcut.clone_from(&response.shortcut);
                 published.shortcut_cn.clone_from(&response.shortcut_cn);
+
                 changed
             } else {
                 let changed =
                     published.icon != response.icon || published.icon_cn != response.icon_cn;
                 published.icon.clone_from(&response.icon);
                 published.icon_cn.clone_from(&response.icon_cn);
+
                 changed
             };
             if changed {
                 self.write_catalog(game, source, &published)?;
             }
+
             notify();
         }
+
         if let Some(overlay) = response.backgrounds[index].overlay.as_deref() {
             if let Err(error) = self.asset(overlay, &mut batch, download).await {
                 log::debug!("Optional background overlay unavailable: {error:#}");
             }
+
             notify();
         }
+
         if use_video && !video {
             match self.background(&response, true, &mut batch, download).await {
                 Ok(index) => {
@@ -910,17 +991,20 @@ impl Store {
                         if let Err(error) = self.asset(overlay, &mut batch, download).await {
                             log::debug!("Optional video overlay unavailable: {error:#}");
                         }
+
                         notify();
                     }
                 }
                 Err(error) => log::debug!("Optional video unavailable: {error:#}"),
             }
         }
+
         ensure!(
             self.usable(&response, locale, use_video),
             "Required cached assets disappeared during refresh"
         );
         publication.committed = true;
+
         Ok(())
     }
 
@@ -966,6 +1050,7 @@ impl Store {
         let mut jobs = VecDeque::from([(priority, locale.clone())]);
         let mut pending = FuturesUnordered::new();
         let mut ready = VecDeque::new();
+
         loop {
             // Completed catalogs count toward the bound too: a slow transfer
             // must not accumulate an unbounded prefetch queue.
@@ -973,9 +1058,11 @@ impl Store {
                 let Some((game, source)) = jobs.pop_front() else {
                     break;
                 };
+
                 let request = fetch(game, source.clone());
                 pending.push(async move { (game, source, request.await) });
             }
+
             let next = match ready.pop_front() {
                 Some(next) => Some(next),
                 None => pending.next().await,
@@ -983,6 +1070,7 @@ impl Store {
             let Some((game, source, response)) = next else {
                 break;
             };
+
             let result = match response {
                 Ok(response) => {
                     let preparation = self.prepare(
@@ -997,6 +1085,7 @@ impl Store {
                     futures_util::pin_mut!(preparation);
                     std::future::poll_fn(|cx| {
                         let result = preparation.as_mut().poll(cx);
+
                         // Continue polling catalog I/O during the one active
                         // asset transaction, without spawning detached tasks.
                         while let std::task::Poll::Ready(Some(catalog)) =
@@ -1004,12 +1093,14 @@ impl Store {
                         {
                             ready.push_back(catalog);
                         }
+
                         result
                     })
                     .await
                 }
                 Err(error) => Err(error),
             };
+
             let mut finished = true;
             match result {
                 Ok(()) if source == locale => report.successes.push(game),
@@ -1030,16 +1121,19 @@ impl Store {
                     } else {
                         report.failures.push((game, message));
                     }
+
                     // prepare's rollback has restored the previous catalog.
                     if self.resolve(game, &locale, use_video).background.is_some() {
                         on_ready(game);
                     }
+
                     if source != "en-us" {
                         jobs.push_front((game, "en-us".to_owned()));
                         finished = false;
                     }
                 }
             }
+
             if game == priority && finished {
                 jobs.extend(
                     Game::all()
@@ -1049,9 +1143,11 @@ impl Store {
                 );
             }
         }
+
         if let Err(error) = self.collect(&HashSet::new()) {
             log::warn!("Could not collect unused cached assets: {error:#}");
         }
+
         Ok(report)
     }
 }
@@ -1071,6 +1167,7 @@ mod tests {
             cache_path(Path::new("/images/a.png")).unwrap(),
             PathBuf::from("cache/assets/images/a.png")
         );
+
         for path in [
             "relative.png",
             "/../outside",
@@ -1079,6 +1176,7 @@ mod tests {
         ] {
             assert!(cache_path(Path::new(path)).is_err());
         }
+
         assert_ne!(
             metadata_path(Game::Bh3, "en-us"),
             metadata_path(Game::Hk4e, "en-us")

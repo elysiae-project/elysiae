@@ -16,26 +16,31 @@ pub enum SettingValue {
     Bool(bool),
     Str(String),
 }
+
 impl From<bool> for SettingValue {
     /// Wraps a boolean as a setting value.
     fn from(v: bool) -> Self {
         Self::Bool(v)
     }
 }
+
 impl From<String> for SettingValue {
     /// Wraps an owned string as a setting value.
     fn from(v: String) -> Self {
         Self::Str(v)
     }
 }
+
 impl From<&str> for SettingValue {
     /// Copies a borrowed string into a setting value.
     fn from(v: &str) -> Self {
         Self::Str(v.into())
     }
 }
+
 impl TryFrom<SettingValue> for bool {
     type Error = anyhow::Error;
+
     /// Reads a boolean setting, rejecting string values.
     fn try_from(v: SettingValue) -> Result<Self> {
         match v {
@@ -44,8 +49,10 @@ impl TryFrom<SettingValue> for bool {
         }
     }
 }
+
 impl TryFrom<SettingValue> for String {
     type Error = anyhow::Error;
+
     /// Reads a string setting, rejecting boolean values.
     fn try_from(v: SettingValue) -> Result<Self> {
         match v {
@@ -67,17 +74,20 @@ fn settings() -> Result<Settings> {
     SETTINGS.with(|slot| {
         let mut slot = slot.borrow_mut();
         if let Some(settings) = slot.as_ref() { return Ok(settings.clone()); }
+
         let parent = SettingsSchemaSource::default();
         let schema = SettingsSchemaSource::from_directory(env!("OUT_DIR"), parent.as_ref(), false)
             .ok().and_then(|source| source.lookup(APP_ID, false))
             .or_else(|| parent.and_then(|source| source.lookup(APP_ID, true)))
             .context("Elysiae's GSettings schema is not installed; install it or set GSETTINGS_SCHEMA_DIR")?;
+
         #[cfg(test)]
         let backend = Some(gio::memory_settings_backend_new());
         #[cfg(not(test))]
         let backend: Option<gio::SettingsBackend> = None;
         let settings = Settings::new_full(&schema, backend.as_ref(), None);
         *slot = Some(settings.clone());
+
         Ok(settings)
     })
 }
@@ -90,6 +100,7 @@ fn require_key(settings: &Settings, key: &str) -> Result<()> {
             .is_some_and(|schema| schema.has_key(key)),
         "Unknown setting: {key}"
     );
+
     Ok(())
 }
 
@@ -98,6 +109,7 @@ fn require_key(settings: &Settings, key: &str) -> Result<()> {
 pub fn connect_changed(callback: impl Fn(&str) + 'static) -> Result<()> {
     let settings = settings()?;
     let _ = settings.connect_changed(None, move |_, key| callback(key));
+
     Ok(())
 }
 
@@ -105,6 +117,7 @@ pub fn connect_changed(callback: impl Fn(&str) + 'static) -> Result<()> {
 pub fn get_option(key: &str) -> Result<SettingValue> {
     let settings = settings()?;
     require_key(&settings, key)?;
+
     let value = settings.value(key);
     if let Some(value) = value.get::<bool>() {
         Ok(value.into())
@@ -119,6 +132,7 @@ pub fn get_option(key: &str) -> Result<SettingValue> {
 pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
     let settings = settings()?;
     require_key(&settings, key)?;
+
     let current = settings.value(key);
     match value {
         SettingValue::Bool(value) => {
@@ -133,6 +147,7 @@ pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
                 current.get::<String>().is_some(),
                 "Setting {key} expects a boolean"
             );
+
             let value = match key {
                 "vo-lang" => voice_language(&value)?.to_owned(),
                 "display-language" => normalize_locale(&value)?,
@@ -141,9 +156,11 @@ pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
             settings.set_string(key, &value)?;
         }
     }
+
     if settings.is_delay_apply() {
         settings.apply();
     }
+
     Ok(())
 }
 
@@ -165,6 +182,7 @@ pub fn normalize_locale(value: &str) -> Result<String> {
         SUPPORTED_LOCALES.contains(&locale.as_str()),
         "Unsupported launcher locale: {value}"
     );
+
     Ok(locale)
 }
 
@@ -193,6 +211,7 @@ pub fn initialize() -> Result<Initialization> {
     ] {
         require_key(&settings, key)?;
     }
+
     let version: u32 = String::try_from(get_option("settings-version")?)?
         .parse()
         .context("Invalid settings migration version")?;
@@ -200,12 +219,14 @@ pub fn initialize() -> Result<Initialization> {
         version <= SETTINGS_VERSION,
         "Settings were written by a newer Elysiae version"
     );
+
     let initial = Initialization {
         first_launch: bool::try_from(get_option("is-first-launch")?)?,
         previous_version: String::try_from(get_option("last-used-version")?)?,
     };
     let voice = voice_language(&String::try_from(get_option("vo-lang")?)?)?;
     let locale = display_locale()?;
+
     settings.delay();
     let result = (|| -> Result<()> {
         settings.set_string("vo-lang", voice)?;
@@ -213,13 +234,17 @@ pub fn initialize() -> Result<Initialization> {
         settings.set_string("settings-version", &SETTINGS_VERSION.to_string())?;
         settings.set_string("last-used-version", env!("CARGO_PKG_VERSION"))?;
         settings.set_boolean("is-first-launch", false)?;
+
         Ok(())
     })();
+
     if let Err(error) = result {
         settings.revert();
         return Err(error);
     }
+
     settings.apply();
+
     Ok(initial)
 }
 
@@ -244,6 +269,7 @@ mod tests {
         settings.set_string("vo-lang", "en-us").unwrap();
         set_option("display-language", "fr_FR".into()).unwrap();
         set_option("use-video-background", true.into()).unwrap();
+
         assert!(initialize().unwrap().first_launch);
         assert!(!initialize().unwrap().first_launch);
         assert_eq!(
@@ -256,6 +282,7 @@ mod tests {
             settings.string("last-used-version"),
             env!("CARGO_PKG_VERSION")
         );
+
         settings.set_string("settings-version", "99").unwrap();
         assert!(initialize().is_err());
         assert_eq!(settings.string("settings-version"), "99");

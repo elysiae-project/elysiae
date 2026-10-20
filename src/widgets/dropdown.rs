@@ -26,16 +26,20 @@ mod option_imp {
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
         }
+
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
     }
+
     impl ObjectImpl for DropdownOption {
         fn dispose(&self) {
             self.dispose_template();
         }
     }
+
     impl WidgetImpl for DropdownOption {}
+
     impl ListBoxRowImpl for DropdownOption {}
 }
 
@@ -50,6 +54,7 @@ impl DropdownOption {
         let row: Self = glib::Object::new();
         row.imp().label.set_label(text);
         row.set_tooltip_text(Some(text));
+
         row
     }
 
@@ -93,6 +98,7 @@ mod imp {
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
         }
+
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
@@ -101,6 +107,7 @@ mod imp {
     impl ObjectImpl for Dropdown {
         fn properties() -> &'static [glib::ParamSpec] {
             static PROPERTIES: OnceLock<Vec<glib::ParamSpec>> = OnceLock::new();
+
             PROPERTIES.get_or_init(|| {
                 vec![
                     glib::ParamSpecUInt::builder("selected")
@@ -135,6 +142,7 @@ mod imp {
             self.trigger.child_focus(gtk::DirectionType::TabForward)
         }
     }
+
     impl BoxImpl for Dropdown {}
 }
 
@@ -148,14 +156,17 @@ glib::wrapper! {
 impl Dropdown {
     pub fn new(labels: &[&str]) -> Self {
         let obj: Self = glib::Object::new();
+
         for label in labels {
             let row = DropdownOption::new(label);
             obj.imp().list.append(&row);
             obj.imp().options.borrow_mut().push(row);
         }
+
         obj.set_sensitive(!labels.is_empty());
         obj.imp().trigger.set_sensitive(!labels.is_empty());
         obj.set_selected(0);
+
         obj
     }
 
@@ -167,6 +178,7 @@ impl Dropdown {
                 obj.dismiss(true);
             }
         });
+
         let weak = self.downgrade();
         self.imp().popover.connect_visible_notify(move |popover| {
             if popover.is_visible()
@@ -178,6 +190,7 @@ impl Dropdown {
                 row.grab_focus();
             }
         });
+
         let weak = self.downgrade();
         self.imp().popover.connect_closed(move |_| {
             if let Some(obj) = weak.upgrade()
@@ -188,6 +201,7 @@ impl Dropdown {
                 obj.grab_focus();
             }
         });
+
         let keys = gtk::EventControllerKey::new();
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);
         let weak = self.downgrade();
@@ -207,15 +221,18 @@ impl Dropdown {
         let Some(row) = self.imp().options.borrow().get(index as usize).cloned() else {
             return;
         };
+
         if self.imp().selected.replace(index) == index {
             return;
         }
+
         let text = row.imp().label.label();
         self.imp().label.set_label(&text);
         self.imp().trigger.set_tooltip_text(Some(&text));
         for option in self.imp().options.borrow().iter() {
             option.mark_selected(option.index() as u32 == index);
         }
+
         self.imp().list.select_row(Some(&row));
         self.notify("selected");
     }
@@ -255,18 +272,22 @@ impl Dropdown {
             self.imp().restore_focus.set(restore_focus);
             self.imp().trigger.popdown();
         }
+
         open
     }
 
     fn handle_key(&self, key: gtk::gdk::Key) -> glib::Propagation {
         use gtk::gdk::Key;
+
         if !self.is_open() {
             if matches!(key, Key::Down | Key::Up) && !self.imp().options.borrow().is_empty() {
                 self.popup();
                 return glib::Propagation::Stop;
             }
+
             return glib::Propagation::Proceed;
         }
+
         match key {
             Key::Escape => {
                 self.dismiss(true);
@@ -296,6 +317,7 @@ impl Dropdown {
             }
             _ => return glib::Propagation::Proceed,
         }
+
         glib::Propagation::Stop
     }
 }
@@ -310,11 +332,13 @@ mod tests {
 
     fn pump_until(ready: impl Fn() -> bool) {
         let deadline = Instant::now() + Duration::from_secs(3);
+
         while !ready() {
             assert!(Instant::now() < deadline, "GTK dropdown did not settle");
             while glib::MainContext::default().pending() {
                 glib::MainContext::default().iteration(false);
             }
+
             std::thread::sleep(Duration::from_millis(5));
         }
     }
@@ -328,6 +352,7 @@ mod tests {
                     .and_downcast::<gtk::EventControllerKey>()
             })
             .unwrap();
+
         controller.emit_by_name(
             "key-pressed",
             &[&key, &0u32, &gtk::gdk::ModifierType::empty()],
@@ -339,6 +364,7 @@ mod tests {
     fn gtk_dropdown_template_selects_navigates_and_dismisses() {
         gtk::init().unwrap();
         gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
+
         let labels = [
             "English",
             "日本語",
@@ -359,6 +385,7 @@ mod tests {
         assert!(!empty.is_sensitive());
         empty.popup();
         assert!(!empty.is_open());
+
         let changes = Rc::new(Cell::new(0));
         let count = changes.clone();
         dropdown.connect_selected_notify(move |_| count.set(count.get() + 1));
@@ -366,6 +393,7 @@ mod tests {
         dropdown.set_selected(0);
         dropdown.set_selected(gtk::INVALID_LIST_POSITION);
         assert_eq!(changes.get(), 0);
+
         let window = gtk::Window::builder()
             .default_width(400)
             .default_height(420)
@@ -374,6 +402,7 @@ mod tests {
         dropdown.set_valign(gtk::Align::Start);
         window.present();
         pump_until(|| window.is_mapped() && dropdown.width() > 0);
+
         dropdown.popup();
         pump_until(|| dropdown.imp().popover.is_mapped());
         let row = dropdown.imp().list.row_at_index(2).unwrap();
@@ -386,6 +415,7 @@ mod tests {
         assert_eq!(dropdown.imp().label.label(), labels[2]);
         assert_eq!(changes.get(), 1);
         assert!(row.has_css_class("is-selected"));
+
         assert!(key(&dropdown, gtk::gdk::Key::Down));
         pump_until(|| dropdown.imp().popover.is_mapped());
         assert!(key(&dropdown, gtk::gdk::Key::End));
@@ -398,6 +428,7 @@ mod tests {
             dropdown.imp().list.selected_row().unwrap().index(),
             labels.len() as i32 - 1
         );
+
         assert!(key(&dropdown, gtk::gdk::Key::Escape));
         pump_until(|| !dropdown.is_open());
         assert_eq!(dropdown.selected(), 2);
@@ -405,6 +436,7 @@ mod tests {
         pump_until(|| {
             gtk::prelude::GtkWindowExt::focus(&window).is_some_and(|w| w.is_ancestor(&dropdown))
         });
+
         dropdown.popup();
         pump_until(|| dropdown.imp().popover.is_mapped());
         assert!(key(&dropdown, gtk::gdk::Key::Home));
@@ -413,6 +445,7 @@ mod tests {
         pump_until(|| !dropdown.is_open());
         assert_eq!(dropdown.selected(), 1);
         assert_eq!(changes.get(), 2);
+
         dropdown.popup();
         pump_until(|| dropdown.imp().popover.is_mapped());
         dropdown.set_selected((labels.len() - 1) as u32);
@@ -422,14 +455,17 @@ mod tests {
         );
         assert!(!key(&dropdown, gtk::gdk::Key::Tab));
         pump_until(|| !dropdown.is_open());
+
         dropdown.set_sensitive(false);
         dropdown.popup();
         assert!(!dropdown.is_open());
+
         dropdown.set_sensitive(true);
         dropdown.popup();
         pump_until(|| dropdown.imp().popover.is_mapped());
         dropdown.imp().popover.popdown();
         pump_until(|| !dropdown.is_open());
+
         window.close();
         let weak = dropdown.downgrade();
         drop(dropdown);

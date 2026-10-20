@@ -42,12 +42,14 @@ fn memfd_path_for(
 
     {
         use std::io::Write;
+
         mfd.as_file().write_all(bytes)?;
     }
 
     let file = mfd.into_file();
     let path = format!("/proc/self/fd/{}", file.as_raw_fd());
     handles.push(file); // keep fd open — do NOT drop before fontconfig reads it
+
     Ok(path)
 }
 
@@ -60,6 +62,7 @@ pub fn load_app_fonts(fonts: &[(&str, &'static [u8])]) -> anyhow::Result<()> {
     if FONT_HANDLES.get().is_some() {
         return Ok(());
     }
+
     let mut handles = Vec::with_capacity(fonts.len());
 
     // SAFETY: FcInitLoadConfigAndFonts / FcConfigAppFontAddFile /
@@ -89,5 +92,6 @@ pub fn load_app_fonts(fonts: &[(&str, &'static [u8])]) -> anyhow::Result<()> {
     }
 
     let _ = FONT_HANDLES.set(handles);
+
     Ok(())
 }

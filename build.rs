@@ -3,6 +3,7 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=ELYSIAE_SKIP_KERNEL_CHECK");
     compile_resources();
+
     let status = std::process::Command::new("glib-compile-schemas")
         .args(["--strict", "--targetdir"])
         .arg(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"))
@@ -34,6 +35,7 @@ fn main() {
 fn compile_resources() {
     println!("cargo:rerun-if-changed=data/resources.gresource.xml");
     println!("cargo:rerun-if-changed=data");
+
     glib_build_tools::compile_resources(
         &["data"],
         "data/resources.gresource.xml",
@@ -47,6 +49,7 @@ fn supported_kernel() -> bool {
     if std::env::var_os("ELYSIAE_SKIP_KERNEL_CHECK").is_some() {
         return true;
     }
+
     std::fs::read_to_string("/proc/sys/kernel/osrelease")
         .is_ok_and(|release| version_at_least(&release, (6, 14, 0)))
 }
@@ -58,6 +61,7 @@ fn version_at_least(release: &str, minimum: (u64, u64, u64)) -> bool {
         .split(|c: char| !c.is_ascii_digit())
         .filter(|part| !part.is_empty())
         .filter_map(|part| part.parse::<u64>().ok());
+
     (
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
@@ -68,6 +72,7 @@ fn version_at_least(release: &str, minimum: (u64, u64, u64)) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     /// Checks version ordering, distribution suffixes and invalid release strings.
     #[test]
     fn compares_kernel_versions() {

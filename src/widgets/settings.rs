@@ -113,6 +113,7 @@ impl Control {
             }
             _ => bail!("The saved preference has an unexpected type"),
         }
+
         Ok(())
     }
 }
@@ -165,7 +166,9 @@ mod imp {
             self.obj().initialize();
         }
     }
+
     impl WidgetImpl for Settings {}
+
     impl BoxImpl for Settings {}
 }
 
@@ -195,17 +198,20 @@ impl Settings {
                 }
             }
         }
+
         self.imp().close.grab_focus();
     }
 
     /// Close nested choices before dismissing or moving focus around the modal.
     pub fn dismiss_dropdowns(&self, restore_focus: bool) -> bool {
         let mut dismissed = false;
+
         for field in self.imp().fields.get().into_iter().flatten() {
             if let Control::Dropdown(control, _) = &field.control {
                 dismissed |= control.dismiss(restore_focus);
             }
         }
+
         dismissed
     }
 
@@ -214,6 +220,7 @@ impl Settings {
         let Control::Dropdown(control, _) = &self.field(key).unwrap().control else {
             panic!("Expected a dropdown preference");
         };
+
         control.clone()
     }
 
@@ -235,6 +242,7 @@ impl Settings {
             set_option(key, setting)
         })();
         self.finish_change(key, &result);
+
         result
     }
 
@@ -242,6 +250,7 @@ impl Settings {
         let fields = FIELDS.iter().map(|spec| self.add_field(spec)).collect();
         // Construction happens once, before any user or settings callbacks exist.
         let _ = self.imp().fields.set(fields);
+
         for field in self.imp().fields.get().into_iter().flatten() {
             self.refresh_field(field.spec.key);
             let weak = self.downgrade();
@@ -263,6 +272,7 @@ impl Settings {
                 }
             }
         }
+
         let weak = self.downgrade();
         if let Err(error) = connect_changed(move |key| {
             if let Some(settings) = weak.upgrade() {
@@ -298,6 +308,7 @@ impl Settings {
             .max_width_chars(36)
             .css_classes(["settings-description"])
             .build();
+
         text.append(&label);
         text.append(&description);
         row.append(&text);
@@ -311,6 +322,7 @@ impl Settings {
                 let dropdown = Dropdown::new(&labels);
                 dropdown.set_valign(gtk::Align::Center);
                 dropdown.set_accessible_labels(&label, &description);
+
                 Control::Dropdown(dropdown, choices)
             }
             None => Control::Switch(
@@ -328,6 +340,7 @@ impl Settings {
         label.set_mnemonic_widget(Some(&widget));
         row.append(&widget);
         self.imp().content.append(&row);
+
         Field {
             spec,
             control,
@@ -346,14 +359,17 @@ impl Settings {
     /// Backend refreshes never write, even when GTK emits synchronous notifications.
     fn refresh_field(&self, key: &str) {
         let Some(field) = self.field(key) else { return };
+
         let was_refreshing = self.imp().refreshing.replace(true);
         let result = get_option(key).and_then(|value| {
             field.control.set_value(&value)?;
             *field.previous.borrow_mut() = Some(value);
+
             Ok(())
         });
         self.imp().refreshing.set(was_refreshing);
         field.control.widget().set_sensitive(result.is_ok());
+
         match result {
             Ok(()) => {
                 self.imp().errors.borrow_mut().remove(field.spec.key);
@@ -373,7 +389,9 @@ impl Settings {
         if self.imp().refreshing.get() {
             return;
         }
+
         let Some(field) = self.field(key) else { return };
+
         let result = match field.control.value() {
             // GTK may queue a second notify after rollback. It is not an edit
             // and must neither write again nor erase the failure message.
@@ -386,6 +404,7 @@ impl Settings {
 
     fn finish_change(&self, key: &str, result: &Result<()>) {
         let Some(field) = self.field(key) else { return };
+
         match result {
             Ok(()) => self.refresh_field(key),
             Err(error) => {
@@ -400,6 +419,7 @@ impl Settings {
                 {
                     let _ = field.control.set_value(&previous);
                 }
+
                 self.imp().refreshing.set(was_refreshing);
                 self.show_error(
                     field.spec.key,
@@ -462,6 +482,7 @@ mod tests {
         expected.sort();
         let mut actual: Vec<_> = FIELDS.iter().map(|spec| spec.key.to_owned()).collect();
         actual.sort();
+
         assert_eq!(actual, expected);
         assert_eq!(FIELDS.len(), 6);
         assert_eq!(FIELDS.last().unwrap().choices, Some(SUPPORTED_LOCALES));
@@ -480,6 +501,7 @@ mod tests {
                 set_option(spec.key, value.clone()).unwrap();
                 assert_eq!(get_option(spec.key).unwrap(), value);
             }
+
             set_option(spec.key, original).unwrap();
         }
     }
@@ -491,12 +513,14 @@ mod tests {
         gtk::init().expect("This test requires a working GTK display");
         gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
         Settings::static_type();
+
         let builder = gtk::Builder::from_string(
             "<interface><object class='ElysiaeSettings' id='settings'/></interface>",
         );
         let settings: Settings = builder.object("settings").unwrap();
         assert_eq!(settings.imp().fields.get().unwrap().len(), 6);
         assert!(settings.close_button().has_css_class("settings-close"));
+
         for field in settings.imp().fields.get().unwrap() {
             assert_eq!(
                 field.control.value().unwrap(),
@@ -508,6 +532,7 @@ mod tests {
             };
             field.control.set_value(&value).unwrap();
             assert_eq!(get_option(field.spec.key).unwrap(), value);
+
             let external: SettingValue = match field.spec.choices {
                 Some(choices) => choices[0].into(),
                 None => (!bool::try_from(value).unwrap()).into(),
@@ -515,6 +540,7 @@ mod tests {
             set_option(field.spec.key, external.clone()).unwrap();
             assert_eq!(field.control.value().unwrap(), external);
         }
+
         let dropdown = settings.dropdown("vo-lang");
         let row = dropdown.imp().list.row_at_index(2).unwrap();
         dropdown
@@ -524,11 +550,13 @@ mod tests {
         assert_eq!(get_option("vo-lang").unwrap(), "jp".into());
         drop(row);
         drop(dropdown);
+
         set_option("vo-lang", "cn".into()).unwrap();
         assert_eq!(
             settings.field("vo-lang").unwrap().control.value().unwrap(),
             "cn".into()
         );
+
         settings
             .set_property_value("display-language", "fr_FR")
             .unwrap();
@@ -536,14 +564,17 @@ mod tests {
             settings.get_property_value("display-language").unwrap(),
             "fr-fr"
         );
+
         assert!(settings.set_property_value("vo-lang", "invalid").is_err());
         assert!(settings.imp().error.is_visible());
         assert_eq!(
             settings.field("vo-lang").unwrap().control.value().unwrap(),
             "cn".into()
         );
+
         settings.set_property_value("vo-lang", "jp").unwrap();
         assert!(!settings.imp().error.is_visible());
+
         // Simulate an unsaved control value before a rejected write.
         let Control::Dropdown(dropdown, _) = &settings.field("vo-lang").unwrap().control else {
             panic!("Voice language must use a dropdown");
@@ -555,6 +586,7 @@ mod tests {
         assert!(settings.imp().error.is_visible());
         assert_eq!(dropdown.selected(), 2);
         assert_eq!(settings.get_property_value("vo-lang").unwrap(), "jp");
+
         let weak = settings.downgrade();
         drop(settings);
         drop(builder);

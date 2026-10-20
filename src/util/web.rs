@@ -50,6 +50,7 @@ fn https_url(url: &str) -> Result<Url> {
         parsed.scheme() == "https" && parsed.host_str().is_some(),
         "Only HTTPS URLs with a host are allowed"
     );
+
     Ok(parsed)
 }
 
@@ -65,12 +66,14 @@ async fn checked_response(request: RequestBuilder, max_size: u64, kind: &str) ->
         response.url(),
         response.status()
     );
+
     if let Some(size) = response.content_length() {
         ensure!(
             size <= max_size,
             "{kind} Content-Length {size} bytes exceeds limit of {max_size} bytes"
         );
     }
+
     Ok(response)
 }
 
@@ -107,8 +110,10 @@ pub async fn download_file_limited(
         max_size <= MAX_DOWNLOAD_SIZE,
         "Download budget exceeds the global limit"
     );
+
     let parsed = https_url(&url)?;
     let destination = full_path(Some(dest), base_dir)?;
+
     download_to(
         http_client()?.get(parsed),
         destination,
@@ -128,11 +133,13 @@ async fn download_to(
     let mut response = checked_response(request, max_size, "Download").await?;
     let size = response.content_length();
     let id = Uuid::new_v4();
+
     let destination_parent = destination
         .parent()
         .context("Download destination has no parent")?;
     tokio::fs::create_dir_all(destination_parent).await?;
     let path = destination_parent.join(format!(".download-{id}"));
+
     // Synchronous creation avoids a cancelled Tokio open creating a file after
     // the cleanup guard has already run. Only guard files we actually created.
     let file = std::fs::OpenOptions::new()
@@ -144,6 +151,7 @@ async fn download_to(
     let mut file = tokio::fs::File::from_std(file);
     let mut downloaded: u64 = 0;
     let mut last = Instant::now() - Duration::from_millis(250);
+
     while let Some(chunk) = response.chunk().await.with_context(|| {
         format!("Download body failed after {downloaded} bytes (declared length: {size:?})")
     })? {
@@ -157,6 +165,7 @@ async fn download_to(
         file.write_all(&chunk)
             .await
             .context("Could not write downloaded data")?;
+
         if last.elapsed() >= Duration::from_millis(250) {
             last = Instant::now();
             if let Some(cb) = &on_progress {
@@ -168,20 +177,24 @@ async fn download_to(
             }
         }
     }
+
     if let Some(expected) = size {
         ensure!(
             downloaded == expected,
             "Download length mismatch: expected {expected} bytes, received {downloaded} bytes"
         );
     }
+
     file.flush()
         .await
         .context("Could not flush downloaded file")?;
     drop(file);
+
     // These are resolved, same-parent paths.
     // Commit without an await so cancellation cannot race a background rename.
     std::fs::rename(&path, &destination)
         .with_context(|| format!("Could not finalize download to {}", destination.display()))?;
+
     if let Some(cb) = &on_progress {
         cb(DownloadProgress {
             download_id: id,
@@ -189,12 +202,14 @@ async fn download_to(
             total: size.unwrap_or(0),
         });
     }
+
     Ok(())
 }
 
 /// Fetch HTTPS JSON metadata within the shared size and time limits.
 pub async fn fetch_data<T: DeserializeOwned>(url: &str) -> Result<T> {
     let parsed = https_url(url)?;
+
     fetch_json(
         http_client()?.get(parsed),
         MAX_METADATA_SIZE,
@@ -213,6 +228,7 @@ async fn fetch_json<T: DeserializeOwned>(
         checked_response(request.timeout(timeout), max_size as u64, "Metadata").await?;
     let size = response.content_length();
     let mut bytes = Vec::new();
+
     while let Some(chunk) = response.chunk().await.with_context(|| {
         format!(
             "Metadata body failed after {} bytes (declared length: {size:?})",
@@ -225,6 +241,7 @@ async fn fetch_json<T: DeserializeOwned>(
         );
         bytes.extend_from_slice(&chunk);
     }
+
     if let Some(expected) = size {
         ensure!(
             bytes.len() as u64 == expected,
@@ -232,6 +249,7 @@ async fn fetch_json<T: DeserializeOwned>(
             bytes.len()
         );
     }
+
     serde_json::from_slice(&bytes).context("Invalid metadata JSON")
 }
 
@@ -243,6 +261,7 @@ mod tests {
     #[test]
     fn requests_require_https() {
         assert!(https_url("https://example.invalid/file").is_ok());
+
         for url in [
             "http://example.invalid/file",
             "ftp://example.invalid/file",

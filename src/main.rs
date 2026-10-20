@@ -1,6 +1,7 @@
 use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
+
 mod app;
 mod core;
 mod fonts;
@@ -14,11 +15,13 @@ fn main() -> glib::ExitCode {
         eprintln!("Could not initialize logging: {error:#}");
         return glib::ExitCode::FAILURE;
     }
+
     if let Err(error) = util::settings::initialize() {
         log::error!(
             "Settings initialization failed; existing preferences are unchanged: {error:#}"
         );
     }
+
     if is_nvidia() {
         log::info!("NVIDIA Device detected. setting the GSK renderer to Cairo");
         unsafe {
@@ -29,6 +32,7 @@ fn main() -> glib::ExitCode {
             std::env::set_var("GSK_RENDERER", "cairo");
         }
     }
+
     gio::resources_register_include!("elysiae.gresource").expect("Failed to register resources.");
 
     let app = app::build_app();

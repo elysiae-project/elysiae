@@ -11,6 +11,7 @@ use gtk::{glib, prelude::*, subclass::prelude::*};
 mod imp {
     use super::*;
     use std::cell::{Cell, RefCell};
+
     #[derive(gtk::CompositeTemplate, Default)]
     #[template(resource = "/app/elysiae/Elysiae/ui/background.ui")]
     pub struct Background {
@@ -27,18 +28,22 @@ mod imp {
         pub key: RefCell<Option<(std::path::PathBuf, bool, Option<std::path::PathBuf>)>>,
         pub video_generation: Cell<u64>,
     }
+
     #[glib::object_subclass]
     impl ObjectSubclass for Background {
         const NAME: &'static str = "ElysiaeBackground";
         type Type = super::Background;
         type ParentType = gtk::Box;
+
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
         }
+
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
             obj.init_template();
         }
     }
+
     impl ObjectImpl for Background {
         fn dispose(&self) {
             self.video.set_autoplay(false);
@@ -46,7 +51,9 @@ mod imp {
             self.dispose_template();
         }
     }
+
     impl WidgetImpl for Background {}
+
     impl BoxImpl for Background {}
 }
 
@@ -67,6 +74,7 @@ impl Background {
         if changed_game {
             self.clear_media();
         }
+
         let request = imp.request.get().wrapping_add(1);
         imp.request.set(request);
         let locale = display_locale().unwrap_or_else(|_| "en-us".into());
@@ -74,6 +82,7 @@ impl Background {
             .and_then(bool::try_from)
             .unwrap_or(false);
         let (sender, receiver) = async_channel::bounded(1);
+
         runtime::spawn(async move {
             let result = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
                 let media = cache::resolve_media(game, &locale, use_video)?;
@@ -82,11 +91,13 @@ impl Background {
                 } else {
                     ResolvedMedia::default()
                 };
+
                 Ok((media, poster))
             })
             .await;
             let _ = sender.send(result).await;
         });
+
         let weak = self.downgrade();
         glib::MainContext::default().spawn_local(async move {
             let Ok(result) = receiver.recv().await else {
@@ -95,14 +106,17 @@ impl Background {
             let Some(widget) = weak.upgrade() else {
                 return;
             };
+
             if widget.imp().request.get() != request {
                 return;
             }
+
             match result {
                 Ok(Ok((media, poster))) => {
                     if media.background.is_none() && changed_game {
                         let _ = widget.activate_action("app.refresh-assets", None);
                     }
+
                     widget.apply_media(media, poster);
                 }
                 // Keep usable artwork on refresh failure. A new game already
@@ -117,10 +131,12 @@ impl Background {
         let Some(path) = media.background.clone() else {
             return;
         };
+
         let key = (path.clone(), media.is_video, media.overlay.clone());
         if self.imp().key.borrow().as_ref() == Some(&key) {
             return;
         }
+
         let picture_path = if media.is_video {
             poster.background.as_ref()
         } else {
@@ -131,6 +147,7 @@ impl Background {
             log::warn!("Background image could not be decoded: {}", path.display());
             return;
         }
+
         let paths: Vec<_> = media
             .background
             .iter()
@@ -140,6 +157,7 @@ impl Background {
             .cloned()
             .collect();
         let imp = self.imp();
+
         imp.video.set_autoplay(false);
         imp.video.set_filename(None::<&std::path::Path>);
         imp.video.set_opacity(0.0);
@@ -147,9 +165,11 @@ impl Background {
             log::warn!("Could not pin background media: {error:#}");
             return;
         }
+
         imp.background.set_paintable(texture.as_ref());
         imp.background.set_visible(texture.is_some());
         imp.fallback.set_visible(texture.is_none());
+
         let initial_overlay = if media.is_video {
             poster.overlay.as_ref()
         } else {
@@ -158,11 +178,13 @@ impl Background {
         imp.overlay.set_filename(initial_overlay);
         imp.overlay.set_visible(initial_overlay.is_some());
         *imp.key.borrow_mut() = Some(key);
+
         let generation = imp.video_generation.get().wrapping_add(1);
         imp.video_generation.set(generation);
         if !media.is_video {
             return;
         }
+
         // Keep the poster underneath a mapped, initially transparent player.
         // Hiding GtkVideo prevents autoplay; reveal only after playback advances.
         imp.video.set_filename(Some(&path));
@@ -174,19 +196,24 @@ impl Background {
                 if stream.timestamp() <= 0 {
                     return;
                 }
+
                 let Some(widget) = weak.upgrade() else {
                     return;
                 };
+
                 if widget.imp().video.opacity() >= 1.0 {
                     return;
                 }
+
                 if widget.imp().video_generation.get() != generation || stream.error().is_some() {
                     return;
                 }
+
                 widget.imp().video.set_opacity(1.0);
                 widget.imp().overlay.set_filename(overlay.as_ref());
                 widget.imp().overlay.set_visible(overlay.is_some());
             });
+
             let weak = self.downgrade();
             stream.connect_error_notify(move |stream| {
                 if stream.error().is_some()
@@ -198,6 +225,7 @@ impl Background {
                 }
             });
         }
+
         imp.video.set_autoplay(true);
     }
 
@@ -208,17 +236,20 @@ impl Background {
         imp.video.set_autoplay(false);
         imp.video.set_filename(None::<&std::path::Path>);
         imp.video.set_opacity(0.0);
+
         imp.background.set_paintable(None::<&gtk::gdk::Texture>);
         imp.background.set_visible(false);
         imp.overlay.set_visible(false);
         imp.overlay.set_filename(None::<&std::path::Path>);
         imp.fallback.set_visible(true);
         *imp.key.borrow_mut() = None;
+
         if let Err(error) = cache::set_active_assets(&[]) {
             log::debug!("Could not clear media pins: {error:#}");
         }
     }
 }
+
 impl Default for Background {
     fn default() -> Self {
         Self::new()

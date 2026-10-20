@@ -38,7 +38,9 @@ fn level(value: Option<&str>) -> Result<LevelFilter> {
 pub fn init() -> Result<()> {
     static LOGGER: StderrLogger = StderrLogger;
     let filter = level(std::env::var("ELYSIAE_LOG").ok().as_deref())?;
+
     log::set_logger(&LOGGER).map_err(|error| anyhow::anyhow!("{error}"))?;
     log::set_max_level(filter);
+
     Ok(())
 }

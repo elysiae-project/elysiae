@@ -1,5 +1,6 @@
 //! Bounded, best-effort UI notifications. Operation leases and their returned
 //! results remain authoritative; no GTK objects cross the backend boundary.
+
 use std::sync::{Mutex, OnceLock};
 
 use async_channel::{Receiver, Sender};
@@ -26,15 +27,18 @@ pub struct ProgressUpdate {
 
 fn subscribers() -> &'static Mutex<Vec<Sender<ProgressUpdate>>> {
     static SUBSCRIBERS: OnceLock<Mutex<Vec<Sender<ProgressUpdate>>>> = OnceLock::new();
+
     SUBSCRIBERS.get_or_init(Mutex::default)
 }
 
 pub fn subscribe() -> Receiver<ProgressUpdate> {
     let (sender, receiver) = async_channel::bounded(64);
+
     if let Ok(mut subscribers) = subscribers().lock() {
         subscribers.retain(|sender| !sender.is_closed());
         subscribers.push(sender);
     }
+
     receiver
 }
 
@@ -73,10 +77,13 @@ mod tests {
             error: None,
         };
         let reporter = ProgressReporter(operation.clone());
+
         for _ in 0..100 {
             reporter.report(ProgressEvent::Message("Preparing".into()));
         }
+
         reporter.report(ProgressEvent::Finished { error: None });
+
         let mut finished = false;
         while let Ok(update) = receiver.try_recv() {
             if update.operation.id == operation.id
@@ -85,6 +92,7 @@ mod tests {
                 finished = true;
             }
         }
+
         assert!(finished);
     }
 }

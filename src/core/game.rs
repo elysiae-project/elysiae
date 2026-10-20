@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Ok, bail};
+
 /// Game identifiers shared by launcher metadata, storage and backend operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Game {
@@ -104,10 +105,12 @@ mod tests {
     fn game_metadata_round_trips_and_uses_local_executables() {
         for game in Game::all() {
             assert_eq!(Game::try_from(game.code()).unwrap(), game);
+
             let executable = PathBuf::from(game.executable().unwrap());
             assert_eq!(executable.components().count(), 1);
             assert_eq!(executable.extension().unwrap(), "exe");
         }
+
         assert!(Game::try_from("unknown").is_err());
     }
 }

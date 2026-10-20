@@ -96,6 +96,7 @@ impl ProgressState {
         ) {
             return false;
         }
+
         if self.operation_id != Some(update.operation.id) {
             *self = Self {
                 operation_id: Some(update.operation.id),
@@ -113,10 +114,12 @@ impl ProgressState {
             // A queued worker notification must not erase the final result.
             return false;
         }
+
         self.error = false;
         self.extracting = false;
         self.download.active = false;
         self.verification.active = false;
+
         match &update.event {
             ProgressEvent::Started => self.detail = "Preparing…".into(),
             ProgressEvent::File(progress) => {
@@ -131,6 +134,7 @@ impl ProgressState {
                     self.download = BarState::default();
                     self.verification = BarState::default();
                 }
+
                 self.bars = Bars::Sophon;
                 self.detail = format_sophon_progress(progress);
                 match progress {
@@ -186,6 +190,7 @@ impl ProgressState {
                 );
             }
         }
+
         true
     }
 
@@ -207,10 +212,12 @@ fn bytes(bytes: f64) -> String {
     let mut value = bytes.max(0.0);
     let units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
     let mut unit = 0;
+
     while value >= 1024.0 && unit < units.len() - 1 {
         value /= 1024.0;
         unit += 1;
     }
+
     if unit == 0 {
         format!("{value:.0} {}", units[unit])
     } else {
@@ -234,7 +241,9 @@ fn eta(seconds: f64) -> Option<String> {
     if !seconds.is_finite() || seconds < 0.0 {
         return None;
     }
+
     let seconds = seconds.ceil() as u64;
+
     Some(if seconds >= 86_400 {
         format!("{}d {}h left", seconds / 86_400, (seconds % 86_400) / 3600)
     } else if seconds >= 3600 {
@@ -271,6 +280,7 @@ fn format_sophon_progress(progress: &SophonProgress) -> String {
                     detail.push_str(&format!(" · {eta}"));
                 }
             }
+
             detail
         }
         SophonProgress::Paused { .. } => "Download paused".into(),
@@ -381,10 +391,13 @@ mod imp {
             if let Some(source) = self.pulse_source.borrow_mut().take() {
                 source.remove();
             }
+
             self.dispose_template();
         }
     }
+
     impl WidgetImpl for Progressbar {}
+
     impl BoxImpl for Progressbar {}
 }
 
@@ -416,12 +429,14 @@ impl Progressbar {
     fn render(&self) {
         let imp = self.imp();
         let state = imp.state.borrow();
+
         self.set_visible(state.visible);
         imp.heading.set_text(&state.heading);
         imp.heading.set_visible(!state.extracting);
         imp.detail.set_text(&state.detail);
         imp.bars.set_visible(state.shows_bars());
         imp.verification_row.set_visible(state.bars == Bars::Sophon);
+
         for (bar, label, value) in [
             (
                 &*imp.download_progress,
@@ -443,6 +458,7 @@ impl Progressbar {
                 bar.set_fraction(value.fraction.unwrap_or(0.0));
             }
         }
+
         for (class, enabled) in [
             ("is-error", state.error),
             ("is-complete", state.complete),
@@ -454,8 +470,10 @@ impl Progressbar {
                 self.remove_css_class(class);
             }
         }
+
         let pulses = state.pulses();
         drop(state);
+
         if !pulses {
             if let Some(source) = imp.pulse_source.borrow_mut().take() {
                 source.remove();
@@ -467,20 +485,24 @@ impl Progressbar {
                     let Some(panel) = weak.upgrade() else {
                         return glib::ControlFlow::Break;
                     };
+
                     let imp = panel.imp();
                     let state = imp.state.borrow();
                     if !panel.is_visible() || !state.pulses() {
                         imp.pulse_source.borrow_mut().take();
                         return glib::ControlFlow::Break;
                     }
+
                     if panel.is_mapped() {
                         if state.download.pulses() {
                             imp.download_progress.pulse();
                         }
+
                         if state.bars == Bars::Sophon && state.verification.pulses() {
                             imp.verification_progress.pulse();
                         }
                     }
+
                     glib::ControlFlow::Continue
                 });
             *imp.pulse_source.borrow_mut() = Some(source);
@@ -553,6 +575,7 @@ mod tests {
         assert_eq!(state.heading, "Downloading Genshin Impact");
         assert_eq!(state.bars, Bars::File);
         assert_eq!(state.download.fraction, Some(0.5));
+
         state.update(&update(ProgressEvent::Sophon(
             SophonProgress::FetchingManifest,
         )));
@@ -560,6 +583,7 @@ mod tests {
         assert_eq!(state.download.fraction, None);
         assert_eq!(state.verification.value, "Not started");
         assert!(!state.verification.pulses());
+
         state.update(&update(downloading(80, 100)));
         state.update(&update(ProgressEvent::Sophon(SophonProgress::Verifying {
             scanned_files: 2,
@@ -569,12 +593,14 @@ mod tests {
         assert_eq!(state.download.fraction, Some(0.8));
         assert_eq!(state.verification.fraction, Some(0.5));
         assert!(state.detail.contains("errors: 1"));
+
         state.update(&update(ProgressEvent::Sophon(SophonProgress::Assembling {
             assembled_files: 3,
             total_files: 4,
         })));
         assert_eq!(state.download.fraction, Some(0.8));
         assert_eq!(state.verification.fraction, Some(0.5));
+
         state.update(&update(ProgressEvent::Extracting(
             "/tmp/Phlogiston.tar.xz".into(),
         )));
@@ -582,6 +608,7 @@ mod tests {
         assert!(state.extracting);
         assert!(!state.shows_bars());
         assert!(!state.pulses());
+
         state.update(&update(ProgressEvent::Sophon(SophonProgress::Finished)));
         assert_eq!(state.download.fraction, Some(0.8));
         assert_eq!(state.verification.fraction, Some(0.5));
@@ -595,15 +622,18 @@ mod tests {
         assert_eq!(state.download.fraction, None);
         assert!(state.pulses());
         assert!(state.download.value.contains("total unknown"));
+
         state.update(&update(downloading(42, 0)));
         assert!(state.pulses());
         assert!(!state.detail.contains("left"));
         assert!(!state.verification.pulses());
+
         state.update(&update(ProgressEvent::Sophon(SophonProgress::Paused {
             downloaded_bytes: 42,
             total_bytes: 0,
         })));
         assert!(!state.pulses());
+
         state.update(&update(ProgressEvent::Sophon(
             SophonProgress::CheckingFiles {
                 checked_files: 3,
@@ -618,6 +648,7 @@ mod tests {
     fn plugin_and_metadata_phases_do_not_invent_or_replace_main_progress() {
         let mut state = ProgressState::default();
         state.update(&update(downloading(75, 100)));
+
         for phase in [
             SophonProgress::CalculatingDownloads {
                 checked_files: 2,
@@ -659,10 +690,12 @@ mod tests {
         assert_eq!(fraction(u64::MAX, 1), Some(1.0));
         assert_eq!(fraction(0, 10), Some(0.0));
         assert_eq!(fraction(1, 0), None);
+
         let mut state = ProgressState::default();
         state.update(&update(file(u64::MAX, 1)));
         assert_eq!(state.download.fraction, Some(1.0));
         assert!(state.download.value.ends_with("100%"));
+
         state.update(&update(ProgressEvent::Sophon(SophonProgress::Verifying {
             scanned_files: 5,
             total_files: 4,
@@ -680,6 +713,7 @@ mod tests {
         assert!(!state.terminal);
         assert_eq!(state.detail, "Finalizing…");
         assert_eq!(state.download.fraction, Some(0.75));
+
         state.update(&update(ProgressEvent::Finished {
             error: Some("disk full".into()),
         }));
@@ -690,16 +724,19 @@ mod tests {
         assert!(!state.update(&update(downloading(100, 100))));
         assert!(!state.update(&update(ProgressEvent::Finished { error: None })));
         assert!(state.error);
+
         let mut next = update(ProgressEvent::Started);
         next.operation.id = uuid::Uuid::new_v4();
         state.update(&next);
         assert!(!state.error);
         assert!(!state.terminal);
         assert_eq!(state.bars, Bars::None);
+
         next.event = ProgressEvent::Finished { error: None };
         state.update(&next);
         assert!(state.complete);
         assert!(!state.error);
+
         // Success does not fabricate verification or transfer counts.
         assert_eq!(state.verification.fraction, None);
         assert_eq!(state.download.fraction, None);
@@ -713,6 +750,7 @@ mod tests {
         })));
         assert!(state.error);
         assert!(!state.terminal);
+
         state.update(&update(ProgressEvent::Finished {
             error: Some("installation failed".into()),
         }));
@@ -728,12 +766,14 @@ mod tests {
         event.operation.game = None;
         state.update(&event);
         assert_eq!(state.heading, "Downloading Phlogiston");
+
         for kind in [OperationKind::Launch, OperationKind::Recovery] {
             event.operation.kind = kind;
             event.operation.id = uuid::Uuid::new_v4();
             assert!(!state.update(&event));
             assert_eq!(state.heading, "Downloading Phlogiston");
         }
+
         state = ProgressState::default();
         assert!(!state.visible);
         assert!(!state.shows_bars());
@@ -747,10 +787,12 @@ mod tests {
         assert_eq!(eta(3601.0).as_deref(), Some("1h 0m left"));
         assert_eq!(eta(f64::INFINITY), None);
         assert_eq!(eta(-1.0), None);
+
         let mut state = ProgressState::default();
         state.update(&update(downloading(1, 100)));
         assert!(state.detail.contains("1.0 KiB/s"));
         assert!(state.detail.contains("1m 5s left"));
+
         for invalid in [f64::NAN, f64::INFINITY, -1.0] {
             state.update(&update(ProgressEvent::Sophon(
                 SophonProgress::Downloading {
@@ -770,16 +812,19 @@ mod tests {
     fn template_renders_progress_and_resets_safely() {
         gtk::init().expect("GTK display is available");
         gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
+
         let panel = Progressbar::new();
         let imp = panel.imp();
         assert!(!panel.is_visible());
         assert!(panel.has_css_class("progress-panel"));
+
         panel.update(&update(file(50, 100)));
         assert!(panel.is_visible());
         assert!(imp.bars.is_visible());
         assert!(!imp.verification_row.is_visible());
         assert_eq!(imp.download_progress.fraction(), 0.5);
         assert_eq!(imp.heading.text(), "Downloading Genshin Impact");
+
         panel.update(&update(downloading(75, 100)));
         panel.update(&update(ProgressEvent::Sophon(SophonProgress::Verifying {
             scanned_files: 1,
@@ -789,6 +834,7 @@ mod tests {
         assert!(imp.verification_row.is_visible());
         assert_eq!(imp.download_progress.fraction(), 0.75);
         assert_eq!(imp.verification_progress.fraction(), 0.25);
+
         panel.update(&update(ProgressEvent::Extracting(
             "/tmp/runtime.tar.xz".into(),
         )));
@@ -796,15 +842,18 @@ mod tests {
         assert!(!imp.heading.is_visible());
         assert!(!imp.bars.is_visible());
         assert_eq!(imp.detail.text(), "Extracting runtime.tar.xz…");
+
         panel.update(&update(ProgressEvent::Finished {
             error: Some("disk full".into()),
         }));
         assert!(panel.has_css_class("is-error"));
         assert!(!panel.has_css_class("is-complete"));
         assert!(!panel.has_css_class("is-extracting"));
+
         panel.reset();
         panel.update(&update(file(5, 0)));
         assert!(imp.pulse_source.borrow().is_some());
+
         panel.reset();
         assert!(!panel.is_visible());
         assert!(!panel.has_css_class("is-error"));
@@ -816,6 +865,7 @@ mod tests {
         let ProgressEvent::File(progress) = file(50, 100) else {
             unreachable!()
         };
+
         assert_eq!(
             Progressbar::handle_download_event(DownloadEvent::File(progress)),
             "Downloading: 50%"

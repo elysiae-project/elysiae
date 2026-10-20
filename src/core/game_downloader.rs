@@ -100,6 +100,7 @@ async fn start_download(
     sender: async_channel::Sender<SophonProgress>,
 ) -> Result<()> {
     game.executable()?; // Unreleased games are explicitly unsupported, not guessed.
+
     let lang = voice_language(lang)?;
     let kind = match action {
         DownloadAction::Install => OperationKind::Install,
@@ -108,6 +109,7 @@ async fn start_download(
         DownloadAction::Repair => OperationKind::Repair,
     };
     let operation = operations().begin(kind, Some(game))?;
+
     // Dropping this outer future detaches, rather than aborts, the worker. The
     // worker retains ownership until irmin and all its awaited work have ended.
     run_worker(operation, move |operation| async move {
@@ -120,6 +122,7 @@ async fn start_download(
             },
         };
         let _ = sender.force_send(final_event);
+
         result
     })
     .await
@@ -150,8 +153,10 @@ async fn execute_download(
         }
     };
     validate_mutation_tree(&path, operation)?;
+
     let sophon = installer(game, lang, path)?;
     let reporter = operation.reporter()?;
+
     match action {
         DownloadAction::Install => {
             mark_pending(sophon.game_dir())?;
@@ -161,10 +166,12 @@ async fn execute_download(
                     progress_callback(sender.clone(), reporter.clone()),
                 )
                 .await?;
+
             operation.check_cancelled()?;
             operation.set_phase(Phase::Verifying)?;
             verify(&sophon, sender, reporter).await?;
             clear_pending(sophon.game_dir())?;
+
             if get_option("generate-desktop-shortcut")
                 .and_then(bool::try_from)
                 .unwrap_or(false)
@@ -172,6 +179,7 @@ async fn execute_download(
             {
                 log::warn!("Game installed, but shortcut creation failed: {error:#}");
             }
+
             broadcast_notification("Download Complete");
         }
         DownloadAction::Update | DownloadAction::Preinstall => {
@@ -179,17 +187,20 @@ async fn execute_download(
                 local_status(game, sophon.game_dir())? != UpdateAvailability::Incomplete,
                 "Installation is incomplete; resume installation or repair it first"
             );
+
             let info = checked_update(&sophon).await?;
             ensure!(
                 info.current_tag.is_some(),
                 "No installed version; install the game first"
             );
+
             let availability = classify_update(&info);
             ensure!(
                 !matches!(action, DownloadAction::Preinstall)
                     || availability != UpdateAvailability::Outdated,
                 "A live update is now required; finish the running game before applying it"
             );
+
             match availability {
                 UpdateAvailability::Outdated => {
                     mark_pending(sophon.game_dir())?;
@@ -201,6 +212,7 @@ async fn execute_download(
                                 progress_callback(sender.clone(), reporter.clone()),
                             )
                             .await;
+
                         match result {
                             Ok(()) => {}
                             // The pinned library requires pre-download metadata after
@@ -227,10 +239,12 @@ async fn execute_download(
                             )
                             .await?;
                     }
+
                     operation.check_cancelled()?;
                     operation.set_phase(Phase::Verifying)?;
                     verify(&sophon, sender, reporter).await?;
                     clear_pending(sophon.game_dir())?;
+
                     broadcast_notification("Update Complete");
                 }
                 UpdateAvailability::Preinstall => {
@@ -241,6 +255,7 @@ async fn execute_download(
                             progress_callback(sender, operation.reporter()?),
                         )
                         .await?;
+
                     operation.check_cancelled()?;
                     broadcast_notification("Preinstall Download Complete");
                 }
@@ -253,13 +268,16 @@ async fn execute_download(
                 installed_tag(sophon.game_dir())?.is_some(),
                 "No installed version is available to verify; resume installation first"
             );
+
             operation.set_phase(Phase::Verifying)?;
             mark_pending(sophon.game_dir())?;
             verify(&sophon, sender, reporter).await?;
             clear_pending(sophon.game_dir())?;
+
             broadcast_notification("Integrity scan complete: no errors reported");
         }
     }
+
     Ok(())
 }
 
@@ -304,8 +322,10 @@ async fn checked_update(sophon: &Sophon) -> Result<irmin::game_installer::Update
 /// Reads a path's mount identifier without following its final symlink.
 fn mount_id(path: &Path) -> Result<u64> {
     use std::os::unix::ffi::OsStrExt;
+
     let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
     let mut stat: libc::statx = unsafe { std::mem::zeroed() };
+
     let result = unsafe {
         libc::statx(
             libc::AT_FDCWD,
@@ -315,13 +335,16 @@ fn mount_id(path: &Path) -> Result<u64> {
             &mut stat,
         )
     };
+
     if result != 0 {
         return Err(std::io::Error::last_os_error().into());
     }
+
     ensure!(
         stat.stx_mask & libc::STATX_MNT_ID != 0,
         "Filesystem cannot establish installation mount boundaries"
     );
+
     Ok(stat.stx_mnt_id)
 }
 
@@ -331,8 +354,10 @@ fn mount_id(path: &Path) -> Result<u64> {
 /// mutation of an owned installation is not supported.
 fn validate_mutation_tree(root: &Path, operation: &Operation) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
+
     let mount = mount_id(root)?;
     let mut pending = vec![root.to_path_buf()];
+
     while let Some(path) = pending.pop() {
         operation.check_cancelled()?;
         let metadata = std::fs::symlink_metadata(&path)?;
@@ -346,6 +371,7 @@ fn validate_mutation_tree(root: &Path, operation: &Operation) -> Result<()> {
             "Game mutation cannot cross a mount at {}",
             path.display()
         );
+
         if metadata.is_dir() {
             for entry in std::fs::read_dir(path)? {
                 pending.push(entry?.path());
@@ -358,6 +384,7 @@ fn validate_mutation_tree(root: &Path, operation: &Operation) -> Result<()> {
             );
         }
     }
+
     Ok(())
 }
 
@@ -395,6 +422,7 @@ impl VerificationReport {
         if let Some(error) = &self.error {
             bail!("Integrity scan failed: {error}");
         }
+
         ensure!(
             self.total > 0 && self.scanned == self.total,
             "Integrity scan did not report a complete manifest"
@@ -404,6 +432,7 @@ impl VerificationReport {
             "Irmin found {} damaged files and attempted repairs, but this library version cannot reliably confirm repair success. Run verification again to check their state.",
             self.errors
         );
+
         Ok(())
     }
 }
@@ -420,14 +449,17 @@ async fn verify(
     // must not be disguised by its unconditional Finished/Ok after failed repair.
     let report = Arc::new(Mutex::new(VerificationReport::default()));
     let observed = report.clone();
+
     sophon
         .verify_integrity(move |event| {
             if let Ok(mut report) = observed.lock() {
                 report.observe(&event);
             }
+
             forward_progress(&sender, &reporter, event);
         })
         .await?;
+
     report
         .lock()
         .map_err(|_| anyhow::anyhow!("Verification report lock poisoned"))?
@@ -437,6 +469,7 @@ async fn verify(
 /// Reads a bounded installed-version marker, treating missing or empty markers as absent.
 fn installed_tag(path: &Path) -> Result<Option<String>> {
     use std::io::Read;
+
     let marker = path.join(".sophon_version");
     let metadata = match std::fs::symlink_metadata(&marker) {
         Ok(metadata) => metadata,
@@ -447,12 +480,15 @@ fn installed_tag(path: &Path) -> Result<Option<String>> {
         metadata.is_file(),
         "Installed version marker must be a regular file"
     );
+
     let mut tag = String::new();
     std::fs::File::open(marker)?
         .take(4097)
         .read_to_string(&mut tag)?;
     ensure!(tag.len() <= 4096, "Installed version marker is too large");
+
     let tag = tag.trim();
+
     Ok((!tag.is_empty()).then(|| tag.to_owned()))
 }
 
@@ -470,6 +506,7 @@ fn mutation_pending(root: &Path) -> Result<bool> {
 /// Durably marks an installation as awaiting successful verification.
 fn mark_pending(root: &Path) -> Result<()> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
     let path = root.join(PENDING_VERIFICATION);
     let file = match std::fs::File::create_new(&path) {
         Ok(file) => file,
@@ -486,8 +523,10 @@ fn mark_pending(root: &Path) -> Result<()> {
         metadata.is_file() && metadata.nlink() == 1,
         "Invalid verification marker"
     );
+
     file.sync_all()?;
     std::fs::File::open(root)?.sync_all()?;
+
     Ok(())
 }
 
@@ -495,6 +534,7 @@ fn mark_pending(root: &Path) -> Result<()> {
 fn clear_pending(root: &Path) -> Result<()> {
     std::fs::remove_file(root.join(PENDING_VERIFICATION))?;
     std::fs::File::open(root)?.sync_all()?;
+
     Ok(())
 }
 
@@ -503,18 +543,22 @@ fn local_status(game: Game, path: &Path) -> Result<UpdateAvailability> {
     if !path.try_exists()? {
         return Ok(UpdateAvailability::NotInstalled);
     }
+
     ensure!(path.is_dir(), "Game installation path is not a directory");
     if mutation_pending(path)? {
         return Ok(UpdateAvailability::Incomplete);
     }
+
     let executable = path.join(game.executable()?);
     if !executable.is_file() || installed_tag(path)?.is_none() {
         return Ok(UpdateAvailability::Incomplete);
     }
+
     ensure!(
         executable.canonicalize()?.starts_with(path.canonicalize()?),
         "Game executable escapes installation directory"
     );
+
     Ok(UpdateAvailability::Updated)
 }
 
@@ -543,6 +587,7 @@ pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
     game.executable()?;
     let path = installations::path(game)?;
     let status = local_status(game, &path)?;
+
     if status == UpdateAvailability::Incomplete
         && !mutation_pending(&path)?
         && installed_tag(&path)?.is_none()
@@ -557,6 +602,7 @@ pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
         );
         return Ok(UpdateAvailability::Untracked);
     }
+
     Ok(status)
 }
 
@@ -564,10 +610,13 @@ pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
 pub async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability> {
     let path = installations::path(game)?;
     let local = local_update_status(game)?;
+
     if local != UpdateAvailability::Updated {
         return Ok(local);
     }
+
     let sophon = installer(game, voice_language(lang)?, path)?;
+
     Ok(classify_update(&checked_update(&sophon).await?))
 }
 
@@ -575,6 +624,7 @@ pub async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability>
 pub fn toggle_downloading() -> Result<()> {
     operations().toggle_pause()
 }
+
 /// Requests cancellation without releasing the active worker's ownership.
 pub fn cancel_download() -> Result<()> {
     operations().cancel()
@@ -591,6 +641,7 @@ pub fn game_installed(game: Game) -> Result<bool> {
 /// Writes a desktop shortcut that selects the game in Elysiae without launching it.
 fn generate_desktop_file(game: Game) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
+
     let icon = get_cached_asset_paths(game, "en-us", AssetType::Icon)
         .ok()
         .and_then(|paths| paths.into_iter().next())
@@ -608,6 +659,7 @@ fn generate_desktop_file(game: Game) -> Result<()> {
         game.code()
     );
     let path = PathBuf::from(format!("{}.desktop", game.code()));
+
     write_file(
         path.clone(),
         contents.as_bytes(),
@@ -617,6 +669,7 @@ fn generate_desktop_file(game: Game) -> Result<()> {
         full_path(Some(path), Some(BaseDirectory::Desktop))?,
         std::fs::Permissions::from_mode(0o755),
     )?;
+
     Ok(())
 }
 
@@ -627,6 +680,7 @@ pub async fn launch_game(game: Game) -> Result<()> {
             game_installed(game)?,
             "No complete or explicitly imported game installation"
         );
+
         // A healthy runtime is read-only here: recovery would unnecessarily
         // take an exclusive lease and prevent launch alongside a game download.
         if !runtime_ready_for_launch()? {
@@ -635,6 +689,7 @@ pub async fn launch_game(game: Game) -> Result<()> {
                 update_all_modules().await?;
             }
         }
+
         let operation = operations().begin(OperationKind::Launch, Some(game))?;
         let executable = (|| -> Result<PathBuf> {
             ensure!(
@@ -647,8 +702,10 @@ pub async fn launch_game(game: Game) -> Result<()> {
                 game_installed(game)?,
                 "Game installation changed before launch"
             );
+
             Ok(installations::path(game)?.join(game.executable()?))
         })();
+
         match executable {
             Ok(executable) => run_game(executable, operation).await,
             Err(error) => operation.finish(Err(error)),
@@ -665,9 +722,11 @@ pub async fn launch_game(game: Game) -> Result<()> {
 )]
 pub async fn import_game(game: Game, path: PathBuf, allow_modify: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Import, Some(game))?;
+
     runtime::spawn(async move {
         tokio::task::spawn_blocking(move || {
             let result = installations::import(game, &path, allow_modify, &operation);
+
             operation.finish(result)
         })
         .await
@@ -689,6 +748,7 @@ pub async fn relocate_game(
     remove_source: bool,
 ) -> Result<()> {
     let operation = operations().begin(OperationKind::Relocate, Some(game))?;
+
     runtime::spawn(async move {
         tokio::task::spawn_blocking(move || {
             let result = installations::relocate(
@@ -698,6 +758,7 @@ pub async fn relocate_game(
                 remove_source,
                 &operation,
             );
+
             operation.finish(result)
         })
         .await
@@ -714,9 +775,11 @@ pub async fn relocate_game(
 )]
 pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Uninstall, Some(game))?;
+
     runtime::spawn(async move {
         tokio::task::spawn_blocking(move || {
             let result = installations::uninstall(game, &confirmed_root, delete_files, &operation);
+
             operation.finish(result)
         })
         .await
@@ -729,9 +792,11 @@ pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: b
 /// Recovers interrupted installation maintenance under exclusive operation ownership.
 pub async fn recover_maintenance(game: Game) -> Result<()> {
     let operation = operations().begin(OperationKind::Relocate, Some(game))?;
+
     runtime::spawn(async move {
         tokio::task::spawn_blocking(move || {
             let result = installations::recover(game, &operation);
+
             operation.finish(result)
         })
         .await
@@ -750,6 +815,7 @@ mod tests {
     fn upstream_finished_does_not_override_failed_repairs() {
         let mut report = VerificationReport::default();
         assert!(report.result().is_err());
+
         report.observe(&SophonProgress::Verifying {
             scanned_files: 2,
             total_files: 2,
@@ -763,6 +829,7 @@ mod tests {
                 .to_string()
                 .contains("cannot reliably confirm")
         );
+
         let mut clean = VerificationReport::default();
         clean.observe(&SophonProgress::Verifying {
             scanned_files: 2,
@@ -770,6 +837,7 @@ mod tests {
             error_count: 0,
         });
         assert!(clean.result().is_ok());
+
         clean.observe(&SophonProgress::Error {
             message: "repair failed".into(),
         });

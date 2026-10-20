@@ -1,5 +1,6 @@
 //! Installation locations and write consent, not game-version metadata.
 //! Irmin's version marker remains authoritative, including for imported games.
+
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -144,6 +145,7 @@ impl Store {
     /// Read and validate the registry, using an empty registry only when absent.
     fn load(&self) -> Result<Registry> {
         let file = self.resolve(Path::new(REGISTRY))?;
+
         match std::fs::symlink_metadata(&file) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Registry {
@@ -157,6 +159,7 @@ impl Store {
                 "Installation registry must be a regular file"
             ),
         }
+
         let registry: Registry = serde_json::from_slice(&std::fs::read(file)?)
             .context("Invalid installation registry; existing data was not changed")?;
         ensure!(
@@ -164,6 +167,7 @@ impl Store {
             "Unsupported installation registry schema: {}",
             registry.schema_version
         );
+
         for (code, installation) in &registry.installations {
             let game = Game::try_from(code.as_str())?;
             Uuid::parse_str(&installation.ownership_token).context("Invalid installation token")?;
@@ -174,6 +178,7 @@ impl Store {
             self.validate_root(&installation.path)?;
             check_conflicts(&registry, game, &installation.path)?;
         }
+
         Ok(registry)
     }
 
@@ -205,6 +210,7 @@ impl Store {
         operation.check_game(game)?;
         operation.check_cancelled()?;
         self.ensure_no_pending()?;
+
         let installation = self
             .registered(game)?
             .context("Installation is not registered; prepare or import it first")?;
@@ -212,6 +218,7 @@ impl Store {
             installation.path.is_dir(),
             "Installation directory is missing"
         );
+
         if installation.managed {
             verify_owner(game, &installation)?;
         } else {
@@ -220,6 +227,7 @@ impl Store {
                 "Imported installation does not have permission to modify files"
             );
         }
+
         Ok(installation.path)
     }
 
@@ -228,7 +236,9 @@ impl Store {
         operation.check_game(game)?;
         operation.check_cancelled()?;
         self.ensure_no_pending()?;
+
         let mut registry = self.load()?;
+
         if let Some(installation) = registry.installations.get(game.code()) {
             ensure!(
                 installation.managed,
@@ -242,6 +252,7 @@ impl Store {
                     .validate_root(&installation.path)
                     .and_then(|()| operation.check_cancelled())
                     .and_then(|()| write_owner(game, installation));
+
                 if let Err(error) = result {
                     // Only remove the empty root just created here, never its parents.
                     std::fs::remove_dir(&installation.path).with_context(|| {
@@ -250,11 +261,13 @@ impl Store {
                     return Err(error);
                 }
             }
+
             return Ok(installation.path.clone());
         }
 
         let destination = self.resolve(&game.install_path())?;
         let expected = canonicalize_with_missing(&self.root()?)?.join(game.install_path());
+
         // An XDG base may be a symlink, but a game directory or its games/
         // ancestor must not silently redirect a newly managed installation.
         ensure!(
@@ -263,12 +276,14 @@ impl Store {
         );
         self.check_safe_root(&expected)?;
         check_conflicts(&registry, game, &expected)?;
+
         std::fs::create_dir_all(&destination).context("Could not create installation directory")?;
         self.validate_root(&expected)?;
         ensure!(
             std::fs::read_dir(&expected)?.next().transpose()?.is_none(),
             "Default installation directory is not empty; import it explicitly"
         );
+
         let installation = Installation {
             path: expected.clone(),
             managed: true,
@@ -279,6 +294,7 @@ impl Store {
             .installations
             .insert(game.code().to_owned(), installation.clone());
         self.commit_managed(game, &installation, &registry, operation)?;
+
         Ok(expected)
     }
 
@@ -295,6 +311,7 @@ impl Store {
         let result = operation
             .check_cancelled()
             .and_then(|()| self.save(registry));
+
         if let Err(error) = result {
             // Roll back only our marker, never a directory or arbitrary content.
             // A crash can leave an orphan marker; it is not sufficient to adopt
@@ -306,6 +323,7 @@ impl Store {
                 })?;
             return Err(error);
         }
+
         Ok(())
     }
 
@@ -320,11 +338,13 @@ impl Store {
         operation.check_game(game)?;
         operation.check_cancelled()?;
         self.ensure_no_pending()?;
+
         let mut registry = self.load()?;
         let root = root
             .canonicalize()
             .context("Import directory does not exist")?;
         self.validate_root(&root)?;
+
         let executable = root.join(game.executable()?);
         ensure!(
             executable.is_file(),
@@ -335,6 +355,7 @@ impl Store {
             "Game executable points outside the import directory"
         );
         check_conflicts(&registry, game, &root)?;
+
         let token = if let Some(existing) = registry.installations.get(game.code()) {
             ensure!(
                 !existing.managed,
@@ -357,6 +378,7 @@ impl Store {
                 ownership_token: token,
             },
         );
+
         operation.check_cancelled()?;
         self.save(&registry)
     }
@@ -380,6 +402,7 @@ impl Store {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
+
         self.check_safe_root(root)
     }
 
@@ -391,6 +414,7 @@ impl Store {
             !home.starts_with(root) && !data.starts_with(root),
             "Installation root must not contain home or application data"
         );
+
         for directory in [
             "proton-data",
             "proton",
@@ -405,6 +429,7 @@ impl Store {
                 "Installation root overlaps shared runtime data"
             );
         }
+
         Ok(())
     }
 }
@@ -420,6 +445,7 @@ fn write_owner(game: Game, installation: &Installation) -> Result<()> {
             .is_none(),
         "Ownership markers can only be created in an empty directory"
     );
+
     let marker = OwnerMarker {
         game: game.code().to_owned(),
         token: installation.ownership_token.clone(),
@@ -431,16 +457,20 @@ fn write_owner(game: Game, installation: &Installation) -> Result<()> {
         .write(true)
         .create_new(true)
         .open(&temporary)?;
+
     let result = (|| -> Result<()> {
         file.write_all(&serde_json::to_vec(&marker)?)?;
         file.sync_all()?;
         std::fs::rename(&temporary, installation.path.join(OWNER_MARKER))?;
+
         Ok(())
     })();
+
     if result.is_err() {
         std::fs::remove_file(&temporary)
             .context("Could not clean up temporary ownership marker")?;
     }
+
     result
 }
 
@@ -451,12 +481,14 @@ fn verify_owner(game: Game, installation: &Installation) -> Result<()> {
         std::fs::symlink_metadata(&marker)?.is_file(),
         "Ownership marker must be a regular file"
     );
+
     let marker: OwnerMarker = serde_json::from_slice(&std::fs::read(marker)?)
         .context("Invalid installation ownership marker")?;
     ensure!(
         marker.game == game.code() && marker.token == installation.ownership_token,
         "Installation ownership marker does not match its registration"
     );
+
     Ok(())
 }
 
@@ -469,6 +501,7 @@ fn check_conflicts(registry: &Registry, game: Game, root: &Path) -> Result<()> {
             "Installation root overlaps the registered game {code}"
         );
     }
+
     Ok(())
 }
 
@@ -492,6 +525,7 @@ fn unique_installations<'de, D: serde::Deserializer<'de>>(
 ) -> std::result::Result<BTreeMap<String, Installation>, D::Error> {
     /// A map visitor that preserves the registry's unique-game constraint.
     struct Entries;
+
     impl<'de> serde::de::Visitor<'de> for Entries {
         type Value = BTreeMap<String, Installation>;
 
@@ -506,6 +540,7 @@ fn unique_installations<'de, D: serde::Deserializer<'de>>(
             mut map: M,
         ) -> std::result::Result<Self::Value, M::Error> {
             let mut entries = BTreeMap::new();
+
             while let Some((code, installation)) = map.next_entry::<String, Installation>()? {
                 if entries.insert(code, installation).is_some() {
                     return Err(serde::de::Error::custom(
@@ -513,9 +548,11 @@ fn unique_installations<'de, D: serde::Deserializer<'de>>(
                     ));
                 }
             }
+
             Ok(entries)
         }
     }
+
     deserializer.deserialize_map(Entries)
 }
 
@@ -533,15 +570,18 @@ mod tests {
             .begin(OperationKind::Install, Some(Game::Bh3))
             .unwrap();
         let root = store.prepare_install(Game::Bh3, &operation).unwrap();
+
         std::fs::write(root.join("partial-download"), b"keep").unwrap();
         assert_eq!(store.prepare_install(Game::Bh3, &operation).unwrap(), root);
         assert_eq!(store.writable_path(Game::Bh3, &operation).unwrap(), root);
+
         std::fs::remove_file(root.join(OWNER_MARKER)).unwrap();
         assert!(store.writable_path(Game::Bh3, &operation).is_err());
         assert_eq!(
             std::fs::read(root.join("partial-download")).unwrap(),
             b"keep"
         );
+
         std::fs::remove_dir_all(store.root().unwrap()).unwrap();
     }
 }

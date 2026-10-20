@@ -1,5 +1,6 @@
 //! Own game mutations and supervised Wine sessions independently. Compatible
 //! work shares one profile lock until the last lease (including workers) ends.
+
 use std::{
     fs::File,
     path::Path,
@@ -49,6 +50,7 @@ fn compatible(a: OperationKind, ag: Option<Game>, b: OperationKind, bg: Option<G
         (transfer, OperationKind::Launch) => (transfer, ag, bg),
         _ => return false,
     };
+
     transfer_game.is_some()
         && launch_game.is_some()
         && match transfer {
@@ -98,6 +100,7 @@ pub struct Operations(Arc<Mutex<State>>);
 
 pub fn operations() -> &'static Operations {
     static OPERATIONS: OnceLock<Operations> = OnceLock::new();
+
     OPERATIONS.get_or_init(|| {
         Operations(Arc::new(Mutex::new(State {
             persistent: true,
@@ -109,6 +112,7 @@ pub fn operations() -> &'static Operations {
 /// Acquires a cross-process profile lock without following links or sharing files.
 fn lock_profile(path: &Path) -> Result<File> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
     std::fs::create_dir_all(path.parent().context("Operation lock has no parent")?)?;
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -123,8 +127,10 @@ fn lock_profile(path: &Path) -> Result<File> {
         metadata.is_file() && metadata.nlink() == 1,
         "Operation lock must be an unshared regular file"
     );
+
     file.try_lock()
         .context("Another Elysiae process owns this profile, or the filesystem cannot lock it")?;
+
     Ok(file)
 }
 
@@ -136,6 +142,7 @@ impl Operations {
             .0
             .lock()
             .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
+
         for active in &state.active {
             ensure!(
                 compatible(kind, game, active.status.kind, active.status.game),
@@ -143,6 +150,7 @@ impl Operations {
                 active.status.kind
             );
         }
+
         let new_lock = if state.persistent && state.profile_lock.is_none() {
             Some(lock_profile(&super::fs::full_path(
                 Some("operations.lock".into()),
@@ -151,6 +159,7 @@ impl Operations {
         } else {
             None
         };
+
         // Only our own retained Launch lease authorizes transfers alongside a
         // session fence. Unknown/orphaned fences still require exclusive recovery.
         let supervised = state
@@ -160,9 +169,11 @@ impl Operations {
         if state.persistent && kind != OperationKind::Recovery && !supervised {
             super::proton_manager::ensure_no_session()?;
         }
+
         if let Some(lock) = new_lock {
             state.profile_lock = Some(lock);
         }
+
         let status = OperationStatus {
             id: Uuid::new_v4(),
             kind,
@@ -179,6 +190,7 @@ impl Operations {
             operation: status.clone(),
             event: ProgressEvent::Started,
         });
+
         Ok(Operation {
             owner: self.clone(),
             id: status.id,
@@ -193,6 +205,7 @@ impl Operations {
             .0
             .lock()
             .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
+
         Ok(state
             .active
             .iter()
@@ -204,6 +217,7 @@ impl Operations {
             .0
             .lock()
             .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
+
         Ok(state.active.iter().map(|a| a.status.clone()).collect())
     }
 
@@ -214,6 +228,7 @@ impl Operations {
             .0
             .lock()
             .map_err(|_| anyhow::anyhow!("Operation lock poisoned"))?;
+
         Ok(state
             .active
             .iter()
@@ -242,6 +257,7 @@ impl Operations {
             .iter_mut()
             .find(|a| a.status.kind.supports_download_controls())
             .context("No active download")?;
+
         ensure!(
             matches!(active.status.phase, Phase::Running | Phase::Paused),
             "This phase cannot be paused safely"
@@ -250,6 +266,7 @@ impl Operations {
             !active.handle.is_cancelled(),
             "Cancellation has already been requested"
         );
+
         if active.handle.is_paused() {
             active.handle.resume();
             active.status.phase = Phase::Running;
@@ -257,6 +274,7 @@ impl Operations {
             active.handle.pause();
             active.status.phase = Phase::Paused;
         }
+
         Ok(())
     }
 
@@ -270,11 +288,13 @@ impl Operations {
             .iter()
             .find(|a| a.status.kind.supports_cancellation())
             .context("No cancellable operation")?;
+
         ensure!(
             matches!(active.status.phase, Phase::Running | Phase::Paused),
             "This phase must finish before cancellation is safe"
         );
         active.handle.cancel();
+
         Ok(())
     }
 }
@@ -303,6 +323,7 @@ impl Operation {
             .iter()
             .find(|a| a.status.id == self.id)
             .context("Operation is no longer active")?;
+
         Ok(ProgressReporter(active.status.clone()))
     }
 
@@ -318,6 +339,7 @@ impl Operation {
                 && a.status.kind != OperationKind::Launch),
             "Operation does not own this game's installation"
         );
+
         Ok(())
     }
 
@@ -342,11 +364,13 @@ impl Operation {
             "Only updates can become preinstalls"
         );
         active.status.kind = OperationKind::Preinstall;
+
         Ok(())
     }
 
     pub fn check_cancelled(&self) -> Result<()> {
         ensure!(!self.handle.is_cancelled(), "Operation cancelled");
+
         Ok(())
     }
 
@@ -355,6 +379,7 @@ impl Operation {
             matches!(phase, Phase::Running | Phase::Verifying | Phase::Committing),
             "Terminal states must be recorded by finish"
         );
+
         let mut state = self
             .owner
             .0
@@ -370,6 +395,7 @@ impl Operation {
             "Operation cancelled before phase transition"
         );
         active.status.phase = phase;
+
         Ok(())
     }
 
@@ -381,11 +407,13 @@ impl Operation {
         } else {
             Phase::Failed
         };
+
         self.release(
             phase,
             result.as_ref().err().map(|error| format!("{error:#}")),
         );
         self.finished = true;
+
         result
     }
 
@@ -394,6 +422,7 @@ impl Operation {
             log::error!("Operation lock poisoned during completion");
             return;
         };
+
         if let Some(index) = state.active.iter().position(|a| a.status.id == self.id) {
             let mut status = state.active.remove(index).status;
             status.phase = phase;
@@ -402,10 +431,12 @@ impl Operation {
                 operation: status.clone(),
                 event: ProgressEvent::Finished { error },
             });
+
             #[cfg(test)]
             {
                 state.last = Some(status);
             }
+
             if state.active.is_empty() {
                 state.profile_lock = None;
             }
@@ -421,6 +452,7 @@ impl Drop for Operation {
             } else {
                 Phase::Failed
             };
+
             self.handle.cancel();
             self.release(phase, Some("Operation ended without completion".into()));
         }
@@ -447,6 +479,7 @@ mod tests {
                 };
                 let first = owner.begin(first_kind, Some(first_game)).unwrap();
                 let second = owner.begin(second_kind, Some(second_game)).unwrap();
+
                 assert_eq!(owner.active().unwrap().len(), 2);
                 assert!(
                     owner
@@ -456,8 +489,10 @@ mod tests {
                 assert!(owner.begin(OperationKind::Launch, Some(Game::Nap)).is_err());
                 assert!(owner.begin(OperationKind::Components, None).is_err());
                 assert!(owner.begin(OperationKind::Recovery, None).is_err());
+
                 first.finish(Ok(())).unwrap();
                 assert!(owner.is_busy().unwrap());
+
                 second.finish(Ok(())).unwrap();
                 assert!(!owner.is_busy().unwrap());
             }
@@ -468,19 +503,23 @@ mod tests {
     fn same_game_requires_staging_only_preinstall() {
         let owner = Operations::default();
         let update = owner.begin(OperationKind::Update, Some(Game::Bh3)).unwrap();
+
         assert!(
             !owner
                 .can_begin(OperationKind::Launch, Some(Game::Bh3))
                 .unwrap()
         );
+
         update.mark_preinstall().unwrap();
         let launch = owner.begin(OperationKind::Launch, Some(Game::Bh3)).unwrap();
         assert!(launch.check_game(Game::Bh3).is_err());
         assert!(launch.mark_preinstall().is_err());
         assert!(owner.begin(OperationKind::Repair, Some(Game::Nap)).is_err());
+
         owner.cancel().unwrap();
         assert!(update.check_cancelled().is_err());
         assert!(launch.check_cancelled().is_ok());
+
         drop(update);
         assert!(owner.is_busy().unwrap());
         launch.finish(Ok(())).unwrap();
@@ -494,17 +533,20 @@ mod tests {
             .unwrap();
         owner.toggle_pause().unwrap();
         assert!(operation.handle().is_paused());
+
         owner.toggle_pause().unwrap();
         operation.set_phase(Phase::Verifying).unwrap();
         assert!(owner.cancel().is_err());
         assert!(owner.toggle_pause().is_err());
         assert!(operation.check_game(Game::Nap).is_err());
+
         assert!(
             operation
                 .finish::<()>(Err(anyhow::anyhow!("verification failed")))
                 .is_err()
         );
         assert_eq!(owner.status().unwrap().unwrap().phase, Phase::Failed);
+
         let next = owner
             .begin(OperationKind::Install, Some(Game::Nap))
             .unwrap();
@@ -525,14 +567,18 @@ mod tests {
             .begin(OperationKind::Install, Some(Game::Bh3))
             .unwrap();
         let launch = owner.begin(OperationKind::Launch, Some(Game::Nap)).unwrap();
+
         drop(transfer);
         assert!(lock_profile(&path).is_err());
+
         drop(launch);
         drop(lock_profile(&path).unwrap());
+
         std::fs::remove_file(&path).unwrap();
         std::os::unix::fs::symlink("outside", &path).unwrap();
         assert!(lock_profile(&path).is_err());
         assert!(!root.join("outside").exists());
+
         std::fs::remove_dir_all(root).unwrap();
     }
 }

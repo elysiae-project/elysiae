@@ -12,6 +12,7 @@ pub fn broadcast_notification(body: &str) {
         let n = Notification::new("Elysiae");
         n.set_body(Some(body));
         n.set_priority(gtk::gio::NotificationPriority::Normal);
+
         app.send_notification(None, &n);
     }
 }

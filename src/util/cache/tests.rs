@@ -32,6 +32,7 @@ fn run(future: impl Future<Output = ()>) {
 
 fn catalog(game: Game, version: &str, optional: bool) -> AedesResponse {
     let prefix = format!("/{}/{version}", game.code());
+
     AedesResponse {
         backgrounds: vec![AedesBackgroundAssets {
             image: format!("{prefix}/image.jpg"),
@@ -47,14 +48,17 @@ fn catalog(game: Game, version: &str, optional: bool) -> AedesResponse {
 
 async fn download(_url: String, destination: PathBuf, limit: u64) -> Result<()> {
     ensure!(limit >= 4, "fixture exceeds remaining budget");
+
     let path = full_path(Some(destination), None)?;
     std::fs::create_dir_all(path.parent().unwrap())?;
     std::fs::write(path, b"art!")?;
+
     Ok(())
 }
 
 async fn yield_once() {
     let mut yielded = false;
+
     std::future::poll_fn(|cx| {
         if yielded {
             Poll::Ready(())
@@ -85,6 +89,7 @@ async fn seed(store: &Store, game: Game, response: AedesResponse) {
 #[test]
 fn progress_api_future_can_run_on_the_background_runtime() {
     fn assert_send(_: impl Send) {}
+
     // Constructing (but never polling) the future performs no network or I/O.
     assert_send(refresh_cache_with_preferences(
         "en-us",
@@ -104,6 +109,7 @@ fn priority_static_is_published_before_optional_assets_and_unrelated_failures() 
         let notified = AtomicBool::new(false);
         let calls = Mutex::new(Vec::new());
         let notifications = Mutex::new(Vec::new());
+
         let report = store
             .refresh_with_progress(
                 "en-us",
@@ -113,6 +119,7 @@ fn priority_static_is_published_before_optional_assets_and_unrelated_failures() 
                     assert_eq!(game, priority);
                     let media = store.resolve(game, "en-us", true);
                     assert!(media.background.is_some());
+
                     if !notified.swap(true, Ordering::SeqCst) {
                         assert!(!media.is_video);
                         assert!(media.overlay.is_none());
@@ -128,6 +135,7 @@ fn priority_static_is_published_before_optional_assets_and_unrelated_failures() 
                             [response.backgrounds[0].image.clone()]
                         );
                     }
+
                     notifications.lock().unwrap().push(media);
                 },
                 |game, _| {
@@ -140,6 +148,7 @@ fn priority_static_is_published_before_optional_assets_and_unrelated_failures() 
                             yield_once().await;
                             anyhow::bail!("unrelated service failure");
                         }
+
                         Ok(catalog(game, "v1", true))
                     }
                 },
@@ -153,6 +162,7 @@ fn priority_static_is_published_before_optional_assets_and_unrelated_failures() 
             )
             .await
             .unwrap();
+
         assert_eq!(report.successes, [priority]);
         assert_eq!(report.failures.len(), Game::all().len() - 1);
         assert!(notifications.lock().unwrap().last().unwrap().is_video);
@@ -166,6 +176,7 @@ fn warm_cache_reuses_assets_and_never_downloads_disabled_videos() {
         let fixture = Fixture::new(4096);
         let store = &fixture.0;
         let transfers = AtomicUsize::new(0);
+
         for pass in 0..2 {
             let report = store
                 .refresh_with(
@@ -181,8 +192,10 @@ fn warm_cache_reuses_assets_and_never_downloads_disabled_videos() {
                 )
                 .await
                 .unwrap();
+
             assert!(report.failures.is_empty());
             assert_eq!(report.successes.len(), Game::all().len());
+
             let old_time = std::time::UNIX_EPOCH + Duration::from_secs(1);
             for game in Game::all() {
                 let path = store.path(&metadata_path(game, "en-us")).unwrap();
@@ -200,6 +213,7 @@ fn warm_cache_reuses_assets_and_never_downloads_disabled_videos() {
                 }
             }
         }
+
         assert_eq!(transfers.load(Ordering::SeqCst), Game::all().len() * 4);
     });
 }
@@ -212,6 +226,7 @@ fn catalog_prefetch_is_bounded_and_progresses_during_serial_downloads() {
         let peak = AtomicUsize::new(0);
         let downloading = AtomicUsize::new(0);
         let overlapped = AtomicBool::new(false);
+
         let report = fixture
             .0
             .refresh_with(
@@ -229,7 +244,9 @@ fn catalog_prefetch_is_bounded_and_progresses_during_serial_downloads() {
                         if downloading.load(Ordering::SeqCst) != 0 {
                             overlapped.store(true, Ordering::SeqCst);
                         }
+
                         fetching.fetch_sub(1, Ordering::SeqCst);
+
                         Ok(catalog(game, "v1", false))
                     }
                 },
@@ -240,12 +257,14 @@ fn catalog_prefetch_is_bounded_and_progresses_during_serial_downloads() {
                         yield_once().await;
                         let result = download(url, destination, limit).await;
                         assert_eq!(downloading.fetch_sub(1, Ordering::SeqCst), 1);
+
                         result
                     }
                 },
             )
             .await
             .unwrap();
+
         assert!(report.failures.is_empty());
         assert_eq!(peak.load(Ordering::SeqCst), CATALOG_CONCURRENCY);
         assert!(overlapped.load(Ordering::SeqCst));
@@ -262,7 +281,9 @@ fn budget_includes_staging_and_retains_old_catalog_when_full() {
             .unwrap();
         std::fs::create_dir_all(staging.parent().unwrap()).unwrap();
         std::fs::write(&staging, b"live").unwrap();
+
         let limits = Mutex::new(Vec::new());
+
         store
             .prepare(
                 Game::Bh3,
@@ -278,9 +299,11 @@ fn budget_includes_staging_and_retains_old_catalog_when_full() {
             )
             .await
             .unwrap();
+
         assert_eq!(*limits.lock().unwrap(), [12, 8, 4]);
         assert_eq!(store.collect(&HashSet::new()).unwrap(), 16);
         assert!(staging.exists());
+
         let path = store.path(&metadata_path(Game::Bh3, "en-us")).unwrap();
         let original = std::fs::read(&path).unwrap();
         let error = store
@@ -295,6 +318,7 @@ fn budget_includes_staging_and_retains_old_catalog_when_full() {
             )
             .await
             .unwrap_err();
+
         assert!(format!("{error:#}").contains("exhausted"));
         assert_eq!(std::fs::read(path).unwrap(), original);
         assert!(store.ready(Game::Bh3, "en-us", false));
@@ -309,10 +333,12 @@ fn failed_required_asset_restores_old_catalog_and_preserves_active_new_image() {
         let game = Game::Hyg;
         let old = catalog(game, "v1", false);
         seed(store, game, old.clone()).await;
+
         let metadata = store.path(&metadata_path(game, "en-us")).unwrap();
         let original = std::fs::read(&metadata).unwrap();
         let new = catalog(game, "v2", false);
         let notifications = AtomicUsize::new(0);
+
         let result = store
             .prepare(
                 game,
@@ -336,14 +362,18 @@ fn failed_required_asset_restores_old_catalog_and_preserves_active_new_image() {
                 },
             )
             .await;
+
         assert!(result.is_err());
         assert_eq!(notifications.load(Ordering::SeqCst), 1);
         assert_eq!(std::fs::read(metadata).unwrap(), original);
+
         store.collect(&HashSet::new()).unwrap();
         for path in old.all_paths().filter(|path| !path.is_empty()) {
             assert!(store.existing(path).is_some());
         }
+
         assert!(store.existing(&new.backgrounds[0].image).is_some());
+
         store.set_active(&[]).unwrap();
         store.collect(&HashSet::new()).unwrap();
         assert!(store.existing(&new.backgrounds[0].image).is_none());
@@ -357,6 +387,7 @@ fn requested_locale_failure_still_refreshes_and_reports_english_fallback() {
         let game = Game::Abc;
         let requests = Mutex::new(Vec::new());
         let notified = AtomicBool::new(false);
+
         let report = fixture
             .0
             .refresh_with_progress(
@@ -382,6 +413,7 @@ fn requested_locale_failure_still_refreshes_and_reports_english_fallback() {
             )
             .await
             .unwrap();
+
         assert!(notified.load(Ordering::SeqCst));
         assert!(report.successes.is_empty());
         assert!(
@@ -408,6 +440,7 @@ fn chinese_icon_failures_use_global_variants() {
         let mut response = catalog(game, "v1", true);
         response.icon_cn = "/cn/icon.png".to_owned();
         response.shortcut_cn = "/cn/shortcut.png".to_owned();
+
         fixture
             .0
             .prepare(
@@ -425,6 +458,7 @@ fn chinese_icon_failures_use_global_variants() {
             )
             .await
             .unwrap();
+
         assert!(fixture.0.ready(game, "zh-cn", false));
         assert_eq!(
             fixture.0.cached_paths(game, "zh-cn", AssetType::Icon),
@@ -440,6 +474,7 @@ fn cancelling_partial_refresh_restores_previous_catalog() {
         let store = &fixture.0;
         let game = Game::Bh3;
         seed(store, game, catalog(game, "v1", false)).await;
+
         let metadata = store.path(&metadata_path(game, "en-us")).unwrap();
         let original = std::fs::read(&metadata).unwrap();
         let notified = AtomicBool::new(false);
@@ -450,6 +485,7 @@ fn cancelling_partial_refresh_restores_previous_catalog() {
             if url.ends_with("icon.png") {
                 std::future::pending::<()>().await;
             }
+
             download(url, destination, limit).await
         };
         let pending = store.prepare(
@@ -461,6 +497,7 @@ fn cancelling_partial_refresh_restores_previous_catalog() {
             &on_ready,
             &mut transfer,
         );
+
         assert!(pending.now_or_never().is_none());
         assert!(notified.load(Ordering::SeqCst));
         assert_eq!(std::fs::read(metadata).unwrap(), original);
@@ -475,11 +512,13 @@ fn stale_replacements_account_for_old_and_staged_bytes_and_keep_pins() {
         let game = Game::Bh3;
         let response = catalog(game, "v1", false);
         seed(&fixture.0, game, response.clone()).await;
+
         fixture.0.ttl = Duration::ZERO;
         let icon = fixture.0.existing(&response.icon).unwrap();
         fixture.0.set_active(std::slice::from_ref(&icon)).unwrap();
         let limits = Mutex::new(Vec::new());
         let notified = AtomicBool::new(false);
+
         fixture
             .0
             .prepare(
@@ -506,6 +545,7 @@ fn stale_replacements_account_for_old_and_staged_bytes_and_keep_pins() {
             )
             .await
             .unwrap();
+
         assert_eq!(*limits.lock().unwrap(), [4, 4]);
         assert_eq!(std::fs::read(icon).unwrap(), b"art!");
         assert_eq!(fixture.0.collect(&HashSet::new()).unwrap(), 12);
@@ -519,6 +559,7 @@ fn cold_cache_keeps_displayable_static_image_when_required_icon_fails() {
         let game = Game::Nap;
         let response = catalog(game, "v1", true);
         let notified = AtomicBool::new(false);
+
         let result = fixture
             .0
             .prepare(
@@ -537,8 +578,10 @@ fn cold_cache_keeps_displayable_static_image_when_required_icon_fails() {
                 },
             )
             .await;
+
         assert!(result.is_err());
         assert!(notified.load(Ordering::SeqCst));
+
         fixture.0.collect(&HashSet::new()).unwrap();
         assert!(fixture.0.resolve(game, "en-us", false).background.is_some());
         assert!(!fixture.0.ready(game, "en-us", false));
@@ -555,11 +598,14 @@ fn symlink_assets_are_neither_downloaded_nor_collected_through() {
         std::fs::create_dir_all(&outside).unwrap();
         let sentinel = outside.join("image.jpg");
         std::fs::write(&sentinel, b"private").unwrap();
+
         let link = store.path(Path::new("cache/assets/linked")).unwrap();
         std::fs::create_dir_all(link.parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(&outside, &link).unwrap();
+
         let mut response = catalog(Game::Bh3, "v1", false);
         response.backgrounds[0].image = "/linked/image.jpg".to_owned();
+
         assert!(
             store
                 .prepare(
@@ -576,6 +622,7 @@ fn symlink_assets_are_neither_downloaded_nor_collected_through() {
         );
         assert!(store.existing("/linked/image.jpg").is_none());
         assert!(store.set_active(&[link.join("image.jpg")]).is_err());
+
         store.collect(&HashSet::new()).unwrap();
         assert_eq!(std::fs::read(sentinel).unwrap(), b"private");
     });

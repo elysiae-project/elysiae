@@ -27,7 +27,9 @@ mod imp {
     }
 
     impl ObjectImpl for Titlebar {}
+
     impl WidgetImpl for Titlebar {}
+
     impl BoxImpl for Titlebar {}
 
     #[gtk::template_callbacks]

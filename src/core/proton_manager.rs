@@ -71,11 +71,13 @@ impl ComponentRelease {
             valid_checksum(&self.download.checksum),
             "Invalid component checksum"
         );
+
         let url = reqwest::Url::parse(&self.download.url).context("Invalid component URL")?;
         ensure!(
             url.scheme() == "https" && url.host_str().is_some(),
             "Component URL must use HTTPS"
         );
+
         Ok(())
     }
 }
@@ -98,6 +100,7 @@ fn component_url() -> Result<reqwest::Url> {
         .append_pair("arch", ARCH)
         .append_pair("component", "phlogiston")
         .append_pair("latest", "true");
+
     Ok(url)
 }
 
@@ -105,6 +108,7 @@ fn component_url() -> Result<reqwest::Url> {
 async fn latest_release() -> Result<ComponentRelease> {
     let mut release: ComponentRelease = fetch_data(component_url()?.as_str()).await?;
     release.validate()?;
+
     Ok(release)
 }
 
@@ -132,6 +136,7 @@ fn runtime_version(root: &Path) -> Result<RuntimeVersion> {
         "Invalid runtime version marker"
     );
     transaction_id(&marker.transaction)?;
+
     Ok(marker)
 }
 
@@ -183,6 +188,7 @@ impl RuntimePaths {
                 return Ok(layout);
             }
         }
+
         bail!(
             "No complete Proton runtime found in {} (install or repair Phlogiston)",
             self.0.display()
@@ -198,15 +204,19 @@ impl RuntimePaths {
                     marker.version != release.tag || marker.checksum != release.download.checksum
                 }));
         }
+
         let Ok(legacy) = self.resolve() else {
             return Ok(true);
         };
+
         if let Ok(marker) = runtime_version(&legacy.root) {
             return Ok(
                 marker.version != release.tag || marker.checksum != release.download.checksum
             );
         }
+
         let tracker = read_json::<LegacyVersion>(&self.0.join("components/proton.json"));
+
         Ok(tracker.map_or(true, |marker| marker.version != release.tag))
     }
 
@@ -233,6 +243,7 @@ impl RuntimeLayout {
     /// Validates a runtime using the selected Wine architecture.
     fn validate(root: &Path) -> Result<Self> {
         let (bin, architecture) = wine_architecture(root);
+
         Self::validate_architecture(root, bin, architecture)
     }
 
@@ -241,6 +252,7 @@ impl RuntimeLayout {
         real_directory(root, false)?;
         let root = root.canonicalize()?;
         let executable = checked_file(&root, "proton", true)?;
+
         // These are imported/read by Phlogiston before it can run Wine.
         for file in [
             "version",
@@ -251,8 +263,10 @@ impl RuntimeLayout {
         ] {
             checked_file(&root, file, false)?;
         }
+
         checked_file(&root, &format!("{bin}/wine"), true)?;
         let wineserver = checked_file(&root, &format!("{bin}/wineserver"), true)?;
+
         // Both sides of ntdll are needed; empty lib directories or a lone fake
         // launcher are not evidence of a usable distribution. Older GE builds
         // kept the 64-bit libraries in lib64 rather than lib.
@@ -273,6 +287,7 @@ impl RuntimeLayout {
             }),
             "Runtime is missing the Wine ntdll layout"
         );
+
         Ok(Self {
             root,
             executable,
@@ -289,6 +304,7 @@ fn wine_architecture(_root: &Path) -> (&'static str, &'static str) {
     {
         return ("files/bin-arm64", "aarch64");
     }
+
     ("files/bin", "x86_64")
 }
 
@@ -302,6 +318,7 @@ fn checked_file(root: &Path, relative: &str, executable: bool) -> Result<PathBuf
         resolved.starts_with(root),
         "Runtime file escapes its distribution: {relative}"
     );
+
     let metadata = fs::metadata(&resolved)?;
     ensure!(
         metadata.is_file() && metadata.len() > 0,
@@ -311,6 +328,7 @@ fn checked_file(root: &Path, relative: &str, executable: bool) -> Result<PathBuf
         !executable || metadata.permissions().mode() & 0o111 != 0,
         "Runtime file is not executable: {relative}"
     );
+
     // Keep the original path: Proton derives its distribution root from argv[0].
     Ok(path)
 }
@@ -324,6 +342,7 @@ pub fn components_installed() -> Result<bool> {
 /// no interrupted runtime transaction. This probe never performs recovery.
 pub fn runtime_ready_for_launch() -> Result<bool> {
     let paths = RuntimePaths::appdata()?;
+
     Ok(!node_exists(&paths.journal())? && paths.resolve().is_ok())
 }
 
@@ -331,6 +350,7 @@ pub fn runtime_ready_for_launch() -> Result<bool> {
 /// and deciding whether to offer an update belong to the caller.
 pub async fn check_runtime_update() -> Result<bool> {
     let release = latest_release().await?;
+
     RuntimePaths::appdata()?.needs_update(&release)
 }
 
@@ -342,6 +362,7 @@ async fn runtime_worker(
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         let result = work(&operation);
+
         operation.finish(result)
     })
     .await
@@ -353,6 +374,7 @@ pub async fn update_all_modules() -> Result<()> {
     recover_session().await?;
     let operation = operations().begin(OperationKind::Components, None)?;
     let handle = tokio::runtime::Handle::current();
+
     runtime_worker(operation, move |operation| {
         let paths = RuntimePaths::appdata()?;
         if node_exists(&paths.journal())? {
@@ -360,6 +382,7 @@ pub async fn update_all_modules() -> Result<()> {
             recover_at(&paths)?;
             operation.set_phase(Phase::Running)?;
         }
+
         handle.block_on(update_runtime(&paths, operation))
     })
     .await
@@ -370,6 +393,7 @@ pub async fn update_all_modules() -> Result<()> {
 pub async fn recover_runtime() -> Result<()> {
     recover_session().await?;
     let operation = operations().begin(OperationKind::Components, None)?;
+
     runtime_worker(operation, |operation| {
         operation.set_phase(Phase::Committing)?;
         recover_at(&RuntimePaths::appdata()?)
@@ -383,6 +407,7 @@ async fn cancellable<T>(
     future: impl Future<Output = Result<T>>,
 ) -> Result<T> {
     operation.check_cancelled()?;
+
     tokio::select! {
         result = future => result,
         _ = operation.handle().cancelled_future() => bail!("Operation cancelled"),
@@ -400,15 +425,19 @@ async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<(
             operation.set_phase(Phase::Committing)?;
             paths.sync_legacy_version(&marker)?;
         }
+
         return Ok(());
     }
+
     operation.check_cancelled()?;
     let journal = start_transaction(paths)?;
+
     let result = async {
         let stage = paths.stage(&journal);
         let archive = stage.join("download.tar.gz");
         // web/fs accept only paths relative to appdata, not absolute paths.
         let relative_stage = stage.strip_prefix(full_path(None, None)?)?;
+
         retry_download(operation, || async {
             // A previous checksum failure can leave an archive beside the new
             // transfer's temporary file. Rebudget rather than deleting the old
@@ -419,6 +448,7 @@ async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<(
                 "Insufficient free space for a runtime download"
             );
             let budget = (available - STORAGE_RESERVE).min(MAX_ARCHIVE_BYTES);
+
             // Do not drop an in-progress file transfer on cancellation: Tokio
             // file writes can outlive their future. Observe cancellation after
             // the transfer returns, while this worker still owns the lease.
@@ -443,6 +473,7 @@ async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<(
         install_verified_archive(paths, &journal, &release, operation).await
     }
     .await;
+
     if result.is_err() {
         // Staging errors leave the old runtime untouched. Commit errors perform
         // rollback themselves; an unresolved journal is retained for recovery.
@@ -453,6 +484,7 @@ async fn update_runtime(paths: &RuntimePaths, operation: &Operation) -> Result<(
             log::warn!("Could not clean runtime staging: {error:#}");
         }
     }
+
     result
 }
 
@@ -465,6 +497,7 @@ async fn install_verified_archive(
 ) -> Result<()> {
     let stage = paths.stage(journal);
     let relative_stage = stage.strip_prefix(full_path(None, None)?)?;
+
     operation.set_phase(Phase::Verifying)?;
     check_archive_space(&stage.join("download.tar.gz"), available_bytes(&stage)?)?;
     operation
@@ -481,10 +514,12 @@ async fn install_verified_archive(
         Some(true),
     )
     .await?;
+
     operation
         .reporter()?
         .report(ProgressEvent::Message("Validating Phlogiston…".into()));
     RuntimeLayout::validate(&stage.join("runtime"))?;
+
     let marker = RuntimeVersion {
         format: 1,
         version: release.tag.clone(),
@@ -494,6 +529,7 @@ async fn install_verified_archive(
     atomic_json(&stage.join("runtime").join(MARKER), &marker)?;
     sync_tree(&stage.join("runtime"))?;
     sync_directory(&stage)?;
+
     operation.set_phase(Phase::Committing)?;
     commit_runtime(paths, journal)
 }
@@ -515,15 +551,18 @@ where
                         "Runtime download failed after {MAX_RETRIES} attempts"
                     ));
                 }
+
                 log::warn!("Runtime download attempt {number}: {error:#}");
                 cancellable(operation, async {
                     tokio::time::sleep(Duration::from_millis(250 * number as u64)).await;
+
                     Ok(())
                 })
                 .await?;
             }
         }
     }
+
     unreachable!("MAX_RETRIES is positive")
 }
 
@@ -535,6 +574,7 @@ fn verify_archive(archive: &Path, checksum: &str) -> Result<()> {
         actual.eq_ignore_ascii_case(checksum),
         "Downloaded component checksum did not match"
     );
+
     Ok(())
 }
 
@@ -552,6 +592,7 @@ fn charge(total: &mut u64, bytes: u64, limit: u64, resource: &str) -> Result<()>
         *total <= limit,
         "Runtime archive exceeds {resource} budget ({total} > {limit})"
     );
+
     Ok(())
 }
 
@@ -561,6 +602,7 @@ fn raw_tar_preflight(path: &Path) -> Result<()> {
     let mut decoded = 0;
     let mut metadata = 0;
     let mut pax_size = None;
+
     // tar 0.4 entries() eagerly reads GNU/PAX payloads and GNU sparse maps.
     // raw(true) exposes their headers BEFORE those allocations take place.
     for (index, entry) in archive.entries()?.raw(true).enumerate() {
@@ -588,6 +630,7 @@ fn raw_tar_preflight(path: &Path) -> Result<()> {
         charge(&mut decoded, 512, MAX_TAR_DECODED_BYTES, "decoded data")?;
         charge(&mut decoded, padded, MAX_TAR_DECODED_BYTES, "decoded data")?;
         charge(&mut metadata, 512, MAX_TAR_METADATA_BYTES, "metadata")?;
+
         if extension {
             ensure!(
                 entry.size() <= MAX_TAR_EXTENSION_BYTES,
@@ -604,6 +647,7 @@ fn raw_tar_preflight(path: &Path) -> Result<()> {
                 // see the same offsets: PAX size overrides must agree with the
                 // next file header, or they could hide unchecked extensions.
                 let mut size = None;
+
                 for field in entry.pax_extensions()?.context("Missing PAX metadata")? {
                     let field = field?;
                     ensure!(
@@ -614,6 +658,7 @@ fn raw_tar_preflight(path: &Path) -> Result<()> {
                         size = Some(field.value()?.parse::<u64>().context("Invalid PAX size")?);
                     }
                 }
+
                 pax_size = if kind.is_pax_local_extensions() {
                     size
                 } else {
@@ -627,6 +672,7 @@ fn raw_tar_preflight(path: &Path) -> Result<()> {
             );
         }
     }
+
     Ok(())
 }
 
@@ -638,6 +684,7 @@ fn bounded_archive_path(path: &Path) -> Result<PathBuf> {
     );
     let mut normalized = PathBuf::new();
     let mut depth = 0;
+
     for component in path.components() {
         match component {
             Component::Normal(name) => {
@@ -649,6 +696,7 @@ fn bounded_archive_path(path: &Path) -> Result<PathBuf> {
             _ => bail!("Unsafe runtime archive path"),
         }
     }
+
     Ok(normalized)
 }
 
@@ -656,11 +704,13 @@ fn bounded_archive_path(path: &Path) -> Result<PathBuf> {
 fn check_archive_space(path: &Path, available: u64) -> Result<()> {
     // This caller-owned budget also protects the later generic extract_file.
     raw_tar_preflight(path)?;
+
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(File::open(path)?));
     let mut needed = STORAGE_RESERVE;
     ensure!(needed <= available, "Insufficient staging space");
     let mut metadata = 0;
     let mut directories = HashSet::new();
+
     for (index, entry) in archive.entries()?.enumerate() {
         ensure!(index < MAX_TAR_ENTRIES, "Too many runtime archive entries");
         let entry = entry?;
@@ -668,6 +718,7 @@ fn check_archive_space(path: &Path, available: u64) -> Result<()> {
         if kind.is_pax_global_extensions() {
             continue;
         }
+
         charge(
             &mut metadata,
             entry.path_bytes().len() as u64,
@@ -688,6 +739,7 @@ fn check_archive_space(path: &Path, available: u64) -> Result<()> {
                 "path metadata",
             )?;
         }
+
         // Every unique implicit parent consumes an inode/block even when the
         // archive omitted directory entries. Normalize ./ aliases before charging.
         let parents = if kind.is_dir() {
@@ -713,6 +765,7 @@ fn check_archive_space(path: &Path, available: u64) -> Result<()> {
                 }
             }
         }
+
         if !kind.is_dir() {
             // Payload plus conservative block-rounding/inode overhead. Count
             // repeated file entries too; extraction may reject them later.
@@ -720,6 +773,7 @@ fn check_archive_space(path: &Path, available: u64) -> Result<()> {
             charge(&mut needed, NODE_ALLOCATION, available, "staging space")?;
         }
     }
+
     Ok(())
 }
 
@@ -748,6 +802,7 @@ fn transaction_id(id: &str) -> Result<()> {
         parsed.to_string() == id,
         "Noncanonical runtime transaction id"
     );
+
     Ok(())
 }
 
@@ -759,6 +814,7 @@ fn read_journal(paths: &RuntimePaths) -> Result<Journal> {
         "Unsupported runtime transaction format"
     );
     transaction_id(&journal.id)?;
+
     // Journal filenames are derived from a UUID, never accepted as paths.
     for path in [paths.stage(&journal), paths.backup(&journal)] {
         if node_exists(&path)? {
@@ -768,6 +824,7 @@ fn read_journal(paths: &RuntimePaths) -> Result<Journal> {
             );
         }
     }
+
     Ok(journal)
 }
 
@@ -778,6 +835,7 @@ fn start_transaction(paths: &RuntimePaths) -> Result<Journal> {
         !node_exists(&paths.journal())?,
         "Runtime recovery is required first"
     );
+
     let journal = Journal {
         format: 1,
         id: Uuid::new_v4().to_string(),
@@ -787,10 +845,12 @@ fn start_transaction(paths: &RuntimePaths) -> Result<Journal> {
         !node_exists(&paths.stage(&journal))? && !node_exists(&paths.backup(&journal))?,
         "Runtime transaction paths already exist"
     );
+
     // Record ownership before creating anything which might survive a crash.
     atomic_json(&paths.journal(), &journal)?;
     fs::create_dir(paths.stage(&journal))?;
     sync_directory(&paths.0)?;
+
     Ok(journal)
 }
 
@@ -805,6 +865,7 @@ fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     if let Ok(runtime) = paths.resolve() {
         wait_for_session(paths, &runtime)?;
     }
+
     snapshot_legacy_version(paths, journal)?;
     let committing = Journal {
         format: 1,
@@ -812,6 +873,7 @@ fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         phase: TransactionPhase::Committing,
     };
     atomic_json(&paths.journal(), &committing)?;
+
     let mut committed_published = false;
     let result = (|| {
         if node_exists(&paths.live())? {
@@ -822,6 +884,7 @@ fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
             fs::rename(paths.live(), paths.backup(journal)).context("Could not back up runtime")?;
             sync_directory(&paths.0)?;
         }
+
         fs::rename(&staged, paths.live()).context("Could not activate staged runtime")?;
         sync_directory(&paths.stage(journal))?;
         sync_directory(&paths.0)?;
@@ -835,8 +898,10 @@ fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
             },
             &mut committed_published,
         )?;
+
         Ok(())
     })();
+
     if let Err(error) = result {
         // rename publishes the decision before parent fsync makes it durable.
         // Either surviving journal (Committing or Committed) can roll forward;
@@ -844,11 +909,14 @@ fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         if committed_published {
             return Err(error).context("Runtime commit publication needs recovery");
         }
+
         if let Err(rollback) = rollback_runtime(paths, journal) {
             return Err(error).context(format!("Runtime rollback needs recovery: {rollback:#}"));
         }
+
         return Err(error);
     }
+
     // Once the compatibility marker is durable the new tree is committed. A
     // cleanup error leaves the journal/remaining backup, not a half-rollback.
     discard_transaction(paths, journal)
@@ -868,12 +936,14 @@ fn snapshot_legacy_version(paths: &RuntimePaths, journal: &Journal) -> Result<()
     if node_exists(&components)? {
         real_directory(&components, false)?;
     }
+
     let tracker = components.join("proton.json");
     let bytes = if node_exists(&tracker)? {
         Some(read_metadata(&tracker, MAX_METADATA_BYTES)?)
     } else {
         None
     };
+
     // Fixed name under UUID-owned staging; neither snapshot nor journal can
     // supply a destination path. Preserve invalid bytes too, never infer v1.
     atomic_json(
@@ -893,6 +963,7 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         recorded.phase != TransactionPhase::Committed,
         "Cannot roll back a committed runtime"
     );
+
     let snapshot: TrackerSnapshot = serde_json::from_slice(&read_metadata(
         &paths.stage(journal).join(TRACKER_SNAPSHOT),
         MAX_METADATA_BYTES * 4 + 128,
@@ -904,6 +975,7 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
             .is_none_or(|bytes| bytes.len() as u64 <= MAX_METADATA_BYTES),
         "Runtime tracker snapshot is too large"
     );
+
     // Persist rollback intent before any move; restart must not bless v2 again
     // if rollback failed before moving the newly installed tree back to staging.
     atomic_json(
@@ -925,10 +997,12 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         if let Ok(runtime) = RuntimeLayout::validate(&paths.live()) {
             wait_for_session(paths, &runtime)?;
         }
+
         fs::rename(paths.live(), &staged)?;
         sync_directory(&paths.stage(journal))?;
         sync_directory(&paths.0)?;
     }
+
     if node_exists(&paths.backup(journal))? {
         ensure!(
             !node_exists(&paths.live())?,
@@ -937,6 +1011,7 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         fs::rename(paths.backup(journal), paths.live())?;
         sync_directory(&paths.0)?;
     }
+
     let components = paths.0.join("components");
     real_directory(&components, true)?;
     let tracker = components.join("proton.json");
@@ -950,9 +1025,11 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
                 );
                 fs::remove_file(&tracker)?;
             }
+
             sync_directory(&components)?;
         }
     }
+
     // Both old tree and tracker are durable. Cleanup can now discard staging,
     // including the snapshot, even if interrupted before journal deletion.
     atomic_json(
@@ -972,6 +1049,7 @@ fn recover_at(paths: &RuntimePaths) -> Result<()> {
         // Unjournaled directories may belong to someone else; no glob cleanup.
         return Ok(());
     }
+
     let journal = read_journal(paths)?;
     if journal.phase == TransactionPhase::Staging {
         ensure!(
@@ -980,6 +1058,7 @@ fn recover_at(paths: &RuntimePaths) -> Result<()> {
         );
         return discard_transaction(paths, &journal);
     }
+
     let installed =
         runtime_version(&paths.live()).is_ok_and(|marker| marker.transaction == journal.id);
     if journal.phase == TransactionPhase::Committed {
@@ -991,6 +1070,7 @@ fn recover_at(paths: &RuntimePaths) -> Result<()> {
         paths.sync_legacy_version(&runtime_version(&paths.live())?)?;
         return discard_transaction(paths, &journal);
     }
+
     if journal.phase == TransactionPhase::Committing
         && installed
         && RuntimeLayout::validate(&paths.live()).is_ok()
@@ -1014,6 +1094,7 @@ fn recover_at(paths: &RuntimePaths) -> Result<()> {
             }
         }
     }
+
     rollback_runtime(paths, &journal)
 }
 
@@ -1024,6 +1105,7 @@ fn discard_transaction(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
         recorded.id == journal.id,
         "Runtime transaction ownership changed"
     );
+
     for path in [paths.backup(journal), paths.stage(journal)] {
         if node_exists(&path)? {
             let metadata = fs::symlink_metadata(&path)?;
@@ -1038,6 +1120,7 @@ fn discard_transaction(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
             }
         }
     }
+
     sync_directory(&paths.0)?;
     fs::remove_file(paths.journal())?;
     sync_directory(&paths.0)
@@ -1057,11 +1140,13 @@ fn real_directory(path: &Path, create: bool) -> Result<()> {
     if create && !node_exists(path)? {
         fs::create_dir(path)?;
     }
+
     ensure!(
         fs::symlink_metadata(path)?.is_dir(),
         "Not a real directory: {}",
         path.display()
     );
+
     Ok(())
 }
 
@@ -1072,9 +1157,11 @@ fn read_metadata(path: &Path, limit: u64) -> Result<Vec<u8>> {
         "Not a regular metadata file: {}",
         path.display()
     );
+
     let mut bytes = Vec::new();
     File::open(path)?.take(limit + 1).read_to_end(&mut bytes)?;
     ensure!(bytes.len() as u64 <= limit, "Runtime metadata is too large");
+
     Ok(bytes)
 }
 
@@ -1103,6 +1190,7 @@ fn atomic_bytes(path: &Path, bytes: &[u8], published: &mut bool) -> Result<()> {
         .write(true)
         .create_new(true)
         .open(&temporary)?;
+
     let result = (|| {
         file.write_all(bytes)?;
         file.sync_all()?;
@@ -1110,9 +1198,11 @@ fn atomic_bytes(path: &Path, bytes: &[u8], published: &mut bool) -> Result<()> {
         *published = true;
         sync_directory(parent)
     })();
+
     if result.is_err() {
         let _ = fs::remove_file(temporary);
     }
+
     result
 }
 
@@ -1127,6 +1217,7 @@ fn sync_directory(path: &Path) -> Result<()> {
 fn sync_tree(root: &Path) -> Result<()> {
     let mut directories = vec![root.to_path_buf()];
     let mut index = 0;
+
     while index < directories.len() {
         for entry in fs::read_dir(&directories[index])? {
             let entry = entry?;
@@ -1137,11 +1228,14 @@ fn sync_tree(root: &Path) -> Result<()> {
                 File::open(entry.path())?.sync_all()?;
             }
         }
+
         index += 1;
     }
+
     for directory in directories.into_iter().rev() {
         sync_directory(&directory)?;
     }
+
     Ok(())
 }
 
@@ -1219,6 +1313,7 @@ fn validate_boot_id(id: &str) -> Result<()> {
             && uuid.get_variant() == uuid::Variant::RFC4122,
         "Invalid session boot id"
     );
+
     Ok(())
 }
 
@@ -1227,6 +1322,7 @@ fn boot_id() -> Result<String> {
     let bytes = read_metadata(Path::new("/proc/sys/kernel/random/boot_id"), 128)?;
     let id = std::str::from_utf8(&bytes)?.trim().to_owned();
     validate_boot_id(&id)?;
+
     Ok(id)
 }
 
@@ -1245,6 +1341,7 @@ fn ensure_no_session_at(paths: &RuntimePaths) -> Result<()> {
         !node_exists(&paths.session())?,
         "A Wine session may still own the shared prefix; session recovery is required"
     );
+
     Ok(())
 }
 
@@ -1288,6 +1385,7 @@ fn fence_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<Sessio
         wrapper: SessionWrapper::Unknown,
     };
     atomic_json(&paths.session(), &session)?;
+
     Ok(session)
 }
 
@@ -1319,6 +1417,7 @@ fn parse_wrapper_process(pid: u32, stat: &[u8]) -> Result<WrapperProcess> {
         stat.starts_with(format!("{pid} (").as_bytes()),
         "Wrapper process PID mismatch"
     );
+
     let mut fields = stat[end + 1..]
         .split(u8::is_ascii_whitespace)
         .filter(|field| !field.is_empty());
@@ -1327,6 +1426,7 @@ fn parse_wrapper_process(pid: u32, stat: &[u8]) -> Result<WrapperProcess> {
     let start_time = std::str::from_utf8(fields.nth(18).context("Missing wrapper start time")?)?
         .parse::<u64>()
         .context("Invalid wrapper start time")?;
+
     Ok(WrapperProcess {
         start_time,
         exited: matches!(state[0], b'Z' | b'X' | b'x'),
@@ -1337,6 +1437,7 @@ fn parse_wrapper_process(pid: u32, stat: &[u8]) -> Result<WrapperProcess> {
 fn wrapper_process(pid: u32) -> Result<Option<WrapperProcess>> {
     ensure!(pid > 0 && pid <= i32::MAX as u32, "Invalid wrapper PID");
     let path = PathBuf::from(format!("/proc/{pid}/stat"));
+
     match read_metadata(&path, 4096) {
         Ok(stat) => Ok(Some(parse_wrapper_process(pid, &stat)?)),
         Err(error)
@@ -1371,6 +1472,7 @@ fn wait_for_wrapper(wrapper: SessionWrapper) -> Result<()> {
             while !wrapper_has_exited(pid, start_time)? {
                 std::thread::sleep(Duration::from_millis(50));
             }
+
             Ok(())
         }
     }
@@ -1390,6 +1492,7 @@ fn quiesce_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()> 
     if node_exists(&paths.prefix().join("pfx"))? {
         real_directory(&paths.prefix().join("pfx"), false)?;
     }
+
     wait_for_session(paths, runtime)?;
     clear_session(paths)
 }
@@ -1399,6 +1502,7 @@ fn recover_session_at(paths: &RuntimePaths) -> Result<()> {
     if !node_exists(&paths.session())? {
         return Ok(());
     }
+
     let mut session: SessionFence = read_json(&paths.session())?;
     ensure!(session.format == 1, "Unsupported session fence format");
     validate_boot_id(&session.boot_id)?;
@@ -1429,6 +1533,7 @@ async fn recover_session_with(paths: RuntimePaths, owner: &Operations) -> Result
     if !node_exists(&paths.session())? {
         return Ok(());
     }
+
     let operation = owner.begin(OperationKind::Recovery, None)?;
     runtime_worker(operation, move |_| recover_session_at(&paths)).await
 }
@@ -1462,9 +1567,11 @@ fn game_command(
     if node_exists(&paths.prefix().join("pfx"))? {
         real_directory(&paths.prefix().join("pfx"), false)?;
     }
+
     let mut command = Command::new(&runtime.executable);
     command.arg("run").arg(&executable).current_dir(root);
     prefix_environment(&mut command, paths);
+
     Ok(command)
 }
 
@@ -1476,6 +1583,7 @@ fn wait_child(mut child: Child) -> Result<ExitStatus> {
             // Do not leave a live child behind on an unexpected wait failure.
             let _ = child.kill();
             let _ = child.wait();
+
             Err(error).context("Could not reap runtime process")
         }
     }
@@ -1486,16 +1594,19 @@ fn wait_for_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()>
     if !node_exists(&paths.prefix())? {
         return Ok(());
     }
+
     real_directory(&paths.prefix(), false)?;
     let mut command = Command::new(&runtime.wineserver);
     command.arg("-w").current_dir(&runtime.root);
     prefix_environment(&mut command, paths);
+
     // Phlogiston 11 uses multiarch library directories; older GE releases use
     // lib/lib64. Match Proton's search order without changing the host process.
     let mut libraries = Vec::new();
     if runtime.wineserver == runtime.root.join("files/bin-arm64/wineserver") {
         libraries.push(runtime.root.join("files/lib/aarch64-linux-gnu"));
     }
+
     libraries.extend([
         runtime.root.join("files/lib/x86_64-linux-gnu"),
         runtime.root.join("files/lib/i386-linux-gnu"),
@@ -1505,6 +1616,7 @@ fn wait_for_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()>
     if let Some(existing) = std::env::var_os("LD_LIBRARY_PATH") {
         libraries.extend(std::env::split_paths(&existing));
     }
+
     command.env("LD_LIBRARY_PATH", std::env::join_paths(libraries)?);
     let status = wait_child(
         command
@@ -1512,6 +1624,7 @@ fn wait_for_session(paths: &RuntimePaths, runtime: &RuntimeLayout) -> Result<()>
             .context("Could not start matching wineserver -w")?,
     )?;
     ensure!(status.success(), "wineserver -w failed: {status}");
+
     Ok(())
 }
 
@@ -1534,6 +1647,7 @@ fn run_game_owned(paths: &RuntimePaths, executable: &Path, operation: &Operation
     ensure_no_session_at(paths)?;
     let runtime = paths.resolve()?;
     let mut command = game_command(paths, &runtime, executable)?;
+
     // Persist before spawn: a crash or any supervision uncertainty must
     // continue excluding other processes after this lease is released.
     let mut fence = fence_session(paths, &runtime)?;
@@ -1558,6 +1672,7 @@ fn run_game_owned(paths: &RuntimePaths, executable: &Path, operation: &Operation
             })();
             let waited = wait_child(child);
             wrapper_reaped = waited.is_ok();
+
             match (recorded, waited) {
                 (Err(error), Err(wait)) => {
                     Err(error).context(format!("Wrapper wait also failed: {wait:#}"))
@@ -1574,14 +1689,17 @@ fn run_game_owned(paths: &RuntimePaths, executable: &Path, operation: &Operation
             }
         }
     };
+
     if !wrapper_reaped {
         // Even successful -w is premature while this wrapper might start Wine.
         return launched.context("Wrapper exit uncertain; session fence retained");
     }
+
     // Publish known exit (also after spawn failure) before clearing the fence.
     // Publication errors retain Unknown/Running/Reaped, all safe to recover.
     let session = record_wrapper(paths, &mut fence, SessionWrapper::Reaped)
         .and_then(|_| quiesce_session(paths, &runtime));
+
     match (launched, session) {
         (Err(error), Err(wait)) => {
             Err(error).context(format!("Wine session wait also failed: {wait:#}"))
@@ -1604,9 +1722,11 @@ mod tests {
                 .query_pairs()
                 .any(|(key, value)| key == "latest" && value == "true")
         );
+
         let data = serde_json::json!({"tag": "11-0", "prerelease": false,
             "download": {"url": "https://example.invalid/runtime.tar.gz", "checksum": "a".repeat(64)}});
         let mut release: ComponentRelease = serde_json::from_value(data.clone()).unwrap();
+
         release.validate().unwrap();
         assert!(serde_json::from_value::<ComponentRelease>(serde_json::json!([data])).is_err());
     }
@@ -1618,6 +1738,7 @@ mod tests {
             bounded_archive_path(Path::new("./runtime/proton")).unwrap(),
             PathBuf::from("runtime/proton")
         );
+
         for path in [
             "../outside".to_owned(),
             "/outside".to_owned(),
