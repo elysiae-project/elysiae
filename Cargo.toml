@@ -28,7 +28,7 @@ sha256 = "1.6.0"
 sysinfo = "0.39.6"
 regex = "1.13.1"
 
-irmin = { git = "https://github.com/elysiae-project/irmin", rev = "184b364e9ec41826d434cacfb8fe059fefe19fc7" }
+irmin = { git = "https://github.com/elysiae-project/irmin", rev = "2ce9dc032f61cba46421083b956c896020bfede0" }
 libc = "0.2.190"
 memfd = "0.6.6"
 async-channel = "2.5.0"
