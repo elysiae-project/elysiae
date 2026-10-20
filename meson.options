@@ -1,0 +1,38 @@
+option(
+    'profile',
+    type: 'combo',
+    choices: ['auto', 'release', 'dev'],
+    value: 'auto',
+    description: 'Cargo profile override. auto maps Meson debug/release build types to Cargo dev/release.',
+)
+option(
+    'cargo_target_dir',
+    type: 'string',
+    value: '',
+    description: 'Cargo cache directory (relative paths use the source root). Empty uses CARGO_TARGET_DIR at configure time, then <build>/target.',
+)
+option(
+    'tests',
+    type: 'boolean',
+    value: true,
+    description: 'Register Cargo tests using locked dependency versions.',
+)
+option(
+    'gui_tests',
+    type: 'boolean',
+    value: false,
+    description: 'Also register ignored GTK tests. Requires a working display when tests run.',
+)
+option(
+    'validation',
+    type: 'feature',
+    value: 'auto',
+    description: 'Desktop/AppStream validation tests: auto uses available tools, enabled requires both. Schema validation always runs when tests are enabled.',
+)
+option(
+    'test_timeout',
+    type: 'integer',
+    min: 1,
+    value: 1800,
+    description: 'Timeout in seconds for each Cargo test invocation, including test compilation.',
+)

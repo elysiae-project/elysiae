@@ -1,0 +1,49 @@
+/* Selector geometry, independent of artwork resolution. */
+:root {
+  --game-icon-size: 56px;
+  --game-button-padding: 3px;
+}
+
+.game-button {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--game-button-padding);
+  margin: 0;
+  border: 1px solid var(--transparent);
+  border-radius: 12px;
+  background: var(--transparent);
+  box-shadow: none;
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+.game-button:hover {
+  background: var(--surface-hover);
+}
+
+.game-button:checked,
+.game-button.is-selected {
+  border-color: var(--download-color);
+  background: var(--surface-selected);
+}
+
+.game-icon {
+  min-width: var(--game-icon-size);
+  min-height: var(--game-icon-size);
+  border-radius: 8px;
+}
+
+.game-icon-fallback {
+  -gtk-icon-size: var(--game-icon-size);
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+}
+
+.game-button.is-downloading {
+  border-bottom-color: var(--verification-color);
+}
+
+.game-button:focus-visible {
+  outline-offset: -2px;
+}

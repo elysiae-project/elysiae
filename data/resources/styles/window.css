@@ -1,0 +1,72 @@
+.launcher-window {
+  background: var(--bg-color-dark);
+  color: var(--text-primary);
+}
+
+.launcher-content {
+  padding: 24px 32px 28px;
+}
+
+.launcher-bottom-row {
+  background: var(--transparent);
+}
+
+.launcher-footer {
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--footer-shade);
+}
+
+.launcher-footer .progress-panel {
+  padding: 12px 0 0;
+  background: var(--transparent);
+}
+
+.launcher-action-column {
+  margin-left: 24px;
+  background: var(--transparent);
+}
+
+.launcher-actions {
+  background: var(--transparent);
+}
+
+.game-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.activity-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* Approximately 1.35x the previous 172x48 and 48x48 action controls. */
+.operation-button,
+.settings-button {
+  min-height: 32px;
+  padding: 16px 27px;
+  border-radius: 16px;
+  font-size: 22px;
+}
+
+.operation-button {
+  min-width: 178px;
+}
+
+.settings-button {
+  min-width: 32px;
+  padding: 16px;
+  border-radius: 32px;
+  -gtk-icon-size: 22px;
+}
+
+.preinstall-button {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.preinstall-button:hover {
+  background: var(--surface-hover);
+}

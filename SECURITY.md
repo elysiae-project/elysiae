@@ -1,19 +1,15 @@
-# Security Policy
+# Security Vulnerabilities
 
-The Elysiae Project aims to keep the launcher as secure as possible. However, we can make mistakes and may not discover them before delivering builds to the public. If you discover a vulnerability, we would like to be notified as soon as possible so the issue can be addressed.
+The Elysiae project aims to have the best security possible for all of its applications. If you discover/learn of a security vulnerability, please let us know
 
-## Supported Versions
+## What we aren't responsible for
 
-The Elysiae Project will only support the latest version of the launcher at any given time. We are a team of just two people, and do not have the ability to manage multiple versions of Elysiae. Please verify that you are on the latest version of Elysiae before reporting issues.
+The Elysiae project is not accepting security reports for:
 
-> [!IMPORTANT]
-> Elysiae depends on many external packages to function properly. If you discover a vulnerability in external packages, in addition to notifying us, report it to the maintainers of those packages as well
+- Outdated versions of Elysiae
+- Distributions of Elysiae that aren't based on the source code of this repository
+- Packages that Elysiae depends on, except for if the package becomes outdated and starts to be affected by security vulnerabilites
 
-## Reporting a Vulnerability
+## Reporting a security vulnerability
 
-If you discover a vulnerability, may take one of the two steps outlined below:
-
-1. Open an issue and label it as a bug or open a pull request with the fix. Use this for less critical vulnerabilities.
-2. Privately disclose the vulnerability on GitHub (Security and Quality tab). Use thiss for more severe and sensitive vulnerabilities
-
-When disclosing a vulnerability, please be descriptive, provide steps to reproduce, and optionally, a demo in the form of a screen recording
+If you discover a vulnerability in Elysiae, **DO NOT** open an issue on the Elysiae repoistory. This will attract attention to the bug and make the issue more severe than it already is. You should always send security vulnerabilities through the security vulnerability disclosure form on this repository.

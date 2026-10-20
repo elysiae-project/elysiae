@@ -1,0 +1,36 @@
+.dropdown-option {
+  min-height: 24px;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--transparent);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+.dropdown-option:hover {
+  background: var(--surface-hover);
+}
+
+.dropdown-option.is-selected,
+.dropdown-option:selected {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+/* The check denotes committed selection; :selected is keyboard preview only. */
+.dropdown-check {
+  -gtk-icon-size: 16px;
+  color: var(--download-color);
+  opacity: 0;
+}
+
+.dropdown-option.is-selected .dropdown-check {
+  opacity: 1;
+}
+
+.dropdown-option:focus-visible {
+  outline-offset: -2px;
+}

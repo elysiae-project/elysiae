@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeWindow" parent="GtkApplicationWindow">
+    <property name="title">Elysiae</property>
+    <property name="default-width">1200</property>
+    <property name="default-height">700</property>
+    <property name="width-request">680</property>
+    <property name="height-request">500</property>
+    <style><class name="launcher-window"/></style>
+    <property name="titlebar"><object class="ElysiaeTitlebar"/></property>
+    <child>
+      <object class="GtkOverlay" id="root_overlay">
+        <style><class name="launcher-overlay"/></style>
+        <child><object class="ElysiaeBackground" id="background"/></child>
+        <child type="overlay">
+          <object class="GtkBox" id="content">
+            <property name="orientation">vertical</property>
+            <style><class name="launcher-content"/></style>
+            <child><object class="ElysiaeSidebar" id="sidebar"/></child>
+            <child>
+              <object class="GtkBox">
+                <property name="vexpand">true</property>
+                <property name="can-target">false</property>
+                <style><class name="launcher-spacer"/></style>
+              </object>
+            </child>
+            <child>
+              <!-- Two of five equal columns keep the progress area at 40%. -->
+              <object class="GtkGrid" id="footer_layout">
+                <property name="column-homogeneous">true</property>
+                <style><class name="launcher-bottom-row"/></style>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">12</property>
+                    <property name="valign">end</property>
+                    <style><class name="launcher-footer"/></style>
+                    <layout>
+                      <property name="column">0</property>
+                      <property name="row">0</property>
+                      <property name="column-span">2</property>
+                    </layout>
+                    <child>
+                      <object class="GtkLabel" id="game_title">
+                        <property name="xalign">0</property>
+                        <property name="ellipsize">end</property>
+                        <style><class name="game-title"/></style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="activity_label">
+                        <property name="xalign">0</property>
+                        <property name="wrap">true</property>
+                        <property name="wrap-mode">word-char</property>
+                        <style><class name="activity-label"/></style>
+                      </object>
+                    </child>
+                    <child><object class="ElysiaeProgressbar" id="progress"/></child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">12</property>
+                    <property name="halign">end</property>
+                    <property name="valign">end</property>
+                    <style><class name="launcher-action-column"/></style>
+                    <layout>
+                      <property name="column">2</property>
+                      <property name="row">0</property>
+                      <property name="column-span">3</property>
+                    </layout>
+                    <child>
+                      <object class="GtkButton" id="preinstall_button">
+                        <property name="label">Preinstall</property>
+                        <property name="visible">false</property>
+                        <property name="halign">end</property>
+                        <style><class name="button"/><class name="preinstall-button"/></style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">16</property>
+                        <style><class name="launcher-actions"/></style>
+                        <child>
+                          <object class="GtkButton" id="settings_button">
+                            <property name="icon-name">settings</property>
+                            <property name="tooltip-text">Settings</property>
+                            <accessibility><property name="label">Settings</property></accessibility>
+                            <style><class name="button"/><class name="settings-button"/></style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="operation_button">
+                            <property name="label">Checking…</property>
+                            <style><class name="button"/><class name="operation-button"/></style>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child type="overlay">
+          <object class="GtkOverlay" id="settings_layer">
+            <property name="visible">false</property>
+            <style><class name="settings-layer"/></style>
+            <child>
+              <object class="GtkButton" id="settings_backdrop">
+                <property name="focusable">false</property>
+                <accessibility><property name="label">Close settings</property></accessibility>
+                <style><class name="settings-backdrop"/></style>
+              </object>
+            </child>
+            <child type="overlay">
+              <object class="ElysiaeSettings" id="settings_panel">
+                <property name="halign">fill</property>
+                <property name="valign">center</property>
+                <property name="margin-start">24</property>
+                <property name="margin-end">24</property>
+                <property name="margin-top">16</property>
+                <property name="margin-bottom">16</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

@@ -1,0 +1,15 @@
+:root {
+  --game-selector-padding: 5px;
+}
+
+/* Selector: content-sized, with overflow handled by its scrolled window. */
+.game-selector {
+  padding: var(--game-selector-padding);
+  border-radius: 16px;
+  background: var(--panel-color);
+}
+
+.game-selector-scroll,
+.game-selector-items {
+  background: var(--transparent);
+}

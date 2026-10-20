@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+    <gresource prefix="/app/elysiae/Elysiae">
+        <!--Widgets-->
+        <file alias="window.ui" compressed="true" preprocess="xml-stripblanks">resources/window.ui</file>
+        <file alias="ui/progressbar.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/progressbar.ui</file>
+        <file alias="ui/background.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/background.ui</file>
+        <file alias="ui/titlebar.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/titlebar.ui</file>
+        <file alias="ui/settings.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/settings.ui</file>
+        <file alias="ui/sidebar.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/sidebar.ui</file>
+
+        <file alias="ui/dropdown.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/dropdown.ui</file>
+        <file alias="ui/dropdown-option.ui" compressed="true" preprocess="xml-stripblanks">resources/ui/dropdown-option.ui</file>
+
+        <!--Stylesheets-->
+        <file alias="style.css" compressed="true">resources/styles.css</file>
+        <file alias="styles/window.css" compressed="true">resources/styles/window.css</file>
+        <file alias="styles/background.css" compressed="true">resources/styles/background.css</file>
+        <file alias="styles/sidebar.css" compressed="true">resources/styles/sidebar.css</file>
+        <file alias="styles/game-icon.css" compressed="true">resources/styles/game-icon.css</file>
+        <file alias="styles/progressbar.css" compressed="true">resources/styles/progressbar.css</file>
+        <file alias="styles/settings.css" compressed="true">resources/styles/settings.css</file>
+        <file alias="styles/titlebar.css" compressed="true">resources/styles/titlebar.css</file>
+        <file alias="styles/dropdown.css" compressed="true">resources/styles/dropdown.css</file>
+        <file alias="styles/dropdown-option.css" compressed="true">resources/styles/dropdown-option.css</file>
+
+        <!--Icons-->
+        <file preprocess="xml-stripblanks">icons/scalable/close.svg</file>
+        <file preprocess="xml-stripblanks">icons/scalable/settings.svg</file>
+    </gresource>
+</gresources>

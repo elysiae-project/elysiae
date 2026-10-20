@@ -1,0 +1,24 @@
+.launcher-titlebar {
+  background: var(--bg-color-dark);
+  color: var(--text-primary);
+  box-shadow: none;
+  border: none;
+}
+
+.launcher-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.titlebar-close {
+  background: var(--transparent);
+  color: var(--text-secondary);
+  border-radius: 10px;
+  border: none;
+  box-shadow: none;
+}
+
+.titlebar-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}

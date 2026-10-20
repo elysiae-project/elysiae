@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeDropdown" parent="GtkBox">
+    <style>
+      <class name="dropdown"/>
+    </style>
+    <child>
+      <object class="GtkMenuButton" id="trigger">
+        <property name="sensitive">false</property>
+        <style>
+          <class name="dropdown-trigger"/>
+        </style>
+        <property name="child">
+          <object class="GtkBox">
+            <property name="spacing">12</property>
+            <child>
+              <object class="GtkLabel" id="label">
+                <property name="label">Choose…</property>
+                <property name="xalign">0</property>
+                <property name="hexpand">true</property>
+                <property name="ellipsize">end</property>
+                <property name="width-chars">18</property>
+                <property name="max-width-chars">24</property>
+                <style>
+                  <class name="dropdown-label"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">pan-down-symbolic</property>
+                <property name="accessible-role">presentation</property>
+                <style>
+                  <class name="dropdown-indicator"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </property>
+        <property name="popover">
+          <object class="GtkPopover" id="popover">
+            <property name="has-arrow">false</property>
+            <property name="autohide">true</property>
+            <style>
+              <class name="dropdown-popover"/>
+            </style>
+            <child>
+              <object class="GtkScrolledWindow">
+                <property name="hscrollbar-policy">never</property>
+                <property name="vscrollbar-policy">automatic</property>
+                <property name="propagate-natural-width">true</property>
+                <property name="propagate-natural-height">true</property>
+                <property name="max-content-height">280</property>
+                <style>
+                  <class name="dropdown-scroll"/>
+                </style>
+                <child>
+                  <object class="GtkViewport">
+                    <property name="scroll-to-focus">true</property>
+                    <child>
+                      <object class="GtkListBox" id="list">
+                        <property name="selection-mode">single</property>
+                        <property name="activate-on-single-click">true</property>
+                        <property name="accessible-role">list-box</property>
+                        <style>
+                          <class name="dropdown-list"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

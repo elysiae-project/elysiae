@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeDropdownOption" parent="GtkListBoxRow">
+    <property name="accessible-role">option</property>
+    <style>
+      <class name="dropdown-option"/>
+    </style>
+    <child>
+      <object class="GtkBox">
+        <property name="spacing">12</property>
+        <child>
+          <object class="GtkLabel" id="label">
+            <property name="xalign">0</property>
+            <property name="hexpand">true</property>
+            <property name="ellipsize">end</property>
+            <property name="max-width-chars">28</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkImage" id="check">
+            <property name="icon-name">object-select-symbolic</property>
+            <property name="opacity">0</property>
+            <property name="accessible-role">presentation</property>
+            <style>
+              <class name="dropdown-check"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
