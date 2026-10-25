@@ -96,7 +96,7 @@ fn pid_namespace() -> Result<String> {
 }
 
 /// Rejects mutations whenever a session fence node exists at this root.
-fn ensure_no_session_at(paths: &RuntimePaths) -> Result<()> {
+pub(super) fn ensure_no_session_at(paths: &RuntimePaths) -> Result<()> {
     // Any node (including malformed metadata and symlinks) fences mutations.
     ensure!(
         !node_exists(&paths.session())?,
