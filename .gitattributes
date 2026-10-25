@@ -1,1 +1,1 @@
-*.ui linguist-language=XML
+*.ui linguist-language=XML linguist-detectable=true
