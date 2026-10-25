@@ -14,8 +14,7 @@ fn editable_fields_cover_schema_without_migration_metadata() {
         .into_iter()
         .map(|key| key.to_string())
         .filter(|key| {
-            !["is-first-launch", "settings-version", "last-used-version"]
-                .contains(&key.as_str())
+            !["is-first-launch", "settings-version", "last-used-version"].contains(&key.as_str())
         })
         .collect();
     expected.sort();
