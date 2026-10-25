@@ -1,0 +1,101 @@
+/* Theme palette: all authored colors live here. Keep component rules
+ * expressed through these variables when adjusting or extending the theme. */
+:root {
+  --bg-color-dark: oklch(0.1732 0.0295 273.73);
+  --btn-primary: oklch(0.55 0.183 271.11);
+  --btn-primary-hover: oklch(0.57 0.183 271.11);
+  --surface: oklch(0.235 0.034 273.73);
+  --surface-raised: oklch(0.29 0.043 273.73);
+  --surface-hover: oklch(0.34 0.055 273.73);
+  --surface-selected: oklch(0.36 0.09 271.11);
+  --text-primary: oklch(0.96 0.012 273.73);
+  --text-secondary: oklch(0.79 0.027 273.73);
+  --text-muted: oklch(0.71 0.035 273.73);
+  --text-on-primary: oklch(0.99 0.005 271.11);
+  --border-color: oklch(0.43 0.045 273.73);
+  --focus-color: oklch(0.8 0.12 271.11);
+  --download-color: oklch(0.72 0.15 271.11);
+  --verification-color: oklch(0.78 0.12 190);
+  --success-color: oklch(0.82 0.12 155);
+  --error-color: oklch(0.8 0.13 22);
+  --track-color: oklch(0.35 0.037 273.73);
+  --fallback-color: oklch(0.27 0.065 273.73);
+  --fallback-wordmark: oklch(0.68 0.065 273.73);
+  --panel-color: alpha(var(--surface), 0.96);
+  --backdrop-color: alpha(var(--bg-color-dark), 0.76);
+  --footer-shade: alpha(var(--bg-color-dark), 0.95);
+  --shadow-color: alpha(var(--bg-color-dark), 0.5);
+  --transparent: transparent;
+}
+
+* {
+  font-family: "Pretendard Variable", sans-serif;
+}
+
+/* Shared controls. Keep native keyboard focus visible. */
+.button {
+  border: none;
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  min-height: 24px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-on-primary);
+  background: var(--btn-primary);
+  transition: background-color 160ms ease-out;
+}
+
+.button:hover {
+  background: var(--btn-primary-hover);
+}
+
+.button:active {
+  background: var(--btn-primary);
+}
+
+.button:disabled {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+.button:focus-visible,
+.game-button:focus-visible,
+.settings-close:focus-visible,
+.settings-switch:focus-visible,
+.dropdown-trigger > button:focus-visible,
+.dropdown-option:focus-visible,
+.titlebar-close:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 3px;
+}
+
+.settings-scroll scrollbar,
+.game-selector-scroll scrollbar,
+.dropdown-scroll scrollbar {
+  background: var(--transparent);
+}
+
+.settings-scroll scrollbar slider,
+.game-selector-scroll scrollbar slider,
+.dropdown-scroll scrollbar slider {
+  background: var(--border-color);
+  border: none;
+  border-radius: 8px;
+  min-width: 5px;
+  min-height: 5px;
+  margin: 2px;
+}
+
+/* GTK accepts imports after rules. Keep component overrides after shared
+ * controls, in this same provider, so variables and source-order ties retain
+ * their original behavior (for example .button and .operation-button). */
+@import url("resource:///app/elysiae/Elysiae/styles/window.css");
+@import url("resource:///app/elysiae/Elysiae/styles/background.css");
+@import url("resource:///app/elysiae/Elysiae/styles/sidebar.css");
+@import url("resource:///app/elysiae/Elysiae/styles/game-icon.css");
+@import url("resource:///app/elysiae/Elysiae/styles/progressbar.css");
+@import url("resource:///app/elysiae/Elysiae/styles/settings.css");
+@import url("resource:///app/elysiae/Elysiae/styles/titlebar.css");
+@import url("resource:///app/elysiae/Elysiae/styles/dropdown.css");
+@import url("resource:///app/elysiae/Elysiae/styles/dropdown-option.css");

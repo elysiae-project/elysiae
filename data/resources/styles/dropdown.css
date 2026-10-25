@@ -1,0 +1,81 @@
+:root {
+  --dropdown-label-width: 140px;
+}
+
+/* Reset only this widget's native containers, not unrelated GTK controls. */
+.dropdown,
+.dropdown-trigger {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: var(--transparent);
+  color: var(--text-primary);
+  border: none;
+  box-shadow: none;
+}
+
+/* GtkMenuButton delegates painting and keyboard focus to its native button. */
+.dropdown-trigger > button {
+  min-width: 0;
+  min-height: 24px;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+.dropdown-trigger > button:hover {
+  background: var(--surface-hover);
+}
+
+.dropdown-trigger > button:active,
+.dropdown-trigger > button:checked {
+  background: var(--surface-selected);
+}
+
+.dropdown-trigger > button:disabled {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+/* Leave room for language names; the GtkLabel ellipsizes longer values. */
+.dropdown-label {
+  min-width: var(--dropdown-label-width);
+}
+
+.dropdown-indicator {
+  -gtk-icon-size: 16px;
+}
+
+.dropdown-indicator {
+  color: var(--text-secondary);
+}
+
+.dropdown-popover {
+  background: var(--transparent);
+  color: var(--text-primary);
+}
+
+.dropdown-popover contents {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: none;
+}
+
+.dropdown-scroll,
+.dropdown-list {
+  background: var(--transparent);
+  color: var(--text-primary);
+  border: none;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+}

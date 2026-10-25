@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="ElysiaeProgressbar" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="spacing">10</property>
+    <property name="hexpand">true</property>
+    <property name="visible">false</property>
+    <style>
+      <class name="progress-panel"/>
+    </style>
+    <child>
+      <object class="GtkLabel" id="heading">
+        <property name="xalign">0</property>
+        <property name="wrap">true</property>
+        <property name="wrap-mode">word-char</property>
+        <style>
+          <class name="progress-heading"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel" id="detail">
+        <property name="xalign">0</property>
+        <property name="wrap">true</property>
+        <property name="wrap-mode">word-char</property>
+        <property name="selectable">true</property>
+        <style>
+          <class name="progress-detail"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox" id="bars">
+        <property name="orientation">vertical</property>
+        <property name="spacing">12</property>
+        <style>
+          <class name="progress-bars"/>
+        </style>
+        <child>
+          <object class="GtkBox" id="download_row">
+            <property name="orientation">vertical</property>
+            <property name="spacing">6</property>
+            <style>
+              <class name="progress-row"/>
+            </style>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">12</property>
+                <style>
+                  <class name="progress-row"/>
+                </style>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label" translatable="yes">Download</property>
+                    <property name="xalign">0</property>
+                    <property name="valign">start</property>
+                    <style>
+                      <class name="progress-label"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="download_value">
+                    <property name="hexpand">true</property>
+                    <property name="xalign">1</property>
+                    <property name="wrap">true</property>
+                    <property name="wrap-mode">word-char</property>
+                    <property name="justify">right</property>
+                    <style>
+                      <class name="progress-value"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkProgressBar" id="download_progress">
+                <property name="hexpand">true</property>
+                <accessibility>
+                  <property name="label" translatable="yes">Download progress</property>
+                </accessibility>
+                <style>
+                  <class name="download-progress"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox" id="verification_row">
+            <property name="orientation">vertical</property>
+            <property name="spacing">6</property>
+            <style>
+              <class name="progress-row"/>
+            </style>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">12</property>
+                <style>
+                  <class name="progress-row"/>
+                </style>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label" translatable="yes">Verification</property>
+                    <property name="xalign">0</property>
+                    <property name="valign">start</property>
+                    <style>
+                      <class name="progress-label"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="verification_value">
+                    <property name="hexpand">true</property>
+                    <property name="xalign">1</property>
+                    <property name="wrap">true</property>
+                    <property name="wrap-mode">word-char</property>
+                    <property name="justify">right</property>
+                    <style>
+                      <class name="progress-value"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkProgressBar" id="verification_progress">
+                <property name="hexpand">true</property>
+                <accessibility>
+                  <property name="label" translatable="yes">Verification progress</property>
+                </accessibility>
+                <style>
+                  <class name="verification-progress"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
