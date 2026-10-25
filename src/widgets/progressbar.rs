@@ -206,12 +206,11 @@ impl ProgressState {
 
 mod presentation;
 
-use presentation::{bytes, byte_counts, eta, format_sophon_progress};
+use presentation::{byte_counts, bytes, format_sophon_progress};
 
 fn fraction(done: u64, total: u64) -> Option<f64> {
     presentation::fraction(done, total)
 }
-
 
 mod imp {
     use std::cell::RefCell;

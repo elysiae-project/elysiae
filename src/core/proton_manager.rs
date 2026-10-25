@@ -1239,7 +1239,6 @@ fn sync_tree(root: &Path) -> Result<()> {
     Ok(())
 }
 
-
 mod session;
 
 pub(crate) use session::ensure_no_session;

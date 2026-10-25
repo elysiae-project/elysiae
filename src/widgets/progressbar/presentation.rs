@@ -132,4 +132,3 @@ pub(super) fn format_sophon_progress(progress: &SophonProgress) -> String {
         SophonProgress::Finished => "Finalizing…".into(),
     }
 }
-
