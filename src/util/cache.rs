@@ -1153,13 +1153,9 @@ impl Store {
 }
 
 #[cfg(test)]
-#[path = "cache/tests.rs"]
+#[path = "cache/unit_tests.rs"]
 mod tests;
 
 #[cfg(test)]
 #[path = "cache/fixtures.rs"]
 mod fixtures;
-
-#[cfg(test)]
-#[path = "cache/unit_tests.rs"]
-mod tests;
