@@ -1,7 +1,7 @@
 # Elysiae
 
 <p align="center">
-    <img src="https://raw.githubusercontent.com/elysiae-project/Elysiae/refs/heads/main/app-icon.png" alt="Elysiae App Icon" width="256">
+    <img src="https://raw.githubusercontent.com/elysiae-project/elysiae/refs/heads/main/data/icons/scalable/app.elysiae.Elysiae.svg" alt="Elysiae App Icon" width="256">
 </p>
 
 Universal "Chinese Anime Game" launcher for Linux
