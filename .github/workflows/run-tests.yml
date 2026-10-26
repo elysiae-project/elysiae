@@ -17,14 +17,15 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
-    container:
-      image: archlinux:latest
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
 
       - name: Install dependencies
-        run: pacman -Syu base-devel rustup gtk4 freetype llvm clang meson ninja --needed --noconfirm
+        run: |
+          sudo apt update
+          sudo apt install meson ninja-build build-essential libfreetype-dev libgtk-4-dev llvm clang -y
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             
       - name: Run Tests (Debug)
         run: |
