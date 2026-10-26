@@ -4,12 +4,14 @@ The Elysiae project values a civil community, welcome to opinions from new and o
 
 ## 1. General Rules
 
-We do not want to see any form of harassment of bullying on anything we control. Examples of this are:
+We intend for the Elysiae community to be safe and welcoming. As such, we do not want to see any form of harassment of bullying on anything we control. Examples of this are:
 
 - Trolling
 - Doxxing
 - Any form of Racial/Sexual/Gender-based discrimination
 - Any form of harassment of members of the Elysiae project, weather it is on official channels or not
+
+There is no set punishment for violating these rules; punishments for a violation is up to a moderator or higher member of the Elysiae Project
 
 ## 2. AI Usage Policy
 
@@ -55,6 +57,10 @@ Contributions that fail to meet these requirements may be rejected.
 
 A warning will be issued for the first offense. Repeat offenders may be blocked from contributing to the project.
 
-## 3. Public Knowledge of Elysiae
+## 3. Public Knowledge of content created by The Elysiae Project
 
-Many "Anime Game" projects tend to prefer to hide in the shadows, due to their nature of being "legally gray", which could cause legal action from the games it launches on Linux. The Elysiae Project does not use any tools or libraries that could be considered cheats or exploits to get games running, and runs them completely through proton, which can be done out-of-the-box for almost all games. We also source our downloads from the main download servers, so we aren't providing any redistributions of the games in question. For these reasons, it is okay to share this project with others.
+Elysiae is one of many "Anime Game" launchers available for download by Linux users. Many popular alternatives to Elysiae prefer their users to not mention the names of the project on the internet, in fears that their project could get struck down by the "Anime Game Company". The Elysiae project believes that these fears are largely unfounded, so long as developers are not making money off their projects and aren't actively breaking more severe rules layed out in the terms of service of each game (i.e. providing cheats/plugins).
+
+The Elysiae Launcher only acts as a wrapper for our game downloader, irmin (which in turn gets download URLs from data that is available to the public) and for phlogiston, our custom proton runtime that launches "Anime Games". Elysiae does not and will not add the ability to add cheats/plugins to games, and will not be accepting donations for this project. 
+
+As such, we believe that it is okay for you to mention this project to others you know online and offline. No harm should come from this. You may use Elysiae's full name when mentioning this project
