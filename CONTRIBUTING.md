@@ -11,8 +11,8 @@ Elyisae *must* run on a Linux system in order to successfully compile. If you ar
 To compile Elysiae, you should have the following present on your system:
 
 1. A x86_64 or aarch64 CPU
-2. Linux kernel >= 5.8 for mount-aware write checks; >= 6.14 recommended. Unsupported safety primitives fail closed.
-3. Rustup and the pinned Rust 1.95.0 toolchain from `rust-toolchain`
+2. Linux kernel >= 5.8 (Required, >= 6.14 Recommended)
+3. Rust >= v1.95.0 or a Rustup install to automatically download the correct rust toolchain/components when compiling
 4. FreeType >= 2.9.1
 5. GTK >= 4.22
 6. Any modern version of LLVM/Clang
@@ -35,15 +35,6 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ```sh
 sudo pacman -Syu rustup freetype2 gtk4 openssl libxml2 pkgconf base-devel llvm clang meson ninja gettext python --noconfirm
-```
-
-## Post-clone
-
-Make sure to install the toolchain used by Elysiae before doing anything else with the project:
-
-```sh
-# In the project dir
-rustup show
 ```
 
 ## Creating Elysiae Builds
@@ -91,7 +82,7 @@ To disable the GTK tests again, run `meson configure build -Dgui_tests=false`
 
 ## Contribution Guidelines
 
-On top of following the [Code of Conduct](https://github.com/elysiae-project/elysiae/CODE_OF_CONDUCT.md) , there are a few other general rules we'd like to have developers follow to ensure the Elysiae launcher is the best it can be:
+On top of following the [Code of Conduct](https://github.com/elysiae-project/elysiae/CODE_OF_CONDUCT.md), there are a few other general rules we'd like to have developers follow to ensure the Elysiae launcher is the best it can be:
 
 ### AI Usage
 
