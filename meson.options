@@ -9,7 +9,13 @@ option(
     'cargo_target_dir',
     type: 'string',
     value: '',
-    description: 'Cargo cache directory (relative paths use the source root). Empty uses CARGO_TARGET_DIR at configure time, then <build>/target.',
+    description: 'Cargo cache directory (relative paths use the source root). Empty uses <build>/target.',
+)
+option(
+    'offline',
+    type: 'boolean',
+    value: false,
+    description: 'Pass --offline to Cargo. Needed in sandboxes (e.g. Flatpak) where crates are vendored.',
 )
 option(
     'tests',
