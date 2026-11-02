@@ -1521,9 +1521,9 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "irmin_rs"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c42bcd32b6bf39a9a0d0a8413d5a58e2f0e094beb074718b07483414e5b0ccb"
+checksum = "203700cb01ac4cf17c29e636b38563421bca36e1956c92d52cb6f2c49c9117bf"
 dependencies = [
  "dashmap",
  "fast-md5",
