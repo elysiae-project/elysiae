@@ -2,7 +2,7 @@
 project(
     'Elysiae', 'rust',
     version: '1.0.0',
-    meson_version: '>= 1.4',
+    meson_version: '>= 1.3',
     default_options: ['buildtype=release'],
 )
 
