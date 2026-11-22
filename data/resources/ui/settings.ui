@@ -59,6 +59,7 @@
       <object class="GtkScrolledWindow">
         <property name="hscrollbar-policy">never</property>
         <property name="vscrollbar-policy">automatic</property>
+        <property name="overlay-scrolling">false</property>
         <property name="vexpand">true</property>
         <property name="propagate-natural-height">true</property>
         <property name="max-content-height">480</property>
