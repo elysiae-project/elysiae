@@ -348,8 +348,12 @@ impl ElysiaeWindow {
             .iter()
             .find(|s| s.kind == OperationKind::Launch)
             .and_then(|s| s.game);
-        let transfer = active.iter().any(|s| s.kind != OperationKind::Launch)
-            || imp.transfer_pending.get().is_some();
+        // A running transfer belongs to one game; it must not hold the
+        // other installed games back from launching.
+        let transfer = active
+            .iter()
+            .any(|s| s.game == Some(game))
+            || imp.transfer_pending.get() == Some(game);
         let Some(status) = imp.status.get() else {
             imp.operation_button.set_sensitive(false);
             imp.preinstall_button.set_visible(false);
