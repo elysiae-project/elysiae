@@ -14,7 +14,7 @@ use crate::{
     util::{
         progress::{self, ProgressEvent, ProgressUpdate},
         runtime,
-        settings::get_option,
+        settings::{get_option, set_option, SettingValue},
     },
 };
 
@@ -264,7 +264,11 @@ glib::wrapper! {
 impl ElysiaeWindow {
     pub fn new(app: &gtk::Application) -> Self {
         let window: Self = glib::Object::builder().property("application", app).build();
-        window.change_game(Game::default());
+        let last_active = get_option("last-active-game")
+            .and_then(|value| String::try_from(value))
+            .and_then(|code| Game::try_from(code.as_str()))
+            .unwrap_or_else(|_| Game::default());
+        window.change_game(last_active);
         window.imp().sidebar.refresh_icons();
         window.refresh_installations();
 
@@ -277,6 +281,7 @@ impl ElysiaeWindow {
 
     pub fn change_game(&self, game: Game) {
         self.imp().current_game.set(game);
+        let _ = set_option("last-active-game", SettingValue::Str(game.code().to_owned()));
         self.imp().sidebar.select(game);
         self.imp().game_title.set_label(game.display_name());
         self.imp().status.set(None);

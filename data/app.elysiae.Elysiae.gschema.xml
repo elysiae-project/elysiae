@@ -36,5 +36,9 @@
             <default>'en-us'</default>
             <summary>Launcher Language</summary>
         </key>
+        <key name="last-active-game" type="s">
+            <default>'bh3'</default>
+            <summary>Game selected on the previous launcher session</summary>
+        </key>
     </schema>
 </schemalist>
