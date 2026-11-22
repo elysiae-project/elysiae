@@ -18,6 +18,7 @@
 }
 
 .launcher-footer .progress-panel {
+  min-width: 320px;
   padding: 12px 0 0;
   background: var(--transparent);
 }

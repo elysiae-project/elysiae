@@ -26,9 +26,8 @@
               </object>
             </child>
             <child>
-              <!-- Two of five equal columns keep the progress area at 40%. -->
+              <!-- The grid stretches; the footer reserves the space for the progress panel. -->
               <object class="GtkGrid" id="footer_layout">
-                <property name="column-homogeneous">true</property>
                 <style><class name="launcher-bottom-row"/></style>
                 <child>
                   <object class="GtkBox">

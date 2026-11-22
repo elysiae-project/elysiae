@@ -56,9 +56,16 @@ fn assert_footer_layout(window: &ElysiaeWindow) {
     let row = row.compute_bounds(window).unwrap();
     let controls = actions.compute_bounds(window).unwrap();
 
+    // The footer absorbs width changes; the panel keeps its floor and the
+    // row never leaves the window.
+    assert!(area.width() >= 320.0, "Floor must hold: {area:?}");
     assert!(
-        (area.width() - row.width() * 0.4).abs() <= 2.0,
-        "Expected a 40% progress area: {area:?} in {row:?}"
+        area.x() + area.width() <= row.x() + row.width(),
+        "Progress area must stay in the row: {area:?} in {row:?}"
+    );
+    assert!(
+        row.x() >= 0.0 && row.width() <= window.width() as f32,
+        "Row must stay on screen: {row:?}"
     );
     assert!(
         controls.x() >= area.x() + area.width() + 23.0,
@@ -324,6 +331,25 @@ fn gtk_launcher_interactions_and_layout() {
     pump_until(|| window.width() <= 760);
     assert_footer_layout(&window);
     screenshot(&window, "download-compact.png");
+
+    // Window minimum: the worst-case controls must still fit inside 680x500.
+    window.set_default_size(680, 500);
+    pump_until(|| window.width() <= 700);
+    assert_footer_layout(&window);
+    for widget in [
+        window.imp().progress.upcast_ref::<gtk::Widget>(),
+        &window.imp().progress.parent().unwrap(),
+    ] {
+        let bounds = widget.compute_bounds(&window).unwrap();
+        assert!(
+            bounds.x() >= 0.0
+                && bounds.y() >= 0.0
+                && bounds.x() + bounds.width() <= window.width() as f32
+                && bounds.y() + bounds.height() <= window.height() as f32,
+            "Widget left the 680x500 window: {bounds:?}"
+        );
+    }
+    screenshot(&window, "download-min.png");
 
     // Pin this synthetic worst-case layout while the 250 ms status refresh
     // runs; otherwise it can hide the extra button before GTK allocates it.
