@@ -663,17 +663,19 @@ impl ElysiaeWindow {
             return;
         }
 
-        if matches!(update.event, ProgressEvent::Finished { .. })
-            && self.imp().displayed_operation.get() != Some(id)
-        {
-            return;
-        }
+        // A terminal event for an operation that is not displayed must not redraw
+        // the panel: that would clobber the operation in flight, and the stale
+        // event can never arm the reset. Let it fall through to the terminal
+        // bookkeeping only.
+        let stale_terminal = matches!(update.event, ProgressEvent::Finished { .. })
+            && self.imp().displayed_operation.get() != Some(id);
+        if !stale_terminal {
+            if self.imp().displayed_operation.replace(Some(id)) != Some(id) {
+                self.imp().progress.reset();
+            }
 
-        if self.imp().displayed_operation.replace(Some(id)) != Some(id) {
-            self.imp().progress.reset();
+            self.imp().progress.update(&update);
         }
-
-        self.imp().progress.update(&update);
         if let Some(game) = update.operation.game {
             match &update.event {
                 ProgressEvent::Started => self.imp().sidebar.set_progress(game, Some(0.0)),

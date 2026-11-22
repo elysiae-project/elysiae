@@ -459,3 +459,148 @@ fn preinstall_does_not_replace_launch_action() {
         OperationKind::Update
     );
 }
+
+#[test]
+#[ignore = "requires a GTK display; run explicitly on one test thread"]
+fn stale_terminal_event_does_not_reset_active_progress() {
+    use crate::core::operations::{OperationStatus, Phase};
+
+    gtk::init().unwrap();
+    gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
+
+    let provider = gtk::CssProvider::new();
+    let css_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let errors = css_errors.clone();
+    provider.connect_parsing_error(move |_, _, error| errors.borrow_mut().push(error.to_string()));
+    provider.load_from_resource("/app/elysiae/Elysiae/style.css");
+    assert!(
+        css_errors.borrow().is_empty(),
+        "CSS errors: {:?}",
+        css_errors.borrow()
+    );
+    gtk::style_context_add_provider_for_display(
+        &gtk::gdk::Display::default().unwrap(),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
+    let app = gtk::Application::builder()
+        .application_id("app.elysiae.Elysiae.UiTests")
+        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gtk::gio::Cancellable>).unwrap();
+
+    let window = ElysiaeWindow::new(&app);
+    window.present();
+    pump_until(|| window.is_mapped() && window.width() >= 1100 && window.imp().sidebar.width() > 0);
+
+    let superseded = Uuid::new_v4();
+    let launched = Uuid::new_v4();
+    let in_flight = Uuid::new_v4();
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: superseded,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Finished { error: None },
+    });
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: launched,
+            kind: OperationKind::Install,
+            game: Some(Game::Hk4e),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Started,
+    });
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: in_flight,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Sophon(SophonProgress::Downloading {
+            downloaded_bytes: 9 * 1024 * 1024 * 1024,
+            total_bytes: 24 * 1024 * 1024 * 1024,
+            speed_bps: 16.0 * 1024.0 * 1024.0,
+            eta_seconds: 940.0,
+        }),
+    });
+
+    let heading = format!("Downloading {}", Game::Bh3.display_name());
+    pump_until(|| window.imp().progress.is_visible()
+        && window.imp().progress.imp().heading.label() == heading);
+    assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
+    assert!(window.imp().progress.imp().bars.is_visible());
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: launched,
+            kind: OperationKind::Install,
+            game: Some(Game::Hk4e),
+            phase: Phase::Failed,
+            error: Some("synthetic stale failure".to_string()),
+        },
+        event: ProgressEvent::Finished { error: Some("synthetic stale failure".to_string()) },
+    });
+
+    // The stale failure must neither repaint the panel nor arm the delayed reset:
+    // iterate the main context past the 4-second window and require the panel to
+    // still be showing the in-flight operation.
+    let stale_since = std::time::Instant::now();
+    pump_for(std::time::Duration::from_secs(10), &mut || {
+        window.imp().progress.is_visible()
+            && stale_since.elapsed() > std::time::Duration::from_secs(5)
+    });
+    assert_eq!(window.imp().progress.imp().heading.label(), heading);
+    assert!(window.imp().progress.imp().bars.is_visible());
+    assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: in_flight,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Sophon(SophonProgress::Downloading {
+            downloaded_bytes: 12 * 1024 * 1024 * 1024,
+            total_bytes: 24 * 1024 * 1024 * 1024,
+            speed_bps: 16.0 * 1024.0 * 1024.0,
+            eta_seconds: 730.0,
+        }),
+    });
+    pump_until(|| window.imp().progress.is_visible()
+        && window.imp().progress.imp().heading.label() == heading);
+    assert!(window.imp().progress.imp().bars.is_visible());
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: in_flight,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Failed,
+            error: Some("synthetic in-flight failure".to_string()),
+        },
+        event: ProgressEvent::Finished {
+            error: Some("synthetic in-flight failure".to_string()),
+        },
+    });
+    pump_for(
+        std::time::Duration::from_secs(8),
+        &mut || !window.imp().progress.is_visible(),
+    );
+    assert_eq!(window.imp().displayed_operation.get(), None);
+    screenshot(&window, "r1_terminal_reset");
+    window.close();
+}
