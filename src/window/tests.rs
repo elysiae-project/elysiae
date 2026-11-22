@@ -2,7 +2,12 @@ use super::*;
 
 #[track_caller]
 fn pump_until(mut ready: impl FnMut() -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    pump_for(std::time::Duration::from_secs(3), &mut ready);
+}
+
+#[track_caller]
+fn pump_for(deadline: std::time::Duration, mut ready: &mut impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + deadline;
     let context = glib::MainContext::default();
 
     while !ready() && std::time::Instant::now() < deadline {
@@ -429,6 +434,14 @@ fn gtk_launcher_interactions_and_layout() {
         "Extracting download.tar.gz…"
     );
     component.finish(Ok(())).unwrap();
+    pump_until(|| {
+        window.imp().progress.imp().heading.label() == "Downloading Phlogiston"
+    });
+    pump_for(
+        std::time::Duration::from_secs(8),
+        &mut || !window.imp().progress.is_visible(),
+    );
+    assert_eq!(window.imp().displayed_operation.get(), None);
     window.close();
 }
 

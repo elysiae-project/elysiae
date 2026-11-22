@@ -5,7 +5,6 @@
     <property name="orientation">vertical</property>
     <property name="spacing">10</property>
     <property name="hexpand">true</property>
-    <property name="visible">false</property>
     <style>
       <class name="progress-panel"/>
     </style>

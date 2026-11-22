@@ -714,7 +714,7 @@ impl ElysiaeWindow {
             drop(completed);
             self.refresh_status();
 
-            if matches!(update.event, ProgressEvent::Finished { error: None }) {
+            {
                 let weak = self.downgrade();
                 glib::timeout_add_local_once(std::time::Duration::from_secs(4), move || {
                     if let Some(window) = weak.upgrade()

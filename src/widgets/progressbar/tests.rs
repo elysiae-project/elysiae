@@ -48,7 +48,7 @@ fn file_to_sophon_verification_assembly_and_extraction() {
     )));
     assert_eq!(state.bars, Bars::Sophon);
     assert_eq!(state.download.fraction, None);
-    assert_eq!(state.verification.value, "Not started");
+    assert_eq!(state.verification.value, "");
     assert!(!state.verification.pulses());
 
     state.update(&update(downloading(80, 100)));
@@ -147,7 +147,7 @@ fn plugin_and_metadata_phases_do_not_invent_or_replace_main_progress() {
         state.update(&update(ProgressEvent::Sophon(phase)));
         assert_eq!(state.download.fraction, Some(0.75));
         assert_eq!(state.verification.fraction, None);
-        assert_eq!(state.verification.value, "Not started");
+        assert_eq!(state.verification.value, "");
         assert!(!state.complete);
     }
 }

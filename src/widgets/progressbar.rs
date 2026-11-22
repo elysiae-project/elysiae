@@ -37,7 +37,7 @@ impl Default for BarState {
     fn default() -> Self {
         Self {
             fraction: None,
-            value: "Not started".into(),
+            value: String::new(),
             active: false,
         }
     }
