@@ -363,6 +363,11 @@ impl ElysiaeWindow {
 
         self.imp().content.set_sensitive(!visible);
         self.imp().content.set_can_target(!visible);
+        if visible {
+            self.imp().content.add_css_class("settings-open");
+        } else {
+            self.imp().content.remove_css_class("settings-open");
+        }
         self.imp().settings_layer.set_visible(visible);
 
         if visible {

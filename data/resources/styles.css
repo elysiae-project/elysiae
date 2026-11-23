@@ -61,6 +61,17 @@
   color: var(--text-muted);
 }
 
+/* The modal insensitizes the content behind it; buttons keep their accent
+ * instead of the disabled gray while settings are open. */
+.settings-open .button:disabled {
+  background: var(--btn-primary);
+  color: var(--text-on-primary);
+}
+
+.settings-open .danger-button:disabled {
+  background: var(--btn-danger);
+}
+
 .button:focus-visible,
 .game-button:focus-visible,
 .settings-close:focus-visible,
