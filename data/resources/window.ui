@@ -64,7 +64,7 @@
                         <style><class name="launcher-actions"/></style>
                         <child>
                           <object class="GtkButton" id="settings_button">
-                            <property name="icon-name">settings</property>
+                            <property name="icon-name">settings-symbolic</property>
                             <property name="tooltip-text">Settings</property>
                             <accessibility><property name="label">Settings</property></accessibility>
                             <style><class name="button"/><class name="settings-button"/></style>
