@@ -246,6 +246,12 @@ mod imp {
         pub download_progress: TemplateChild<gtk::ProgressBar>,
         #[template_child]
         pub verification_progress: TemplateChild<gtk::ProgressBar>,
+        #[template_child]
+        pub controls: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub pause_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub cancel_button: TemplateChild<gtk::Button>,
         pub(super) state: RefCell<super::ProgressState>,
         pub(super) pulse_source: RefCell<Option<glib::SourceId>>,
     }
@@ -314,6 +320,27 @@ impl Progressbar {
     /// Whether the panel currently presents an operation.
     pub fn is_presenting(&self) -> bool {
         self.imp().state.borrow().visible
+    }
+
+    /// Show transfer controls while a pausable download is active; the pause
+    /// button reflects the phase. Cancellation stays available until it is
+    /// requested, then locks until the worker releases the operation.
+    pub fn set_controls(&self, active: bool, paused: bool, cancelling: bool) {
+        let imp = self.imp();
+        imp.controls.set_visible(active);
+        imp.pause_button.set_sensitive(active && !cancelling);
+        imp.pause_button
+            .set_icon_name(if paused {
+                "media-playback-start-symbolic"
+            } else {
+                "media-playback-pause-symbolic"
+            });
+        imp.pause_button.set_tooltip_text(Some(if paused {
+            "Resume download"
+        } else {
+            "Pause download"
+        }));
+        imp.cancel_button.set_sensitive(active && !cancelling);
     }
 
     fn render(&self) {

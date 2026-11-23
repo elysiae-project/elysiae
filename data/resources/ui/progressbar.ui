@@ -154,5 +154,30 @@
         </child>
       </object>
     </child>
+    <child>
+      <object class="GtkBox" id="controls">
+        <property name="spacing">12</property>
+        <property name="visible">false</property>
+        <style>
+          <class name="progress-controls"/>
+        </style>
+        <child>
+          <object class="GtkButton" id="pause_button">
+            <property name="icon-name">media-playback-pause-symbolic</property>
+            <property name="tooltip-text">Pause download</property>
+            <accessibility><property name="label">Pause download</property></accessibility>
+            <style><class name="button"/><class name="progress-control-button"/></style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="cancel_button">
+            <property name="icon-name">process-stop-symbolic</property>
+            <property name="tooltip-text">Cancel download and delete files</property>
+            <accessibility><property name="label">Cancel download and delete files</property></accessibility>
+            <style><class name="button"/><class name="danger-button"/><class name="progress-control-button"/></style>
+          </object>
+        </child>
+      </object>
+    </child>
   </template>
 </interface>

@@ -59,6 +59,7 @@ mod imp {
         pub installation_request: Cell<u64>,
         pub runtime_ready: Cell<bool>,
         pub transfer_pending: Cell<Option<Game>>,
+        pub cancel_pending: Cell<bool>,
         pub launch_pending: Cell<Option<Game>>,
         pub displayed_operation: Cell<Option<Uuid>>,
         pub completed: RefCell<Vec<Uuid>>,
@@ -111,6 +112,28 @@ mod imp {
                     window.start_operation(true);
                 }
             });
+
+            let weak = window.downgrade();
+            self.progress
+                .imp()
+                .pause_button
+                .connect_clicked(move |_| {
+                    if let Some(window) = weak.upgrade()
+                        && let Err(error) = game_downloader::toggle_downloading()
+                    {
+                        window.show_error(&format!("{error:#}"));
+                    }
+                });
+
+            let weak = window.downgrade();
+            self.progress
+                .imp()
+                .cancel_button
+                .connect_clicked(move |_| {
+                    if let Some(window) = weak.upgrade() {
+                        window.confirm_cancel_transfer();
+                    }
+                });
 
             let weak = window.downgrade();
             self.settings_panel
@@ -377,6 +400,23 @@ impl ElysiaeWindow {
         let game = self.get_current_game();
         let active = operations().active().unwrap_or_default();
         self.refresh_status_box();
+
+        // Controls act on the live transfer, which may belong to another game.
+        let transfer = active.iter().find(|s| {
+            matches!(
+                s.kind,
+                OperationKind::Install
+                    | OperationKind::Update
+                    | OperationKind::Preinstall
+                    | OperationKind::Repair
+            )
+        });
+        imp.progress.set_controls(
+            transfer.is_some(),
+            transfer.is_some_and(|s| s.phase == crate::core::operations::Phase::Paused),
+            imp.cancel_pending.get(),
+        );
+
         let running = active
             .iter()
             .find(|s| s.kind == OperationKind::Launch)
@@ -684,6 +724,106 @@ impl ElysiaeWindow {
             }
 
             window.start_uninstall(game);
+        });
+    }
+
+    /// Confirms cancelling the active transfer and deleting the directory it
+    /// is installing to. Cancel is default, matching the uninstall flow.
+    fn confirm_cancel_transfer(&self) {
+        let Some(game) = operations()
+            .active()
+            .unwrap_or_default()
+            .iter()
+            .find(|s| {
+                matches!(
+                    s.kind,
+                    OperationKind::Install
+                        | OperationKind::Update
+                        | OperationKind::Preinstall
+                        | OperationKind::Repair
+                )
+            })
+            .and_then(|s| s.game)
+        else {
+            return;
+        };
+
+        let dialog = gtk::AlertDialog::builder()
+            .message(format!("Cancel the {} download?", game.display_name()))
+            .detail("The download stops and the directory it is installing to will be deleted.")
+            .buttons(["Keep downloading", "Cancel and delete"])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+
+            if dialog.choose_future(Some(&window)).await != Ok(1) {
+                return;
+            }
+
+            window.cancel_and_delete(game);
+        });
+    }
+
+    /// Requests cancellation, waits for the worker to release its lease, then
+    /// uninstalls: managed roots lose their files, imported roots only unregister.
+    fn cancel_and_delete(&self, game: Game) {
+        if let Err(error) = game_downloader::cancel_download() {
+            self.show_error(&format!("{error:#}"));
+            return;
+        }
+
+        self.imp().cancel_pending.set(true);
+        self.refresh_controls();
+
+        let weak = self.downgrade();
+        let hold = self.application().map(|app| app.hold());
+        glib::MainContext::default().spawn_local(async move {
+            let _hold = hold;
+
+            // The worker keeps its lease until irmin exits; deletion must not
+            // race it. Poll with a bound instead of hanging on a stuck worker.
+            let mut waited = 0;
+            loop {
+                let Some(window) = weak.upgrade() else {
+                    return;
+                };
+
+                let released = operations()
+                    .active()
+                    .unwrap_or_default()
+                    .iter()
+                    .all(|s| {
+                        s.game != Some(game)
+                            || !matches!(
+                                s.kind,
+                                OperationKind::Install
+                                    | OperationKind::Update
+                                    | OperationKind::Preinstall
+                                    | OperationKind::Repair
+                            )
+                    });
+                if released || waited >= 120 {
+                    window.imp().cancel_pending.set(false);
+                    if released {
+                        window.start_uninstall(game);
+                    } else {
+                        window.show_error(
+                            "The download did not stop in time; the directory was kept",
+                        );
+                        window.refresh_controls();
+                    }
+                    return;
+                }
+
+                waited += 1;
+                glib::timeout_future(std::time::Duration::from_millis(250)).await;
+            }
         });
     }
 
