@@ -59,7 +59,7 @@ fn file_to_sophon_verification_assembly_and_extraction() {
     })));
     assert_eq!(state.download.fraction, Some(0.8));
     assert_eq!(state.verification.fraction, Some(0.5));
-    assert!(state.detail.contains("errors: 1"));
+    assert_eq!(state.detail, "Assembling");
 
     state.update(&update(ProgressEvent::Sophon(SophonProgress::Assembling {
         assembled_files: 3,
@@ -213,7 +213,7 @@ fn only_operation_finished_is_authoritative_and_terminal() {
     state.update(&update(ProgressEvent::Sophon(SophonProgress::Finished)));
     assert!(!state.complete);
     assert!(!state.terminal);
-    assert_eq!(state.detail, "Finalizing…");
+    assert_eq!(state.detail, "Assembling");
     assert_eq!(state.download.fraction, Some(0.75));
 
     state.update(&update(ProgressEvent::Finished {
@@ -292,8 +292,9 @@ fn formats_bytes_speed_and_eta_without_nonfinite_values() {
 
     let mut state = ProgressState::default();
     state.update(&update(downloading(1, 100)));
-    assert!(state.detail.contains("1.0 KiB/s"));
-    assert!(state.detail.contains("1m 5s left"));
+    assert_eq!(state.detail, "Downloading");
+    assert!(state.speed.contains("1.0 KiB/s"));
+    assert!(state.speed.contains("1m 5s left"));
 
     for invalid in [f64::NAN, f64::INFINITY, -1.0] {
         state.update(&update(ProgressEvent::Sophon(
@@ -304,7 +305,8 @@ fn formats_bytes_speed_and_eta_without_nonfinite_values() {
                 eta_seconds: invalid,
             },
         )));
-        assert_eq!(state.detail, "Downloading…");
+        assert_eq!(state.detail, "Downloading");
+        assert!(state.speed.is_empty());
     }
 }
 
@@ -378,11 +380,11 @@ fn legacy_text_api_remains_available() {
             total_files: 4,
             error_count: 0,
         })),
-        "Verifying: 2/4 (errors: 0)"
+        "Assembling"
     );
     assert_eq!(
         Progressbar::handle_download_event(DownloadEvent::Sophon(SophonProgress::Finished)),
-        "Finalizing…"
+        "Assembling"
     );
     assert_eq!(
         Progressbar::handle_download_event(DownloadEvent::Error("failed".into())),

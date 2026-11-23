@@ -72,79 +72,24 @@ pub(super) fn speed_and_eta(
     detail
 }
 
+/// The panel's detail line names only the current state: speed and ETA live
+/// beside the heading, byte and file counts live on the bars. Pause, warnings
+/// and errors keep their own text because they are not download/assembly work.
 pub(super) fn format_sophon_progress(progress: &SophonProgress) -> String {
     match progress {
-        SophonProgress::FetchingManifest => "Fetching manifest…".into(),
-        SophonProgress::CalculatingDownloads {
-            checked_files,
-            total_files,
-        } => {
-            format!("Calculating downloads: {checked_files}/{total_files}")
-        }
-        SophonProgress::Downloading {
-            downloaded_bytes,
-            total_bytes,
-            speed_bps,
-            eta_seconds,
-        } => {
-            let mut detail = "Downloading…".to_string();
-            let speed = speed_and_eta(*speed_bps, *eta_seconds, *downloaded_bytes, *total_bytes);
-            if !speed.is_empty() {
-                detail.push_str(&format!(" · {speed}"));
-            }
-
-            detail
-        }
+        SophonProgress::FetchingManifest
+        | SophonProgress::CalculatingDownloads { .. }
+        | SophonProgress::Downloading { .. }
+        | SophonProgress::DownloadingPlugin { .. } => "Downloading".into(),
         SophonProgress::Paused { .. } => "Download paused".into(),
-        SophonProgress::Assembling {
-            assembled_files,
-            total_files,
-        } => {
-            format!("Assembling files: {assembled_files}/{total_files}")
-        }
-        SophonProgress::CheckingFiles {
-            checked_files,
-            total_files,
-        } => {
-            format!("Checking files: {checked_files}/{total_files}")
-        }
-        SophonProgress::Verifying {
-            scanned_files,
-            total_files,
-            error_count,
-        } => {
-            format!("Verifying: {scanned_files}/{total_files} (errors: {error_count})")
-        }
+        SophonProgress::Assembling { .. }
+        | SophonProgress::CheckingFiles { .. }
+        | SophonProgress::Verifying { .. }
+        | SophonProgress::InstallingPlugins { .. }
+        | SophonProgress::InstallingSdks { .. }
+        | SophonProgress::ApplyingPreinstall { .. }
+        | SophonProgress::Finished => "Assembling".into(),
         SophonProgress::Warning { message } => format!("Warning: {message}"),
         SophonProgress::Error { message } => format!("Error: {message}"),
-        SophonProgress::InstallingPlugins {
-            current_plugin,
-            total_plugins,
-        } => {
-            format!("Installing plugin {current_plugin} ({total_plugins} total)")
-        }
-        SophonProgress::InstallingSdks {
-            current_sdk,
-            total_sdks,
-        } => {
-            format!("Installing SDK {current_sdk} ({total_sdks} total)")
-        }
-        SophonProgress::DownloadingPlugin {
-            name,
-            downloaded_bytes,
-            total_bytes,
-        } => {
-            format!(
-                "Downloading {name}: {}",
-                byte_counts(*downloaded_bytes, *total_bytes)
-            )
-        }
-        SophonProgress::ApplyingPreinstall {
-            applied_files,
-            total_files,
-        } => {
-            format!("Applying preinstall: {applied_files}/{total_files}")
-        }
-        SophonProgress::Finished => "Finalizing…".into(),
     }
 }
