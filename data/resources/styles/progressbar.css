@@ -11,6 +11,12 @@
   color: var(--text-primary);
 }
 
+.progress-speed {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .progress-detail,
 .progress-label,
 .progress-value {

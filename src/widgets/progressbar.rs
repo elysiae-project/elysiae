@@ -78,6 +78,7 @@ struct ProgressState {
     operation_id: Option<uuid::Uuid>,
     heading: String,
     detail: String,
+    speed: String,
     bars: Bars,
     download: BarState,
     verification: BarState,
@@ -136,21 +137,21 @@ impl ProgressState {
                 }
 
                 self.bars = Bars::Sophon;
-                // Assembly starts while chunks still transfer; its text
-                // replaces the download speed only once the transfer has
-                // fully completed.
-                if !matches!(progress, SophonProgress::Assembling { .. })
-                    || self.download.fraction == Some(1.0)
-                {
-                    self.detail = format_sophon_progress(progress);
-                }
+                self.detail = format_sophon_progress(progress);
                 match progress {
                     SophonProgress::Downloading {
                         downloaded_bytes,
                         total_bytes,
-                        ..
+                        speed_bps,
+                        eta_seconds,
                     } => {
                         self.download = BarState::bytes(*downloaded_bytes, *total_bytes);
+                        self.speed = presentation::speed_and_eta(
+                            *speed_bps,
+                            *eta_seconds,
+                            *downloaded_bytes,
+                            *total_bytes,
+                        );
                     }
                     SophonProgress::Paused {
                         downloaded_bytes,
@@ -229,6 +230,8 @@ mod imp {
     pub struct Progressbar {
         #[template_child]
         pub heading: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub speed: TemplateChild<gtk::Label>,
         #[template_child]
         pub detail: TemplateChild<gtk::Label>,
         #[template_child]
@@ -320,6 +323,8 @@ impl Progressbar {
         self.set_visible(state.visible);
         imp.heading.set_text(&state.heading);
         imp.heading.set_visible(!state.extracting);
+        imp.speed.set_text(&state.speed);
+        imp.speed.set_visible(!state.extracting && !state.speed.is_empty());
         imp.detail.set_text(&state.detail);
         imp.bars.set_visible(state.shows_bars());
         imp.verification_row.set_visible(state.bars == Bars::Sophon);

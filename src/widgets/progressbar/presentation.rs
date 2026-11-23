@@ -51,6 +51,27 @@ pub(super) fn eta(seconds: f64) -> Option<String> {
     })
 }
 
+/// Speed and remaining time for a transfer, empty when speed is unknown.
+pub(super) fn speed_and_eta(
+    speed_bps: f64,
+    eta_seconds: f64,
+    downloaded: u64,
+    total: u64,
+) -> String {
+    let mut detail = String::new();
+    if speed_bps.is_finite() && speed_bps >= 0.0 {
+        detail.push_str(&format!("{}/s", bytes(speed_bps)));
+        if speed_bps > 0.0
+            && total > downloaded
+            && let Some(eta) = eta(eta_seconds)
+        {
+            detail.push_str(&format!(" · {eta}"));
+        }
+    }
+
+    detail
+}
+
 pub(super) fn format_sophon_progress(progress: &SophonProgress) -> String {
     match progress {
         SophonProgress::FetchingManifest => "Fetching manifest…".into(),
@@ -67,14 +88,9 @@ pub(super) fn format_sophon_progress(progress: &SophonProgress) -> String {
             eta_seconds,
         } => {
             let mut detail = "Downloading…".to_string();
-            if speed_bps.is_finite() && *speed_bps >= 0.0 {
-                detail.push_str(&format!(" · {}/s", bytes(*speed_bps)));
-                if *speed_bps > 0.0
-                    && *total_bytes > *downloaded_bytes
-                    && let Some(eta) = eta(*eta_seconds)
-                {
-                    detail.push_str(&format!(" · {eta}"));
-                }
+            let speed = speed_and_eta(*speed_bps, *eta_seconds, *downloaded_bytes, *total_bytes);
+            if !speed.is_empty() {
+                detail.push_str(&format!(" · {speed}"));
             }
 
             detail

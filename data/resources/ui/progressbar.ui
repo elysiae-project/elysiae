@@ -9,13 +9,29 @@
       <class name="progress-panel"/>
     </style>
     <child>
-      <object class="GtkLabel" id="heading">
-        <property name="xalign">0</property>
-        <property name="wrap">true</property>
-        <property name="wrap-mode">word-char</property>
-        <style>
-          <class name="progress-heading"/>
-        </style>
+      <object class="GtkBox" id="heading_row">
+        <property name="spacing">12</property>
+        <child>
+          <object class="GtkLabel" id="heading">
+            <property name="xalign">0</property>
+            <property name="wrap">true</property>
+            <property name="wrap-mode">word-char</property>
+            <style>
+              <class name="progress-heading"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="speed">
+            <property name="xalign">0</property>
+            <property name="valign">end</property>
+            <property name="margin-bottom">3</property>
+            <property name="visible">false</property>
+            <style>
+              <class name="progress-speed"/>
+            </style>
+          </object>
+        </child>
       </object>
     </child>
     <child>

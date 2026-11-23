@@ -83,30 +83,38 @@ fn file_to_sophon_verification_assembly_and_extraction() {
 }
 
 #[test]
-fn assembling_waits_for_a_finished_download() {
+fn speed_beside_heading_survives_other_phases() {
     let mut state = ProgressState::default();
     state.update(&update(downloading(80, 100)));
-    let detail = state.detail.clone();
-    assert!(detail.contains("1.0 KiB/s"));
+    assert!(state.speed.contains("1.0 KiB/s"));
+    assert!(state.speed.contains("1m 5s left"));
 
+    // Assembly and verification replace the detail line, never the speed.
     state.update(&update(ProgressEvent::Sophon(SophonProgress::Assembling {
         assembled_files: 1,
         total_files: 4,
     })));
-    assert_eq!(state.detail, detail);
+    assert!(state.detail.starts_with("Assembling"));
+    assert!(state.speed.contains("1.0 KiB/s"));
 
-    // Verification progress keeps updating while the transfer finishes.
     state.update(&update(ProgressEvent::Sophon(SophonProgress::Verifying {
         scanned_files: 2,
         total_files: 4,
         error_count: 0,
     })));
-    state.update(&update(downloading(100, 100)));
-    state.update(&update(ProgressEvent::Sophon(SophonProgress::Assembling {
-        assembled_files: 3,
-        total_files: 4,
-    })));
-    assert_eq!(state.detail, "Assembling files: 3/4");
+    assert!(state.speed.contains("1.0 KiB/s"));
+
+    for invalid in [f64::NAN, f64::INFINITY, -1.0] {
+        state.update(&update(ProgressEvent::Sophon(
+            SophonProgress::Downloading {
+                downloaded_bytes: 1,
+                total_bytes: 100,
+                speed_bps: invalid,
+                eta_seconds: invalid,
+            },
+        )));
+        assert!(state.speed.is_empty());
+    }
 }
 
 #[test]
