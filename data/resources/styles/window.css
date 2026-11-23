@@ -21,7 +21,7 @@
 
 .launcher-footer .progress-panel {
   min-width: 421px;
-  padding: 12px 0 0;
+  padding: 0;
   background: var(--transparent);
 }
 
@@ -31,17 +31,6 @@
 
 .launcher-actions {
   background: var(--transparent);
-}
-
-.game-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.activity-label {
-  color: var(--text-secondary);
-  font-size: 14px;
 }
 
 /* Approximately 1.35x the previous 172x48 and 48x48 action controls. */

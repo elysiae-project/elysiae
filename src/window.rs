@@ -48,10 +48,6 @@ mod imp {
         #[template_child]
         pub status_box: TemplateChild<gtk::Box>,
         #[template_child]
-        pub game_title: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub activity_label: TemplateChild<gtk::Label>,
-        #[template_child]
         pub content: TemplateChild<gtk::Box>,
         #[template_child]
         pub settings_layer: TemplateChild<gtk::Overlay>,
@@ -302,7 +298,6 @@ impl ElysiaeWindow {
         self.imp().current_game.set(game);
         let _ = set_option("last-active-game", SettingValue::Str(game.code().to_owned()));
         self.imp().sidebar.select(game);
-        self.imp().game_title.set_label(game.display_name());
         self.imp().status.set(None);
         self.refresh_media();
         self.refresh_status();
@@ -451,21 +446,6 @@ impl ElysiaeWindow {
                     .can_begin(OperationKind::Uninstall, Some(game))
                     .unwrap_or(false),
         );
-
-        imp.activity_label
-            .set_label(&if let Some(running) = running {
-                format!("{} is running", running.display_name())
-            } else {
-                match status {
-                    UpdateAvailability::Updated | UpdateAvailability::Untracked => {
-                        "Ready to play".into()
-                    }
-                    UpdateAvailability::Preinstall => "Ready to play · preinstall available".into(),
-                    UpdateAvailability::Outdated => "An update is available".into(),
-                    UpdateAvailability::Incomplete => "Installation incomplete".into(),
-                    UpdateAvailability::NotInstalled => "Not installed".into(),
-                }
-            });
     }
 
     /// Local status appears first; remote checks cannot replace a newer selection.
@@ -557,10 +537,6 @@ impl ElysiaeWindow {
                         window.imp().status.set(None);
                         window.imp().operation_button.set_label("Unavailable");
                         window.imp().operation_button.set_sensitive(false);
-                        window
-                            .imp()
-                            .activity_label
-                            .set_label("Could not read installation status");
                         window.imp().operation_button.set_tooltip_text(Some(&error));
                     }
                 }

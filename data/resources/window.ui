@@ -42,21 +42,6 @@
                       <property name="row">0</property>
                       <property name="column-span">2</property>
                     </layout>
-                    <child>
-                      <object class="GtkLabel" id="game_title">
-                        <property name="xalign">0</property>
-                        <property name="ellipsize">end</property>
-                        <style><class name="game-title"/></style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="activity_label">
-                        <property name="xalign">0</property>
-                        <property name="wrap">true</property>
-                        <property name="wrap-mode">word-char</property>
-                        <style><class name="activity-label"/></style>
-                      </object>
-                    </child>
                     <child><object class="ElysiaeProgressbar" id="progress"/></child>
                   </object>
                 </child>
