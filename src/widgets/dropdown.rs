@@ -180,6 +180,46 @@ impl Dropdown {
         });
 
         let weak = self.downgrade();
+        self.imp().popover.connect_map(move |popover| {
+            let Some(obj) = weak.upgrade() else {
+                return;
+            };
+
+            // Match the popup contents to the trigger. The popover keeps its
+            // initial allocation when children resize, so request the size
+            // explicitly; chrome (contents padding and border) may still be
+            // unallocated at map time, so retry until the widths are known.
+            let imp = obj.imp();
+            let Some(scroll) = popover.child() else {
+                return;
+            };
+            let width = imp.trigger.width();
+            let chrome = popover.width() - scroll.width();
+            if popover.width() > 0 && scroll.width() > 0 && chrome > 0 {
+                obj.fit_options(width, chrome);
+                popover.set_size_request(width, -1);
+                return;
+            }
+
+            let weak = obj.downgrade();
+            scroll.add_tick_callback(move |scroll, _| {
+                let Some(obj) = weak.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                let popover = obj.imp().popover.get();
+                let chrome = popover.width() - scroll.width();
+                if chrome <= 0 {
+                    return glib::ControlFlow::Continue;
+                }
+
+                obj.fit_options(width, chrome);
+                popover.set_size_request(width, -1);
+                popover.queue_resize();
+                glib::ControlFlow::Break
+            });
+        });
+
+        let weak = self.downgrade();
         self.imp().popover.connect_visible_notify(move |popover| {
             if popover.is_visible()
                 && let Some(obj) = weak.upgrade()
@@ -210,6 +250,39 @@ impl Dropdown {
                 .map_or(glib::Propagation::Proceed, |obj| obj.handle_key(key))
         });
         self.add_controller(keys);
+    }
+
+    /// Size the option rows so the popup contents match the trigger width.
+    /// `chrome` is the popover's own padding/border around the list.
+    fn fit_options(&self, width: i32, chrome: i32) {
+        let imp = self.imp();
+        let Some(row) = imp.options.borrow().first().cloned() else {
+            return;
+        };
+        let Some(box_) = row.child().and_downcast::<gtk::Box>() else {
+            return;
+        };
+        let Some(label) = box_.first_child().and_downcast::<gtk::Label>() else {
+            return;
+        };
+
+        let row_chrome = (row.width() - box_.width()).max(0);
+        let siblings: i32 = box_
+            .observe_children()
+            .iter::<glib::Object>()
+            .flatten()
+            .skip(1)
+            .map(|child| {
+                child
+                    .downcast::<gtk::Widget>()
+                    .map(|w| w.width())
+                    .unwrap_or(0)
+            })
+            .sum();
+        let spacing = box_.spacing() * (box_.observe_children().n_items().saturating_sub(1)) as i32;
+        let target = width - chrome - row_chrome - siblings - spacing;
+        label.set_width_request(target.max(0));
+        imp.list.set_width_request((width - chrome).max(0));
     }
 
     pub fn selected(&self) -> u32 {

@@ -330,7 +330,7 @@ fn failed_required_asset_restores_old_catalog_and_preserves_active_new_image() {
     run(async {
         let fixture = Fixture::new(4096);
         let store = &fixture.0;
-        let game = Game::Hyg;
+        let game = Game::Nap;
         let old = catalog(game, "v1", false);
         seed(store, game, old.clone()).await;
 
@@ -384,7 +384,7 @@ fn failed_required_asset_restores_old_catalog_and_preserves_active_new_image() {
 fn requested_locale_failure_still_refreshes_and_reports_english_fallback() {
     run(async {
         let fixture = Fixture::new(4096);
-        let game = Game::Abc;
+        let game = Game::Nap;
         let requests = Mutex::new(Vec::new());
         let notified = AtomicBool::new(false);
 

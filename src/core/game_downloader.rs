@@ -769,10 +769,6 @@ pub async fn relocate_game(
 }
 
 /// Unregisters a game, optionally deleting its confirmed managed installation.
-#[expect(
-    dead_code,
-    reason = "Managed-uninstall backend retained until a UI caller is connected"
-)]
 pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: bool) -> Result<()> {
     let operation = operations().begin(OperationKind::Uninstall, Some(game))?;
 

@@ -25,13 +25,13 @@ const JOURNALS: &str = "installation-transactions";
 const MAX_JOURNAL: u64 = 64 * 1024;
 const BUFFER: usize = 64 * 1024;
 const MAX_DEPTH: usize = 128;
-const GAMES: [Game; 6] = [
+const GAMES: [Game; 4] = [
     Game::Bh3,
     Game::Hk4e,
     Game::Hkrpg,
     Game::Nap,
-    Game::Abc,
-    Game::Hyg,
+    // Game::Abc,
+    // Game::Hyg,
 ];
 
 /// Recorded maintenance intent and directory identities used to guide recovery.

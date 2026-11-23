@@ -26,36 +26,22 @@
               </object>
             </child>
             <child>
-              <!-- Two of five equal columns keep the progress area at 40%. -->
+              <!-- The grid stretches; the footer reserves the space for the progress panel. -->
               <object class="GtkGrid" id="footer_layout">
-                <property name="column-homogeneous">true</property>
                 <style><class name="launcher-bottom-row"/></style>
                 <child>
-                  <object class="GtkBox">
+                  <object class="GtkBox" id="status_box">
                     <property name="orientation">vertical</property>
                     <property name="spacing">12</property>
+                    <property name="halign">start</property>
                     <property name="valign">end</property>
+                    <property name="visible">false</property>
                     <style><class name="launcher-footer"/></style>
                     <layout>
                       <property name="column">0</property>
                       <property name="row">0</property>
                       <property name="column-span">2</property>
                     </layout>
-                    <child>
-                      <object class="GtkLabel" id="game_title">
-                        <property name="xalign">0</property>
-                        <property name="ellipsize">end</property>
-                        <style><class name="game-title"/></style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="activity_label">
-                        <property name="xalign">0</property>
-                        <property name="wrap">true</property>
-                        <property name="wrap-mode">word-char</property>
-                        <style><class name="activity-label"/></style>
-                      </object>
-                    </child>
                     <child><object class="ElysiaeProgressbar" id="progress"/></child>
                   </object>
                 </child>
@@ -63,6 +49,7 @@
                   <object class="GtkBox">
                     <property name="orientation">vertical</property>
                     <property name="spacing">12</property>
+                    <property name="hexpand">true</property>
                     <property name="halign">end</property>
                     <property name="valign">end</property>
                     <style><class name="launcher-action-column"/></style>
@@ -72,23 +59,24 @@
                       <property name="column-span">3</property>
                     </layout>
                     <child>
-                      <object class="GtkButton" id="preinstall_button">
-                        <property name="label">Preinstall</property>
-                        <property name="visible">false</property>
-                        <property name="halign">end</property>
-                        <style><class name="button"/><class name="preinstall-button"/></style>
-                      </object>
-                    </child>
-                    <child>
                       <object class="GtkBox">
                         <property name="spacing">16</property>
                         <style><class name="launcher-actions"/></style>
                         <child>
                           <object class="GtkButton" id="settings_button">
-                            <property name="icon-name">settings</property>
+                            <property name="icon-name">settings-symbolic</property>
                             <property name="tooltip-text">Settings</property>
                             <accessibility><property name="label">Settings</property></accessibility>
                             <style><class name="button"/><class name="settings-button"/></style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="preinstall_button">
+                            <property name="icon-name">media-floppy-symbolic</property>
+                            <property name="tooltip-text">Download preinstall</property>
+                            <property name="visible">false</property>
+                            <accessibility><property name="label">Download preinstall</property></accessibility>
+                            <style><class name="button"/><class name="preinstall-button"/></style>
                           </object>
                         </child>
                         <child>

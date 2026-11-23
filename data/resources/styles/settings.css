@@ -38,6 +38,11 @@
   color: var(--text-primary);
 }
 
+/* Keep rows clear of the vertical scrollbar, which is not overlaid. */
+.settings-content {
+  padding-right: 12px;
+}
+
 .settings-row {
   padding: 14px 0;
 }

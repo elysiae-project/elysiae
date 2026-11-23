@@ -11,6 +11,8 @@
   background: var(--transparent);
 }
 
+/* The box is content-sized (halign=start in window.ui); the panel's
+ * min-width below caps it at ~45% of the previous full-row width. */
 .launcher-footer {
   padding: 16px;
   border-radius: 16px;
@@ -18,12 +20,12 @@
 }
 
 .launcher-footer .progress-panel {
-  padding: 12px 0 0;
+  min-width: 421px;
+  padding: 0;
   background: var(--transparent);
 }
 
 .launcher-action-column {
-  margin-left: 24px;
   background: var(--transparent);
 }
 
@@ -31,20 +33,10 @@
   background: var(--transparent);
 }
 
-.game-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.activity-label {
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
 /* Approximately 1.35x the previous 172x48 and 48x48 action controls. */
 .operation-button,
-.settings-button {
+.settings-button,
+.preinstall-button {
   min-height: 32px;
   padding: 16px 27px;
   border-radius: 16px;
@@ -55,18 +47,10 @@
   min-width: 178px;
 }
 
-.settings-button {
+.settings-button,
+.preinstall-button {
   min-width: 32px;
   padding: 16px;
   border-radius: 32px;
   -gtk-icon-size: 22px;
-}
-
-.preinstall-button {
-  color: var(--text-primary);
-  background: var(--surface-raised);
-}
-
-.preinstall-button:hover {
-  background: var(--surface-hover);
 }
