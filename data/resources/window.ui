@@ -74,14 +74,6 @@
                       <property name="column-span">3</property>
                     </layout>
                     <child>
-                      <object class="GtkButton" id="preinstall_button">
-                        <property name="label">Preinstall</property>
-                        <property name="visible">false</property>
-                        <property name="halign">end</property>
-                        <style><class name="button"/><class name="preinstall-button"/></style>
-                      </object>
-                    </child>
-                    <child>
                       <object class="GtkBox">
                         <property name="spacing">16</property>
                         <style><class name="launcher-actions"/></style>
@@ -100,6 +92,15 @@
                             <property name="tooltip-text">Settings</property>
                             <accessibility><property name="label">Settings</property></accessibility>
                             <style><class name="button"/><class name="settings-button"/></style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="preinstall_button">
+                            <property name="icon-name">media-floppy-symbolic</property>
+                            <property name="tooltip-text">Download preinstall</property>
+                            <property name="visible">false</property>
+                            <accessibility><property name="label">Download preinstall</property></accessibility>
+                            <style><class name="button"/><class name="preinstall-button"/></style>
                           </object>
                         </child>
                         <child>

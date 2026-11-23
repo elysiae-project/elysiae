@@ -47,6 +47,7 @@
 /* Approximately 1.35x the previous 172x48 and 48x48 action controls. */
 .operation-button,
 .settings-button,
+.preinstall-button,
 .uninstall-button {
   min-height: 32px;
   padding: 16px 27px;
@@ -59,6 +60,7 @@
 }
 
 .settings-button,
+.preinstall-button,
 .uninstall-button {
   min-width: 32px;
   padding: 16px;
@@ -76,13 +78,4 @@
 
 .uninstall-button:active {
   background: var(--btn-danger);
-}
-
-.preinstall-button {
-  color: var(--text-primary);
-  background: var(--surface-raised);
-}
-
-.preinstall-button:hover {
-  background: var(--surface-hover);
 }
