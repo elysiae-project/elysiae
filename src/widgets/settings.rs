@@ -138,16 +138,11 @@ mod imp {
         #[template_child]
         pub content: TemplateChild<gtk::Box>,
         #[template_child]
-        pub scroll: TemplateChild<gtk::ScrolledWindow>,
-        #[template_child]
         pub error: TemplateChild<gtk::Label>,
         pub(super) fields: OnceCell<Vec<super::Field>>,
         pub(super) refreshing: Cell<bool>,
         pub(super) errors: RefCell<BTreeMap<&'static str, String>>,
         pub(super) uninstall_label: RefCell<Option<gtk::Label>>,
-        pub(super) scroll_target: Cell<f64>,
-        pub(super) scroll_animating: Cell<bool>,
-        pub(super) scroll_last_set: Cell<f64>,
     }
 
     #[glib::object_subclass]
@@ -320,81 +315,6 @@ impl Settings {
         }
 
         self.add_uninstall_row();
-        self.enable_smooth_scrolling();
-    }
-
-    /// Wheel steps arrive as discrete jumps; ease the adjustment toward an
-    /// accumulated target instead. Drag/kinetic scrolling stays native GTK.
-    fn enable_smooth_scrolling(&self) {
-        let controller = gtk::EventControllerScroll::new(
-            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE,
-        );
-        controller.set_propagation_phase(gtk::PropagationPhase::Capture);
-
-        let weak = self.downgrade();
-        controller.connect_scroll(move |_, _dx, dy| {
-            let Some(settings) = weak.upgrade() else {
-                return glib::Propagation::Proceed;
-            };
-
-            if !settings.settings().is_gtk_enable_animations() {
-                return glib::Propagation::Proceed;
-            }
-
-            settings.scroll_by(dy);
-            glib::Propagation::Stop
-        });
-        self.imp().scroll.add_controller(controller);
-    }
-
-    fn scroll_by(&self, dy: f64) {
-        let imp = self.imp();
-        let adjustment = imp.scroll.vadjustment();
-        // One wheel notch is a page fraction, like GTK's own step; the
-        // exponential ease below spreads it over several frames.
-        let delta = dy * adjustment.page_size() * 0.25;
-        let upper = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
-        let target = if imp.scroll_animating.get() {
-            imp.scroll_target.get()
-        } else {
-            adjustment.value()
-        };
-        let target = (target + delta).clamp(adjustment.lower(), upper);
-        imp.scroll_target.set(target);
-
-        if imp.scroll_animating.replace(true) {
-            return;
-        }
-
-        imp.scroll.add_tick_callback(|scroll, _| {
-            let Some(settings) = scroll
-                .parent()
-                .and_then(|parent| parent.downcast::<Settings>().ok())
-            else {
-                return glib::ControlFlow::Break;
-            };
-            let imp = settings.imp();
-            let adjustment = scroll.vadjustment();
-
-            // Drag or scrollbar input cancels the wheel animation.
-            if (adjustment.value() - imp.scroll_last_set.get()).abs() > 1.0 {
-                imp.scroll_animating.set(false);
-                return glib::ControlFlow::Break;
-            }
-
-            let delta = imp.scroll_target.get() - adjustment.value();
-            if delta.abs() < 0.5 {
-                imp.scroll_last_set.set(imp.scroll_target.get());
-                adjustment.set_value(imp.scroll_target.get());
-                imp.scroll_animating.set(false);
-                return glib::ControlFlow::Break;
-            }
-
-            let value = adjustment.value() + delta * 0.2;
-            imp.scroll_last_set.set(value);
-            adjustment.set_value(value);
-            glib::ControlFlow::Continue
-        });
     }
 
     /// A destructive action row; the parent window confirms before deleting.
