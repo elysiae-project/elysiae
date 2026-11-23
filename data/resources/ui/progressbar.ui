@@ -171,7 +171,7 @@
         </child>
         <child>
           <object class="GtkButton" id="cancel_button">
-            <property name="icon-name">process-stop-symbolic</property>
+            <property name="icon-name">media-playback-stop-symbolic</property>
             <property name="tooltip-text">Cancel download and delete files</property>
             <accessibility><property name="label">Cancel download and delete files</property></accessibility>
             <style><class name="button"/><class name="danger-button"/><class name="progress-control-button"/></style>
