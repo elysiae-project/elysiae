@@ -63,15 +63,6 @@
                         <property name="spacing">16</property>
                         <style><class name="launcher-actions"/></style>
                         <child>
-                          <object class="GtkButton" id="uninstall_button">
-                            <property name="icon-name">trash-empty-symbolic</property>
-                            <property name="tooltip-text">Uninstall</property>
-                            <property name="visible">false</property>
-                            <accessibility><property name="label">Uninstall</property></accessibility>
-                            <style><class name="button"/><class name="uninstall-button"/></style>
-                          </object>
-                        </child>
-                        <child>
                           <object class="GtkButton" id="settings_button">
                             <property name="icon-name">settings</property>
                             <property name="tooltip-text">Settings</property>

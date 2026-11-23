@@ -38,8 +38,6 @@ mod imp {
         #[template_child]
         pub preinstall_button: TemplateChild<gtk::Button>,
         #[template_child]
-        pub uninstall_button: TemplateChild<gtk::Button>,
-        #[template_child]
         pub background: TemplateChild<Background>,
         #[template_child]
         pub sidebar: TemplateChild<Sidebar>,
@@ -114,19 +112,14 @@ mod imp {
                 }
             });
 
-            // Breeze ships trash-empty-symbolic; Adwaita names it user-trash-symbolic.
-            if let Some(display) = gtk::gdk::Display::default()
-                && !gtk::IconTheme::for_display(&display).has_icon("trash-empty-symbolic")
-            {
-                self.uninstall_button.set_icon_name("user-trash-symbolic");
-            }
-
             let weak = window.downgrade();
-            self.uninstall_button.connect_clicked(move |_| {
-                if let Some(window) = weak.upgrade() {
-                    window.confirm_uninstall();
-                }
-            });
+            self.settings_panel
+                .connect_uninstall_requested(move |settings| {
+                    if let Some(window) = weak.upgrade() {
+                        let _ = settings;
+                        window.confirm_uninstall();
+                    }
+                });
 
             let weak = window.downgrade();
             self.sidebar.connect_game_selected(move |game| {
@@ -298,6 +291,7 @@ impl ElysiaeWindow {
         self.imp().current_game.set(game);
         let _ = set_option("last-active-game", SettingValue::Str(game.code().to_owned()));
         self.imp().sidebar.select(game);
+        self.imp().settings_panel.set_game(game);
         self.imp().status.set(None);
         self.refresh_media();
         self.refresh_status();
@@ -396,7 +390,6 @@ impl ElysiaeWindow {
         let Some(status) = imp.status.get() else {
             imp.operation_button.set_sensitive(false);
             imp.preinstall_button.set_visible(false);
-            imp.uninstall_button.set_visible(false);
             return;
         };
 
@@ -435,15 +428,6 @@ impl ElysiaeWindow {
             imp.transfer_pending.get().is_none()
                 && operations()
                     .can_begin(OperationKind::Preinstall, Some(game))
-                    .unwrap_or(false),
-        );
-
-        imp.uninstall_button.set_visible(is_installed(status));
-        imp.uninstall_button.set_sensitive(
-            imp.transfer_pending.get().is_none()
-                && imp.launch_pending.get().is_none()
-                && operations()
-                    .can_begin(OperationKind::Uninstall, Some(game))
                     .unwrap_or(false),
         );
     }

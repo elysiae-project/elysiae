@@ -72,6 +72,19 @@
   outline-offset: 3px;
 }
 
+/* Destructive actions keep the danger accent across hover and press. */
+.danger-button {
+  background: var(--btn-danger);
+}
+
+.danger-button:hover {
+  background: var(--btn-danger-hover);
+}
+
+.danger-button:active {
+  background: var(--btn-danger);
+}
+
 .settings-scroll scrollbar,
 .game-selector-scroll scrollbar,
 .dropdown-scroll scrollbar {
