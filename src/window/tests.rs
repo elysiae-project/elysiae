@@ -6,7 +6,7 @@ fn pump_until(mut ready: impl FnMut() -> bool) {
 }
 
 #[track_caller]
-fn pump_for(deadline: std::time::Duration, mut ready: &mut impl FnMut() -> bool) {
+fn pump_for(deadline: std::time::Duration, ready: &mut impl FnMut() -> bool) {
     let deadline = std::time::Instant::now() + deadline;
     let context = glib::MainContext::default();
 
