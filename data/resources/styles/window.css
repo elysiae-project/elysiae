@@ -46,7 +46,8 @@
 
 /* Approximately 1.35x the previous 172x48 and 48x48 action controls. */
 .operation-button,
-.settings-button {
+.settings-button,
+.uninstall-button {
   min-height: 32px;
   padding: 16px 27px;
   border-radius: 16px;
@@ -57,11 +58,24 @@
   min-width: 178px;
 }
 
-.settings-button {
+.settings-button,
+.uninstall-button {
   min-width: 32px;
   padding: 16px;
   border-radius: 32px;
   -gtk-icon-size: 22px;
+}
+
+.uninstall-button {
+  background: var(--btn-danger);
+}
+
+.uninstall-button:hover {
+  background: var(--btn-danger-hover);
+}
+
+.uninstall-button:active {
+  background: var(--btn-danger);
 }
 
 .preinstall-button {

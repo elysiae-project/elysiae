@@ -8,6 +8,7 @@ use crate::{
     core::{
         game::Game,
         game_downloader::{self, UpdateAvailability},
+        installations,
         operations::{OperationKind, operations},
         proton_manager,
     },
@@ -36,6 +37,8 @@ mod imp {
         pub operation_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub preinstall_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub uninstall_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub background: TemplateChild<Background>,
         #[template_child]
@@ -112,6 +115,20 @@ mod imp {
             self.preinstall_button.connect_clicked(move |_| {
                 if let Some(window) = weak.upgrade() {
                     window.start_operation(true);
+                }
+            });
+
+            // Breeze ships trash-empty-symbolic; Adwaita names it user-trash-symbolic.
+            if let Some(display) = gtk::gdk::Display::default()
+                && !gtk::IconTheme::for_display(&display).has_icon("trash-empty-symbolic")
+            {
+                self.uninstall_button.set_icon_name("user-trash-symbolic");
+            }
+
+            let weak = window.downgrade();
+            self.uninstall_button.connect_clicked(move |_| {
+                if let Some(window) = weak.upgrade() {
+                    window.confirm_uninstall();
                 }
             });
 
@@ -384,6 +401,7 @@ impl ElysiaeWindow {
         let Some(status) = imp.status.get() else {
             imp.operation_button.set_sensitive(false);
             imp.preinstall_button.set_visible(false);
+            imp.uninstall_button.set_visible(false);
             return;
         };
 
@@ -422,6 +440,15 @@ impl ElysiaeWindow {
             imp.transfer_pending.get().is_none()
                 && operations()
                     .can_begin(OperationKind::Preinstall, Some(game))
+                    .unwrap_or(false),
+        );
+
+        imp.uninstall_button.set_visible(is_installed(status));
+        imp.uninstall_button.set_sensitive(
+            imp.transfer_pending.get().is_none()
+                && imp.launch_pending.get().is_none()
+                && operations()
+                    .can_begin(OperationKind::Uninstall, Some(game))
                     .unwrap_or(false),
         );
 
@@ -651,6 +678,87 @@ impl ElysiaeWindow {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => window.show_error(&format!("{error:#}")),
                 Err(error) => window.show_error(&format!("Operation worker disconnected: {error}")),
+            }
+
+            window.refresh_status();
+            window.refresh_installations();
+        });
+    }
+
+    /// Confirms uninstalling the selected game. Managed installations lose
+    /// their files; imported ones are only unregistered. Cancel is default.
+    fn confirm_uninstall(&self) {
+        let game = self.get_current_game();
+        let managed = match installations::registered(game) {
+            Ok(Some(installation)) => installation.managed,
+            Ok(None) => {
+                self.show_error("Game is not registered");
+                return;
+            }
+            Err(error) => {
+                self.show_error(&format!("{error:#}"));
+                return;
+            }
+        };
+
+        let dialog = gtk::AlertDialog::builder()
+            .message(format!("Uninstall {}?", game.display_name()))
+            .detail(if managed {
+                "The game directory and all of its files will be deleted."
+            } else {
+                "The game will be unregistered. Imported files are kept on disk."
+            })
+            .buttons(["Cancel", "Uninstall"])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+
+            if dialog.choose_future(Some(&window)).await != Ok(1) {
+                return;
+            }
+
+            window.start_uninstall(game);
+        });
+    }
+
+    fn start_uninstall(&self, game: Game) {
+        let root = match installations::path(game) {
+            Ok(root) => root,
+            Err(error) => {
+                self.show_error(&format!("{error:#}"));
+                return;
+            }
+        };
+        let managed = installations::registered(game)
+            .ok()
+            .flatten()
+            .is_some_and(|installation| installation.managed);
+
+        let (done, completion) = async_channel::bounded(1);
+        runtime::spawn(async move {
+            let result = game_downloader::uninstall_game(game, root, managed).await;
+            let _ = done.send(result).await;
+        });
+
+        let weak = self.downgrade();
+        let hold = self.application().map(|app| app.hold());
+        glib::MainContext::default().spawn_local(async move {
+            let _hold = hold;
+            let result = completion.recv().await;
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => window.show_error(&format!("{error:#}")),
+                Err(error) => window.show_error(&format!("Uninstall worker disconnected: {error}")),
             }
 
             window.refresh_status();

@@ -4,6 +4,8 @@
   --bg-color-dark: oklch(0.1732 0.0295 273.73);
   --btn-primary: oklch(0.55 0.183 271.11);
   --btn-primary-hover: oklch(0.57 0.183 271.11);
+  --btn-danger: oklch(0.55 0.183 22);
+  --btn-danger-hover: oklch(0.57 0.183 22);
   --surface: oklch(0.235 0.034 273.73);
   --surface-raised: oklch(0.29 0.043 273.73);
   --surface-hover: oklch(0.34 0.055 273.73);
