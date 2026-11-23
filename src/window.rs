@@ -55,6 +55,9 @@ mod imp {
         pub settings_panel: TemplateChild<Settings>,
         pub current_game: Cell<Game>,
         pub status: Cell<Option<UpdateAvailability>>,
+        // Last known status per game, so revisiting a game shows its action
+        // immediately while a fresh check runs in the background.
+        pub status_cache: RefCell<std::collections::HashMap<Game, (UpdateAvailability, bool)>>,
         pub request: Cell<u64>,
         pub installation_request: Cell<u64>,
         pub runtime_ready: Cell<bool>,
@@ -315,9 +318,16 @@ impl ElysiaeWindow {
         let _ = set_option("last-active-game", SettingValue::Str(game.code().to_owned()));
         self.imp().sidebar.select(game);
         self.imp().settings_panel.set_game(game);
-        self.imp().status.set(None);
+        let cached = self.imp().status_cache.borrow().get(&game).copied();
+        if let Some((status, ready)) = cached {
+            self.imp().status.set(Some(status));
+            self.imp().runtime_ready.set(ready);
+        } else {
+            self.imp().status.set(None);
+        }
         self.refresh_media();
         self.refresh_status();
+        self.refresh_controls();
     }
 
     pub fn refresh_media(&self) {
@@ -553,12 +563,18 @@ impl ElysiaeWindow {
                         window.imp().runtime_ready.set(ready);
                         window
                             .imp()
+                            .status_cache
+                            .borrow_mut()
+                            .insert(game, (status, ready));
+                        window
+                            .imp()
                             .sidebar
                             .set_installed(game, is_installed(status));
                         window.refresh_controls();
                     }
                     Err(error) => {
                         window.imp().status.set(None);
+                        window.imp().status_cache.borrow_mut().remove(&game);
                         window.imp().operation_button.set_label("Unavailable");
                         window.imp().operation_button.set_sensitive(false);
                         window.imp().operation_button.set_tooltip_text(Some(&error));

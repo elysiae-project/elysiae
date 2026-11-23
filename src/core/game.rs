@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Ok, bail};
 
 /// Game identifiers shared by launcher metadata, storage and backend operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Game {
     Bh3,
     Hk4e,
