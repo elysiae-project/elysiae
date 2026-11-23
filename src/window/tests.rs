@@ -61,9 +61,12 @@ fn assert_footer_layout(window: &ElysiaeWindow) {
     let row = row.compute_bounds(window).unwrap();
     let controls = actions.compute_bounds(window).unwrap();
 
-    // The footer absorbs width changes; the panel keeps its floor and the
-    // row never leaves the window.
-    assert!(area.width() >= 320.0, "Floor must hold: {area:?}");
+    // The floor applies while the progress panel is laid out; idle and
+    // hidden it only shows the buttons and stays under it.
+    assert!(
+        !window.imp().progress.is_visible() || area.width() >= 320.0,
+        "Panel floor must hold: {area:?}"
+    );
     assert!(
         area.x() + area.width() <= row.x() + row.width(),
         "Progress area must stay in the row: {area:?} in {row:?}"
@@ -72,15 +75,34 @@ fn assert_footer_layout(window: &ElysiaeWindow) {
         row.x() >= 0.0 && row.width() <= window.width() as f32,
         "Row must stay on screen: {row:?}"
     );
+    // The action column expands, so the buttons hug the right content edge
+    // whether or not the status box is laid out.
     assert!(
-        controls.x() >= area.x() + area.width() + 23.0,
+        (window.width() as f32 - (controls.x() + controls.width()) - 32.0).abs() <= 2.0,
+        "Controls must align to the right content edge: {controls:?}"
+    );
+    assert!(
+        controls.x() >= area.x() + area.width(),
         "Progress and controls must not overlap"
     );
+    // While downloading, the controls share the status box's bottom edge;
+    // idle (box hidden) they sit at the window's bottom content padding.
+    if window.imp().status_box.is_visible() {
+        assert!(
+            (controls.y() + controls.height() - area.y() - area.height()).abs() <= 2.0,
+            "Progress and controls must share a bottom edge: {area:?}, {controls:?}"
+        );
+    } else {
+        assert!(
+            (window.height() as f32 - (controls.y() + controls.height()) - 28.0).abs() <= 2.0,
+            "Controls must sit at the bottom content edge: {controls:?}"
+        );
+    }
     assert!(
-        (controls.y() + controls.height() - area.y() - area.height()).abs() <= 2.0,
-        "Progress and controls must share a bottom edge: {area:?}, {controls:?}"
+        controls.y() + controls.height() <= window.height() as f32,
+        "Controls must stay inside the window: {controls:?} in {}x{}",
+        window.width(), window.height()
     );
-    assert!(controls.y() + controls.height() <= window.height() as f32);
     assert!(!window.imp().settings_button.is_ancestor(&footer));
     assert!(!window.imp().operation_button.is_ancestor(&footer));
 }
@@ -119,14 +141,13 @@ fn gtk_launcher_interactions_and_layout() {
     pump_until(|| window.is_mapped() && window.width() >= 1100 && window.imp().sidebar.width() > 0);
     assert!(!window.imp().progress.is_visible());
     assert!(window.imp().background.is_visible());
-
     let initial_selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-    assert!((initial_selector.center().x() - window.width() as f32 / 2.0).abs() < 2.0);
-    assert!(
-        initial_selector.width() >= Game::all().len() as f32 * 44.0
-            && (64.0..=120.0).contains(&initial_selector.height()),
-        "Selector should have comfortably spaced game buttons: {initial_selector:?}"
+    // R3: sidebar hugs the right content padding; the gap is fixed, not centered.
+    assert_eq!(
+        window.width() as f32 - (initial_selector.x() + initial_selector.width()),
+        32.0
     );
+    assert_eq!((initial_selector.width(), initial_selector.height()), (74.0, 296.0));
     let settings_bounds = window
         .imp()
         .settings_button
@@ -157,10 +178,11 @@ fn gtk_launcher_interactions_and_layout() {
 
     assert_eq!(buttons.len(), Game::all().len());
     for pair in buttons.windows(2) {
-        let left = pair[0].compute_bounds(&window).unwrap();
-        let right = pair[1].compute_bounds(&window).unwrap();
-        assert!(left.width() >= 44.0 && left.height() >= 44.0);
-        assert!(right.x() - left.x() - left.width() >= 9.0);
+        let upper = pair[0].compute_bounds(&window).unwrap();
+        let lower = pair[1].compute_bounds(&window).unwrap();
+        assert_eq!((upper.width(), upper.height()), (64.0, 64.0));
+        assert_eq!(upper.x(), lower.x());
+        assert_eq!(lower.y() - upper.y(), 74.0);
     }
 
     // Real artwork must not override the configured CSS geometry.

@@ -301,6 +301,11 @@ impl Progressbar {
         self.render();
     }
 
+    /// Whether the panel currently presents an operation.
+    pub fn is_presenting(&self) -> bool {
+        self.imp().state.borrow().visible
+    }
+
     fn render(&self) {
         let imp = self.imp();
         let state = imp.state.borrow();

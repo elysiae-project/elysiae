@@ -30,10 +30,12 @@
               <object class="GtkGrid" id="footer_layout">
                 <style><class name="launcher-bottom-row"/></style>
                 <child>
-                  <object class="GtkBox">
+                  <object class="GtkBox" id="status_box">
                     <property name="orientation">vertical</property>
                     <property name="spacing">12</property>
+                    <property name="halign">start</property>
                     <property name="valign">end</property>
+                    <property name="visible">false</property>
                     <style><class name="launcher-footer"/></style>
                     <layout>
                       <property name="column">0</property>

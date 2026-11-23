@@ -43,6 +43,8 @@ mod imp {
         #[template_child]
         pub progress: TemplateChild<Progressbar>,
         #[template_child]
+        pub status_box: TemplateChild<gtk::Box>,
+        #[template_child]
         pub game_title: TemplateChild<gtk::Label>,
         #[template_child]
         pub activity_label: TemplateChild<gtk::Label>,
@@ -340,10 +342,35 @@ impl ElysiaeWindow {
         }
     }
 
+    /// The status box stays up while a download operation is active or the
+    /// progress panel still shows one (a transfer may belong to another game).
+    fn refresh_status_box(&self) {
+        let game = self.get_current_game();
+        let downloading = operations()
+            .active()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| {
+                s.game == Some(game)
+                    && matches!(
+                        s.kind,
+                        OperationKind::Install
+                            | OperationKind::Update
+                            | OperationKind::Preinstall
+                            | OperationKind::Repair
+                            | OperationKind::Components
+                    )
+            });
+        let showing_progress = self.imp().displayed_operation.get().is_some()
+            && self.imp().progress.is_presenting();
+        self.imp().status_box.set_visible(downloading || showing_progress);
+    }
+
     fn refresh_controls(&self) {
         let imp = self.imp();
         let game = self.get_current_game();
         let active = operations().active().unwrap_or_default();
+        self.refresh_status_box();
         let running = active
             .iter()
             .find(|s| s.kind == OperationKind::Launch)
@@ -676,6 +703,8 @@ impl ElysiaeWindow {
 
             self.imp().progress.update(&update);
         }
+        self.refresh_status_box();
+
         if let Some(game) = update.operation.game {
             match &update.event {
                 ProgressEvent::Started => self.imp().sidebar.set_progress(game, Some(0.0)),

@@ -11,6 +11,8 @@
   background: var(--transparent);
 }
 
+/* The box is content-sized (halign=start in window.ui); the panel's
+ * min-width below caps it at ~45% of the previous full-row width. */
 .launcher-footer {
   padding: 16px;
   border-radius: 16px;
@@ -18,13 +20,12 @@
 }
 
 .launcher-footer .progress-panel {
-  min-width: 320px;
+  min-width: 421px;
   padding: 12px 0 0;
   background: var(--transparent);
 }
 
 .launcher-action-column {
-  margin-left: 24px;
   background: var(--transparent);
 }
 
