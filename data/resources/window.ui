@@ -62,6 +62,7 @@
                   <object class="GtkBox">
                     <property name="orientation">vertical</property>
                     <property name="spacing">12</property>
+                    <property name="hexpand">true</property>
                     <property name="halign">end</property>
                     <property name="valign">end</property>
                     <style><class name="launcher-action-column"/></style>
