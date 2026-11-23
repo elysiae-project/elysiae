@@ -83,6 +83,33 @@ fn file_to_sophon_verification_assembly_and_extraction() {
 }
 
 #[test]
+fn assembling_waits_for_a_finished_download() {
+    let mut state = ProgressState::default();
+    state.update(&update(downloading(80, 100)));
+    let detail = state.detail.clone();
+    assert!(detail.contains("1.0 KiB/s"));
+
+    state.update(&update(ProgressEvent::Sophon(SophonProgress::Assembling {
+        assembled_files: 1,
+        total_files: 4,
+    })));
+    assert_eq!(state.detail, detail);
+
+    // Verification progress keeps updating while the transfer finishes.
+    state.update(&update(ProgressEvent::Sophon(SophonProgress::Verifying {
+        scanned_files: 2,
+        total_files: 4,
+        error_count: 0,
+    })));
+    state.update(&update(downloading(100, 100)));
+    state.update(&update(ProgressEvent::Sophon(SophonProgress::Assembling {
+        assembled_files: 3,
+        total_files: 4,
+    })));
+    assert_eq!(state.detail, "Assembling files: 3/4");
+}
+
+#[test]
 fn unknown_totals_are_indeterminate_only_during_actual_work() {
     let mut state = ProgressState::default();
     state.update(&update(file(42, 0)));

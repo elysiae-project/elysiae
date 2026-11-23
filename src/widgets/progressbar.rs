@@ -136,7 +136,14 @@ impl ProgressState {
                 }
 
                 self.bars = Bars::Sophon;
-                self.detail = format_sophon_progress(progress);
+                // Assembly starts while chunks still transfer; its text
+                // replaces the download speed only once the transfer has
+                // fully completed.
+                if !matches!(progress, SophonProgress::Assembling { .. })
+                    || self.download.fraction == Some(1.0)
+                {
+                    self.detail = format_sophon_progress(progress);
+                }
                 match progress {
                     SophonProgress::Downloading {
                         downloaded_bytes,
