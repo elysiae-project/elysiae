@@ -9,7 +9,7 @@ use crate::{
         game::Game,
         game_downloader::{self, UpdateAvailability},
         installations,
-        operations::{OperationKind, operations},
+        operations::{OperationKind, Phase, operations},
         proton_manager,
     },
     util::{
@@ -63,6 +63,9 @@ mod imp {
         pub runtime_ready: Cell<bool>,
         pub transfer_pending: Cell<Option<Game>>,
         pub cancel_pending: Cell<bool>,
+        // Games whose transfer the user cancelled; their expected failure
+        // must not raise an error dialog.
+        pub cancelled: RefCell<std::collections::HashSet<Game>>,
         pub launch_pending: Cell<Option<Game>>,
         pub displayed_operation: Cell<Option<Uuid>>,
         pub completed: RefCell<Vec<Uuid>>,
@@ -697,6 +700,9 @@ impl ElysiaeWindow {
 
             match result {
                 Ok(Ok(())) => {}
+                // A user-requested cancellation ends the worker with an
+                // error; the follow-up uninstall owns the outcome instead.
+                Ok(Err(_)) if window.imp().cancelled.borrow_mut().remove(&game) => {}
                 Ok(Err(error)) => window.show_error(&format!("{error:#}")),
                 Err(error) => window.show_error(&format!("Operation worker disconnected: {error}")),
             }
@@ -800,6 +806,7 @@ impl ElysiaeWindow {
         }
 
         self.imp().cancel_pending.set(true);
+        self.imp().cancelled.borrow_mut().insert(game);
         self.refresh_controls();
 
         let weak = self.downgrade();
@@ -834,6 +841,7 @@ impl ElysiaeWindow {
                     if released {
                         window.start_uninstall(game);
                     } else {
+                        window.imp().cancelled.borrow_mut().remove(&game);
                         window.show_error(
                             "The download did not stop in time; the directory was kept",
                         );
@@ -925,7 +933,13 @@ impl ElysiaeWindow {
         // bookkeeping only.
         let stale_terminal = matches!(update.event, ProgressEvent::Finished { .. })
             && self.imp().displayed_operation.get() != Some(id);
-        if !stale_terminal {
+        let cancelled = matches!(update.event, ProgressEvent::Finished { .. })
+            && update.operation.phase == Phase::Cancelled;
+        if cancelled {
+            // Cancellation is a user choice, not a failure to report.
+            self.imp().progress.reset();
+            self.imp().displayed_operation.set(None);
+        } else if !stale_terminal {
             if self.imp().displayed_operation.replace(Some(id)) != Some(id) {
                 self.imp().progress.reset();
             }
