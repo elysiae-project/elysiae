@@ -27,13 +27,13 @@ jobs:
           sudo apt-get install meson ninja-build build-essential libfreetype-dev libgtk-4-dev libxml2-utils desktop-file-utils dbus-x11 xvfb llvm clang -y
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             
-      - name: Run Tests
+      - name: Run tests
         run: |
           mkdir build_release
           meson setup build_release -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
           LIBGL_ALWAYS_SOFTWARE=1 GTK_A11Y=none dbus-run-session -- xvfb-run -a ninja -C build_release test
       
-      - name: Test Installs
+      - name: Test installs
         run: |
           DESTDIR="$PWD/stage" meson install -C build_release --no-rebuild
           test -x stage/usr/bin/Elysiae
