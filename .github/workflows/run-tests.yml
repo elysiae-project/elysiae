@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install meson ninja-build build-essential libfreetype-dev libgtk-4-dev llvm clang -y
+          sudo apt-get install meson ninja-build build-essential libfreetype-dev libgtk-4-dev libxml2-utils desktop-file-utils llvm clang -y
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             
       - name: Run Tests (Debug)
