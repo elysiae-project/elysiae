@@ -8,13 +8,14 @@ use crate::{
     core::{
         game::Game,
         game_downloader::{self, UpdateAvailability},
-        operations::{OperationKind, operations},
+        installations,
+        operations::{OperationKind, Phase, operations},
         proton_manager,
     },
     util::{
         progress::{self, ProgressEvent, ProgressUpdate},
         runtime,
-        settings::get_option,
+        settings::{get_option, set_option, SettingValue},
     },
 };
 
@@ -43,9 +44,7 @@ mod imp {
         #[template_child]
         pub progress: TemplateChild<Progressbar>,
         #[template_child]
-        pub game_title: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub activity_label: TemplateChild<gtk::Label>,
+        pub status_box: TemplateChild<gtk::Box>,
         #[template_child]
         pub content: TemplateChild<gtk::Box>,
         #[template_child]
@@ -56,10 +55,17 @@ mod imp {
         pub settings_panel: TemplateChild<Settings>,
         pub current_game: Cell<Game>,
         pub status: Cell<Option<UpdateAvailability>>,
+        // Last known status per game, so revisiting a game shows its action
+        // immediately while a fresh check runs in the background.
+        pub status_cache: RefCell<std::collections::HashMap<Game, (UpdateAvailability, bool)>>,
         pub request: Cell<u64>,
         pub installation_request: Cell<u64>,
         pub runtime_ready: Cell<bool>,
         pub transfer_pending: Cell<Option<Game>>,
+        pub cancel_pending: Cell<bool>,
+        // Games whose transfer the user cancelled; their expected failure
+        // must not raise an error dialog.
+        pub cancelled: RefCell<std::collections::HashSet<Game>>,
         pub launch_pending: Cell<Option<Game>>,
         pub displayed_operation: Cell<Option<Uuid>>,
         pub completed: RefCell<Vec<Uuid>>,
@@ -112,6 +118,37 @@ mod imp {
                     window.start_operation(true);
                 }
             });
+
+            let weak = window.downgrade();
+            self.progress
+                .imp()
+                .pause_button
+                .connect_clicked(move |_| {
+                    if let Some(window) = weak.upgrade()
+                        && let Err(error) = game_downloader::toggle_downloading()
+                    {
+                        window.show_error(&format!("{error:#}"));
+                    }
+                });
+
+            let weak = window.downgrade();
+            self.progress
+                .imp()
+                .cancel_button
+                .connect_clicked(move |_| {
+                    if let Some(window) = weak.upgrade() {
+                        window.confirm_cancel_transfer();
+                    }
+                });
+
+            let weak = window.downgrade();
+            self.settings_panel
+                .connect_uninstall_requested(move |settings| {
+                    if let Some(window) = weak.upgrade() {
+                        let _ = settings;
+                        window.confirm_uninstall();
+                    }
+                });
 
             let weak = window.downgrade();
             self.sidebar.connect_game_selected(move |game| {
@@ -264,7 +301,11 @@ glib::wrapper! {
 impl ElysiaeWindow {
     pub fn new(app: &gtk::Application) -> Self {
         let window: Self = glib::Object::builder().property("application", app).build();
-        window.change_game(Game::default());
+        let last_active = get_option("last-active-game")
+            .and_then(|value| String::try_from(value))
+            .and_then(|code| Game::try_from(code.as_str()))
+            .unwrap_or_else(|_| Game::default());
+        window.change_game(last_active);
         window.imp().sidebar.refresh_icons();
         window.refresh_installations();
 
@@ -277,11 +318,19 @@ impl ElysiaeWindow {
 
     pub fn change_game(&self, game: Game) {
         self.imp().current_game.set(game);
+        let _ = set_option("last-active-game", SettingValue::Str(game.code().to_owned()));
         self.imp().sidebar.select(game);
-        self.imp().game_title.set_label(game.display_name());
-        self.imp().status.set(None);
+        self.imp().settings_panel.set_game(game);
+        let cached = self.imp().status_cache.borrow().get(&game).copied();
+        if let Some((status, ready)) = cached {
+            self.imp().status.set(Some(status));
+            self.imp().runtime_ready.set(ready);
+        } else {
+            self.imp().status.set(None);
+        }
         self.refresh_media();
         self.refresh_status();
+        self.refresh_controls();
     }
 
     pub fn refresh_media(&self) {
@@ -317,6 +366,11 @@ impl ElysiaeWindow {
 
         self.imp().content.set_sensitive(!visible);
         self.imp().content.set_can_target(!visible);
+        if visible {
+            self.imp().content.add_css_class("settings-open");
+        } else {
+            self.imp().content.remove_css_class("settings-open");
+        }
         self.imp().settings_layer.set_visible(visible);
 
         if visible {
@@ -335,16 +389,62 @@ impl ElysiaeWindow {
         }
     }
 
+    /// The status box stays up while a download operation is active or the
+    /// progress panel still shows one (a transfer may belong to another game).
+    fn refresh_status_box(&self) {
+        let game = self.get_current_game();
+        let downloading = operations()
+            .active()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| {
+                s.game == Some(game)
+                    && matches!(
+                        s.kind,
+                        OperationKind::Install
+                            | OperationKind::Update
+                            | OperationKind::Preinstall
+                            | OperationKind::Repair
+                            | OperationKind::Components
+                    )
+            });
+        let showing_progress = self.imp().displayed_operation.get().is_some()
+            && self.imp().progress.is_presenting();
+        self.imp().status_box.set_visible(downloading || showing_progress);
+    }
+
     fn refresh_controls(&self) {
         let imp = self.imp();
         let game = self.get_current_game();
         let active = operations().active().unwrap_or_default();
+        self.refresh_status_box();
+
+        // Controls act on the live transfer, which may belong to another game.
+        let transfer = active.iter().find(|s| {
+            matches!(
+                s.kind,
+                OperationKind::Install
+                    | OperationKind::Update
+                    | OperationKind::Preinstall
+                    | OperationKind::Repair
+            )
+        });
+        imp.progress.set_controls(
+            transfer.is_some(),
+            transfer.is_some_and(|s| s.phase == crate::core::operations::Phase::Paused),
+            imp.cancel_pending.get(),
+        );
+
         let running = active
             .iter()
             .find(|s| s.kind == OperationKind::Launch)
             .and_then(|s| s.game);
-        let transfer = active.iter().any(|s| s.kind != OperationKind::Launch)
-            || imp.transfer_pending.get().is_some();
+        // A running transfer belongs to one game; it must not hold the
+        // other installed games back from launching.
+        let transfer = active
+            .iter()
+            .any(|s| s.game == Some(game))
+            || imp.transfer_pending.get() == Some(game);
         let Some(status) = imp.status.get() else {
             imp.operation_button.set_sensitive(false);
             imp.preinstall_button.set_visible(false);
@@ -388,21 +488,6 @@ impl ElysiaeWindow {
                     .can_begin(OperationKind::Preinstall, Some(game))
                     .unwrap_or(false),
         );
-
-        imp.activity_label
-            .set_label(&if let Some(running) = running {
-                format!("{} is running", running.display_name())
-            } else {
-                match status {
-                    UpdateAvailability::Updated | UpdateAvailability::Untracked => {
-                        "Ready to play".into()
-                    }
-                    UpdateAvailability::Preinstall => "Ready to play · preinstall available".into(),
-                    UpdateAvailability::Outdated => "An update is available".into(),
-                    UpdateAvailability::Incomplete => "Installation incomplete".into(),
-                    UpdateAvailability::NotInstalled => "Not installed".into(),
-                }
-            });
     }
 
     /// Local status appears first; remote checks cannot replace a newer selection.
@@ -486,18 +571,20 @@ impl ElysiaeWindow {
                         window.imp().runtime_ready.set(ready);
                         window
                             .imp()
+                            .status_cache
+                            .borrow_mut()
+                            .insert(game, (status, ready));
+                        window
+                            .imp()
                             .sidebar
                             .set_installed(game, is_installed(status));
                         window.refresh_controls();
                     }
                     Err(error) => {
                         window.imp().status.set(None);
+                        window.imp().status_cache.borrow_mut().remove(&game);
                         window.imp().operation_button.set_label("Unavailable");
                         window.imp().operation_button.set_sensitive(false);
-                        window
-                            .imp()
-                            .activity_label
-                            .set_label("Could not read installation status");
                         window.imp().operation_button.set_tooltip_text(Some(&error));
                     }
                 }
@@ -613,8 +700,194 @@ impl ElysiaeWindow {
 
             match result {
                 Ok(Ok(())) => {}
+                // A user-requested cancellation ends the worker with an
+                // error; the follow-up uninstall owns the outcome instead.
+                Ok(Err(_)) if window.imp().cancelled.borrow_mut().remove(&game) => {}
                 Ok(Err(error)) => window.show_error(&format!("{error:#}")),
                 Err(error) => window.show_error(&format!("Operation worker disconnected: {error}")),
+            }
+
+            window.refresh_status();
+            window.refresh_installations();
+        });
+    }
+
+    /// Confirms uninstalling the selected game. Managed installations lose
+    /// their files; imported ones are only unregistered. Cancel is default.
+    fn confirm_uninstall(&self) {
+        let game = self.get_current_game();
+        let managed = match installations::registered(game) {
+            Ok(Some(installation)) => installation.managed,
+            Ok(None) => {
+                self.show_error("Game is not registered");
+                return;
+            }
+            Err(error) => {
+                self.show_error(&format!("{error:#}"));
+                return;
+            }
+        };
+
+        let dialog = gtk::AlertDialog::builder()
+            .message(format!("Uninstall {}?", game.display_name()))
+            .detail(if managed {
+                "The game directory and all of its files will be deleted."
+            } else {
+                "The game will be unregistered. Imported files are kept on disk."
+            })
+            .buttons(["Cancel", "Uninstall"])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+
+            if dialog.choose_future(Some(&window)).await != Ok(1) {
+                return;
+            }
+
+            window.start_uninstall(game);
+        });
+    }
+
+    /// Confirms cancelling the active transfer and deleting the directory it
+    /// is installing to. Cancel is default, matching the uninstall flow.
+    fn confirm_cancel_transfer(&self) {
+        let Some(game) = operations()
+            .active()
+            .unwrap_or_default()
+            .iter()
+            .find(|s| {
+                matches!(
+                    s.kind,
+                    OperationKind::Install
+                        | OperationKind::Update
+                        | OperationKind::Preinstall
+                        | OperationKind::Repair
+                )
+            })
+            .and_then(|s| s.game)
+        else {
+            return;
+        };
+
+        let dialog = gtk::AlertDialog::builder()
+            .message(format!("Cancel the {} download?", game.display_name()))
+            .detail("The download stops and the directory it is installing to will be deleted.")
+            .buttons(["Keep downloading", "Cancel and delete"])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+
+            if dialog.choose_future(Some(&window)).await != Ok(1) {
+                return;
+            }
+
+            window.cancel_and_delete(game);
+        });
+    }
+
+    /// Requests cancellation, waits for the worker to release its lease, then
+    /// uninstalls: managed roots lose their files, imported roots only unregister.
+    fn cancel_and_delete(&self, game: Game) {
+        if let Err(error) = game_downloader::cancel_download() {
+            self.show_error(&format!("{error:#}"));
+            return;
+        }
+
+        self.imp().cancel_pending.set(true);
+        self.imp().cancelled.borrow_mut().insert(game);
+        self.refresh_controls();
+
+        let weak = self.downgrade();
+        let hold = self.application().map(|app| app.hold());
+        glib::MainContext::default().spawn_local(async move {
+            let _hold = hold;
+
+            // The worker keeps its lease until irmin exits; deletion must not
+            // race it. Poll with a bound instead of hanging on a stuck worker.
+            let mut waited = 0;
+            loop {
+                let Some(window) = weak.upgrade() else {
+                    return;
+                };
+
+                let released = operations()
+                    .active()
+                    .unwrap_or_default()
+                    .iter()
+                    .all(|s| {
+                        s.game != Some(game)
+                            || !matches!(
+                                s.kind,
+                                OperationKind::Install
+                                    | OperationKind::Update
+                                    | OperationKind::Preinstall
+                                    | OperationKind::Repair
+                            )
+                    });
+                if released || waited >= 120 {
+                    window.imp().cancel_pending.set(false);
+                    if released {
+                        window.start_uninstall(game);
+                    } else {
+                        window.imp().cancelled.borrow_mut().remove(&game);
+                        window.show_error(
+                            "The download did not stop in time; the directory was kept",
+                        );
+                        window.refresh_controls();
+                    }
+                    return;
+                }
+
+                waited += 1;
+                glib::timeout_future(std::time::Duration::from_millis(250)).await;
+            }
+        });
+    }
+
+    fn start_uninstall(&self, game: Game) {
+        let root = match installations::path(game) {
+            Ok(root) => root,
+            Err(error) => {
+                self.show_error(&format!("{error:#}"));
+                return;
+            }
+        };
+        let managed = installations::registered(game)
+            .ok()
+            .flatten()
+            .is_some_and(|installation| installation.managed);
+
+        let (done, completion) = async_channel::bounded(1);
+        runtime::spawn(async move {
+            let result = game_downloader::uninstall_game(game, root, managed).await;
+            let _ = done.send(result).await;
+        });
+
+        let weak = self.downgrade();
+        let hold = self.application().map(|app| app.hold());
+        glib::MainContext::default().spawn_local(async move {
+            let _hold = hold;
+            let result = completion.recv().await;
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => window.show_error(&format!("{error:#}")),
+                Err(error) => window.show_error(&format!("Uninstall worker disconnected: {error}")),
             }
 
             window.refresh_status();
@@ -654,17 +927,27 @@ impl ElysiaeWindow {
             return;
         }
 
-        if matches!(update.event, ProgressEvent::Finished { .. })
-            && self.imp().displayed_operation.get() != Some(id)
-        {
-            return;
-        }
-
-        if self.imp().displayed_operation.replace(Some(id)) != Some(id) {
+        // A terminal event for an operation that is not displayed must not redraw
+        // the panel: that would clobber the operation in flight, and the stale
+        // event can never arm the reset. Let it fall through to the terminal
+        // bookkeeping only.
+        let stale_terminal = matches!(update.event, ProgressEvent::Finished { .. })
+            && self.imp().displayed_operation.get() != Some(id);
+        let cancelled = matches!(update.event, ProgressEvent::Finished { .. })
+            && update.operation.phase == Phase::Cancelled;
+        if cancelled {
+            // Cancellation is a user choice, not a failure to report.
             self.imp().progress.reset();
-        }
+            self.imp().displayed_operation.set(None);
+        } else if !stale_terminal {
+            if self.imp().displayed_operation.replace(Some(id)) != Some(id) {
+                self.imp().progress.reset();
+            }
 
-        self.imp().progress.update(&update);
+            self.imp().progress.update(&update);
+        }
+        self.refresh_status_box();
+
         if let Some(game) = update.operation.game {
             match &update.event {
                 ProgressEvent::Started => self.imp().sidebar.set_progress(game, Some(0.0)),
@@ -705,7 +988,7 @@ impl ElysiaeWindow {
             drop(completed);
             self.refresh_status();
 
-            if matches!(update.event, ProgressEvent::Finished { error: None }) {
+            {
                 let weak = self.downgrade();
                 glib::timeout_add_local_once(std::time::Duration::from_secs(4), move || {
                     if let Some(window) = weak.upgrade()

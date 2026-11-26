@@ -61,7 +61,7 @@ struct AedesBackgroundAssets {
 }
 
 /// Available background and matching overlay selected from the cache.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ResolvedMedia {
     pub background: Option<PathBuf>,
     pub overlay: Option<PathBuf>,

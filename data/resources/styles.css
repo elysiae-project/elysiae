@@ -4,6 +4,8 @@
   --bg-color-dark: oklch(0.1732 0.0295 273.73);
   --btn-primary: oklch(0.55 0.183 271.11);
   --btn-primary-hover: oklch(0.57 0.183 271.11);
+  --btn-danger: oklch(0.55 0.183 22);
+  --btn-danger-hover: oklch(0.57 0.183 22);
   --surface: oklch(0.235 0.034 273.73);
   --surface-raised: oklch(0.29 0.043 273.73);
   --surface-hover: oklch(0.34 0.055 273.73);
@@ -59,6 +61,17 @@
   color: var(--text-muted);
 }
 
+/* The modal insensitizes the content behind it; buttons keep their accent
+ * instead of the disabled gray while settings are open. */
+.settings-open .button:disabled {
+  background: var(--btn-primary);
+  color: var(--text-on-primary);
+}
+
+.settings-open .danger-button:disabled {
+  background: var(--btn-danger);
+}
+
 .button:focus-visible,
 .game-button:focus-visible,
 .settings-close:focus-visible,
@@ -68,6 +81,19 @@
 .titlebar-close:focus-visible {
   outline: 2px solid var(--focus-color);
   outline-offset: 3px;
+}
+
+/* Destructive actions keep the danger accent across hover and press. */
+.danger-button {
+  background: var(--btn-danger);
+}
+
+.danger-button:hover {
+  background: var(--btn-danger-hover);
+}
+
+.danger-button:active {
+  background: var(--btn-danger);
 }
 
 .settings-scroll scrollbar,

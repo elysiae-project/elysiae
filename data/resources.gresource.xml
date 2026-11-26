@@ -24,8 +24,10 @@
         <file alias="styles/dropdown.css" compressed="true">resources/styles/dropdown.css</file>
         <file alias="styles/dropdown-option.css" compressed="true">resources/styles/dropdown-option.css</file>
 
-        <!--Icons-->
-        <file preprocess="xml-stripblanks">icons/scalable/close.svg</file>
-        <file preprocess="xml-stripblanks">icons/scalable/settings.svg</file>
+    </gresource>
+    
+    <!--Icons-->
+    <gresource prefix="/app/elysiae/Elysiae/icons/scalable/actions">
+        <file alias="settings-symbolic.svg" preprocess="xml-stripblanks">icons/scalable/settings-symbolic.svg</file>
     </gresource>
 </gresources>

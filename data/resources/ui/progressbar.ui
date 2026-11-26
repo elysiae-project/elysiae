@@ -5,18 +5,33 @@
     <property name="orientation">vertical</property>
     <property name="spacing">10</property>
     <property name="hexpand">true</property>
-    <property name="visible">false</property>
     <style>
       <class name="progress-panel"/>
     </style>
     <child>
-      <object class="GtkLabel" id="heading">
-        <property name="xalign">0</property>
-        <property name="wrap">true</property>
-        <property name="wrap-mode">word-char</property>
-        <style>
-          <class name="progress-heading"/>
-        </style>
+      <object class="GtkBox" id="heading_row">
+        <property name="spacing">12</property>
+        <child>
+          <object class="GtkLabel" id="heading">
+            <property name="xalign">0</property>
+            <property name="wrap">true</property>
+            <property name="wrap-mode">word-char</property>
+            <style>
+              <class name="progress-heading"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="speed">
+            <property name="xalign">0</property>
+            <property name="valign">end</property>
+            <property name="margin-bottom">3</property>
+            <property name="visible">false</property>
+            <style>
+              <class name="progress-speed"/>
+            </style>
+          </object>
+        </child>
       </object>
     </child>
     <child>
@@ -135,6 +150,31 @@
                 </style>
               </object>
             </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox" id="controls">
+        <property name="spacing">12</property>
+        <property name="visible">false</property>
+        <style>
+          <class name="progress-controls"/>
+        </style>
+        <child>
+          <object class="GtkButton" id="pause_button">
+            <property name="icon-name">media-playback-pause-symbolic</property>
+            <property name="tooltip-text">Pause download</property>
+            <accessibility><property name="label">Pause download</property></accessibility>
+            <style><class name="button"/><class name="progress-control-button"/></style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="cancel_button">
+            <property name="icon-name">media-playback-stop-symbolic</property>
+            <property name="tooltip-text">Cancel download and delete files</property>
+            <accessibility><property name="label">Cancel download and delete files</property></accessibility>
+            <style><class name="button"/><class name="danger-button"/><class name="progress-control-button"/></style>
           </object>
         </child>
       </object>

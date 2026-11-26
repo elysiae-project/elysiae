@@ -169,12 +169,18 @@ impl Store {
         );
 
         for (code, installation) in &registry.installations {
-            let game = Game::try_from(code.as_str())?;
-            Uuid::parse_str(&installation.ownership_token).context("Invalid installation token")?;
+            let Some(game) = Game::try_from(code.as_str()).ok() else {
+                // Unknown codes from retired games are kept verbatim in memory and
+                // persisted unchanged on the next save.
+                continue;
+            };
+
             ensure!(
                 !installation.managed || installation.allow_modify,
                 "Managed installation has inconsistent write consent"
             );
+            Uuid::parse_str(&installation.ownership_token)
+                .context("Invalid installation token")?;
             self.validate_root(&installation.path)?;
             check_conflicts(&registry, game, &installation.path)?;
         }

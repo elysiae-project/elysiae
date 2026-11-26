@@ -37,7 +37,7 @@ impl Default for BarState {
     fn default() -> Self {
         Self {
             fraction: None,
-            value: "Not started".into(),
+            value: String::new(),
             active: false,
         }
     }
@@ -78,6 +78,7 @@ struct ProgressState {
     operation_id: Option<uuid::Uuid>,
     heading: String,
     detail: String,
+    speed: String,
     bars: Bars,
     download: BarState,
     verification: BarState,
@@ -141,9 +142,16 @@ impl ProgressState {
                     SophonProgress::Downloading {
                         downloaded_bytes,
                         total_bytes,
-                        ..
+                        speed_bps,
+                        eta_seconds,
                     } => {
                         self.download = BarState::bytes(*downloaded_bytes, *total_bytes);
+                        self.speed = presentation::speed_and_eta(
+                            *speed_bps,
+                            *eta_seconds,
+                            *downloaded_bytes,
+                            *total_bytes,
+                        );
                     }
                     SophonProgress::Paused {
                         downloaded_bytes,
@@ -223,6 +231,8 @@ mod imp {
         #[template_child]
         pub heading: TemplateChild<gtk::Label>,
         #[template_child]
+        pub speed: TemplateChild<gtk::Label>,
+        #[template_child]
         pub detail: TemplateChild<gtk::Label>,
         #[template_child]
         pub bars: TemplateChild<gtk::Box>,
@@ -236,6 +246,12 @@ mod imp {
         pub download_progress: TemplateChild<gtk::ProgressBar>,
         #[template_child]
         pub verification_progress: TemplateChild<gtk::ProgressBar>,
+        #[template_child]
+        pub controls: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub pause_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub cancel_button: TemplateChild<gtk::Button>,
         pub(super) state: RefCell<super::ProgressState>,
         pub(super) pulse_source: RefCell<Option<glib::SourceId>>,
     }
@@ -301,6 +317,32 @@ impl Progressbar {
         self.render();
     }
 
+    /// Whether the panel currently presents an operation.
+    pub fn is_presenting(&self) -> bool {
+        self.imp().state.borrow().visible
+    }
+
+    /// Show transfer controls while a pausable download is active; the pause
+    /// button reflects the phase. Cancellation stays available until it is
+    /// requested, then locks until the worker releases the operation.
+    pub fn set_controls(&self, active: bool, paused: bool, cancelling: bool) {
+        let imp = self.imp();
+        imp.controls.set_visible(active);
+        imp.pause_button.set_sensitive(active && !cancelling);
+        imp.pause_button
+            .set_icon_name(if paused {
+                "media-playback-start-symbolic"
+            } else {
+                "media-playback-pause-symbolic"
+            });
+        imp.pause_button.set_tooltip_text(Some(if paused {
+            "Resume download"
+        } else {
+            "Pause download"
+        }));
+        imp.cancel_button.set_sensitive(active && !cancelling);
+    }
+
     fn render(&self) {
         let imp = self.imp();
         let state = imp.state.borrow();
@@ -308,6 +350,8 @@ impl Progressbar {
         self.set_visible(state.visible);
         imp.heading.set_text(&state.heading);
         imp.heading.set_visible(!state.extracting);
+        imp.speed.set_text(&state.speed);
+        imp.speed.set_visible(!state.extracting && !state.speed.is_empty());
         imp.detail.set_text(&state.detail);
         imp.bars.set_visible(state.shows_bars());
         imp.verification_row.set_visible(state.bars == Bars::Sophon);

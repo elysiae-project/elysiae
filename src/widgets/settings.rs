@@ -142,6 +142,7 @@ mod imp {
         pub(super) fields: OnceCell<Vec<super::Field>>,
         pub(super) refreshing: Cell<bool>,
         pub(super) errors: RefCell<BTreeMap<&'static str, String>>,
+        pub(super) uninstall_label: RefCell<Option<gtk::Label>>,
     }
 
     #[glib::object_subclass]
@@ -160,6 +161,18 @@ mod imp {
     }
 
     impl ObjectImpl for Settings {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: std::sync::OnceLock<Vec<glib::subclass::Signal>> =
+                std::sync::OnceLock::new();
+
+            SIGNALS.get_or_init(|| {
+                vec![
+                    glib::subclass::Signal::builder("uninstall-requested")
+                        .build(),
+                ]
+            })
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             // Runs for both Settings::new() and instances made by a parent template.
@@ -187,6 +200,25 @@ impl Settings {
     /// Connect this button to the parent modal's dismissal handler.
     pub fn close_button(&self) -> gtk::Button {
         self.imp().close.get()
+    }
+
+    /// The parent confirms and performs the uninstall for the selected game.
+    pub fn connect_uninstall_requested(&self, callback: impl Fn(&Self) + 'static) {
+        let weak = self.downgrade();
+        self.connect_local("uninstall-requested", false, move |_| {
+            if let Some(settings) = weak.upgrade() {
+                callback(&settings);
+            }
+
+            None
+        });
+    }
+
+    /// Name the game the uninstall row acts on.
+    pub fn set_game(&self, game: crate::core::game::Game) {
+        if let Some(label) = self.imp().uninstall_label.borrow().as_ref() {
+            label.set_label(&format!("Uninstall {}", game.display_name()));
+        }
     }
 
     /// Call after showing the modal; focus the first available preference.
@@ -281,6 +313,66 @@ impl Settings {
         }) {
             self.show_error("", format!("Could not monitor preference changes: {error}"));
         }
+
+        self.add_uninstall_row();
+    }
+
+    /// A destructive action row; the parent window confirms before deleting.
+    fn add_uninstall_row(&self) {
+        let row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(20)
+            .css_classes(["settings-row"])
+            .build();
+        let text = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .hexpand(true)
+            .css_classes(["settings-row-text"])
+            .build();
+        let label = gtk::Label::builder()
+            .label("Uninstall game")
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["settings-label"])
+            .build();
+        let description = gtk::Label::builder()
+            .label("Remove the selected game. Managed installations lose their files.")
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(36)
+            .css_classes(["settings-description"])
+            .build();
+        text.append(&label);
+        text.append(&description);
+        row.append(&text);
+
+        let button = gtk::Button::builder()
+            .icon_name("trash-empty-symbolic")
+            .tooltip_text("Uninstall")
+            .valign(gtk::Align::Center)
+            .css_classes(["button", "danger-button"])
+            .build();
+        // Breeze ships trash-empty-symbolic; Adwaita names it user-trash-symbolic.
+        if let Some(display) = gtk::gdk::Display::default()
+            && !gtk::IconTheme::for_display(&display).has_icon("trash-empty-symbolic")
+        {
+            button.set_icon_name("user-trash-symbolic");
+        }
+        button.update_relation(&[
+            gtk::accessible::Relation::LabelledBy(&[label.upcast_ref()]),
+            gtk::accessible::Relation::DescribedBy(&[description.upcast_ref()]),
+        ]);
+
+        let weak = self.downgrade();
+        button.connect_clicked(move |_| {
+            if let Some(settings) = weak.upgrade() {
+                settings.emit_by_name::<()>("uninstall-requested", &[]);
+            }
+        });
+        row.append(&button);
+        self.imp().content.append(&row);
+        *self.imp().uninstall_label.borrow_mut() = Some(label);
     }
 
     fn add_field(&self, spec: &'static FieldSpec) -> Field {

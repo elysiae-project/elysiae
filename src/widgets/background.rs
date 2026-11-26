@@ -11,6 +11,7 @@ use gtk::{glib, prelude::*, subclass::prelude::*};
 mod imp {
     use super::*;
     use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
 
     #[derive(gtk::CompositeTemplate, Default)]
     #[template(resource = "/app/elysiae/Elysiae/ui/background.ui")]
@@ -27,6 +28,10 @@ mod imp {
         pub game: Cell<Option<Game>>,
         pub key: RefCell<Option<(std::path::PathBuf, bool, Option<std::path::PathBuf>)>>,
         pub video_generation: Cell<u64>,
+        // Resolved media and decoded images per game, so switching applies
+        // synchronously. Workers refresh these entries after each resolution.
+        pub media_cache: RefCell<HashMap<Game, (ResolvedMedia, ResolvedMedia)>>,
+        pub texture_cache: RefCell<HashMap<std::path::PathBuf, gtk::gdk::Texture>>,
     }
 
     #[glib::object_subclass]
@@ -45,6 +50,11 @@ mod imp {
     }
 
     impl ObjectImpl for Background {
+        fn constructed(&self) {
+            self.parent_constructed();
+            self.obj().preload_media();
+        }
+
         fn dispose(&self) {
             self.video.set_autoplay(false);
             self.video.set_filename(None::<&std::path::Path>);
@@ -71,9 +81,6 @@ impl Background {
     pub fn set_media(&self, game: Game) {
         let imp = self.imp();
         let changed_game = imp.game.replace(Some(game)) != Some(game);
-        if changed_game {
-            self.clear_media();
-        }
 
         let request = imp.request.get().wrapping_add(1);
         imp.request.set(request);
@@ -81,6 +88,17 @@ impl Background {
         let use_video = get_option("use-video-background")
             .and_then(bool::try_from)
             .unwrap_or(false);
+
+        // Apply cached artwork synchronously; the visible layers keep the old
+        // image until a resolution arrives when nothing is cached yet.
+        let cached = imp.media_cache.borrow().get(&game).cloned();
+        if let Some((media, poster)) = cached {
+            if media.background.is_none() && changed_game {
+                let _ = self.activate_action("app.refresh-assets", None);
+            }
+            self.apply_media(media, poster);
+        }
+
         let (sender, receiver) = async_channel::bounded(1);
 
         runtime::spawn(async move {
@@ -107,12 +125,19 @@ impl Background {
                 return;
             };
 
-            if widget.imp().request.get() != request {
-                return;
-            }
-
             match result {
                 Ok(Ok((media, poster))) => {
+                    widget
+                        .imp()
+                        .media_cache
+                        .borrow_mut()
+                        .insert(game, (media.clone(), poster.clone()));
+                    widget.decode_media(&media, &poster);
+
+                    if widget.imp().request.get() != request {
+                        return;
+                    }
+
                     if media.background.is_none() && changed_game {
                         let _ = widget.activate_action("app.refresh-assets", None);
                     }
@@ -127,8 +152,103 @@ impl Background {
         });
     }
 
+    /// Resolve and decode every game's artwork ahead of selection.
+    fn preload_media(&self) {
+        let locale = display_locale().unwrap_or_else(|_| "en-us".into());
+        let use_video = get_option("use-video-background")
+            .and_then(bool::try_from)
+            .unwrap_or(false);
+        let (sender, receiver) = async_channel::bounded(1);
+
+        runtime::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                Game::all()
+                    .into_iter()
+                    .filter_map(|game| {
+                        let media = cache::resolve_media(game, &locale, use_video).ok()?;
+                        let poster = if media.is_video {
+                            cache::resolve_media(game, &locale, false).ok()?
+                        } else {
+                            ResolvedMedia::default()
+                        };
+
+                        Some((game, media, poster))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await;
+            let _ = sender.send(result).await;
+        });
+
+        let weak = self.downgrade();
+        glib::MainContext::default().spawn_local(async move {
+            let Ok(Ok(entries)) = receiver.recv().await else {
+                return;
+            };
+            let Some(widget) = weak.upgrade() else {
+                return;
+            };
+
+            for (game, media, poster) in entries {
+                widget.decode_media(&media, &poster);
+                widget
+                    .imp()
+                    .media_cache
+                    .borrow_mut()
+                    .insert(game, (media, poster));
+            }
+        });
+    }
+
+    /// Decode the images a resolved media set displays, caching by path.
+    fn decode_media(&self, media: &ResolvedMedia, poster: &ResolvedMedia) {
+        let picture = if media.is_video {
+            poster.background.as_ref()
+        } else {
+            media.background.as_ref()
+        };
+        let overlay = if media.is_video {
+            poster.overlay.as_ref()
+        } else {
+            media.overlay.as_ref()
+        };
+
+        let mut cache = self.imp().texture_cache.borrow_mut();
+        for path in picture.into_iter().chain(overlay) {
+            if cache.contains_key(path) {
+                continue;
+            }
+            match gtk::gdk::Texture::from_filename(path) {
+                Ok(texture) => {
+                    cache.insert(path.clone(), texture);
+                }
+                Err(error) => log::debug!("Could not decode {}: {error}", path.display()),
+            }
+        }
+    }
+
+    fn cached_texture(&self, path: &std::path::Path) -> Option<gtk::gdk::Texture> {
+        self.imp()
+            .texture_cache
+            .borrow()
+            .get(path)
+            .cloned()
+            .or_else(|| {
+                let texture = gtk::gdk::Texture::from_filename(path).ok()?;
+                self.imp()
+                    .texture_cache
+                    .borrow_mut()
+                    .insert(path.to_path_buf(), texture.clone());
+                Some(texture)
+            })
+    }
+
     fn apply_media(&self, media: ResolvedMedia, poster: ResolvedMedia) {
         let Some(path) = media.background.clone() else {
+            // A game without artwork must not keep another game's background.
+            if self.imp().key.borrow().is_some() {
+                self.clear_media();
+            }
             return;
         };
 
@@ -142,7 +262,7 @@ impl Background {
         } else {
             Some(&path)
         };
-        let texture = picture_path.and_then(|path| gtk::gdk::Texture::from_filename(path).ok());
+        let texture = picture_path.and_then(|path| self.cached_texture(path));
         if !media.is_video && texture.is_none() {
             log::warn!("Background image could not be decoded: {}", path.display());
             return;

@@ -49,5 +49,4 @@ jobs:
           test -f stage/usr/share/licenses/app.elysiae.Elysiae/LICENSE
           test -f stage/usr/share/Elysiae/fonts/OFL.txt
           test -f stage/usr/share/Elysiae/resources.gresource
-          test ! -e stage/usr/share/icons/hicolor/scalable/actions/close.svg
-          test ! -e stage/usr/share/icons/hicolor/scalable/actions/settings.svg
+          test ! -e stage/usr/share/icons/hicolor/scalable/settings-symbolic.svg

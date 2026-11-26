@@ -2,7 +2,12 @@ use super::*;
 
 #[track_caller]
 fn pump_until(mut ready: impl FnMut() -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    pump_for(std::time::Duration::from_secs(3), &mut ready);
+}
+
+#[track_caller]
+fn pump_for(deadline: std::time::Duration, ready: &mut impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + deadline;
     let context = glib::MainContext::default();
 
     while !ready() && std::time::Instant::now() < deadline {
@@ -56,19 +61,48 @@ fn assert_footer_layout(window: &ElysiaeWindow) {
     let row = row.compute_bounds(window).unwrap();
     let controls = actions.compute_bounds(window).unwrap();
 
+    // The floor applies while the progress panel is laid out; idle and
+    // hidden it only shows the buttons and stays under it.
     assert!(
-        (area.width() - row.width() * 0.4).abs() <= 2.0,
-        "Expected a 40% progress area: {area:?} in {row:?}"
+        !window.imp().progress.is_visible() || area.width() >= 320.0,
+        "Panel floor must hold: {area:?}"
     );
     assert!(
-        controls.x() >= area.x() + area.width() + 23.0,
+        area.x() + area.width() <= row.x() + row.width(),
+        "Progress area must stay in the row: {area:?} in {row:?}"
+    );
+    assert!(
+        row.x() >= 0.0 && row.width() <= window.width() as f32,
+        "Row must stay on screen: {row:?}"
+    );
+    // The action column expands, so the buttons hug the right content edge
+    // whether or not the status box is laid out.
+    assert!(
+        (window.width() as f32 - (controls.x() + controls.width()) - 32.0).abs() <= 2.0,
+        "Controls must align to the right content edge: {controls:?}"
+    );
+    assert!(
+        controls.x() >= area.x() + area.width(),
         "Progress and controls must not overlap"
     );
+    // While downloading, the controls share the status box's bottom edge;
+    // idle (box hidden) they sit at the window's bottom content padding.
+    if window.imp().status_box.is_visible() {
+        assert!(
+            (controls.y() + controls.height() - area.y() - area.height()).abs() <= 2.0,
+            "Progress and controls must share a bottom edge: {area:?}, {controls:?}"
+        );
+    } else {
+        assert!(
+            (window.height() as f32 - (controls.y() + controls.height()) - 28.0).abs() <= 2.0,
+            "Controls must sit at the bottom content edge: {controls:?}"
+        );
+    }
     assert!(
-        (controls.y() + controls.height() - area.y() - area.height()).abs() <= 2.0,
-        "Progress and controls must share a bottom edge: {area:?}, {controls:?}"
+        controls.y() + controls.height() <= window.height() as f32,
+        "Controls must stay inside the window: {controls:?} in {}x{}",
+        window.width(), window.height()
     );
-    assert!(controls.y() + controls.height() <= window.height() as f32);
     assert!(!window.imp().settings_button.is_ancestor(&footer));
     assert!(!window.imp().operation_button.is_ancestor(&footer));
 }
@@ -107,14 +141,13 @@ fn gtk_launcher_interactions_and_layout() {
     pump_until(|| window.is_mapped() && window.width() >= 1100 && window.imp().sidebar.width() > 0);
     assert!(!window.imp().progress.is_visible());
     assert!(window.imp().background.is_visible());
-
     let initial_selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-    assert!((initial_selector.center().x() - window.width() as f32 / 2.0).abs() < 2.0);
-    assert!(
-        initial_selector.width() >= Game::all().len() as f32 * 44.0
-            && (64.0..=120.0).contains(&initial_selector.height()),
-        "Selector should have comfortably spaced game buttons: {initial_selector:?}"
+    // R3: sidebar hugs the right content padding; the gap is fixed, not centered.
+    assert_eq!(
+        window.width() as f32 - (initial_selector.x() + initial_selector.width()),
+        32.0
     );
+    assert_eq!((initial_selector.width(), initial_selector.height()), (74.0, 296.0));
     let settings_bounds = window
         .imp()
         .settings_button
@@ -145,10 +178,11 @@ fn gtk_launcher_interactions_and_layout() {
 
     assert_eq!(buttons.len(), Game::all().len());
     for pair in buttons.windows(2) {
-        let left = pair[0].compute_bounds(&window).unwrap();
-        let right = pair[1].compute_bounds(&window).unwrap();
-        assert!(left.width() >= 44.0 && left.height() >= 44.0);
-        assert!(right.x() - left.x() - left.width() >= 9.0);
+        let upper = pair[0].compute_bounds(&window).unwrap();
+        let lower = pair[1].compute_bounds(&window).unwrap();
+        assert_eq!((upper.width(), upper.height()), (64.0, 64.0));
+        assert_eq!(upper.x(), lower.x());
+        assert_eq!(lower.y() - upper.y(), 74.0);
     }
 
     // Real artwork must not override the configured CSS geometry.
@@ -325,6 +359,25 @@ fn gtk_launcher_interactions_and_layout() {
     assert_footer_layout(&window);
     screenshot(&window, "download-compact.png");
 
+    // Window minimum: the worst-case controls must still fit inside 680x500.
+    window.set_default_size(680, 500);
+    pump_until(|| window.width() <= 700);
+    assert_footer_layout(&window);
+    for widget in [
+        window.imp().progress.upcast_ref::<gtk::Widget>(),
+        &window.imp().progress.parent().unwrap(),
+    ] {
+        let bounds = widget.compute_bounds(&window).unwrap();
+        assert!(
+            bounds.x() >= 0.0
+                && bounds.y() >= 0.0
+                && bounds.x() + bounds.width() <= window.width() as f32
+                && bounds.y() + bounds.height() <= window.height() as f32,
+            "Widget left the 680x500 window: {bounds:?}"
+        );
+    }
+    screenshot(&window, "download-min.png");
+
     // Pin this synthetic worst-case layout while the 250 ms status refresh
     // runs; otherwise it can hide the extra button before GTK allocates it.
     let keep_preinstall = window
@@ -403,6 +456,14 @@ fn gtk_launcher_interactions_and_layout() {
         "Extracting download.tar.gz…"
     );
     component.finish(Ok(())).unwrap();
+    pump_until(|| {
+        window.imp().progress.imp().heading.label() == "Downloading Phlogiston"
+    });
+    pump_for(
+        std::time::Duration::from_secs(8),
+        &mut || !window.imp().progress.is_visible(),
+    );
+    assert_eq!(window.imp().displayed_operation.get(), None);
     window.close();
 }
 
@@ -419,4 +480,149 @@ fn preinstall_does_not_replace_launch_action() {
         action_kind(UpdateAvailability::Outdated),
         OperationKind::Update
     );
+}
+
+#[test]
+#[ignore = "requires a GTK display; run explicitly on one test thread"]
+fn stale_terminal_event_does_not_reset_active_progress() {
+    use crate::core::operations::{OperationStatus, Phase};
+
+    gtk::init().unwrap();
+    gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
+
+    let provider = gtk::CssProvider::new();
+    let css_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let errors = css_errors.clone();
+    provider.connect_parsing_error(move |_, _, error| errors.borrow_mut().push(error.to_string()));
+    provider.load_from_resource("/app/elysiae/Elysiae/style.css");
+    assert!(
+        css_errors.borrow().is_empty(),
+        "CSS errors: {:?}",
+        css_errors.borrow()
+    );
+    gtk::style_context_add_provider_for_display(
+        &gtk::gdk::Display::default().unwrap(),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
+    let app = gtk::Application::builder()
+        .application_id("app.elysiae.Elysiae.UiTests")
+        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gtk::gio::Cancellable>).unwrap();
+
+    let window = ElysiaeWindow::new(&app);
+    window.present();
+    pump_until(|| window.is_mapped() && window.width() >= 1100 && window.imp().sidebar.width() > 0);
+
+    let superseded = Uuid::new_v4();
+    let launched = Uuid::new_v4();
+    let in_flight = Uuid::new_v4();
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: superseded,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Finished { error: None },
+    });
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: launched,
+            kind: OperationKind::Install,
+            game: Some(Game::Hk4e),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Started,
+    });
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: in_flight,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Sophon(SophonProgress::Downloading {
+            downloaded_bytes: 9 * 1024 * 1024 * 1024,
+            total_bytes: 24 * 1024 * 1024 * 1024,
+            speed_bps: 16.0 * 1024.0 * 1024.0,
+            eta_seconds: 940.0,
+        }),
+    });
+
+    let heading = format!("Downloading {}", Game::Bh3.display_name());
+    pump_until(|| window.imp().progress.is_visible()
+        && window.imp().progress.imp().heading.label() == heading);
+    assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
+    assert!(window.imp().progress.imp().bars.is_visible());
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: launched,
+            kind: OperationKind::Install,
+            game: Some(Game::Hk4e),
+            phase: Phase::Failed,
+            error: Some("synthetic stale failure".to_string()),
+        },
+        event: ProgressEvent::Finished { error: Some("synthetic stale failure".to_string()) },
+    });
+
+    // The stale failure must neither repaint the panel nor arm the delayed reset:
+    // iterate the main context past the 4-second window and require the panel to
+    // still be showing the in-flight operation.
+    let stale_since = std::time::Instant::now();
+    pump_for(std::time::Duration::from_secs(10), &mut || {
+        window.imp().progress.is_visible()
+            && stale_since.elapsed() > std::time::Duration::from_secs(5)
+    });
+    assert_eq!(window.imp().progress.imp().heading.label(), heading);
+    assert!(window.imp().progress.imp().bars.is_visible());
+    assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: in_flight,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Running,
+            error: None,
+        },
+        event: ProgressEvent::Sophon(SophonProgress::Downloading {
+            downloaded_bytes: 12 * 1024 * 1024 * 1024,
+            total_bytes: 24 * 1024 * 1024 * 1024,
+            speed_bps: 16.0 * 1024.0 * 1024.0,
+            eta_seconds: 730.0,
+        }),
+    });
+    pump_until(|| window.imp().progress.is_visible()
+        && window.imp().progress.imp().heading.label() == heading);
+    assert!(window.imp().progress.imp().bars.is_visible());
+
+    progress::publish(ProgressUpdate {
+        operation: OperationStatus {
+            id: in_flight,
+            kind: OperationKind::Install,
+            game: Some(Game::Bh3),
+            phase: Phase::Failed,
+            error: Some("synthetic in-flight failure".to_string()),
+        },
+        event: ProgressEvent::Finished {
+            error: Some("synthetic in-flight failure".to_string()),
+        },
+    });
+    pump_for(
+        std::time::Duration::from_secs(8),
+        &mut || !window.imp().progress.is_visible(),
+    );
+    assert_eq!(window.imp().displayed_operation.get(), None);
+    screenshot(&window, "r1_terminal_reset");
+    window.close();
 }
