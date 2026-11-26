@@ -24,20 +24,20 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install meson ninja-build build-essential libfreetype-dev libgtk-4-dev libxml2-utils desktop-file-utils llvm clang -y
+          sudo apt-get install meson ninja-build build-essential libfreetype-dev libgtk-4-dev libxml2-utils desktop-file-utils dbus-x11 xvfb llvm clang -y
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             
       - name: Run Tests (Debug)
         run: |
           mkdir build_debug
           meson setup build_debug -Dprofile=dev -Dtests=true -Dgui_tests=true 
-          ninja -C build_debug test
+          LIBGL_ALWAYS_SOFTWARE=1 GTK_A11Y=none dbus-run-session -- xvfb-run -a ninja -C build_debug test
       
       - name: Run Tests (Release)
         run: |
           mkdir build_release
           meson setup build_release -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
-          ninja -C build_release test
+          LIBGL_ALWAYS_SOFTWARE=1 GTK_A11Y=none dbus-run-session -- xvfb-run -a ninja -C build_release test
       
       - name: Test Installs
         run: |
