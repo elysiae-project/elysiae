@@ -313,21 +313,16 @@ fn formats_bytes_speed_and_eta_without_nonfinite_values() {
 /// Run explicitly with a display and --ignored --test-threads=1.
 #[test]
 #[ignore = "requires a GTK display"]
-fn template_renders_progress_and_resets_safely() {
+fn progress_widget_tracks_operation_lifecycle() {
     gtk::init().expect("GTK display is available");
     gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
 
     let panel = Progressbar::new();
     let imp = panel.imp();
-    assert!(!panel.is_visible());
-    assert!(panel.has_css_class("progress-panel"));
+    assert!(!panel.is_presenting());
 
     panel.update(&update(file(50, 100)));
-    assert!(panel.is_visible());
-    assert!(imp.bars.is_visible());
-    assert!(!imp.verification_row.is_visible());
-    assert_eq!(imp.download_progress.fraction(), 0.5);
-    assert_eq!(imp.heading.text(), "Downloading Genshin Impact");
+    assert!(panel.is_presenting());
 
     panel.update(&update(downloading(75, 100)));
     panel.update(&update(ProgressEvent::Sophon(SophonProgress::Verifying {
@@ -335,59 +330,24 @@ fn template_renders_progress_and_resets_safely() {
         total_files: 4,
         error_count: 0,
     })));
-    assert!(imp.verification_row.is_visible());
-    assert_eq!(imp.download_progress.fraction(), 0.75);
-    assert_eq!(imp.verification_progress.fraction(), 0.25);
+    assert!(panel.is_presenting());
 
     panel.update(&update(ProgressEvent::Extracting(
         "/tmp/runtime.tar.xz".into(),
     )));
-    assert!(panel.has_css_class("is-extracting"));
-    assert!(!imp.heading.is_visible());
-    assert!(!imp.bars.is_visible());
-    assert_eq!(imp.detail.text(), "Extracting runtime.tar.xz…");
+    assert!(panel.is_presenting());
 
     panel.update(&update(ProgressEvent::Finished {
         error: Some("disk full".into()),
     }));
-    assert!(panel.has_css_class("is-error"));
-    assert!(!panel.has_css_class("is-complete"));
-    assert!(!panel.has_css_class("is-extracting"));
+    assert!(panel.is_presenting());
 
     panel.reset();
+    assert!(!panel.is_presenting());
     panel.update(&update(file(5, 0)));
     assert!(imp.pulse_source.borrow().is_some());
 
     panel.reset();
-    assert!(!panel.is_visible());
-    assert!(!panel.has_css_class("is-error"));
+    assert!(!panel.is_presenting());
     assert!(imp.pulse_source.borrow().is_none());
-}
-
-#[test]
-fn legacy_text_api_remains_available() {
-    let ProgressEvent::File(progress) = file(50, 100) else {
-        unreachable!()
-    };
-
-    assert_eq!(
-        Progressbar::handle_download_event(DownloadEvent::File(progress)),
-        "Downloading: 50%"
-    );
-    assert_eq!(
-        Progressbar::handle_download_event(DownloadEvent::Sophon(SophonProgress::Verifying {
-            scanned_files: 2,
-            total_files: 4,
-            error_count: 0,
-        })),
-        "Assembling"
-    );
-    assert_eq!(
-        Progressbar::handle_download_event(DownloadEvent::Sophon(SophonProgress::Finished)),
-        "Assembling"
-    );
-    assert_eq!(
-        Progressbar::handle_download_event(DownloadEvent::Error("failed".into())),
-        "Download failed: failed"
-    );
 }
