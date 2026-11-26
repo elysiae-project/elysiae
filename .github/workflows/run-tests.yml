@@ -21,32 +21,42 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v6
 
-      - name: Install dependencies
+      - name: Build CI container
         run: |
-          sudo apt update
-          sudo apt full-upgrade -y
-          sudo apt install meson ninja-build build-essential libfreetype-dev libgtk-4-dev llvm clang -y
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            
-      - name: Run Tests (Debug)
+          docker build --platform "linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}" \
+            --file .github/ci/Dockerfile --tag elysiae-ci .
+
+      - name: Run tests and verify installation
         run: |
-          mkdir build_debug
-          meson setup build_debug -Dprofile=dev -Dtests=true -Dgui_tests=true 
-          ninja -C build_debug test
-      
-      - name: Run Tests (Release)
-        run: |
-          mkdir build_release
-          meson setup build_release -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
-          ninja -C build_release test
-      
-      - name: Test Installs
-        run: |
-          DESTDIR="$PWD/stage" meson install -C build_release --no-rebuild
-          test -x stage/usr/bin/Elysiae
-          test -f stage/usr/share/glib-2.0/schemas/app.elysiae.Elysiae.gschema.xml
-          test -f stage/usr/share/icons/hicolor/scalable/apps/app.elysiae.Elysiae.svg
-          test -f stage/usr/share/licenses/app.elysiae.Elysiae/LICENSE
-          test -f stage/usr/share/Elysiae/fonts/OFL.txt
-          test -f stage/usr/share/Elysiae/resources.gresource
-          test ! -e stage/usr/share/icons/hicolor/scalable/settings-symbolic.svg
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env HOME="$GITHUB_WORKSPACE/.ci-home" \
+            elysiae-ci \
+            bash -o pipefail -lc '
+              set -e
+              export LIBGL_ALWAYS_SOFTWARE=1
+              export GTK_A11Y=none
+              mkdir -p "$HOME"
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
+              export PATH="$HOME/.cargo/bin:$PATH"
+              source "$HOME/.cargo/env"
+              toolchain=$(sed -n "s/^channel = \"\(.*\)\"$/\1/p" rust-toolchain.toml)
+              rustup install "$toolchain" --profile minimal
+              rustup override set "$toolchain"
+              mkdir build_debug
+              meson setup build_debug -Dprofile=dev -Dtests=true -Dgui_tests=true
+              dbus-run-session -- xvfb-run -a ninja -C build_debug test
+              mkdir build_release
+              meson setup build_release -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
+              dbus-run-session -- xvfb-run -a ninja -C build_release test
+              DESTDIR="$PWD/stage" meson install -C build_release --no-rebuild
+              test -x stage/usr/bin/Elysiae
+              test -f stage/usr/share/glib-2.0/schemas/app.elysiae.Elysiae.gschema.xml
+              test -f stage/usr/share/icons/hicolor/scalable/apps/app.elysiae.Elysiae.svg
+              test -f stage/usr/share/licenses/app.elysiae.Elysiae/LICENSE
+              test -f stage/usr/share/Elysiae/fonts/OFL.txt
+              test -f stage/usr/share/Elysiae/resources.gresource
+              test ! -e stage/usr/share/icons/hicolor/scalable/settings-symbolic.svg
+            '
