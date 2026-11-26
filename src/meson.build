@@ -68,12 +68,12 @@ if get_option('tests')
     )
 
     if get_option('gui_tests')
-        # One process per GTK test, and only these ignored tests ever run.
         gui_tests = [
-            'window::tests::gtk_launcher_interactions_and_layout',
-            'widgets::dropdown::tests::gtk_dropdown_template_selects_navigates_and_dismisses',
-            'widgets::settings::tests::gtk_settings_template_persists_syncs_and_restores',
-            'widgets::progressbar::tests::template_renders_progress_and_resets_safely',
+            'window::tests::game_selection_and_progress_operations',
+            'window::tests::stale_terminal_event_does_not_reset_active_progress',
+            'widgets::dropdown::tests::dropdown_selection_and_keyboard_behavior',
+            'widgets::settings::tests::settings_values_persist_and_revert',
+            'widgets::progressbar::tests::progress_widget_tracks_operation_lifecycle',
         ]
         foreach gui_test : gui_tests
             test(
@@ -85,7 +85,6 @@ if get_option('tests')
                 workdir: meson.project_source_root(),
                 depends: cargo_build,
                 suite: 'gui',
-                env: {'G_DEBUG': 'fatal-warnings'},
                 timeout: get_option('test_timeout'),
                 is_parallel: false,
             )

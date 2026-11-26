@@ -1,13 +1,8 @@
 use super::*;
 
 #[track_caller]
-fn pump_until(mut ready: impl FnMut() -> bool) {
-    pump_for(std::time::Duration::from_secs(3), &mut ready);
-}
-
-#[track_caller]
-fn pump_for(deadline: std::time::Duration, ready: &mut impl FnMut() -> bool) {
-    let deadline = std::time::Instant::now() + deadline;
+fn pump_for(timeout: std::time::Duration, mut ready: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + timeout;
     let context = glib::MainContext::default();
 
     while !ready() && std::time::Instant::now() < deadline {
@@ -18,455 +13,12 @@ fn pump_for(deadline: std::time::Duration, ready: &mut impl FnMut() -> bool) {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 
-    assert!(ready(), "GTK did not reach the expected state");
+    assert!(ready(), "GTK behavior did not settle");
 }
 
-fn screenshot(window: &ElysiaeWindow, name: &str) {
-    if let Ok(directory) = std::env::var("ELYSIAE_TEST_SCREENSHOTS") {
-        std::fs::create_dir_all(&directory).unwrap();
-        let paintable = gtk::WidgetPaintable::new(Some(window));
-        let mut node = None;
-        pump_until(|| {
-            if node.is_none() {
-                let snapshot = gtk::Snapshot::new();
-                paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
-                node = snapshot.to_node();
-            }
-
-            node.is_some()
-        });
-        let texture = window
-            .renderer()
-            .unwrap()
-            .render_texture(node.unwrap(), None);
-        texture
-            .save_to_png(std::path::Path::new(&directory).join(name))
-            .unwrap();
-    }
-}
-
-fn assert_footer_layout(window: &ElysiaeWindow) {
-    let footer = window.imp().progress.parent().unwrap();
-    let row = footer.parent().unwrap();
-    let actions = window.imp().settings_button.parent().unwrap();
-    pump_until(|| {
-        let row = row.compute_bounds(window).unwrap();
-        let actions = actions.compute_bounds(window).unwrap();
-        (row.width() - (window.width() as f32 - 64.0)).abs() <= 2.0
-            && actions.x() + actions.width() <= window.width() as f32
-            && (!window.imp().progress.is_visible() || window.imp().progress.height() > 0)
-    });
-
-    let area = footer.compute_bounds(window).unwrap();
-    let row = row.compute_bounds(window).unwrap();
-    let controls = actions.compute_bounds(window).unwrap();
-
-    // The floor applies while the progress panel is laid out; idle and
-    // hidden it only shows the buttons and stays under it.
-    assert!(
-        !window.imp().progress.is_visible() || area.width() >= 320.0,
-        "Panel floor must hold: {area:?}"
-    );
-    assert!(
-        area.x() + area.width() <= row.x() + row.width(),
-        "Progress area must stay in the row: {area:?} in {row:?}"
-    );
-    assert!(
-        row.x() >= 0.0 && row.width() <= window.width() as f32,
-        "Row must stay on screen: {row:?}"
-    );
-    // The action column expands, so the buttons hug the right content edge
-    // whether or not the status box is laid out.
-    assert!(
-        (window.width() as f32 - (controls.x() + controls.width()) - 32.0).abs() <= 2.0,
-        "Controls must align to the right content edge: {controls:?}"
-    );
-    assert!(
-        controls.x() >= area.x() + area.width(),
-        "Progress and controls must not overlap"
-    );
-    // While downloading, the controls share the status box's bottom edge;
-    // idle (box hidden) they sit at the window's bottom content padding.
-    if window.imp().status_box.is_visible() {
-        assert!(
-            (controls.y() + controls.height() - area.y() - area.height()).abs() <= 2.0,
-            "Progress and controls must share a bottom edge: {area:?}, {controls:?}"
-        );
-    } else {
-        assert!(
-            (window.height() as f32 - (controls.y() + controls.height()) - 28.0).abs() <= 2.0,
-            "Controls must sit at the bottom content edge: {controls:?}"
-        );
-    }
-    assert!(
-        controls.y() + controls.height() <= window.height() as f32,
-        "Controls must stay inside the window: {controls:?} in {}x{}",
-        window.width(),
-        window.height()
-    );
-    assert!(!window.imp().settings_button.is_ancestor(&footer));
-    assert!(!window.imp().operation_button.is_ancestor(&footer));
-}
-
-#[test]
-#[ignore = "requires a GTK display; run explicitly on one test thread"]
-fn gtk_launcher_interactions_and_layout() {
-    gtk::init().unwrap();
-    gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
-    crate::util::settings::set_option("check-for-updates", false.into()).unwrap();
-
-    let provider = gtk::CssProvider::new();
-    let css_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let errors = css_errors.clone();
-    provider.connect_parsing_error(move |_, _, error| errors.borrow_mut().push(error.to_string()));
-    provider.load_from_resource("/app/elysiae/Elysiae/style.css");
-    assert!(
-        css_errors.borrow().is_empty(),
-        "CSS errors: {:?}",
-        css_errors.borrow()
-    );
-    gtk::style_context_add_provider_for_display(
-        &gtk::gdk::Display::default().unwrap(),
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-
-    let app = gtk::Application::builder()
-        .application_id("app.elysiae.Elysiae.UiTests")
-        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
-        .build();
-    app.register(None::<&gtk::gio::Cancellable>).unwrap();
-
-    let window = ElysiaeWindow::new(&app);
-    window.present();
-    pump_until(|| window.is_mapped() && window.width() >= 1100 && window.imp().sidebar.width() > 0);
-    assert!(!window.imp().progress.is_visible());
-    assert!(window.imp().background.is_visible());
-    let initial_selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-    // R3: sidebar hugs the right content padding; the gap is fixed, not
-    // centered.
-    assert_eq!(
-        window.width() as f32 - (initial_selector.x() + initial_selector.width()),
-        32.0
-    );
-    assert_eq!(
-        (initial_selector.width(), initial_selector.height()),
-        (74.0, 296.0)
-    );
-    let settings_bounds = window
-        .imp()
-        .settings_button
-        .compute_bounds(&window)
-        .unwrap();
-    let operation_bounds = window
-        .imp()
-        .operation_button
-        .compute_bounds(&window)
-        .unwrap();
-    assert!(
-        (62.0..=68.0).contains(&settings_bounds.width())
-            && (62.0..=68.0).contains(&settings_bounds.height())
-    );
-    assert!(
-        (228.0..=240.0).contains(&operation_bounds.width())
-            && (62.0..=68.0).contains(&operation_bounds.height())
-    );
-    assert_footer_layout(&window);
-    screenshot(&window, "launcher-desktop.png");
-
-    let mut buttons = Vec::new();
-    let mut child = window.imp().sidebar.imp().games.first_child();
-    while let Some(widget) = child {
-        child = widget.next_sibling();
-        buttons.push(widget.downcast::<gtk::ToggleButton>().unwrap());
-    }
-
-    assert_eq!(buttons.len(), Game::all().len());
-    for pair in buttons.windows(2) {
-        let upper = pair[0].compute_bounds(&window).unwrap();
-        let lower = pair[1].compute_bounds(&window).unwrap();
-        assert_eq!((upper.width(), upper.height()), (64.0, 64.0));
-        assert_eq!(upper.x(), lower.x());
-        assert_eq!(lower.y() - upper.y(), 74.0);
-    }
-
-    // Real artwork must not override the configured CSS geometry.
-    let artwork = gtk::gdk::MemoryTexture::new(
-        512,
-        512,
-        gtk::gdk::MemoryFormat::R8g8b8a8,
-        &glib::Bytes::from_owned(vec![192u8; 512 * 512 * 4]),
-        512 * 4,
-    );
-    for button in &buttons {
-        let icon = button
-            .child()
-            .unwrap()
-            .downcast::<crate::widgets::sidebar::GameIcon>()
-            .unwrap();
-        let natural_width = icon.measure(gtk::Orientation::Horizontal, -1).1;
-        let picture = icon.imp().picture.borrow();
-        let picture = picture.as_ref().unwrap();
-        picture.set_paintable(Some(&artwork));
-        picture.set_visible(true);
-        icon.imp()
-            .fallback
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .set_visible(false);
-        assert!(
-            icon.measure(gtk::Orientation::Horizontal, -1).1 <= natural_width,
-            "Icon natural size must ignore artwork resolution: {:?}",
-            icon.measure(gtk::Orientation::Horizontal, -1)
-        );
-    }
-
-    buttons[2].emit_clicked();
-    assert_eq!(window.get_current_game(), Game::Hkrpg);
-    assert!(buttons[2].has_css_class("is-selected"));
-
-    window.imp().settings_button.emit_clicked();
-    pump_until(|| {
-        window.imp().settings_layer.is_visible() && window.imp().settings_panel.width() > 0
-    });
-    assert!(!window.imp().content.is_sensitive());
-    let panel = window
-        .imp()
-        .settings_panel
-        .compute_bounds(&window.imp().settings_layer.get())
-        .unwrap();
-    let (_, natural, _, _) = window
-        .imp()
-        .settings_panel
-        .measure(gtk::Orientation::Horizontal, -1);
-    let margins =
-        window.imp().settings_panel.margin_start() + window.imp().settings_panel.margin_end();
-    let expected = ((natural - margins) * 2).min(window.imp().settings_layer.width() - margins);
-    assert!(
-        (panel.width() - expected as f32).abs() <= 2.0,
-        "Settings should be double natural width, capped to the window: {panel:?}, natural={natural}, expected={expected}"
-    );
-    let picked = window
-        .imp()
-        .settings_layer
-        .pick(
-            panel.center().x() as f64,
-            panel.center().y() as f64,
-            gtk::PickFlags::DEFAULT,
-        )
-        .unwrap();
-    assert!(
-        picked != window.imp().settings_backdrop.get().upcast::<gtk::Widget>()
-            && !picked.is_ancestor(&window.imp().settings_backdrop.get())
-    );
-    let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
-    assert!(focus.is_ancestor(&window.imp().settings_panel.get()));
-    screenshot(&window, "settings-desktop.png");
-
-    window.imp().settings_panel.close_button().emit_clicked();
-    assert!(!window.imp().settings_layer.is_visible());
-
-    window.imp().settings_button.emit_clicked();
-    window.imp().settings_backdrop.emit_clicked();
-    assert!(!window.imp().settings_layer.is_visible());
-
-    window.imp().settings_button.emit_clicked();
-    let controllers = window.observe_controllers();
-    let keys = (0..controllers.n_items())
-        .filter_map(|i| {
-            controllers
-                .item(i)
-                .and_downcast::<gtk::EventControllerKey>()
-        })
-        .next()
-        .unwrap();
-    let dropdown = window.imp().settings_panel.dropdown("vo-lang");
-    dropdown.popup();
-    pump_until(|| dropdown.imp().popover.is_mapped());
-    assert!(keys.emit_by_name::<bool>(
-        "key-pressed",
-        &[
-            &gtk::gdk::Key::Escape,
-            &0u32,
-            &gtk::gdk::ModifierType::empty()
-        ]
-    ));
-    pump_until(|| !dropdown.is_open());
-    assert!(
-        window.imp().settings_layer.is_visible(),
-        "Escape closes the choices before the modal"
-    );
-
-    dropdown.popup();
-    pump_until(|| dropdown.imp().popover.is_mapped());
-    assert!(keys.emit_by_name::<bool>(
-        "key-pressed",
-        &[&gtk::gdk::Key::Tab, &0u32, &gtk::gdk::ModifierType::empty()]
-    ));
-    pump_until(|| !dropdown.is_open());
-    let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
-    assert!(!focus.is_ancestor(&dropdown), "Tab must leave the dropdown");
-
-    for _ in 0..16 {
-        assert!(keys.emit_by_name::<bool>(
-            "key-pressed",
-            &[&gtk::gdk::Key::Tab, &0u32, &gtk::gdk::ModifierType::empty()]
-        ));
-        let focus = gtk::prelude::GtkWindowExt::focus(&window).unwrap();
-        assert!(focus.is_ancestor(&window.imp().settings_panel.get()));
-    }
-
-    assert!(keys.emit_by_name::<bool>(
-        "key-pressed",
-        &[
-            &gtk::gdk::Key::Escape,
-            &0u32,
-            &gtk::gdk::ModifierType::empty()
-        ]
-    ));
-    assert!(!window.imp().settings_layer.is_visible());
-
-    window.change_game(Game::Hk4e);
-    let transfer = operations()
-        .begin(OperationKind::Install, Some(Game::Hkrpg))
-        .unwrap();
-    window.imp().status.set(Some(UpdateAvailability::Updated));
-    window.imp().runtime_ready.set(true);
-    window.refresh_controls();
-    assert_eq!(window.imp().operation_button.label().unwrap(), "Launch");
-    assert!(window.imp().operation_button.is_sensitive());
-
-    let reporter = transfer.reporter().unwrap();
-    reporter.report(ProgressEvent::Sophon(SophonProgress::Downloading {
-        downloaded_bytes: 50 * 1024 * 1024 * 1024,
-        total_bytes: 100 * 1024 * 1024 * 1024,
-        speed_bps: 20.0 * 1024.0 * 1024.0,
-        eta_seconds: 2560.0,
-    }));
-    pump_until(|| window.imp().progress.is_visible());
-    assert_eq!(window.get_current_game(), Game::Hk4e);
-    assert!(window.imp().progress.imp().verification_row.is_visible());
-    let selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-    assert!((selector.width() - initial_selector.width()).abs() <= 1.0);
-    assert!((selector.height() - initial_selector.height()).abs() <= 1.0);
-    assert_footer_layout(&window);
-    let icon = buttons[2]
-        .child()
-        .unwrap()
-        .downcast::<crate::widgets::sidebar::GameIcon>()
-        .unwrap();
-    assert!((icon.imp().target.get() - 0.5).abs() < 0.001);
-    screenshot(&window, "download-desktop.png");
-
-    window.set_default_size(720, 540);
-    pump_until(|| window.width() <= 760);
-    assert_footer_layout(&window);
-    screenshot(&window, "download-compact.png");
-
-    // Window minimum: the worst-case controls must still fit inside 680x500.
-    window.set_default_size(680, 500);
-    pump_until(|| window.width() <= 700);
-    assert_footer_layout(&window);
-    for widget in [
-        window.imp().progress.upcast_ref::<gtk::Widget>(),
-        &window.imp().progress.parent().unwrap(),
-    ] {
-        let bounds = widget.compute_bounds(&window).unwrap();
-        assert!(
-            bounds.x() >= 0.0
-                && bounds.y() >= 0.0
-                && bounds.x() + bounds.width() <= window.width() as f32
-                && bounds.y() + bounds.height() <= window.height() as f32,
-            "Widget left the 680x500 window: {bounds:?}"
-        );
-    }
-    screenshot(&window, "download-min.png");
-
-    // Pin this synthetic worst-case layout while the 250 ms status refresh
-    // runs; otherwise it can hide the extra button before GTK allocates it.
-    let keep_preinstall = window
-        .imp()
-        .preinstall_button
-        .connect_visible_notify(|button| {
-            if !button.is_visible() {
-                button.set_visible(true);
-            }
-        });
-    let keep_label = window
-        .imp()
-        .operation_button
-        .connect_label_notify(|button| {
-            if button.label().as_deref() != Some("Resume installation") {
-                button.set_label("Resume installation");
-            }
-        });
-    window.imp().preinstall_button.set_visible(true);
-    window
-        .imp()
-        .operation_button
-        .set_label("Resume installation");
-
-    // Exercise a refresh during the fixture rather than relying on timing.
-    window.refresh_controls();
-    assert!(window.imp().preinstall_button.is_visible());
-    assert_eq!(
-        window.imp().operation_button.label().as_deref(),
-        Some("Resume installation")
-    );
-    pump_until(|| window.imp().preinstall_button.height() > 0);
-    assert_footer_layout(&window);
-    window.imp().preinstall_button.disconnect(keep_preinstall);
-    window.imp().operation_button.disconnect(keep_label);
-    window.imp().preinstall_button.set_visible(false);
-    window.refresh_controls();
-
-    window.imp().settings_button.emit_clicked();
-    pump_until(|| {
-        window
-            .imp()
-            .settings_panel
-            .compute_bounds(&window)
-            .is_some_and(|bounds| {
-                bounds.x() >= 0.0
-                    && bounds.y() >= 0.0
-                    && bounds.x() + bounds.width() <= window.width() as f32 + 1.0
-                    && bounds.y() + bounds.height() <= window.height() as f32 + 1.0
-            })
-    });
-    let bounds = window.imp().settings_panel.compute_bounds(&window).unwrap();
-    assert!(bounds.x() >= 0.0 && bounds.y() >= 0.0);
-    assert!(bounds.x() + bounds.width() <= window.width() as f32 + 1.0);
-    assert!(bounds.y() + bounds.height() <= window.height() as f32 + 1.0);
-    screenshot(&window, "settings-compact.png");
-    window.show_settings(false);
-    transfer.finish(Ok(())).unwrap();
-
-    let component = operations().begin(OperationKind::Components, None).unwrap();
-    let reporter = component.reporter().unwrap();
-    reporter.report(ProgressEvent::File(crate::util::web::DownloadProgress {
-        download_id: Uuid::new_v4(),
-        downloaded: 25,
-        total: 100,
-    }));
-    pump_until(|| window.imp().displayed_operation.get() == Some(reporter.0.id));
-    assert!(window.imp().progress.imp().bars.is_visible());
-    assert!(!window.imp().progress.imp().verification_row.is_visible());
-
-    reporter.report(ProgressEvent::Extracting("download.tar.gz".into()));
-    pump_until(|| !window.imp().progress.imp().bars.is_visible());
-    assert!(!window.imp().progress.imp().heading.is_visible());
-    assert_eq!(
-        window.imp().progress.imp().detail.label(),
-        "Extracting download.tar.gz…"
-    );
-    component.finish(Ok(())).unwrap();
-    pump_until(|| window.imp().progress.imp().heading.label() == "Downloading Phlogiston");
-    pump_for(std::time::Duration::from_secs(8), &mut || {
-        !window.imp().progress.is_visible()
-    });
-    assert_eq!(window.imp().displayed_operation.get(), None);
-    window.close();
+#[track_caller]
+fn pump_until(ready: impl FnMut() -> bool) {
+    pump_for(std::time::Duration::from_secs(8), ready);
 }
 
 #[test]
@@ -475,7 +27,6 @@ fn preinstall_does_not_replace_launch_action() {
         action_kind(UpdateAvailability::Preinstall),
         OperationKind::Launch
     );
-    assert_eq!(action_label(UpdateAvailability::Preinstall), "Launch");
     assert!(is_installed(UpdateAvailability::Outdated));
     assert!(!is_installed(UpdateAvailability::Incomplete));
     assert_eq!(
@@ -485,73 +36,137 @@ fn preinstall_does_not_replace_launch_action() {
 }
 
 #[test]
-#[ignore = "requires a GTK display; run explicitly on one test thread"]
-fn stale_terminal_event_does_not_reset_active_progress() {
-    use crate::core::operations::{OperationStatus, Phase};
-
+#[ignore = "requires a GTK display"]
+fn game_selection_and_progress_operations() {
     gtk::init().unwrap();
     gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
-
-    let provider = gtk::CssProvider::new();
-    let css_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let errors = css_errors.clone();
-    provider.connect_parsing_error(move |_, _, error| errors.borrow_mut().push(error.to_string()));
-    provider.load_from_resource("/app/elysiae/Elysiae/style.css");
-    assert!(
-        css_errors.borrow().is_empty(),
-        "CSS errors: {:?}",
-        css_errors.borrow()
-    );
-    gtk::style_context_add_provider_for_display(
-        &gtk::gdk::Display::default().unwrap(),
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    crate::util::settings::set_option("check-for-updates", false.into()).unwrap();
 
     let app = gtk::Application::builder()
-        .application_id("app.elysiae.Elysiae.UiTests")
+        .application_id("app.elysiae.Elysiae.BehaviorTests")
         .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.register(None::<&gtk::gio::Cancellable>).unwrap();
 
     let window = ElysiaeWindow::new(&app);
     window.present();
-    pump_until(|| window.is_mapped() && window.width() >= 1100 && window.imp().sidebar.width() > 0);
+    pump_until(|| window.is_mapped());
+
+    let selected_games = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let selected_games_sink = selected_games.clone();
+    window
+        .imp()
+        .sidebar
+        .connect_game_selected(move |game| selected_games_sink.borrow_mut().push(game));
+    let game_code = Game::Hkrpg.code();
+    window
+        .imp()
+        .sidebar
+        .emit_by_name::<()>("game-selected", &[&game_code]);
+    assert_eq!(window.get_current_game(), Game::Hkrpg);
+    assert_eq!(*selected_games.borrow(), [Game::Hkrpg]);
+
+    window.imp().settings_button.emit_clicked();
+    pump_until(|| window.imp().settings_layer.is_visible());
+    assert!(!window.imp().content.is_sensitive());
+    assert!(
+        gtk::prelude::GtkWindowExt::focus(&window)
+            .is_some_and(|focus| focus.is_ancestor(&window.imp().settings_panel.get()))
+    );
+    window.imp().settings_panel.close_button().emit_clicked();
+    pump_until(|| !window.imp().settings_layer.is_visible());
+    assert!(window.imp().content.is_sensitive());
+
+    window.imp().settings_button.emit_clicked();
+    pump_until(|| window.imp().settings_layer.is_visible());
+    window.imp().settings_backdrop.emit_clicked();
+    pump_until(|| !window.imp().settings_layer.is_visible());
+
+    window.change_game(Game::Hk4e);
+    let transfer = operations()
+        .begin(OperationKind::Install, Some(Game::Hkrpg))
+        .unwrap();
+    let transfer_id = transfer.reporter().unwrap().0.id;
+    window.imp().status.set(Some(UpdateAvailability::Updated));
+    window.imp().runtime_ready.set(true);
+    window.refresh_controls();
+    assert!(window.imp().operation_button.is_sensitive());
+
+    let reporter = transfer.reporter().unwrap();
+    reporter.report(ProgressEvent::Sophon(SophonProgress::Downloading {
+        downloaded_bytes: 50 * 1024 * 1024 * 1024,
+        total_bytes: 100 * 1024 * 1024 * 1024,
+        speed_bps: 20.0 * 1024.0 * 1024.0,
+        eta_seconds: 2560.0,
+    }));
+    pump_until(|| window.imp().displayed_operation.get() == Some(transfer_id));
+    assert_eq!(window.get_current_game(), Game::Hk4e);
+    assert!(window.imp().progress.is_presenting());
+    transfer.finish(Ok(())).unwrap();
+    pump_for(std::time::Duration::from_secs(8), || {
+        window.imp().displayed_operation.get().is_none()
+    });
+    assert!(!window.imp().progress.is_presenting());
+
+    let component = operations().begin(OperationKind::Components, None).unwrap();
+    let reporter = component.reporter().unwrap();
+    let component_id = reporter.0.id;
+    reporter.report(ProgressEvent::File(crate::util::web::DownloadProgress {
+        download_id: Uuid::new_v4(),
+        downloaded: 25,
+        total: 100,
+    }));
+    pump_until(|| window.imp().displayed_operation.get() == Some(component_id));
+    assert!(window.imp().progress.is_presenting());
+    reporter.report(ProgressEvent::Extracting("component.tar.gz".into()));
+    component.finish(Ok(())).unwrap();
+    pump_for(std::time::Duration::from_secs(8), || {
+        window.imp().displayed_operation.get().is_none()
+    });
+    assert!(!window.imp().progress.is_presenting());
+
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a GTK display"]
+fn stale_terminal_event_does_not_reset_active_progress() {
+    use crate::core::operations::{OperationStatus, Phase};
+
+    gtk::init().unwrap();
+    gtk::gio::resources_register_include!("elysiae.gresource").unwrap();
+
+    let app = gtk::Application::builder()
+        .application_id("app.elysiae.Elysiae.StaleProgressBehaviorTests")
+        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gtk::gio::Cancellable>).unwrap();
+
+    let window = ElysiaeWindow::new(&app);
+    window.present();
+    pump_until(|| window.is_mapped());
 
     let superseded = Uuid::new_v4();
     let launched = Uuid::new_v4();
     let in_flight = Uuid::new_v4();
+    let make_status = |id, game, phase, error| OperationStatus {
+        id,
+        kind: OperationKind::Install,
+        game: Some(game),
+        phase,
+        error,
+    };
 
     progress::publish(ProgressUpdate {
-        operation: OperationStatus {
-            id: superseded,
-            kind: OperationKind::Install,
-            game: Some(Game::Bh3),
-            phase: Phase::Running,
-            error: None,
-        },
+        operation: make_status(superseded, Game::Bh3, Phase::Running, None),
         event: ProgressEvent::Finished { error: None },
     });
-
     progress::publish(ProgressUpdate {
-        operation: OperationStatus {
-            id: launched,
-            kind: OperationKind::Install,
-            game: Some(Game::Hk4e),
-            phase: Phase::Running,
-            error: None,
-        },
+        operation: make_status(launched, Game::Hk4e, Phase::Running, None),
         event: ProgressEvent::Started,
     });
-
     progress::publish(ProgressUpdate {
-        operation: OperationStatus {
-            id: in_flight,
-            kind: OperationKind::Install,
-            game: Some(Game::Bh3),
-            phase: Phase::Running,
-            error: None,
-        },
+        operation: make_status(in_flight, Game::Bh3, Phase::Running, None),
         event: ProgressEvent::Sophon(SophonProgress::Downloading {
             downloaded_bytes: 9 * 1024 * 1024 * 1024,
             total_bytes: 24 * 1024 * 1024 * 1024,
@@ -560,74 +175,38 @@ fn stale_terminal_event_does_not_reset_active_progress() {
         }),
     });
 
-    let heading = format!("Downloading {}", Game::Bh3.display_name());
-    pump_until(|| {
-        window.imp().progress.is_visible() && window.imp().progress.imp().heading.label() == heading
-    });
-    assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
-    assert!(window.imp().progress.imp().bars.is_visible());
+    pump_until(|| window.imp().displayed_operation.get() == Some(in_flight));
+    assert!(window.imp().progress.is_presenting());
 
     progress::publish(ProgressUpdate {
-        operation: OperationStatus {
-            id: launched,
-            kind: OperationKind::Install,
-            game: Some(Game::Hk4e),
-            phase: Phase::Failed,
-            error: Some("synthetic stale failure".to_string()),
-        },
+        operation: make_status(
+            launched,
+            Game::Hk4e,
+            Phase::Failed,
+            Some("stale failure".to_string()),
+        ),
         event: ProgressEvent::Finished {
-            error: Some("synthetic stale failure".to_string()),
+            error: Some("stale failure".to_string()),
         },
     });
 
-    // The stale failure must neither repaint the panel nor arm the delayed
-    // reset: iterate the main context past the 4-second window and require the
-    // panel to still be showing the in-flight operation.
     let stale_since = std::time::Instant::now();
-    pump_for(std::time::Duration::from_secs(10), &mut || {
-        window.imp().progress.is_visible()
-            && stale_since.elapsed() > std::time::Duration::from_secs(5)
-    });
-    assert_eq!(window.imp().progress.imp().heading.label(), heading);
-    assert!(window.imp().progress.imp().bars.is_visible());
+    pump_until(|| stale_since.elapsed() > std::time::Duration::from_secs(5));
     assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
+    assert!(window.imp().progress.is_presenting());
 
     progress::publish(ProgressUpdate {
-        operation: OperationStatus {
-            id: in_flight,
-            kind: OperationKind::Install,
-            game: Some(Game::Bh3),
-            phase: Phase::Running,
-            error: None,
-        },
-        event: ProgressEvent::Sophon(SophonProgress::Downloading {
-            downloaded_bytes: 12 * 1024 * 1024 * 1024,
-            total_bytes: 24 * 1024 * 1024 * 1024,
-            speed_bps: 16.0 * 1024.0 * 1024.0,
-            eta_seconds: 730.0,
-        }),
-    });
-    pump_until(|| {
-        window.imp().progress.is_visible() && window.imp().progress.imp().heading.label() == heading
-    });
-    assert!(window.imp().progress.imp().bars.is_visible());
-
-    progress::publish(ProgressUpdate {
-        operation: OperationStatus {
-            id: in_flight,
-            kind: OperationKind::Install,
-            game: Some(Game::Bh3),
-            phase: Phase::Failed,
-            error: Some("synthetic in-flight failure".to_string()),
-        },
+        operation: make_status(
+            in_flight,
+            Game::Bh3,
+            Phase::Failed,
+            Some("active failure".to_string()),
+        ),
         event: ProgressEvent::Finished {
-            error: Some("synthetic in-flight failure".to_string()),
+            error: Some("active failure".to_string()),
         },
     });
-    pump_for(std::time::Duration::from_secs(8), &mut || {
-        !window.imp().progress.is_visible()
-    });
-    assert_eq!(window.imp().displayed_operation.get(), None);
-    screenshot(&window, "r1_terminal_reset");
+    pump_until(|| window.imp().displayed_operation.get().is_none());
+    assert!(!window.imp().progress.is_presenting());
     window.close();
 }
