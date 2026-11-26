@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  build-image:
     strategy:
       fail-fast: false
       matrix:
@@ -44,13 +44,50 @@ jobs:
           cache-from: type=gha,scope=elysiae-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=elysiae-${{ matrix.arch }},ignore-error=true
 
-      - name: Run tests and verify installation
+      - name: Save image for downstream jobs
+        run: |
+          docker save elysiae-ci | gzip -1 > elysiae-ci-${{ matrix.arch }}.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: elysiae-ci-${{ matrix.arch }}
+          path: elysiae-ci-${{ matrix.arch }}.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  test:
+    needs: build-image
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+        profile: [debug, release]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+
+      - name: Download architecture image
+        uses: actions/download-artifact@v5
+        with:
+          name: elysiae-ci-${{ matrix.arch }}
+
+      - name: Load image
+        run: gzip -dc "elysiae-ci-${{ matrix.arch }}.tar.gz" | docker load
+
+      - name: Run Meson tests
         run: |
           docker run --rm \
             --user "$(id -u):$(id -g)" \
             --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             --workdir "$GITHUB_WORKSPACE" \
             --env HOME="$GITHUB_WORKSPACE/.ci-home" \
+            --env BUILD_PROFILE="${{ matrix.profile }}" \
             elysiae-ci \
             bash -o pipefail -lc '
               set -e
@@ -63,18 +100,20 @@ jobs:
               toolchain=$(sed -n "s/^channel = \"\(.*\)\"$/\1/p" rust-toolchain.toml)
               rustup install "$toolchain" --profile minimal
               rustup override set "$toolchain"
-              mkdir build_debug
-              meson setup build_debug -Dprofile=dev -Dtests=true -Dgui_tests=true
-              dbus-run-session -- xvfb-run -a ninja -C build_debug test
-              mkdir build_release
-              meson setup build_release -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
-              dbus-run-session -- xvfb-run -a ninja -C build_release test
-              DESTDIR="$PWD/stage" meson install -C build_release --no-rebuild
-              test -x stage/usr/bin/Elysiae
-              test -f stage/usr/share/glib-2.0/schemas/app.elysiae.Elysiae.gschema.xml
-              test -f stage/usr/share/icons/hicolor/scalable/apps/app.elysiae.Elysiae.svg
-              test -f stage/usr/share/licenses/app.elysiae.Elysiae/LICENSE
-              test -f stage/usr/share/Elysiae/fonts/OFL.txt
-              test -f stage/usr/share/Elysiae/resources.gresource
-              test ! -e stage/usr/share/icons/hicolor/scalable/settings-symbolic.svg
+              if [ "$BUILD_PROFILE" = debug ]; then
+                meson setup build -Dprofile=dev -Dtests=true -Dgui_tests=true
+              else
+                meson setup build -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
+              fi
+              dbus-run-session -- xvfb-run -a ninja -C build test
+              if [ "$BUILD_PROFILE" = release ]; then
+                DESTDIR="$PWD/stage" meson install -C build --no-rebuild
+                test -x stage/usr/bin/Elysiae
+                test -f stage/usr/share/glib-2.0/schemas/app.elysiae.Elysiae.gschema.xml
+                test -f stage/usr/share/icons/hicolor/scalable/apps/app.elysiae.Elysiae.svg
+                test -f stage/usr/share/licenses/app.elysiae.Elysiae/LICENSE
+                test -f stage/usr/share/Elysiae/fonts/OFL.txt
+                test -f stage/usr/share/Elysiae/resources.gresource
+                test ! -e stage/usr/share/icons/hicolor/scalable/settings-symbolic.svg
+              fi
             '
