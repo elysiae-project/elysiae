@@ -140,7 +140,8 @@ fn runtime_version(root: &Path) -> Result<RuntimeVersion> {
     Ok(marker)
 }
 
-// Explicit roots keep tests independent of both the user's profile and each other.
+// Explicit roots keep tests independent of both the user's profile and each
+// other.
 /// Runtime, prefix and transaction paths under an application data root.
 struct RuntimePaths(PathBuf);
 
@@ -180,9 +181,11 @@ impl RuntimePaths {
         self.0.join(format!(".phlogiston-backup-{}", journal.id))
     }
 
-    /// Finds a complete runtime, preferring the canonical layout over legacy ones.
+    /// Finds a complete runtime, preferring the canonical layout over legacy
+    /// ones.
     fn resolve(&self) -> Result<RuntimeLayout> {
-        // Legacy layouts are read in place, never silently moved into phlogiston.
+        // Legacy layouts are read in place, never silently moved into
+        // phlogiston.
         for root in [self.live(), self.0.join("proton"), self.0.clone()] {
             if let Ok(layout) = RuntimeLayout::validate(&root) {
                 return Ok(layout);
@@ -195,7 +198,8 @@ impl RuntimePaths {
         )
     }
 
-    /// Checks whether the installed runtime needs repair or differs from a release.
+    /// Checks whether the installed runtime needs repair or differs from a
+    /// release.
     fn needs_update(&self, release: &ComponentRelease) -> Result<bool> {
         // A legacy tracker must never bless a missing/corrupt canonical tree.
         if node_exists(&self.live())? {
@@ -308,7 +312,8 @@ fn wine_architecture(_root: &Path) -> (&'static str, &'static str) {
     ("files/bin", "x86_64")
 }
 
-/// Validates a required runtime file without allowing links outside the distribution.
+/// Validates a required runtime file without allowing links outside the
+/// distribution.
 fn checked_file(root: &Path, relative: &str, executable: bool) -> Result<PathBuf> {
     let path = root.join(relative);
     let resolved = path
@@ -329,7 +334,8 @@ fn checked_file(root: &Path, relative: &str, executable: bool) -> Result<PathBuf
         "Runtime file is not executable: {relative}"
     );
 
-    // Keep the original path: Proton derives its distribution root from argv[0].
+    // Keep the original path: Proton derives its distribution root from
+    // argv[0].
     Ok(path)
 }
 
@@ -346,16 +352,17 @@ pub fn runtime_ready_for_launch() -> Result<bool> {
     Ok(!node_exists(&paths.journal())? && paths.resolve().is_ok())
 }
 
-/// Read-only, including when offline or an operation is already active. Scheduling
-/// and deciding whether to offer an update belong to the caller.
+/// Read-only, including when offline or an operation is already active.
+/// Scheduling and deciding whether to offer an update belong to the caller.
 pub async fn check_runtime_update() -> Result<bool> {
     let release = latest_release().await?;
 
     RuntimePaths::appdata()?.needs_update(&release)
 }
 
-/// The blocking worker, not its cancellable async waiter, owns the lease and all
-/// nested download/extraction futures until their filesystem work has quiesced.
+/// The blocking worker, not its cancellable async waiter, owns the lease and
+/// all nested download/extraction futures until their filesystem work has
+/// quiesced.
 async fn runtime_worker(
     operation: Operation,
     work: impl FnOnce(&Operation) -> Result<()> + Send + 'static,
@@ -596,7 +603,8 @@ fn charge(total: &mut u64, bytes: u64, limit: u64, resource: &str) -> Result<()>
     Ok(())
 }
 
-/// Bounds raw TAR resources and rejects unsafe extensions before interpretation.
+/// Bounds raw TAR resources and rejects unsafe extensions before
+/// interpretation.
 fn raw_tar_preflight(path: &Path) -> Result<()> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(File::open(path)?));
     let mut decoded = 0;
@@ -700,7 +708,8 @@ fn bounded_archive_path(path: &Path) -> Result<PathBuf> {
     Ok(normalized)
 }
 
-/// Checks archive resource limits and budgets staging space, including directories.
+/// Checks archive resource limits and budgets staging space, including
+/// directories.
 fn check_archive_space(path: &Path, available: u64) -> Result<()> {
     // This caller-owned budget also protects the later generic extract_file.
     raw_tar_preflight(path)?;
@@ -741,7 +750,8 @@ fn check_archive_space(path: &Path, available: u64) -> Result<()> {
         }
 
         // Every unique implicit parent consumes an inode/block even when the
-        // archive omitted directory entries. Normalize ./ aliases before charging.
+        // archive omitted directory entries. Normalize ./ aliases before
+        // charging.
         let parents = if kind.is_dir() {
             Some(path.as_path())
         } else {
@@ -806,7 +816,8 @@ fn transaction_id(id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Reads a valid transaction journal and rejects symlink staging or backup paths.
+/// Reads a valid transaction journal and rejects symlink staging or backup
+/// paths.
 fn read_journal(paths: &RuntimePaths) -> Result<Journal> {
     let journal: Journal = read_json(&paths.journal())?;
     ensure!(
@@ -854,7 +865,8 @@ fn start_transaction(paths: &RuntimePaths) -> Result<Journal> {
     Ok(journal)
 }
 
-/// Replaces the runtime and tracker, rolling back failures before commit publication.
+/// Replaces the runtime and tracker, rolling back failures before commit
+/// publication.
 fn commit_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let staged = paths.stage(journal).join("runtime");
     RuntimeLayout::validate(&staged)?;
@@ -952,7 +964,8 @@ fn snapshot_legacy_version(paths: &RuntimePaths, journal: &Journal) -> Result<()
     )
 }
 
-/// Durably restores the prior runtime and tracker from an uncommitted transaction.
+/// Durably restores the prior runtime and tracker from an uncommitted
+/// transaction.
 fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let recorded = read_journal(paths)?;
     ensure!(
@@ -977,7 +990,8 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     );
 
     // Persist rollback intent before any move; restart must not bless v2 again
-    // if rollback failed before moving the newly installed tree back to staging.
+    // if rollback failed before moving the newly installed tree back to
+    // staging.
     atomic_json(
         &paths.journal(),
         &Journal {
@@ -1043,7 +1057,8 @@ fn rollback_runtime(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     discard_transaction(paths, journal)
 }
 
-/// Completes or rolls back an interrupted runtime transaction at the given root.
+/// Completes or rolls back an interrupted runtime transaction at the given
+/// root.
 fn recover_at(paths: &RuntimePaths) -> Result<()> {
     if !node_exists(&paths.journal())? {
         // Unjournaled directories may belong to someone else; no glob cleanup.
@@ -1098,7 +1113,8 @@ fn recover_at(paths: &RuntimePaths) -> Result<()> {
     rollback_runtime(paths, &journal)
 }
 
-/// Removes a matching transaction's staging and backup before deleting its journal.
+/// Removes a matching transaction's staging and backup before deleting its
+/// journal.
 fn discard_transaction(paths: &RuntimePaths, journal: &Journal) -> Result<()> {
     let recorded = read_journal(paths)?;
     ensure!(
@@ -1181,7 +1197,8 @@ fn atomic_json_published(path: &Path, value: &impl Serialize, published: &mut bo
     atomic_bytes(path, &serde_json::to_vec(value)?, published)
 }
 
-/// Durably replaces metadata bytes, tracking publication even if the final sync fails.
+/// Durably replaces metadata bytes, tracking publication even if the final sync
+/// fails.
 fn atomic_bytes(path: &Path, bytes: &[u8], published: &mut bool) -> Result<()> {
     *published = false;
     let parent = path.parent().context("Metadata path has no parent")?;
@@ -1213,7 +1230,8 @@ fn sync_directory(path: &Path) -> Result<()> {
         .with_context(|| format!("Could not sync {}", path.display()))
 }
 
-/// Syncs regular files and directories in a runtime tree without following symlinks.
+/// Syncs regular files and directories in a runtime tree without following
+/// symlinks.
 fn sync_tree(root: &Path) -> Result<()> {
     let mut directories = vec![root.to_path_buf()];
     let mut index = 0;

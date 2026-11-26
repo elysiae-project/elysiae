@@ -166,16 +166,14 @@ mod imp {
                 std::sync::OnceLock::new();
 
             SIGNALS.get_or_init(|| {
-                vec![
-                    glib::subclass::Signal::builder("uninstall-requested")
-                        .build(),
-                ]
+                vec![glib::subclass::Signal::builder("uninstall-requested").build()]
             })
         }
 
         fn constructed(&self) {
             self.parent_constructed();
-            // Runs for both Settings::new() and instances made by a parent template.
+            // Runs for both Settings::new() and instances made by a parent
+            // template.
             self.obj().initialize();
         }
     }
@@ -280,7 +278,8 @@ impl Settings {
 
     fn initialize(&self) {
         let fields = FIELDS.iter().map(|spec| self.add_field(spec)).collect();
-        // Construction happens once, before any user or settings callbacks exist.
+        // Construction happens once, before any user or settings callbacks
+        // exist.
         let _ = self.imp().fields.set(fields);
 
         for field in self.imp().fields.get().into_iter().flatten() {
@@ -353,7 +352,8 @@ impl Settings {
             .valign(gtk::Align::Center)
             .css_classes(["button", "danger-button"])
             .build();
-        // Breeze ships trash-empty-symbolic; Adwaita names it user-trash-symbolic.
+        // Breeze ships trash-empty-symbolic; Adwaita names it
+        // user-trash-symbolic.
         if let Some(display) = gtk::gdk::Display::default()
             && !gtk::IconTheme::for_display(&display).has_icon("trash-empty-symbolic")
         {
@@ -448,7 +448,8 @@ impl Settings {
             .find(|field| field.spec.key == key)
     }
 
-    /// Backend refreshes never write, even when GTK emits synchronous notifications.
+    /// Backend refreshes never write, even when GTK emits synchronous
+    /// notifications.
     fn refresh_field(&self, key: &str) {
         let Some(field) = self.field(key) else { return };
 
@@ -500,8 +501,9 @@ impl Settings {
         match result {
             Ok(()) => self.refresh_field(key),
             Err(error) => {
-                // Prefer the current backend value; retain a known-good fallback if
-                // the backend itself is unavailable. Restoring must not write again.
+                // Prefer the current backend value; retain a known-good
+                // fallback if the backend itself is unavailable. Restoring must
+                // not write again.
                 let previous = field.previous.borrow().clone();
                 let value = get_option(key).ok().or(previous.clone());
                 let was_refreshing = self.imp().refreshing.replace(true);

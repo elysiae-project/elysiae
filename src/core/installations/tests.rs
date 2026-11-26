@@ -72,12 +72,10 @@ fn unknown_codes_do_not_block_the_registry() {
 
     let registry = store.load().unwrap();
     store.save(&registry).unwrap();
-    let persisted: Registry =
-        serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+    let persisted: Registry = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
     assert!(persisted.installations.contains_key("bogus"));
     assert_eq!(
-        persisted.installations["bogus"].path,
-        orphan_root,
+        persisted.installations["bogus"].path, orphan_root,
         "Unknown records must round-trip verbatim"
     );
 

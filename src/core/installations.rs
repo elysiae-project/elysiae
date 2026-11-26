@@ -25,7 +25,8 @@ pub(crate) struct Installation {
     pub(crate) path: PathBuf,
     pub(crate) managed: bool,
     pub(crate) allow_modify: bool,
-    // Imported records have an identity, but no ownership marker or deletion rights.
+    // Imported records have an identity, but no ownership marker or deletion
+    // rights.
     pub(crate) ownership_token: String,
 }
 
@@ -60,7 +61,8 @@ pub fn prepare_install(game: Game, operation: &Operation) -> Result<PathBuf> {
 }
 
 /// Require a matching operation and either verified managed ownership or
-/// explicit import write consent. An unregistered default path is never writable.
+/// explicit import write consent. An unregistered default path is never
+/// writable.
 pub fn writable_path(game: Game, operation: &Operation) -> Result<PathBuf> {
     Store(PathBuf::new()).writable_path(game, operation)
 }
@@ -76,8 +78,9 @@ pub fn import(game: Game, root: &Path, allow_modify: bool, operation: &Operation
 /// Copy and verify into a managed destination before switching registration.
 /// Destination must be canonical and absolute, absent or empty; missing parents
 /// are created durably. Confirmation must exactly match the registered source.
-/// Imported sources may be copied, but never deleted, regardless of write consent.
-/// Copying is cancellable; committing and confirmed cleanup must finish or recover.
+/// Imported sources may be copied, but never deleted, regardless of write
+/// consent. Copying is cancellable; committing and confirmed cleanup must
+/// finish or recover.
 pub fn relocate(
     game: Game,
     destination: &Path,
@@ -94,8 +97,8 @@ pub fn relocate(
     )
 }
 
-/// Unregister only, or quarantine and delete a confirmed, verified managed root.
-/// Imported installations never grant file-deletion authority.
+/// Unregister only, or quarantine and delete a confirmed, verified managed
+/// root. Imported installations never grant file-deletion authority.
 pub fn uninstall(
     game: Game,
     confirmed_root: &Path,
@@ -107,7 +110,8 @@ pub fn uninstall(
 
 /// Finish committed cleanup or roll back an interrupted pre-commit transaction.
 /// Recovery never discovers or adopts unjournaled staging directories. If the
-/// source changed before deletion, restore its registration and report an error.
+/// source changed before deletion, restore its registration and report an
+/// error.
 pub fn recover(game: Game, operation: &Operation) -> Result<()> {
     Store(PathBuf::new()).recover(game, operation)
 }
@@ -142,7 +146,8 @@ impl Store {
         fs::full_path(Some(self.0.join(relative)), None)
     }
 
-    /// Read and validate the registry, using an empty registry only when absent.
+    /// Read and validate the registry, using an empty registry only when
+    /// absent.
     fn load(&self) -> Result<Registry> {
         let file = self.resolve(Path::new(REGISTRY))?;
 
@@ -170,8 +175,8 @@ impl Store {
 
         for (code, installation) in &registry.installations {
             let Some(game) = Game::try_from(code.as_str()).ok() else {
-                // Unknown codes from retired games are kept verbatim in memory and
-                // persisted unchanged on the next save.
+                // Unknown codes from retired games are kept verbatim in memory
+                // and persisted unchanged on the next save.
                 continue;
             };
 
@@ -179,8 +184,7 @@ impl Store {
                 !installation.managed || installation.allow_modify,
                 "Managed installation has inconsistent write consent"
             );
-            Uuid::parse_str(&installation.ownership_token)
-                .context("Invalid installation token")?;
+            Uuid::parse_str(&installation.ownership_token).context("Invalid installation token")?;
             self.validate_root(&installation.path)?;
             check_conflicts(&registry, game, &installation.path)?;
         }
@@ -203,7 +207,8 @@ impl Store {
         Ok(self.load()?.installations.remove(game.code()))
     }
 
-    /// Return the registered root or the unregistered default installation path.
+    /// Return the registered root or the unregistered default installation
+    /// path.
     fn path(&self, game: Game) -> Result<PathBuf> {
         match self.registered(game)? {
             Some(installation) => Ok(installation.path),
@@ -211,7 +216,8 @@ impl Store {
         }
     }
 
-    /// Check the operation and ownership or import consent before returning a path.
+    /// Check the operation and ownership or import consent before returning a
+    /// path.
     fn writable_path(&self, game: Game, operation: &Operation) -> Result<PathBuf> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
@@ -237,7 +243,8 @@ impl Store {
         Ok(installation.path)
     }
 
-    /// Prepare or resume a managed root, retaining its ownership token on recreation.
+    /// Prepare or resume a managed root, retaining its ownership token on
+    /// recreation.
     fn prepare_install(&self, game: Game, operation: &Operation) -> Result<PathBuf> {
         operation.check_game(game)?;
         operation.check_cancelled()?;
@@ -260,7 +267,8 @@ impl Store {
                     .and_then(|()| write_owner(game, installation));
 
                 if let Err(error) = result {
-                    // Only remove the empty root just created here, never its parents.
+                    // Only remove the empty root just created here, never its
+                    // parents.
                     std::fs::remove_dir(&installation.path).with_context(|| {
                         format!("{error:#}; could not remove recreated empty directory")
                     })?;
@@ -304,7 +312,8 @@ impl Store {
         Ok(expected)
     }
 
-    /// Write ownership and registration, removing only the new marker on failure.
+    /// Write ownership and registration, removing only the new marker on
+    /// failure.
     fn commit_managed(
         &self,
         game: Game,
@@ -319,9 +328,9 @@ impl Store {
             .and_then(|()| self.save(registry));
 
         if let Err(error) = result {
-            // Roll back only our marker, never a directory or arbitrary content.
-            // A crash can leave an orphan marker; it is not sufficient to adopt
-            // an unregistered nonempty directory on the next attempt.
+            // Roll back only our marker, never a directory or arbitrary
+            // content. A crash can leave an orphan marker; it is not sufficient
+            // to adopt an unregistered nonempty directory on the next attempt.
             verify_owner(game, installation)
                 .and_then(|()| Ok(std::fs::remove_file(installation.path.join(OWNER_MARKER))?))
                 .with_context(|| {
@@ -333,7 +342,8 @@ impl Store {
         Ok(())
     }
 
-    /// Register an existing game or update its consent without modifying its files.
+    /// Register an existing game or update its consent without modifying its
+    /// files.
     fn import(
         &self,
         game: Game,
@@ -412,7 +422,8 @@ impl Store {
         self.check_safe_root(root)
     }
 
-    /// Exclude roots containing home or AppData, or overlapping shared runtime data.
+    /// Exclude roots containing home or AppData, or overlapping shared runtime
+    /// data.
     fn check_safe_root(&self, root: &Path) -> Result<()> {
         let home = canonicalize_with_missing(&fs::full_path(None, Some(fs::BaseDirectory::Home))?)?;
         let data = canonicalize_with_missing(&self.root()?)?;
@@ -440,7 +451,8 @@ impl Store {
     }
 }
 
-/// Create an ownership marker in an empty installation directory by absolute path.
+/// Create an ownership marker in an empty installation directory by absolute
+/// path.
 fn write_owner(game: Game, installation: &Installation) -> Result<()> {
     use std::io::Write;
 

@@ -131,7 +131,8 @@ impl ProgressState {
             }
             ProgressEvent::Sophon(progress) => {
                 if self.bars != Bars::Sophon {
-                    // A preceding file transfer belongs to another stage, not Sophon.
+                    // A preceding file transfer belongs to another stage, not
+                    // Sophon.
                     self.download = BarState::default();
                     self.verification = BarState::default();
                 }
@@ -174,8 +175,9 @@ impl ProgressState {
                         self.verification = BarState::files(*scanned_files, *total_files);
                     }
                     SophonProgress::Error { .. } => self.error = true,
-                    // Assembly, plugins, metadata and upstream Finished never invent
-                    // transferred or verified work, or mark the operation complete.
+                    // Assembly, plugins, metadata and upstream Finished never
+                    // invent transferred or verified work, or mark the
+                    // operation complete.
                     _ => {}
                 }
             }
@@ -274,7 +276,8 @@ mod imp {
     impl ObjectImpl for Progressbar {
         fn constructed(&self) {
             self.parent_constructed();
-            // Children are bound now; never access them from Default/init_template.
+            // Children are bound now; never access them from
+            // Default/init_template.
             self.obj().reset();
         }
 
@@ -303,7 +306,8 @@ impl Progressbar {
         glib::Object::builder().build()
     }
 
-    /// The window selects relevant operations; launch/recovery are always ignored.
+    /// The window selects relevant operations; launch/recovery are always
+    /// ignored.
     pub fn update(&self, update: &ProgressUpdate) {
         let changed = self.imp().state.borrow_mut().update(update);
         if changed {
@@ -329,12 +333,11 @@ impl Progressbar {
         let imp = self.imp();
         imp.controls.set_visible(active);
         imp.pause_button.set_sensitive(active && !cancelling);
-        imp.pause_button
-            .set_icon_name(if paused {
-                "media-playback-start-symbolic"
-            } else {
-                "media-playback-pause-symbolic"
-            });
+        imp.pause_button.set_icon_name(if paused {
+            "media-playback-start-symbolic"
+        } else {
+            "media-playback-pause-symbolic"
+        });
         imp.pause_button.set_tooltip_text(Some(if paused {
             "Resume download"
         } else {
@@ -351,7 +354,8 @@ impl Progressbar {
         imp.heading.set_text(&state.heading);
         imp.heading.set_visible(!state.extracting);
         imp.speed.set_text(&state.speed);
-        imp.speed.set_visible(!state.extracting && !state.speed.is_empty());
+        imp.speed
+            .set_visible(!state.extracting && !state.speed.is_empty());
         imp.detail.set_text(&state.detail);
         imp.bars.set_visible(state.shows_bars());
         imp.verification_row.set_visible(state.bars == Bars::Sophon);

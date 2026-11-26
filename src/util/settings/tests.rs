@@ -1,6 +1,7 @@
 use super::*;
 
-/// Checks invalid preferences return errors instead of reaching GLib assertions.
+/// Checks invalid preferences return errors instead of reaching GLib
+/// assertions.
 #[test]
 fn invalid_keys_and_types_return_errors_without_glib_abort() {
     assert!(get_option("not-a-key").is_err());
@@ -10,7 +11,8 @@ fn invalid_keys_and_types_return_errors_without_glib_abort() {
     assert!(set_option("vo-lang", "invalid".into()).is_err());
 }
 
-/// Checks idempotent migration, independent language choices and future versions.
+/// Checks idempotent migration, independent language choices and future
+/// versions.
 #[test]
 fn initialization_preserves_preferences_and_rejects_newer_schemas() {
     let settings = settings().unwrap();

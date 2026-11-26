@@ -1,4 +1,5 @@
-/// Builds the embedded resources and settings schema, then checks the host kernel.
+/// Builds the embedded resources and settings schema, then checks the host
+/// kernel.
 #[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-env-changed=ELYSIAE_SKIP_KERNEL_CHECK");
@@ -43,7 +44,8 @@ fn compile_resources() {
     );
 }
 
-/// Checks the recommended kernel version, unless the build-time check is disabled.
+/// Checks the recommended kernel version, unless the build-time check is
+/// disabled.
 #[cfg(not(test))]
 fn supported_kernel() -> bool {
     if std::env::var_os("ELYSIAE_SKIP_KERNEL_CHECK").is_some() {

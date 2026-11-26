@@ -27,7 +27,8 @@ use crate::{
     },
 };
 
-/// Installation and update states used to decide which game actions are available.
+/// Installation and update states used to decide which game actions are
+/// available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAvailability {
     Updated,
@@ -50,9 +51,9 @@ enum DownloadAction {
 }
 
 /// Progress is best-effort and bounded by the caller's channel. Terminal events
-/// replace an older progress item if necessary. The worker's final Result remains
-/// authoritative even if the consumer closes; irmin's Finished event alone is
-/// not evidence that an operation succeeded.
+/// replace an older progress item if necessary. The worker's final Result
+/// remains authoritative even if the consumer closes; irmin's Finished event
+/// alone is not evidence that an operation succeeded.
 pub async fn download_game(
     game: Game,
     lang: &str,
@@ -128,7 +129,8 @@ async fn start_download(
     .await
 }
 
-/// Runs work on the backend runtime, retaining ownership if the caller detaches.
+/// Runs work on the backend runtime, retaining ownership if the caller
+/// detaches.
 async fn run_worker<F: Future<Output = Result<()>> + Send + 'static>(
     operation: Operation,
     work: impl FnOnce(Operation) -> F,
@@ -215,8 +217,9 @@ async fn execute_download(
 
                         match result {
                             Ok(()) => {}
-                            // The pinned library requires pre-download metadata after
-                            // promotion. This error occurs before it modifies files.
+                            // The pinned library requires pre-download metadata
+                            // after promotion. This error occurs before it
+                            // modifies files.
                             Err(SophonError::NoPreinstallAvailable) => {
                                 log::warn!(
                                     "Promoted preinstall metadata unavailable; using normal update"
@@ -281,7 +284,8 @@ async fn execute_download(
     Ok(())
 }
 
-/// Forwards progress without blocking, leaving completion to the operation worker.
+/// Forwards progress without blocking, leaving completion to the operation
+/// worker.
 fn forward_progress(
     sender: &async_channel::Sender<SophonProgress>,
     reporter: &ProgressReporter,
@@ -388,7 +392,8 @@ fn validate_mutation_tree(root: &Path, operation: &Operation) -> Result<()> {
     Ok(())
 }
 
-/// Tracks scan completeness and errors independently of upstream completion events.
+/// Tracks scan completeness and errors independently of upstream completion
+/// events.
 #[derive(Default)]
 struct VerificationReport {
     total: u64,
@@ -437,16 +442,18 @@ impl VerificationReport {
     }
 }
 
-/// Runs integrity verification and checks that the reported scan is complete and clean.
+/// Runs integrity verification and checks that the reported scan is complete
+/// and clean.
 async fn verify(
     sophon: &Sophon,
     sender: async_channel::Sender<SophonProgress>,
     reporter: ProgressReporter,
 ) -> Result<()> {
     // Verification in the current irmin pin has no control handle. Do not drop
-    // its future on cancel: spawned work could continue after releasing ownership.
-    // The upstream fixes are explicitly deferred; errors found during the scan
-    // must not be disguised by its unconditional Finished/Ok after failed repair.
+    // its future on cancel: spawned work could continue after releasing
+    // ownership. The upstream fixes are explicitly deferred; errors found
+    // during the scan must not be disguised by its unconditional Finished/Ok
+    // after failed repair.
     let report = Arc::new(Mutex::new(VerificationReport::default()));
     let observed = report.clone();
 
@@ -466,7 +473,8 @@ async fn verify(
         .result()
 }
 
-/// Reads a bounded installed-version marker, treating missing or empty markers as absent.
+/// Reads a bounded installed-version marker, treating missing or empty markers
+/// as absent.
 fn installed_tag(path: &Path) -> Result<Option<String>> {
     use std::io::Read;
 
@@ -538,7 +546,8 @@ fn clear_pending(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Classifies local installation markers and the executable without network access.
+/// Classifies local installation markers and the executable without network
+/// access.
 fn local_status(game: Game, path: &Path) -> Result<UpdateAvailability> {
     if !path.try_exists()? {
         return Ok(UpdateAvailability::NotInstalled);
@@ -562,7 +571,8 @@ fn local_status(game: Game, path: &Path) -> Result<UpdateAvailability> {
     Ok(UpdateAvailability::Updated)
 }
 
-/// Classifies update metadata, prioritizing required updates over future preinstalls.
+/// Classifies update metadata, prioritizing required updates over future
+/// preinstalls.
 fn classify_update(info: &irmin::game_installer::UpdateInfo) -> UpdateAvailability {
     if info.current_tag.is_none() {
         UpdateAvailability::Incomplete
@@ -575,14 +585,16 @@ fn classify_update(info: &irmin::game_installer::UpdateInfo) -> UpdateAvailabili
     }
 }
 
-/// Checks whether the downloaded preinstall matches the currently available update.
+/// Checks whether the downloaded preinstall matches the currently available
+/// update.
 fn apply_live_preinstall(info: &irmin::game_installer::UpdateInfo) -> bool {
     info.update_available
         && info.preinstall_downloaded
         && info.preinstall_tag.as_deref() == Some(info.remote_tag.as_str())
 }
 
-/// Gets local installation status, recognizing explicitly imported untracked games.
+/// Gets local installation status, recognizing explicitly imported untracked
+/// games.
 pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
     game.executable()?;
     let path = installations::path(game)?;
@@ -606,7 +618,8 @@ pub fn local_update_status(game: Game) -> Result<UpdateAvailability> {
     Ok(status)
 }
 
-/// Combines local installation state with remote update availability when applicable.
+/// Combines local installation state with remote update availability when
+/// applicable.
 pub async fn update_status(game: Game, lang: &str) -> Result<UpdateAvailability> {
     let path = installations::path(game)?;
     let local = local_update_status(game)?;
@@ -638,7 +651,8 @@ pub fn game_installed(game: Game) -> Result<bool> {
     ))
 }
 
-/// Writes a desktop shortcut that selects the game in Elysiae without launching it.
+/// Writes a desktop shortcut that selects the game in Elysiae without launching
+/// it.
 fn generate_desktop_file(game: Game) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -673,7 +687,8 @@ fn generate_desktop_file(game: Game) -> Result<()> {
     Ok(())
 }
 
-/// Prepares the runtime and launches an installed game under operation ownership.
+/// Prepares the runtime and launches an installed game under operation
+/// ownership.
 pub async fn launch_game(game: Game) -> Result<()> {
     runtime::spawn(async move {
         ensure!(
@@ -715,7 +730,8 @@ pub async fn launch_game(game: Game) -> Result<()> {
     .context("Launch worker failed")?
 }
 
-/// Registers an existing installation with the requested modification permission.
+/// Registers an existing installation with the requested modification
+/// permission.
 #[expect(
     dead_code,
     reason = "Import backend retained until a UI caller is connected"
@@ -785,7 +801,8 @@ pub async fn uninstall_game(game: Game, confirmed_root: PathBuf, delete_files: b
     .context("Uninstall task failed")?
 }
 
-/// Recovers interrupted installation maintenance under exclusive operation ownership.
+/// Recovers interrupted installation maintenance under exclusive operation
+/// ownership.
 pub async fn recover_maintenance(game: Game) -> Result<()> {
     let operation = operations().begin(OperationKind::Relocate, Some(game))?;
 

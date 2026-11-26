@@ -145,7 +145,8 @@ impl Background {
                     widget.apply_media(media, poster);
                 }
                 // Keep usable artwork on refresh failure. A new game already
-                // has the immediate themed fallback, never a cleared black layer.
+                // has the immediate themed fallback, never a cleared black
+                // layer.
                 Ok(Err(error)) => log::debug!("Artwork unavailable: {error:#}"),
                 Err(error) => log::warn!("Artwork lookup failed: {error}"),
             }
@@ -306,7 +307,8 @@ impl Background {
         }
 
         // Keep the poster underneath a mapped, initially transparent player.
-        // Hiding GtkVideo prevents autoplay; reveal only after playback advances.
+        // Hiding GtkVideo prevents autoplay; reveal only after playback
+        // advances.
         imp.video.set_filename(Some(&path));
         if let Some(stream) = imp.video.media_stream() {
             stream.set_muted(true);

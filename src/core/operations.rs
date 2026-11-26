@@ -109,7 +109,8 @@ pub fn operations() -> &'static Operations {
     })
 }
 
-/// Acquires a cross-process profile lock without following links or sharing files.
+/// Acquires a cross-process profile lock without following links or sharing
+/// files.
 fn lock_profile(path: &Path) -> Result<File> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
@@ -161,7 +162,8 @@ impl Operations {
         };
 
         // Only our own retained Launch lease authorizes transfers alongside a
-        // session fence. Unknown/orphaned fences still require exclusive recovery.
+        // session fence. Unknown/orphaned fences still require exclusive
+        // recovery.
         let supervised = state
             .active
             .iter()
@@ -199,7 +201,8 @@ impl Operations {
         })
     }
 
-    /// Read-only UI eligibility hint. begin() rechecks ownership and disk fences.
+    /// Read-only UI eligibility hint. begin() rechecks ownership and disk
+    /// fences.
     pub fn can_begin(&self, kind: OperationKind, game: Option<Game>) -> Result<bool> {
         let state = self
             .0
@@ -299,7 +302,8 @@ impl Operations {
     }
 }
 
-/// Worker-owned lease; dropping an async waiter must not drop this worker's lease.
+/// Worker-owned lease; dropping an async waiter must not drop this worker's
+/// lease.
 pub struct Operation {
     owner: Operations,
     id: Uuid,

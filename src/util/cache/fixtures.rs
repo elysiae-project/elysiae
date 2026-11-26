@@ -142,8 +142,8 @@ fn priority_static_is_published_before_optional_assets_and_unrelated_failures() 
                     let notified = &notified;
                     async move {
                         if game != priority {
-                            // These deliberately yielding failures cannot hold up
-                            // the selected game's first visible background.
+                            // These deliberately yielding failures cannot hold
+                            // up the selected game's first visible background.
                             assert!(notified.load(Ordering::SeqCst));
                             yield_once().await;
                             anyhow::bail!("unrelated service failure");

@@ -15,7 +15,7 @@ use crate::{
     util::{
         progress::{self, ProgressEvent, ProgressUpdate},
         runtime,
-        settings::{get_option, set_option, SettingValue},
+        settings::{SettingValue, get_option, set_option},
     },
 };
 
@@ -99,7 +99,8 @@ mod imp {
             self.parent_constructed();
             let window = self.obj();
 
-            // Long action labels must not change the footer's proportional split.
+            // Long action labels must not change the footer's proportional
+            // split.
             if let Some(label) = self.operation_button.child().and_downcast::<gtk::Label>() {
                 label.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 label.set_max_width_chars(16);
@@ -120,26 +121,20 @@ mod imp {
             });
 
             let weak = window.downgrade();
-            self.progress
-                .imp()
-                .pause_button
-                .connect_clicked(move |_| {
-                    if let Some(window) = weak.upgrade()
-                        && let Err(error) = game_downloader::toggle_downloading()
-                    {
-                        window.show_error(&format!("{error:#}"));
-                    }
-                });
+            self.progress.imp().pause_button.connect_clicked(move |_| {
+                if let Some(window) = weak.upgrade()
+                    && let Err(error) = game_downloader::toggle_downloading()
+                {
+                    window.show_error(&format!("{error:#}"));
+                }
+            });
 
             let weak = window.downgrade();
-            self.progress
-                .imp()
-                .cancel_button
-                .connect_clicked(move |_| {
-                    if let Some(window) = weak.upgrade() {
-                        window.confirm_cancel_transfer();
-                    }
-                });
+            self.progress.imp().cancel_button.connect_clicked(move |_| {
+                if let Some(window) = weak.upgrade() {
+                    window.confirm_cancel_transfer();
+                }
+            });
 
             let weak = window.downgrade();
             self.settings_panel
@@ -318,7 +313,10 @@ impl ElysiaeWindow {
 
     pub fn change_game(&self, game: Game) {
         self.imp().current_game.set(game);
-        let _ = set_option("last-active-game", SettingValue::Str(game.code().to_owned()));
+        let _ = set_option(
+            "last-active-game",
+            SettingValue::Str(game.code().to_owned()),
+        );
         self.imp().sidebar.select(game);
         self.imp().settings_panel.set_game(game);
         let cached = self.imp().status_cache.borrow().get(&game).copied();
@@ -393,24 +391,22 @@ impl ElysiaeWindow {
     /// progress panel still shows one (a transfer may belong to another game).
     fn refresh_status_box(&self) {
         let game = self.get_current_game();
-        let downloading = operations()
-            .active()
-            .unwrap_or_default()
-            .iter()
-            .any(|s| {
-                s.game == Some(game)
-                    && matches!(
-                        s.kind,
-                        OperationKind::Install
-                            | OperationKind::Update
-                            | OperationKind::Preinstall
-                            | OperationKind::Repair
-                            | OperationKind::Components
-                    )
-            });
-        let showing_progress = self.imp().displayed_operation.get().is_some()
-            && self.imp().progress.is_presenting();
-        self.imp().status_box.set_visible(downloading || showing_progress);
+        let downloading = operations().active().unwrap_or_default().iter().any(|s| {
+            s.game == Some(game)
+                && matches!(
+                    s.kind,
+                    OperationKind::Install
+                        | OperationKind::Update
+                        | OperationKind::Preinstall
+                        | OperationKind::Repair
+                        | OperationKind::Components
+                )
+        });
+        let showing_progress =
+            self.imp().displayed_operation.get().is_some() && self.imp().progress.is_presenting();
+        self.imp()
+            .status_box
+            .set_visible(downloading || showing_progress);
     }
 
     fn refresh_controls(&self) {
@@ -441,10 +437,8 @@ impl ElysiaeWindow {
             .and_then(|s| s.game);
         // A running transfer belongs to one game; it must not hold the
         // other installed games back from launching.
-        let transfer = active
-            .iter()
-            .any(|s| s.game == Some(game))
-            || imp.transfer_pending.get() == Some(game);
+        let transfer =
+            active.iter().any(|s| s.game == Some(game)) || imp.transfer_pending.get() == Some(game);
         let Some(status) = imp.status.get() else {
             imp.operation_button.set_sensitive(false);
             imp.preinstall_button.set_visible(false);
@@ -490,7 +484,8 @@ impl ElysiaeWindow {
         );
     }
 
-    /// Local status appears first; remote checks cannot replace a newer selection.
+    /// Local status appears first; remote checks cannot replace a newer
+    /// selection.
     pub fn refresh_status(&self) {
         let game = self.get_current_game();
         let previous = self.imp().status.get();
@@ -668,7 +663,8 @@ impl ElysiaeWindow {
 
         runtime::spawn(async move {
             // Legacy backend API remains available; the UI receives identified
-            // events through the shared reporter instead of an anonymous channel.
+            // events through the shared reporter instead of an anonymous
+            // channel.
             let (sender, _receiver) = async_channel::bounded(1);
             let result = match kind {
                 OperationKind::Launch => game_downloader::launch_game(game).await,
@@ -798,7 +794,8 @@ impl ElysiaeWindow {
     }
 
     /// Requests cancellation, waits for the worker to release its lease, then
-    /// uninstalls: managed roots lose their files, imported roots only unregister.
+    /// uninstalls: managed roots lose their files, imported roots only
+    /// unregister.
     fn cancel_and_delete(&self, game: Game) {
         if let Err(error) = game_downloader::cancel_download() {
             self.show_error(&format!("{error:#}"));
@@ -822,20 +819,16 @@ impl ElysiaeWindow {
                     return;
                 };
 
-                let released = operations()
-                    .active()
-                    .unwrap_or_default()
-                    .iter()
-                    .all(|s| {
-                        s.game != Some(game)
-                            || !matches!(
-                                s.kind,
-                                OperationKind::Install
-                                    | OperationKind::Update
-                                    | OperationKind::Preinstall
-                                    | OperationKind::Repair
-                            )
-                    });
+                let released = operations().active().unwrap_or_default().iter().all(|s| {
+                    s.game != Some(game)
+                        || !matches!(
+                            s.kind,
+                            OperationKind::Install
+                                | OperationKind::Update
+                                | OperationKind::Preinstall
+                                | OperationKind::Repair
+                        )
+                });
                 if released || waited >= 120 {
                     window.imp().cancel_pending.set(false);
                     if released {
@@ -927,10 +920,10 @@ impl ElysiaeWindow {
             return;
         }
 
-        // A terminal event for an operation that is not displayed must not redraw
-        // the panel: that would clobber the operation in flight, and the stale
-        // event can never arm the reset. Let it fall through to the terminal
-        // bookkeeping only.
+        // A terminal event for an operation that is not displayed must not
+        // redraw the panel: that would clobber the operation in flight, and the
+        // stale event can never arm the reset. Let it fall through to the
+        // terminal bookkeeping only.
         let stale_terminal = matches!(update.event, ProgressEvent::Finished { .. })
             && self.imp().displayed_operation.get() != Some(id);
         let cancelled = matches!(update.event, ProgressEvent::Finished { .. })

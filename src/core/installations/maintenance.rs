@@ -1,6 +1,7 @@
 //! A journal records intent, not deletion authority. Cleanup additionally needs
 //! a derived temporary name and the matching owner marker. The registry is the
-//! commit point: recovery rolls back before it changes and finishes cleanup after.
+//! commit point: recovery rolls back before it changes and finishes cleanup
+//! after.
 
 use std::{
     fs::{self as disk, File, OpenOptions},
@@ -50,7 +51,8 @@ pub(super) struct Journal {
     step: Step,
 }
 
-/// Relocation or managed-deletion intent, distinct from unregister-only operations.
+/// Relocation or managed-deletion intent, distinct from unregister-only
+/// operations.
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 enum Action {
@@ -62,7 +64,8 @@ enum Action {
     Uninstall,
 }
 
-/// Copy and cleanup progress; registry contents determine whether commit occurred.
+/// Copy and cleanup progress; registry contents determine whether commit
+/// occurred.
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 enum Step {
     Copying,
@@ -71,7 +74,8 @@ enum Step {
 }
 
 impl Journal {
-    /// Capture source identity and transaction intent before staging or quarantine.
+    /// Capture source identity and transaction intent before staging or
+    /// quarantine.
     fn new(game: Game, original: Installation, action: Action) -> Result<Self> {
         let metadata = disk::symlink_metadata(&original.path)?;
 
@@ -97,7 +101,8 @@ impl Journal {
         }
     }
 
-    /// Derive a transaction path from its parent, role, game, and transaction ID.
+    /// Derive a transaction path from its parent, role, game, and transaction
+    /// ID.
     fn generated(&self, parent: &Path, kind: &str) -> PathBuf {
         parent.join(format!(".elysiae-{kind}-{}-{}", self.game, self.id))
     }
@@ -123,7 +128,8 @@ impl Journal {
         ))
     }
 
-    /// Describe a managed relocation root using the transaction ID as its token.
+    /// Describe a managed relocation root using the transaction ID as its
+    /// token.
     fn target(&self, path: PathBuf) -> Installation {
         Installation {
             path,
@@ -133,7 +139,8 @@ impl Journal {
         }
     }
 
-    /// Check the path's recorded staging identity and transaction ownership marker.
+    /// Check the path's recorded staging identity and transaction ownership
+    /// marker.
     fn check_staging(&self, game: Game, path: &Path) -> Result<()> {
         let metadata = disk::symlink_metadata(path)?;
         ensure!(
@@ -146,7 +153,8 @@ impl Journal {
         verify_owner(game, &self.target(path.to_owned()))
     }
 
-    /// Check a source path's recorded identity and, when managed, ownership marker.
+    /// Check a source path's recorded identity and, when managed, ownership
+    /// marker.
     fn check_source(&self, game: Game, path: &Path) -> Result<()> {
         let metadata = disk::symlink_metadata(path)?;
         ensure!(
@@ -208,7 +216,8 @@ impl Store {
         Ok(Some(journal))
     }
 
-    /// Check journal intent and derived paths without granting cleanup authority.
+    /// Check journal intent and derived paths without granting cleanup
+    /// authority.
     fn validate_journal(&self, game: Game, journal: &Journal) -> Result<()> {
         ensure!(
             journal.schema_version == 1 && journal.game == game.code(),
@@ -268,7 +277,8 @@ impl Store {
         Ok(())
     }
 
-    /// Validate and persist bounded maintenance intent with its directory entries.
+    /// Validate and persist bounded maintenance intent with its directory
+    /// entries.
     fn save_journal(&self, game: Game, journal: &Journal) -> Result<()> {
         self.validate_journal(game, journal)?;
         ensure!(
@@ -292,14 +302,16 @@ impl Store {
         sync_directory(&self.root()?)
     }
 
-    /// Remove a completed journal and persist its parent directory entry change.
+    /// Remove a completed journal and persist its parent directory entry
+    /// change.
     fn clear_journal(&self, game: Game) -> Result<()> {
         let path = self.journal_path(game)?;
         disk::remove_file(&path)?;
         sync_directory(path.parent().context("Journal has no parent")?)
     }
 
-    /// Require all game maintenance journals to be cleared before new mutations.
+    /// Require all game maintenance journals to be cleared before new
+    /// mutations.
     pub(super) fn ensure_no_pending(&self) -> Result<()> {
         for game in GAMES {
             ensure!(
@@ -318,8 +330,9 @@ impl Store {
         sync_file_and_parent(&self.resolve(Path::new(super::REGISTRY))?)
     }
 
-    /// Copy and verify into destination-side staging before committing registration.
-    /// Delete the confirmed source only when managed and explicitly requested.
+    /// Copy and verify into destination-side staging before committing
+    /// registration. Delete the confirmed source only when managed and
+    /// explicitly requested.
     pub(super) fn relocate(
         &self,
         game: Game,
@@ -408,8 +421,9 @@ impl Store {
         journal.staging_device = identity.dev();
         journal.staging_inode = identity.ino();
 
-        // No file data is copied before both ownership and durable intent exist.
-        // A crash before journaling leaves an unconfirmed stray, never auto-adopted.
+        // No file data is copied before both ownership and durable intent
+        // exist. A crash before journaling leaves an unconfirmed stray, never
+        // auto-adopted.
         write_owner(game, &journal.target(staging.clone()))?;
         sync_directory(&staging)?;
         sync_directory(destination_parent)?;
@@ -447,7 +461,8 @@ impl Store {
         self.recover_on_error(game, operation, result)
     }
 
-    /// Promote verified staging to the destination, then commit its registration.
+    /// Promote verified staging to the destination, then commit its
+    /// registration.
     fn commit_relocation(
         &self,
         game: Game,
@@ -478,7 +493,8 @@ impl Store {
         self.save_registry(registry)
     }
 
-    /// Unregister only, or journal quarantine and deletion of a confirmed managed root.
+    /// Unregister only, or journal quarantine and deletion of a confirmed
+    /// managed root.
     pub(super) fn uninstall(
         &self,
         game: Game,
@@ -534,7 +550,8 @@ impl Store {
         self.recover_on_error(game, operation, result)
     }
 
-    /// Attempt rollback or cleanup after failure while retaining the original error.
+    /// Attempt rollback or cleanup after failure while retaining the original
+    /// error.
     fn recover_on_error(
         &self,
         game: Game,
@@ -547,7 +564,8 @@ impl Store {
                 if let Err(transition) = operation.set_phase(Phase::Committing) {
                     // A cancelled lease cannot enter Committing. It can still
                     // discard its copied staging while retaining the original;
-                    // any already committed work requires a fresh recovery lease.
+                    // any already committed work requires a fresh recovery
+                    // lease.
                     let registry = self.load()?;
                     ensure!(
                         operation.check_cancelled().is_err()
@@ -582,7 +600,8 @@ impl Store {
         self.recover_transaction(game, &mut journal)
     }
 
-    /// Use registration as commit evidence to roll back or finish journaled maintenance.
+    /// Use registration as commit evidence to roll back or finish journaled
+    /// maintenance.
     fn recover_transaction(&self, game: Game, journal: &mut Journal) -> Result<()> {
         self.validate_journal(game, journal)?;
         let mut registry = self.load()?;
@@ -640,7 +659,8 @@ impl Store {
                         "Registry references an unverified relocation"
                     );
                     journal.check_staging(game, &destination)?;
-                    // Never discard the backup on a possibly undurable registry switch.
+                    // Never discard the backup on a possibly undurable registry
+                    // switch.
                     sync_file_and_parent(&self.resolve(Path::new(super::REGISTRY))?)?;
                     ensure!(
                         !staging.try_exists()?,
@@ -654,7 +674,8 @@ impl Store {
                         }
 
                         // Quarantine cuts off ordinary writes through the old
-                        // pathname before the last verification and any deletion.
+                        // pathname before the last verification and any
+                        // deletion.
                         if quarantine.try_exists()? && journal.step != Step::Cleaning {
                             journal.check_source(game, &quarantine)?;
                             if let Err(error) = verify_tree(
@@ -749,7 +770,8 @@ impl Store {
         self.clear_journal(game)
     }
 
-    /// Move the checked source to quarantine without replacing existing entries.
+    /// Move the checked source to quarantine without replacing existing
+    /// entries.
     fn quarantine(&self, game: Game, journal: &Journal) -> Result<()> {
         self.validate_root(&journal.original.path)?;
         journal.check_source(game, &journal.original.path)?;
@@ -763,8 +785,9 @@ impl Store {
         sync_directory(quarantine.parent().context("Quarantine has no parent")?)
     }
 
-    /// Clean an owned staging or quarantine tree, or finish an empty journaled cleanup.
-    /// Content deletion uses pinned descriptors; final root removal uses its path.
+    /// Clean an owned staging or quarantine tree, or finish an empty journaled
+    /// cleanup. Content deletion uses pinned descriptors; final root removal
+    /// uses its path.
     fn cleanup(&self, game: Game, journal: &mut Journal, path: &Path, token: &str) -> Result<()> {
         ensure!(
             path == journal.quarantine()?
@@ -839,7 +862,8 @@ fn overlap(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
-/// Create missing canonical destination parents and persist their directory entries.
+/// Create missing canonical destination parents and persist their directory
+/// entries.
 fn create_destination_parents(path: &Path) -> Result<()> {
     let mut missing = Vec::new();
     let mut ancestor = path;
@@ -982,7 +1006,8 @@ fn metadata(root: &Path, path: &Path, device: u64) -> Result<disk::Metadata> {
     Ok(metadata)
 }
 
-/// Measure a bounded tree excluding its owner marker, optionally checking link targets.
+/// Measure a bounded tree excluding its owner marker, optionally checking link
+/// targets.
 fn tree_size(
     root: &Path,
     path: &Path,
@@ -1036,7 +1061,8 @@ fn tree_size(
     Ok(size)
 }
 
-/// Read a relative symlink target and check that its chain stays within the root.
+/// Read a relative symlink target and check that its chain stays within the
+/// root.
 fn safe_link(root: &Path, path: &Path) -> Result<PathBuf> {
     let target = disk::read_link(path)?;
     ensure!(
@@ -1056,7 +1082,8 @@ fn safe_link(root: &Path, path: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
-/// Resolve a bounded symlink chain within a root, allowing missing internal targets.
+/// Resolve a bounded symlink chain within a root, allowing missing internal
+/// targets.
 fn resolve_link(root: &Path, relative: &Path, remaining: &mut usize) -> Result<PathBuf> {
     let mut path = root.to_owned();
 
@@ -1100,7 +1127,8 @@ fn resolve_link(root: &Path, relative: &Path, remaining: &mut usize) -> Result<P
     Ok(path)
 }
 
-/// Open a root-relative regular file and confirm its previously observed identity.
+/// Open a root-relative regular file and confirm its previously observed
+/// identity.
 fn open_regular(root: &Path, path: &Path, device: u64) -> Result<File> {
     let expected = metadata(root, path, device)?;
     ensure!(expected.is_file(), "Expected a regular installation file");
@@ -1153,7 +1181,8 @@ fn copy_tree(
     copy_tree_into(root, source, &destination, device, depth, operation)
 }
 
-/// Copy into a pinned destination directory, preserving permissions and internal links.
+/// Copy into a pinned destination directory, preserving permissions and
+/// internal links.
 fn copy_tree_into(
     root: &Path,
     source: &Path,
@@ -1210,7 +1239,8 @@ fn copy_tree_into(
     Ok(destination.sync_all()?)
 }
 
-/// Compare tree contents, permissions, and links while excluding root ownership markers.
+/// Compare tree contents, permissions, and links while excluding root ownership
+/// markers.
 fn verify_tree(
     roots: (&Path, &Path),
     source: &Path,
@@ -1274,7 +1304,8 @@ fn verify_tree(
             );
             let mut original = open_regular(root, &path, source_device)?;
             let mut copied = open_regular(destination_root, &target, destination_device)?;
-            // Heap buffers keep recursive directory frames small even in debug builds.
+            // Heap buffers keep recursive directory frames small even in debug
+            // builds.
             let mut left = vec![0u8; BUFFER];
             let mut right = vec![0u8; BUFFER];
 
@@ -1316,8 +1347,9 @@ fn verify_tree(
 }
 
 // Trusted canonical roots may themselves live on a different mount. Descendant
-// access must instead use open_beneath: NO_XDEV on an absolute path would reject
-// legitimate installations mounted below /, not just unexpected child mounts.
+// access must instead use open_beneath: NO_XDEV on an absolute path would
+// reject legitimate installations mounted below /, not just unexpected child
+// mounts.
 /// Open a selected path without symlink traversal, allowing mount boundaries.
 fn open_without_links(path: &Path, directory: bool) -> Result<File> {
     open_at(
@@ -1328,14 +1360,16 @@ fn open_without_links(path: &Path, directory: bool) -> Result<File> {
     ) // RESOLVE_NO_SYMLINKS
 }
 
-/// Open beneath a pinned directory without crossing mounts or following symlinks.
+/// Open beneath a pinned directory without crossing mounts or following
+/// symlinks.
 fn open_beneath(directory: &File, path: &Path, flags: libc::c_int) -> Result<File> {
     use std::os::fd::AsRawFd;
 
     open_at(directory.as_raw_fd(), path, flags, 0x01 | 0x04 | 0x08) // RESOLVE_NO_XDEV | NO_SYMLINKS | BENEATH
 }
 
-/// Pin a selected root and open a path relative to it with descendant restrictions.
+/// Pin a selected root and open a path relative to it with descendant
+/// restrictions.
 fn open_tree_path(root: &Path, path: &Path, flags: libc::c_int) -> Result<File> {
     let directory = open_without_links(root, true)?;
     let relative = path.strip_prefix(root)?;
@@ -1353,7 +1387,8 @@ fn open_tree_path(root: &Path, path: &Path, flags: libc::c_int) -> Result<File> 
 
 // openat2 is available on the supported Linux kernels. Fail closed if absent;
 // st_dev comparisons alone do not detect same-filesystem bind mounts.
-/// Apply Linux openat2 flags and resolution restrictions, returning an owned descriptor.
+/// Apply Linux openat2 flags and resolution restrictions, returning an owned
+/// descriptor.
 fn open_at(
     directory: std::os::fd::RawFd,
     path: &Path,
@@ -1380,8 +1415,8 @@ fn open_at(
         resolve,
     };
 
-    // SAFETY: NUL-terminated path and correctly sized Linux open_how. A returned
-    // descriptor is newly owned and immediately wrapped in File.
+    // SAFETY: NUL-terminated path and correctly sized Linux open_how. A
+    // returned descriptor is newly owned and immediately wrapped in File.
     let fd = unsafe {
         libc::syscall(
             libc::SYS_openat2,
@@ -1406,7 +1441,8 @@ fn fd_path(directory: &File) -> PathBuf {
     PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()))
 }
 
-/// Delete entries relative to pinned directories, retaining the root ownership marker.
+/// Delete entries relative to pinned directories, retaining the root ownership
+/// marker.
 fn remove_contents(directory: &File, device: u64, depth: usize) -> Result<()> {
     ensure!(depth <= MAX_DEPTH, "Cleanup directory nesting is too deep");
     let permissions = directory.metadata()?;
@@ -1419,7 +1455,8 @@ fn remove_contents(directory: &File, device: u64, depth: usize) -> Result<()> {
     ))?;
 
     // The only followed link is our own live descriptor. Child directories are
-    // pinned with O_NOFOLLOW, so a racing source symlink cannot redirect cleanup.
+    // pinned with O_NOFOLLOW, so a racing source symlink cannot redirect
+    // cleanup.
     for entry in disk::read_dir(fd_path(directory))? {
         let entry = entry?;
         if depth == 0 && entry.file_name() == OWNER_MARKER {

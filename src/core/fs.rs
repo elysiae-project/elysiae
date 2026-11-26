@@ -24,7 +24,8 @@ use directories::BaseDirs;
 ///
 /// Home: ~
 ///
-/// Omitting the base directory selects application data (~/.local/share/elysiae).
+/// Omitting the base directory selects application data
+/// (~/.local/share/elysiae).
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum BaseDirectory {
     Desktop,
@@ -164,7 +165,8 @@ pub async fn extract_file(options: MultiPathOptions, flatten: Option<bool>) -> R
         if flatten.unwrap_or(true) {
             let entries: Vec<_> = fs::read_dir(&root)?.collect::<Result<_, _>>()?;
 
-            // DirEntry::file_type does not follow a symlink to an outside directory.
+            // DirEntry::file_type does not follow a symlink to an outside
+            // directory.
             if entries.len() == 1 && entries[0].file_type()?.is_dir() {
                 let inner_dir = entries[0].path();
                 // Removing the wrapper changes the meaning of relative links.
@@ -421,8 +423,8 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
 }
 
 // Test builds never resolve default paths into a real user profile, including
-// when a test forgets to configure its own fixture. Do not mutate HOME in tests:
-// Tokio workers and parallel tests share the process environment.
+// when a test forgets to configure its own fixture. Do not mutate HOME in
+// tests: Tokio workers and parallel tests share the process environment.
 /// Resolves base directories beneath a temporary profile for tests.
 #[cfg(test)]
 fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
@@ -439,7 +441,8 @@ fn base_path(base_dir: Option<BaseDirectory>) -> Result<PathBuf> {
     })
 }
 
-/// Joins an untrusted relative path to a trusted (possibly XDG-configured) base.
+/// Joins an untrusted relative path to a trusted (possibly XDG-configured)
+/// base.
 fn join_beneath(base: PathBuf, relative: PathBuf) -> Result<PathBuf> {
     ensure!(
         !relative.as_os_str().is_empty()
