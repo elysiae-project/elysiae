@@ -24,6 +24,8 @@ jobs:
       - name: Build CI container
         run: |
           docker build --platform "linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }}" \
+            --build-arg CI_UID="$(id -u)" \
+            --build-arg CI_GID="$(id -g)" \
             --file .github/ci/Dockerfile --tag elysiae-ci .
 
       - name: Run tests and verify installation

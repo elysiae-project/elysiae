@@ -1,5 +1,8 @@
 FROM ubuntu:26.04
 
+ARG CI_UID=1000
+ARG CI_GID=1000
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install --yes --no-install-recommends \
@@ -19,6 +22,11 @@ RUN apt-get update && apt-get install --yes --no-install-recommends \
     xauth \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+RUN if ! getent group "$CI_GID" >/dev/null; then groupadd --gid "$CI_GID" ci; fi \
+    && if ! getent passwd "$CI_UID" >/dev/null; then \
+        useradd --uid "$CI_UID" --gid "$CI_GID" --create-home --shell /bin/bash ci; \
+    fi
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 
