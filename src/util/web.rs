@@ -54,7 +54,8 @@ fn https_url(url: &str) -> Result<Url> {
     Ok(parsed)
 }
 
-/// Send a request and reject unsuccessful status codes or oversized declared bodies.
+/// Send a request and reject unsuccessful status codes or oversized declared
+/// bodies.
 async fn checked_response(request: RequestBuilder, max_size: u64, kind: &str) -> Result<Response> {
     let response = request
         .send()
@@ -123,7 +124,8 @@ pub async fn download_file_limited(
     .await
 }
 
-/// Stream a bounded response into a staging file and atomically replace the destination.
+/// Stream a bounded response into a staging file and atomically replace the
+/// destination.
 async fn download_to(
     request: RequestBuilder,
     destination: PathBuf,
@@ -218,7 +220,8 @@ pub async fn fetch_data<T: DeserializeOwned>(url: &str) -> Result<T> {
     .await
 }
 
-/// Read and deserialize JSON while enforcing response size and request deadlines.
+/// Read and deserialize JSON while enforcing response size and request
+/// deadlines.
 async fn fetch_json<T: DeserializeOwned>(
     request: RequestBuilder,
     max_size: usize,

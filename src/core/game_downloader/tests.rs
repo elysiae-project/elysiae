@@ -1,6 +1,7 @@
 use super::*;
 
-/// Checks that upstream completion cannot conceal scan errors or uncertain repairs.
+/// Checks that upstream completion cannot conceal scan errors or uncertain
+/// repairs.
 #[test]
 fn upstream_finished_does_not_override_failed_repairs() {
     let mut report = VerificationReport::default();

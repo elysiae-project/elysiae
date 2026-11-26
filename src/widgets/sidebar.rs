@@ -67,7 +67,8 @@ mod icon_imp {
     }
 
     impl WidgetImpl for GameIcon {
-        // CSS controls the icon's size, not the downloaded texture's dimensions.
+        // CSS controls the icon's size, not the downloaded texture's
+        // dimensions.
         fn measure(&self, _: gtk::Orientation, _: i32) -> (i32, i32, i32, i32) {
             (0, 0, -1, -1)
         }

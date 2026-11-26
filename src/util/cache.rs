@@ -25,10 +25,11 @@ use crate::{
 const CATALOG_CONCURRENCY: usize = 3;
 
 // The asset budget includes download staging files. Catalogs are separately
-// bounded to 4 MiB each and the supported game/locale pairs. Referenced or active
-// files are never evicted to make room: an oversized working set keeps its last
-// usable catalog instead. URLs are not assumed immutable; recheck after 7 days
-// when unpinned. The cap is on asset bytes, not filesystem allocation overhead.
+// bounded to 4 MiB each and the supported game/locale pairs. Referenced or
+// active files are never evicted to make room: an oversized working set keeps
+// its last usable catalog instead. URLs are not assumed immutable; recheck
+// after 7 days when unpinned. The cap is on asset bytes, not filesystem
+// allocation overhead.
 const ASSET_BUDGET: u64 = 512 * 1024 * 1024;
 const ASSET_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_CATALOG_SIZE: u64 = 4 * 1024 * 1024;
@@ -302,7 +303,8 @@ fn locales(locale: &str) -> impl Iterator<Item = &str> {
 }
 
 impl Store {
-    /// Create a cache store with a validated root, byte budget and asset lifetime.
+    /// Create a cache store with a validated root, byte budget and asset
+    /// lifetime.
     fn new(relative: PathBuf, budget: u64, ttl: Duration) -> Result<Self> {
         let root = full_path(Some(relative.clone()), None)?;
         let store = Self {
@@ -400,7 +402,8 @@ impl Store {
         }
     }
 
-    /// Select an available background and its own overlay, preferring video if enabled.
+    /// Select an available background and its own overlay, preferring video if
+    /// enabled.
     fn selected(&self, response: &AedesResponse, use_video: bool) -> ResolvedMedia {
         for video in [true, false] {
             if video && !use_video {
@@ -546,8 +549,8 @@ impl Store {
 
     /// Scan only owned asset files, without following links. Temporary download
     /// files count against the budget until the TTL expires. Their transfer
-    /// deadline is shorter than that TTL, so abandoned downloads can be reclaimed.
-    /// Published catalogs and unrelated cache roots are untouched.
+    /// deadline is shorter than that TTL, so abandoned downloads can be
+    /// reclaimed. Published catalogs and unrelated cache roots are untouched.
     fn collect(&self, prospective: &HashSet<PathBuf>) -> Result<u64> {
         self.collect_catalog_temporaries();
 
@@ -605,7 +608,8 @@ impl Store {
             }
         }
 
-        // Removed versions must not leave an ever-growing tree of empty folders.
+        // Removed versions must not leave an ever-growing tree of empty
+        // folders.
         for directory in directories.into_iter().rev() {
             let key = Path::new("cache").join(directory.strip_prefix(&self.root)?);
             match std::fs::remove_dir(self.path(&key)?) {
@@ -618,7 +622,8 @@ impl Store {
         Ok(total)
     }
 
-    /// Remove expired catalog staging files without touching published catalogs.
+    /// Remove expired catalog staging files without touching published
+    /// catalogs.
     fn collect_catalog_temporaries(&self) {
         for game in Game::all() {
             let Ok(directory) = self.path(&Path::new("cache/catalogs").join(game.code())) else {
@@ -660,7 +665,8 @@ impl Store {
         }
     }
 
-    /// Reuse or refresh an asset within budget, retaining usable stale files on failure.
+    /// Reuse or refresh an asset within budget, retaining usable stale files on
+    /// failure.
     async fn asset<D, DF>(
         &self,
         server_path: &str,
@@ -829,8 +835,9 @@ impl Store {
         anyhow::bail!("No usable background: {}", errors.join("; "))
     }
 
-    /// Publish usable static artwork before waiting for icons or optional media.
-    /// Keep old assets protected until all required replacements are usable.
+    /// Publish usable static artwork before waiting for icons or optional
+    /// media. Keep old assets protected until all required replacements are
+    /// usable.
     #[expect(
         clippy::too_many_arguments,
         reason = "Keep source and requested locales, preferences, and injected publication/download callbacks distinct"
@@ -1028,7 +1035,8 @@ impl Store {
     }
 
     /// Fetch at most three catalogs concurrently; assets and publications stay
-    /// serial. The priority game (including fallback) runs before unrelated work.
+    /// serial. The priority game (including fallback) runs before unrelated
+    /// work.
     async fn refresh_with_progress<F, FF, D, DF>(
         &self,
         locale: &str,

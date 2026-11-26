@@ -105,7 +105,8 @@ fn require_key(settings: &Settings, key: &str) -> Result<()> {
 }
 
 /// Register one application-lifetime listener on the calling thread's settings.
-/// The application supplies weak GTK references, so the listener owns no windows.
+/// The application supplies weak GTK references, so the listener owns no
+/// windows.
 pub fn connect_changed(callback: impl Fn(&str) + 'static) -> Result<()> {
     let settings = settings()?;
     let _ = settings.connect_changed(None, move |_, key| callback(key));
@@ -128,7 +129,8 @@ pub fn get_option(key: &str) -> Result<SettingValue> {
     }
 }
 
-/// Validates and saves a preference, normalizing language identifiers as needed.
+/// Validates and saves a preference, normalizing language identifiers as
+/// needed.
 pub fn set_option(key: &str, value: SettingValue) -> Result<()> {
     let settings = settings()?;
     require_key(&settings, key)?;

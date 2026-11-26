@@ -14,7 +14,8 @@ const APP_ID: &str = "app.elysiae.Elysiae";
 const APP_STYLE_PRIORITY: u32 = gtk::STYLE_PROVIDER_PRIORITY_APPLICATION;
 const APP_FONT: &[u8] = include_bytes!("../data/fonts/PretendardVariable.woff2");
 
-/// Builds the GTK application and wires recovery, URI routing and backend actions.
+/// Builds the GTK application and wires recovery, URI routing and backend
+/// actions.
 pub fn build_app() -> gtk::Application {
     let app = gtk::Application::builder()
         .application_id(APP_ID)
@@ -293,7 +294,8 @@ fn add_actions(app: &gtk::Application) {
     app.add_action(&action);
 }
 
-/// Reads a game selection from an elysiae navigation URI, rejecting extra commands.
+/// Reads a game selection from an elysiae navigation URI, rejecting extra
+/// commands.
 fn parse_game_uri(uri: &str) -> Option<Game> {
     let url = url::Url::parse(uri).ok()?;
     if url.scheme() != "elysiae"

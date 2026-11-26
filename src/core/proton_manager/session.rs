@@ -27,7 +27,8 @@ enum SessionWine {
 }
 
 impl SessionWine {
-    /// Returns the binary directory and architecture for the recorded Wine variant.
+    /// Returns the binary directory and architecture for the recorded Wine
+    /// variant.
     fn layout(self) -> (&'static str, &'static str) {
         match self {
             Self::X86_64 => ("files/bin", "x86_64"),
@@ -55,7 +56,8 @@ enum SessionWrapper {
 struct SessionFence {
     format: u32,
     root: SessionRoot,
-    // Pin the launch-time server variant even if PROTON_USE_ARM64 changes on restart.
+    // Pin the launch-time server variant even if PROTON_USE_ARM64 changes on
+    // restart.
     wine: SessionWine,
     boot_id: String,
     #[serde(default)]
@@ -194,7 +196,8 @@ fn parse_wrapper_process(pid: u32, stat: &[u8]) -> Result<WrapperProcess> {
     })
 }
 
-/// Inspects a wrapper PID, returning none only when its process entry is absent.
+/// Inspects a wrapper PID, returning none only when its process entry is
+/// absent.
 fn wrapper_process(pid: u32) -> Result<Option<WrapperProcess>> {
     ensure!(pid > 0 && pid <= i32::MAX as u32, "Invalid wrapper PID");
     let path = PathBuf::from(format!("/proc/{pid}/stat"));
@@ -284,12 +287,14 @@ fn recover_session_at(paths: &RuntimePaths) -> Result<()> {
 }
 
 /// Recovery is the sole operation allowed past a durable session fence. The
-/// blocking worker retains its lease/profile lock even if the caller is dropped.
+/// blocking worker retains its lease/profile lock even if the caller is
+/// dropped.
 pub async fn recover_session() -> Result<()> {
     recover_session_with(RuntimePaths::appdata()?, operations()).await
 }
 
-/// Recovers an existing session while the supplied operation manager holds its lease.
+/// Recovers an existing session while the supplied operation manager holds its
+/// lease.
 async fn recover_session_with(paths: RuntimePaths, owner: &Operations) -> Result<()> {
     if !node_exists(&paths.session())? {
         return Ok(());
@@ -299,7 +304,8 @@ async fn recover_session_with(paths: RuntimePaths, owner: &Operations) -> Result
     runtime_worker(operation, move |_| recover_session_at(&paths)).await
 }
 
-/// Configures a child's shared-prefix environment without changing the host process.
+/// Configures a child's shared-prefix environment without changing the host
+/// process.
 fn prefix_environment(command: &mut Command, paths: &RuntimePaths) {
     command
         .env("STEAM_COMPAT_DATA_PATH", paths.prefix())
@@ -307,7 +313,8 @@ fn prefix_environment(command: &mut Command, paths: &RuntimePaths) {
         .env("WINEPREFIX", paths.prefix().join("pfx"));
 }
 
-/// Builds a Proton launch command for an absolute game path and the shared prefix.
+/// Builds a Proton launch command for an absolute game path and the shared
+/// prefix.
 fn game_command(
     paths: &RuntimePaths,
     runtime: &RuntimeLayout,
@@ -389,7 +396,8 @@ pub(super) fn wait_for_session(paths: &RuntimePaths, runtime: &RuntimeLayout) ->
     Ok(())
 }
 
-/// Launches and supervises a game through Proton under the supplied operation lease.
+/// Launches and supervises a game through Proton under the supplied operation
+/// lease.
 pub async fn run_game(executable: PathBuf, operation: Operation) -> Result<()> {
     run_game_at(RuntimePaths::appdata()?, executable, operation).await
 }
@@ -402,7 +410,8 @@ async fn run_game_at(paths: RuntimePaths, executable: PathBuf, operation: Operat
     .await
 }
 
-/// Fences and supervises Proton and Wine, retaining the fence if exit is uncertain.
+/// Fences and supervises Proton and Wine, retaining the fence if exit is
+/// uncertain.
 fn run_game_owned(paths: &RuntimePaths, executable: &Path, operation: &Operation) -> Result<()> {
     operation.check_cancelled()?;
     ensure_no_session_at(paths)?;

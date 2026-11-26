@@ -101,7 +101,8 @@ fn assert_footer_layout(window: &ElysiaeWindow) {
     assert!(
         controls.y() + controls.height() <= window.height() as f32,
         "Controls must stay inside the window: {controls:?} in {}x{}",
-        window.width(), window.height()
+        window.width(),
+        window.height()
     );
     assert!(!window.imp().settings_button.is_ancestor(&footer));
     assert!(!window.imp().operation_button.is_ancestor(&footer));
@@ -142,12 +143,16 @@ fn gtk_launcher_interactions_and_layout() {
     assert!(!window.imp().progress.is_visible());
     assert!(window.imp().background.is_visible());
     let initial_selector = window.imp().sidebar.compute_bounds(&window).unwrap();
-    // R3: sidebar hugs the right content padding; the gap is fixed, not centered.
+    // R3: sidebar hugs the right content padding; the gap is fixed, not
+    // centered.
     assert_eq!(
         window.width() as f32 - (initial_selector.x() + initial_selector.width()),
         32.0
     );
-    assert_eq!((initial_selector.width(), initial_selector.height()), (74.0, 296.0));
+    assert_eq!(
+        (initial_selector.width(), initial_selector.height()),
+        (74.0, 296.0)
+    );
     let settings_bounds = window
         .imp()
         .settings_button
@@ -456,13 +461,10 @@ fn gtk_launcher_interactions_and_layout() {
         "Extracting download.tar.gz…"
     );
     component.finish(Ok(())).unwrap();
-    pump_until(|| {
-        window.imp().progress.imp().heading.label() == "Downloading Phlogiston"
+    pump_until(|| window.imp().progress.imp().heading.label() == "Downloading Phlogiston");
+    pump_for(std::time::Duration::from_secs(8), &mut || {
+        !window.imp().progress.is_visible()
     });
-    pump_for(
-        std::time::Duration::from_secs(8),
-        &mut || !window.imp().progress.is_visible(),
-    );
     assert_eq!(window.imp().displayed_operation.get(), None);
     window.close();
 }
@@ -559,8 +561,9 @@ fn stale_terminal_event_does_not_reset_active_progress() {
     });
 
     let heading = format!("Downloading {}", Game::Bh3.display_name());
-    pump_until(|| window.imp().progress.is_visible()
-        && window.imp().progress.imp().heading.label() == heading);
+    pump_until(|| {
+        window.imp().progress.is_visible() && window.imp().progress.imp().heading.label() == heading
+    });
     assert_eq!(window.imp().displayed_operation.get(), Some(in_flight));
     assert!(window.imp().progress.imp().bars.is_visible());
 
@@ -572,12 +575,14 @@ fn stale_terminal_event_does_not_reset_active_progress() {
             phase: Phase::Failed,
             error: Some("synthetic stale failure".to_string()),
         },
-        event: ProgressEvent::Finished { error: Some("synthetic stale failure".to_string()) },
+        event: ProgressEvent::Finished {
+            error: Some("synthetic stale failure".to_string()),
+        },
     });
 
-    // The stale failure must neither repaint the panel nor arm the delayed reset:
-    // iterate the main context past the 4-second window and require the panel to
-    // still be showing the in-flight operation.
+    // The stale failure must neither repaint the panel nor arm the delayed
+    // reset: iterate the main context past the 4-second window and require the
+    // panel to still be showing the in-flight operation.
     let stale_since = std::time::Instant::now();
     pump_for(std::time::Duration::from_secs(10), &mut || {
         window.imp().progress.is_visible()
@@ -602,8 +607,9 @@ fn stale_terminal_event_does_not_reset_active_progress() {
             eta_seconds: 730.0,
         }),
     });
-    pump_until(|| window.imp().progress.is_visible()
-        && window.imp().progress.imp().heading.label() == heading);
+    pump_until(|| {
+        window.imp().progress.is_visible() && window.imp().progress.imp().heading.label() == heading
+    });
     assert!(window.imp().progress.imp().bars.is_visible());
 
     progress::publish(ProgressUpdate {
@@ -618,10 +624,9 @@ fn stale_terminal_event_does_not_reset_active_progress() {
             error: Some("synthetic in-flight failure".to_string()),
         },
     });
-    pump_for(
-        std::time::Duration::from_secs(8),
-        &mut || !window.imp().progress.is_visible(),
-    );
+    pump_for(std::time::Duration::from_secs(8), &mut || {
+        !window.imp().progress.is_visible()
+    });
     assert_eq!(window.imp().displayed_operation.get(), None);
     screenshot(&window, "r1_terminal_reset");
     window.close();
