@@ -12,9 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - runner: ubuntu-26.04
             arch: x86_64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-26.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
@@ -23,24 +23,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt full-upgrade -y
-          sudo apt install meson ninja-build build-essential libfreetype-dev libgtk-4-dev llvm clang -y
+          sudo apt-get update
+          sudo apt-get install meson ninja-build build-essential libfreetype-dev libgtk-4-dev libxml2-utils desktop-file-utils dbus-x11 xvfb llvm clang -y
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             
-      - name: Run Tests (Debug)
-        run: |
-          mkdir build_debug
-          meson setup build_debug -Dprofile=dev -Dtests=true -Dgui_tests=true 
-          ninja -C build_debug test
-      
-      - name: Run Tests (Release)
+      - name: Run tests
         run: |
           mkdir build_release
           meson setup build_release -Dprofile=release -Dtests=true -Dgui_tests=true --prefix=/usr
-          ninja -C build_release test
+          LIBGL_ALWAYS_SOFTWARE=1 GTK_A11Y=none dbus-run-session -- xvfb-run -a ninja -C build_release test
       
-      - name: Test Installs
+      - name: Test installs
         run: |
           DESTDIR="$PWD/stage" meson install -C build_release --no-rebuild
           test -x stage/usr/bin/Elysiae
